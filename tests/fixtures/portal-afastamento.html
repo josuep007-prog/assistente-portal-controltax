@@ -1,0 +1,70 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Portal do Cliente</title>
+<style>
+body{font-family:Arial;margin:0;background:#f4f4f4}
+header{height:64px;background:#fff;border-bottom:1px solid #ddd;display:flex;align-items:center;padding:0 20px}
+main{margin:20px 40px;background:#fff;padding:20px;min-height:900px}
+label{display:block;font-size:13px;margin-top:12px}
+bento-combobox{display:block;position:relative;width:400px}
+bento-combobox input,input[type=text],textarea{width:400px;padding:6px;border:1px solid #bbb}
+.box{position:absolute;top:32px;left:0;width:400px;background:#fff;border:1px solid #999;z-index:5}
+[role=option]{padding:6px;cursor:pointer}
+.chip{display:inline-block;background:#06c;color:#fff;padding:3px 8px;margin:4px}
+button.btn-primary{background:#0a6aa1;color:#fff;border:0;padding:8px 14px}
+</style></head>
+<body>
+<header>INÍCIO · DOCUMENTOS · PORTAL DO CLIENTE</header>
+<main>
+  <div>EMPRESA
+EMPRESA EXEMPLO SIMPLES NACIONAL LTDA
+EXEMPLO | 0001-19</div>
+  <h2 class="title">Adicionar Solicitação de Afastamento de Empregado para: EMPRESA EXEMPLO SIMPLES NACIONAL LTDA</h2>
+  <button type="button" class="btn btn-primary" id="add">ADICIONAR</button> <button type="button" class="btn">CANCELAR</button>
+  <form>
+    <label>Empregado</label>
+    <bento-combobox formcontrolname="selectedEmployee" role="combobox" aria-expanded="false" aria-owns="box-0" data-opts="FRANCISCO DE MOURA|JOANA FONSECA|JOAO DA SILVA|JORGE OLIVEIRA ALVES|RONALDO DE SOUZA"><div><input type="text" id="bui-combobox-0-input"></div></bento-combobox>
+    <label>Tipo de afastamento</label>
+    <bento-combobox formcontrolname="selectedLeaveType" role="combobox" aria-expanded="false" aria-owns="box-1" data-opts="Afastamento direitos integrais|Acid. Trabalho período superior a 15 dias|Serviço militar|Licença maternidade|Doença período superior a 15 dias|Licença sem vencimento|Novo afast. mesmo acid. Trabalho"><div><input type="text" id="bui-combobox-1-input"></div></bento-combobox>
+    <label for="leave-date">Data de afastamento - opcional</label><input type="text" id="leave-date" formcontrolname="leaveDate" placeholder="DD/MM/AAAA">
+    <label for="cat-date">Data da CAT</label><input type="text" id="cat-date" formcontrolname="catDate" disabled>
+    <div><input type="radio" id="typical" name="catType" formcontrolname="catType" disabled><label for="typical">Típico</label>
+    <input type="radio" id="disease" name="catType" formcontrolname="catType" disabled><label for="disease">Doença profissional ou do trabalho</label>
+    <input type="radio" id="accident" name="catType" formcontrolname="catType" disabled><label for="accident">Trajeto</label></div>
+    <div><label>Número da CAT</label><input type="text" formcontrolname="catNumber" disabled></div>
+    <div><label>Assunto</label><input type="text" formcontrolname="subject"></div>
+    <div><label>Descrição</label><textarea formcontrolname="description" rows="6"></textarea></div>
+    <label for="conclusion-date">Expectativa de conclusão - opcional</label><input type="text" id="conclusion-date" formcontrolname="conclusionExpectation">
+    <cc-sr-file-selector><bento-file-selector><div>Arraste um arquivo aqui ou</div><input type="file" multiple><div class="chips"></div></bento-file-selector></cc-sr-file-selector>
+  </form>
+  <pre id="log"></pre>
+</main>
+<script>
+const log = (s) => document.getElementById('log').textContent += s + '\n';
+let boxN = 0;
+document.querySelectorAll('bento-combobox').forEach(cb => {
+  const inp = cb.querySelector('input');
+  const opts = cb.dataset.opts.split('|');
+  const close = () => { cb.setAttribute('aria-expanded','false'); document.getElementById(cb.getAttribute('aria-owns'))?.remove(); };
+  const open = () => {
+    cb.setAttribute('aria-expanded','true');
+    const box = document.createElement('bento-combobox-list'); box.className='box'; box.id = cb.getAttribute('aria-owns');
+    const f = inp.value && !opts.includes(inp.value) ? inp.value.toUpperCase() : '';
+    opts.filter(o => !f || o.toUpperCase().includes(f)).forEach(o => { const d=document.createElement('div'); d.setAttribute('role','option'); d.innerHTML='<span> '+o+' </span>'; d.addEventListener('click', () => { inp.value=o; close(); cb.classList.add('ng-dirty'); onChange(cb, o); }); box.appendChild(d); });
+    cb.appendChild(box);
+  };
+  inp.addEventListener('click', () => cb.getAttribute('aria-expanded')==='true' ? close() : open());
+  inp.addEventListener('keydown', e => { if (e.key==='Escape') close(); });
+  inp.addEventListener('input', () => { if (cb.getAttribute('aria-expanded')==='true') { close(); open(); } });
+});
+function onChange(cb, v) {
+  if (cb.getAttribute('formcontrolname')==='selectedLeaveType') {
+    const acid = /Acid/.test(v);
+    ['cat-date','typical','disease','accident'].forEach(id => document.getElementById(id).disabled = !acid);
+    document.querySelector('[formcontrolname=catNumber]').disabled = !acid;
+  }
+}
+const fi = document.querySelector('input[type=file]');
+fi.addEventListener('change', () => { [...fi.files].forEach(f => { const c=document.createElement('span'); c.className='chip'; c.textContent = f.name + ' (' + f.size + 'B)'; document.querySelector('.chips').appendChild(c); }); log('files:' + [...fi.files].map(f=>f.name).join(',')); });
+document.getElementById('add').addEventListener('click', () => { log('SUBMITTED ' + JSON.stringify([...document.querySelectorAll('[formcontrolname]')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX'? e.querySelector('input').value : e.value]))); });
+</script>
+</body></html>

@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Assistente do Portal do Cliente — ControlTax",
+  "short_name": "Assistente ControlTax",
+  "version": "1.1.0",
+  "description": "Preenche as solicitações do Portal do Cliente a partir dos seus documentos, confere campos, anexos e prazos antes do envio.",
+  "minimum_chrome_version": "120",
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
+  "action": {
+    "default_title": "Assistente do Portal do Cliente",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png" }
+  },
+  "background": { "service_worker": "background/service-worker.js" },
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://onvio.com.br/*",
+    "https://raw.githubusercontent.com/*",
+    "https://gist.githubusercontent.com/*",
+    "https://*.github.io/*",
+    "http://localhost:35729/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://onvio.com.br/clientcenter/*"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["panel/*", "fonts/*", "icons/*", "lib/*"],
+      "matches": ["https://onvio.com.br/*"]
+    }
+  ],
+  "options_page": "options/options.html",
+  "commands": {
+    "toggle-panel": {
+      "suggested_key": { "default": "Alt+Shift+A" },
+      "description": "Abrir ou fechar o Assistente"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

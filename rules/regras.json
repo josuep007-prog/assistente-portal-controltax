@@ -1,0 +1,2297 @@
+{
+  "versao": "2026.10.09-1",
+  "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
+  "escritorio": {
+    "nome": "ControlTax",
+    "saudacao": "Olá! Eu ajudo você a abrir solicitações no portal de forma rápida e completa.",
+    "contatoSuporte": "Dúvidas sobre o assistente? Fale com o seu analista pelo próprio portal (Solicitação Geral).",
+    "links": [
+      {
+        "rotulo": "Vídeo: como usar o Portal do Cliente",
+        "url": ""
+      },
+      {
+        "rotulo": "Guia rápido em PDF",
+        "url": ""
+      }
+    ]
+  },
+  "config": {
+    "bloquearEnvioComPendencias": false,
+    "confirmarAntesDeEnviar": true,
+    "incluirCidNaDescricao": false,
+    "ocrAutomatico": true,
+    "usarIaDoChromeQuandoDisponivel": true,
+    "atestadoAte15DiasVaiPara": "afastamento",
+    "prazoInternoDiasUteis": {
+      "simples": 3,
+      "calculo": 5
+    },
+    "diaLimiteRubricas": null,
+    "intervaloAtualizacaoRegrasMin": 30
+  },
+  "feriados": [
+    "2026-01-01",
+    "2026-04-03",
+    "2026-04-21",
+    "2026-05-01",
+    "2026-09-07",
+    "2026-10-12",
+    "2026-11-02",
+    "2026-11-15",
+    "2026-11-20",
+    "2026-12-25",
+    "2027-01-01",
+    "2027-03-26",
+    "2027-04-21",
+    "2027-05-01",
+    "2027-09-07",
+    "2027-10-12",
+    "2027-11-02",
+    "2027-11-15",
+    "2027-11-20",
+    "2027-12-25"
+  ],
+  "aliasesOpcoes": {
+    "_comentario": "Quando o documento traz uma forma e o portal mostra outra (ex.: SP → São Paulo). Chave = como vem no documento.",
+    "AC": "Acre",
+    "AL": "Alagoas",
+    "AP": "Amapá",
+    "AM": "Amazonas",
+    "BA": "Bahia",
+    "CE": "Ceará",
+    "DF": "Distrito Federal",
+    "ES": "Espírito Santo",
+    "GO": "Goiás",
+    "MA": "Maranhão",
+    "MT": "Mato Grosso",
+    "MS": "Mato Grosso do Sul",
+    "MG": "Minas Gerais",
+    "PA": "Pará",
+    "PB": "Paraíba",
+    "PR": "Paraná",
+    "PE": "Pernambuco",
+    "PI": "Piauí",
+    "RJ": "Rio de Janeiro",
+    "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul",
+    "RO": "Rondônia",
+    "RR": "Roraima",
+    "SC": "Santa Catarina",
+    "SP": "São Paulo",
+    "SE": "Sergipe",
+    "TO": "Tocantins",
+    "SOLTEIRA": "Solteiro",
+    "CASADA": "Casado",
+    "DIVORCIADA": "Divorciado",
+    "VIUVA": "Viúvo",
+    "BRASILEIRA": "Brasil",
+    "BRASILEIRO": "Brasil"
+  },
+  "intencoes": [
+    {
+      "id": "contratar",
+      "titulo": "Contratar funcionário",
+      "subtitulo": "Admissão CLT — cadastro completo",
+      "icone": "user-plus",
+      "tipo": "cadastroEmpregado",
+      "palavras": [
+        "contratar",
+        "admissão",
+        "admitir",
+        "novo funcionário",
+        "registro",
+        "registrar"
+      ]
+    },
+    {
+      "id": "estagiario",
+      "titulo": "Contratar estagiário",
+      "subtitulo": "Termo de compromisso e cadastro",
+      "icone": "graduation",
+      "tipo": "cadastroEstagiario",
+      "palavras": [
+        "estágio",
+        "estagiário",
+        "estagiária",
+        "tce"
+      ]
+    },
+    {
+      "id": "contribuinte",
+      "titulo": "Sócio ou autônomo",
+      "subtitulo": "Pró-labore, RPA, contribuinte individual",
+      "icone": "briefcase",
+      "tipo": "cadastroContribuinte",
+      "palavras": [
+        "sócio",
+        "pró-labore",
+        "prolabore",
+        "autônomo",
+        "rpa",
+        "contribuinte"
+      ]
+    },
+    {
+      "id": "ferias-aviso",
+      "titulo": "Programar férias",
+      "subtitulo": "Aviso de férias — 30 dias antes",
+      "icone": "sun",
+      "tipo": "avisoFerias",
+      "palavras": [
+        "férias",
+        "ferias",
+        "programar férias",
+        "aviso de férias"
+      ]
+    },
+    {
+      "id": "ferias-calculo",
+      "titulo": "Calcular férias",
+      "subtitulo": "Recibo e pagamento das férias",
+      "icone": "calc",
+      "tipo": "calculoFerias",
+      "palavras": [
+        "cálculo de férias",
+        "recibo de férias",
+        "pagar férias"
+      ]
+    },
+    {
+      "id": "atestado",
+      "titulo": "Atestado ou afastamento",
+      "subtitulo": "Doença, acidente, licenças",
+      "icone": "medical",
+      "tipo": "afastamento",
+      "palavras": [
+        "atestado",
+        "afastamento",
+        "doente",
+        "doença",
+        "acidente",
+        "licença",
+        "maternidade",
+        "inss",
+        "cat"
+      ]
+    },
+    {
+      "id": "desligar",
+      "titulo": "Desligar funcionário",
+      "subtitulo": "Aviso prévio — demissão ou pedido",
+      "icone": "door",
+      "tipo": "avisoRescisao",
+      "palavras": [
+        "demitir",
+        "demissão",
+        "desligar",
+        "desligamento",
+        "pediu demissão",
+        "pedido de demissão",
+        "aviso prévio",
+        "justa causa"
+      ]
+    },
+    {
+      "id": "rescisao",
+      "titulo": "Calcular rescisão",
+      "subtitulo": "Verbas rescisórias e homologação",
+      "icone": "calc",
+      "tipo": "calculoRescisao",
+      "palavras": [
+        "rescisão",
+        "verbas rescisórias",
+        "cálculo de rescisão",
+        "termo de rescisão",
+        "trct"
+      ]
+    },
+    {
+      "id": "rubricas",
+      "titulo": "Variáveis da folha",
+      "subtitulo": "Horas extras, faltas, comissões, bônus",
+      "icone": "list",
+      "tipo": "rubricas",
+      "palavras": [
+        "hora extra",
+        "horas extras",
+        "faltas",
+        "comissão",
+        "comissões",
+        "bônus",
+        "adicional",
+        "desconto",
+        "vale",
+        "variáveis",
+        "rubrica",
+        "folha",
+        "adiantamento",
+        "plr"
+      ]
+    },
+    {
+      "id": "geral",
+      "titulo": "Outro assunto",
+      "subtitulo": "Dúvida, documento ou pedido a qualquer setor",
+      "icone": "chat",
+      "tipo": "geral",
+      "palavras": [
+        "dúvida",
+        "documento",
+        "enviar",
+        "fiscal",
+        "contábil",
+        "nota",
+        "imposto",
+        "guia",
+        "certidão"
+      ]
+    }
+  ],
+  "tipos": {
+    "geral": {
+      "nome": "Solicitação Geral",
+      "slug": "general-requests",
+      "api": null,
+      "setor": "Qualquer setor",
+      "complexidade": "simples",
+      "campos": {
+        "departamento": {
+          "fc": "department",
+          "tipo": "combo",
+          "rotulo": "Departamento",
+          "obrigatorio": true
+        },
+        "assunto": {
+          "fc": "subject",
+          "tipo": "texto",
+          "rotulo": "Assunto",
+          "obrigatorio": true
+        },
+        "descricao": {
+          "fc": "description",
+          "tipo": "textarea",
+          "rotulo": "Descrição",
+          "obrigatorio": true
+        },
+        "conclusao": {
+          "fc": "conclusionExpectation",
+          "tipo": "data",
+          "rotulo": "Expectativa de conclusão"
+        }
+      },
+      "anexos": [],
+      "verificacoes": [
+        {
+          "tipo": "abaErrada"
+        }
+      ],
+      "assunto": "{assunto}",
+      "dicas": [
+        "Escolha o departamento certo: Pessoal (folha e funcionários), Fiscal (notas e impostos), Contábil (balanços e lançamentos).",
+        "Para férias, rescisões, admissões e afastamentos use a solicitação específica — ela já leva os dados certos direto para o sistema do escritório."
+      ]
+    },
+    "afastamento": {
+      "nome": "Afastamento de Empregado",
+      "slug": "employee-leave",
+      "api": "employee-leave",
+      "setor": "Pessoal",
+      "complexidade": "simples",
+      "campos": {
+        "empregado": {
+          "fc": "selectedEmployee",
+          "tipo": "combo",
+          "rotulo": "Empregado",
+          "obrigatorio": true,
+          "fonte": "empregado"
+        },
+        "tipoAfastamento": {
+          "fc": "selectedLeaveType",
+          "tipo": "combo",
+          "rotulo": "Tipo de afastamento",
+          "obrigatorio": true
+        },
+        "dataAfastamento": {
+          "fc": "leaveDate",
+          "tipo": "data",
+          "rotulo": "Data de afastamento",
+          "obrigatorio": true,
+          "sinonimos": [
+            "data do afastamento",
+            "afastado a partir de",
+            "a partir de",
+            "data do acidente"
+          ]
+        },
+        "dataCat": {
+          "fc": "catDate",
+          "tipo": "data",
+          "rotulo": "Data da CAT",
+          "sinonimos": [
+            "data de emissão da CAT",
+            "data da CAT"
+          ]
+        },
+        "tipoCat": {
+          "tipo": "radio",
+          "rotulo": "Tipo da CAT",
+          "seletores": {
+            "Típico": "#typical",
+            "Doença profissional ou do trabalho": "#disease",
+            "Trajeto": "#accident"
+          }
+        },
+        "numeroCat": {
+          "fc": "catNumber",
+          "tipo": "texto",
+          "rotulo": "Número da CAT",
+          "sinonimos": [
+            "número da CAT",
+            "nº da CAT",
+            "n° CAT",
+            "CAT nº"
+          ]
+        },
+        "dias": {
+          "tipo": "numero",
+          "rotulo": "Dias de afastamento",
+          "somenteAssistente": true
+        },
+        "cid": {
+          "tipo": "texto",
+          "rotulo": "CID (opcional)",
+          "somenteAssistente": true,
+          "sensivel": true
+        },
+        "medico": {
+          "tipo": "texto",
+          "rotulo": "Médico / CRM",
+          "somenteAssistente": true
+        },
+        "assunto": {
+          "fc": "subject",
+          "tipo": "texto",
+          "rotulo": "Assunto",
+          "obrigatorio": true
+        },
+        "descricao": {
+          "fc": "description",
+          "tipo": "textarea",
+          "rotulo": "Descrição",
+          "obrigatorio": true
+        },
+        "conclusao": {
+          "fc": "conclusionExpectation",
+          "tipo": "data",
+          "rotulo": "Expectativa de conclusão"
+        }
+      },
+      "condicionais": [
+        {
+          "se": {
+            "campo": "tipoAfastamento",
+            "contem": [
+              "Acid. Trabalho",
+              "mesmo acid"
+            ]
+          },
+          "obrigatorios": [
+            "dataCat",
+            "tipoCat",
+            "numeroCat"
+          ],
+          "anexos": [
+            "cat"
+          ]
+        },
+        {
+          "se": {
+            "campo": "tipoAfastamento",
+            "contem": [
+              "maternidade"
+            ]
+          },
+          "anexos": [
+            "certidao"
+          ]
+        }
+      ],
+      "anexos": [
+        {
+          "id": "atestado",
+          "rotulo": "Atestado médico",
+          "documento": "atestado",
+          "obrigatorio": true,
+          "excetoQuando": {
+            "campo": "tipoAfastamento",
+            "contem": [
+              "Serviço militar",
+              "sem vencimento",
+              "mandato sindical",
+              "Acid. Trabalho",
+              "mesmo acid",
+              "maternidade"
+            ]
+          }
+        },
+        {
+          "id": "cat",
+          "rotulo": "CAT (Comunicação de Acidente de Trabalho)",
+          "documento": "cat",
+          "obrigatorio": false
+        },
+        {
+          "id": "certidao",
+          "rotulo": "Certidão de nascimento ou atestado de licença",
+          "documento": "certidao",
+          "obrigatorio": false
+        }
+      ],
+      "verificacoes": [
+        {
+          "tipo": "dataNaoFutura",
+          "campo": "dataAfastamento",
+          "nivel": "atencao",
+          "mensagem": "A data de afastamento está no futuro. Confira se é isso mesmo."
+        },
+        {
+          "tipo": "antiguidadeMaxima",
+          "campo": "dataAfastamento",
+          "dias": 30,
+          "nivel": "atencao",
+          "mensagem": "Este afastamento começou há mais de 30 dias. Envie assim que possível — atestados antigos podem afetar a folha já fechada."
+        },
+        {
+          "tipo": "prazoCat",
+          "campo": "dataAfastamento",
+          "nivel": "atencao",
+          "condicao": {
+            "campo": "tipoAfastamento",
+            "contem": [
+              "Acid. Trabalho",
+              "mesmo acid"
+            ]
+          },
+          "mensagem": "Em acidente de trabalho a CAT deve ser emitida até o 1º dia útil seguinte ao acidente (Lei 8.213/91, art. 22)."
+        },
+        {
+          "tipo": "diasMaiorQue",
+          "campo": "dias",
+          "valor": 15,
+          "nivel": "info",
+          "mensagem": "Afastamento acima de 15 dias: os 15 primeiros dias são pagos pela empresa e, a partir do 16º, o funcionário é encaminhado ao INSS."
+        }
+      ],
+      "assunto": "Afastamento – {empregado} – {tipoAfastamento}",
+      "descricao": [
+        "Empregado: {empregado}",
+        "Tipo de afastamento: {tipoAfastamento}",
+        "Início do afastamento: {dataAfastamento}",
+        "Quantidade de dias: {dias}",
+        "Retorno previsto: {dataRetorno}",
+        "CID: {cid}",
+        "Médico/CRM: {medico}",
+        "CAT nº {numeroCat} emitida em {dataCat} ({tipoCat})",
+        "Documento anexo: {anexosNomes}",
+        "{observacoes}"
+      ],
+      "dicas": [
+        "Arraste o atestado aqui: eu leio o nome, a data e os dias e preencho para você.",
+        "O CID é um dado de saúde: só é incluído se você ativar essa opção.",
+        "Atestados de até 15 dias: siga a orientação do seu analista sobre onde enviar (o tipo de afastamento do portal começa em 'superior a 15 dias')."
+      ]
+    },
+    "avisoFerias": {
+      "nome": "Aviso Prévio de Férias",
+      "slug": "vacation-notice",
+      "api": "prior-notice-vacations",
+      "setor": "Pessoal",
+      "complexidade": "simples",
+      "campos": {
+        "empregado": {
+          "fc": "selectedEmployee",
+          "tipo": "combo",
+          "rotulo": "Empregado",
+          "obrigatorio": true,
+          "fonte": "empregado"
+        },
+        "inicioGozo": {
+          "fc": "vacationStartDate",
+          "tipo": "data",
+          "rotulo": "Data de início do gozo",
+          "obrigatorio": true,
+          "sinonimos": [
+            "início do gozo",
+            "início das férias",
+            "data de início",
+            "a partir de"
+          ]
+        },
+        "diasGozo": {
+          "fc": "vacationDays",
+          "tipo": "numero",
+          "rotulo": "Dias de gozo",
+          "obrigatorio": true,
+          "sinonimos": [
+            "dias de gozo",
+            "dias de férias",
+            "quantidade de dias"
+          ]
+        },
+        "diasAbono": {
+          "fc": "bonusDays",
+          "tipo": "numero",
+          "rotulo": "Dias de abono",
+          "sinonimos": [
+            "abono pecuniário",
+            "dias de abono",
+            "vender"
+          ]
+        },
+        "dataAviso": {
+          "fc": "noticeDate",
+          "tipo": "data",
+          "rotulo": "Data do aviso"
+        },
+        "dataPagamento": {
+          "fc": "paymentDate",
+          "tipo": "data",
+          "rotulo": "Data do pagamento"
+        },
+        "assunto": {
+          "fc": "subject",
+          "tipo": "texto",
+          "rotulo": "Assunto",
+          "obrigatorio": true
+        },
+        "descricao": {
+          "fc": "description",
+          "tipo": "textarea",
+          "rotulo": "Descrição",
+          "obrigatorio": true
+        },
+        "conclusao": {
+          "fc": "dueDate",
+          "tipo": "data",
+          "rotulo": "Expectativa de conclusão"
+        }
+      },
+      "anexos": [],
+      "calculados": {
+        "fimGozo": {
+          "formula": "somarDias",
+          "de": "inicioGozo",
+          "dias": "diasGozo",
+          "menos": 1
+        },
+        "dataPagamentoSugerida": {
+          "formula": "subtrairDias",
+          "de": "inicioGozo",
+          "dias": 2
+        },
+        "dataAvisoSugerida": {
+          "formula": "hoje"
+        }
+      },
+      "verificacoes": [
+        {
+          "tipo": "antecedenciaMinima",
+          "campo": "inicioGozo",
+          "dias": 30,
+          "nivel": "atencao",
+          "mensagem": "O aviso de férias deve ser dado com pelo menos 30 dias de antecedência (CLT, art. 135)."
+        },
+        {
+          "tipo": "intervalo",
+          "campo": "diasGozo",
+          "min": 5,
+          "max": 30,
+          "nivel": "erro",
+          "mensagem": "Cada período de férias deve ter entre 5 e 30 dias (CLT, art. 134, §1º)."
+        },
+        {
+          "tipo": "intervalo",
+          "campo": "diasAbono",
+          "min": 0,
+          "max": 10,
+          "nivel": "erro",
+          "mensagem": "O abono pecuniário é de no máximo 1/3 das férias (até 10 dias em 30) — CLT, art. 143."
+        },
+        {
+          "tipo": "somaMaxima",
+          "campos": [
+            "diasGozo",
+            "diasAbono"
+          ],
+          "max": 30,
+          "nivel": "erro",
+          "mensagem": "Dias de gozo + dias de abono não podem passar de 30."
+        },
+        {
+          "tipo": "inicioFerias",
+          "campo": "inicioGozo",
+          "nivel": "atencao",
+          "mensagem": "As férias não podem começar nos 2 dias que antecedem feriado ou o descanso semanal (CLT, art. 134, §3º). Evite sexta, sábado e vésperas de feriado."
+        },
+        {
+          "tipo": "pagamentoAntesDe",
+          "campo": "dataPagamento",
+          "referencia": "inicioGozo",
+          "dias": 2,
+          "nivel": "erro",
+          "mensagem": "O pagamento das férias deve ser feito até 2 dias antes do início (CLT, art. 145)."
+        }
+      ],
+      "assunto": "Aviso de férias – {empregado} – {inicioGozo}",
+      "descricao": [
+        "Empregado: {empregado}",
+        "Início do gozo: {inicioGozo} ({diasGozo} dias) — retorno em {retorno}",
+        "Dias de abono pecuniário: {diasAbono}",
+        "Data do aviso: {dataAviso}",
+        "Pagamento previsto: {dataPagamento}",
+        "{observacoes}"
+      ],
+      "dicas": [
+        "Primeiro envie o Aviso (com 30 dias de antecedência). Depois, mais perto da data, envie o Cálculo de Férias.",
+        "Férias podem ser divididas em até 3 períodos: um deles com pelo menos 14 dias e os outros com pelo menos 5."
+      ]
+    },
+    "calculoFerias": {
+      "nome": "Cálculo de Férias",
+      "slug": "vacation-calculation",
+      "api": "vacation-calculations",
+      "setor": "Pessoal",
+      "complexidade": "calculo",
+      "campos": {
+        "empregado": {
+          "fc": "selectedEmployee",
+          "tipo": "combo",
+          "rotulo": "Empregado",
+          "obrigatorio": true,
+          "fonte": "empregado"
+        },
+        "inicioGozo": {
+          "fc": "initialDate",
+          "tipo": "data",
+          "rotulo": "Data de início de gozo",
+          "obrigatorio": true,
+          "sinonimos": [
+            "início do gozo",
+            "início das férias",
+            "a partir de"
+          ]
+        },
+        "diasGozo": {
+          "fc": "vacationDays",
+          "tipo": "numero",
+          "rotulo": "Dias de gozo",
+          "obrigatorio": true,
+          "sinonimos": [
+            "dias de gozo",
+            "dias de férias"
+          ]
+        },
+        "abono": {
+          "tipo": "radio",
+          "rotulo": "Abono pecuniário",
+          "seletores": {
+            "NÃO": "#radioBasic-bonus0",
+            "SIM": "#radioBasic-bonus1"
+          }
+        },
+        "adiantar13": {
+          "tipo": "radio",
+          "rotulo": "Adiantar 13º salário",
+          "seletores": {
+            "NÃO": "#radioBasic-anticipate13th0",
+            "SIM": "#radioBasic-anticipate13th1"
+          }
+        },
+        "assunto": {
+          "fc": "subject",
+          "tipo": "texto",
+          "rotulo": "Assunto",
+          "obrigatorio": true
+        },
+        "descricao": {
+          "rotuloCampo": "Descrição",
+          "tipo": "textarea",
+          "rotulo": "Descrição",
+          "obrigatorio": true
+        },
+        "conclusao": {
+          "fc": "expectedConclusionDate",
+          "tipo": "data",
+          "rotulo": "Expectativa de conclusão"
+        }
+      },
+      "anexos": [
+        {
+          "id": "avisoFerias",
+          "rotulo": "Aviso de férias assinado",
+          "documento": "avisoFeriasAssinado",
+          "obrigatorio": false
+        }
+      ],
+      "verificacoes": [
+        {
+          "tipo": "intervalo",
+          "campo": "diasGozo",
+          "min": 5,
+          "max": 30,
+          "nivel": "erro",
+          "mensagem": "Cada período de férias deve ter entre 5 e 30 dias (CLT, art. 134, §1º)."
+        },
+        {
+          "tipo": "inicioFerias",
+          "campo": "inicioGozo",
+          "nivel": "atencao",
+          "mensagem": "As férias não podem começar nos 2 dias que antecedem feriado ou o descanso semanal (CLT, art. 134, §3º)."
+        },
+        {
+          "tipo": "prazoEscritorio",
+          "campo": "inicioGozo",
+          "menosDias": 2,
+          "complexidade": "calculo",
+          "nivel": "atencao",
+          "mensagem": "O pagamento deve sair até 2 dias antes do início das férias, e o escritório precisa de {diasUteis} dias úteis para o cálculo. Envie o quanto antes."
+        }
+      ],
+      "assunto": "Cálculo de férias – {empregado} – {inicioGozo}",
+      "descricao": [
+        "Empregado: {empregado}",
+        "Início do gozo: {inicioGozo} ({diasGozo} dias) — retorno em {retorno}",
+        "Abono pecuniário: {abono}",
+        "Adiantar 13º salário: {adiantar13}",
+        "Pagamento até: {pagamentoAte}",
+        "{observacoes}"
+      ],
+      "dicas": [
+        "O abono pecuniário (\"vender\" 10 dias) precisa ser pedido pelo funcionário.",
+        "A 1ª parcela do 13º pode ser adiantada nas férias se o funcionário pedir em janeiro."
+      ]
+    },
+    "avisoRescisao": {
+      "nome": "Aviso Prévio de Rescisão",
+      "slug": "termination-notice",
+      "api": "prior-notice-terminations",
+      "setor": "Pessoal",
+      "complexidade": "simples",
+      "campos": {
+        "empregado": {
+          "fc": "employee",
+          "tipo": "combo",
+          "rotulo": "Empregado",
+          "obrigatorio": true,
+          "fonte": "empregado"
+        },
+        "motivo": {
+          "fc": "terminationMotive",
+          "tipo": "combo",
+          "rotulo": "Motivo de rescisão",
+          "obrigatorio": true
+        },
+        "avisoDadoPor": {
+          "tipo": "radio",
+          "rotulo": "Aviso dado pelo",
+          "obrigatorio": true,
+          "seletores": {
+            "EMPREGADO": "#radioBasic-grantedBy0",
+            "EMPREGADOR": "#radioBasic-grantedBy1"
+          }
+        },
+        "dataAviso": {
+          "fc": "priorNoticeDate",
+          "tipo": "data",
+          "rotulo": "Data do aviso",
+          "obrigatorio": true,
+          "sinonimos": [
+            "data do aviso",
+            "data"
+          ]
+        },
+        "anosEmpresa": {
+          "tipo": "numero",
+          "rotulo": "Anos completos na empresa",
+          "somenteAssistente": true
+        },
+        "assunto": {
+          "rotuloCampo": "Assunto",
+          "tipo": "texto",
+          "rotulo": "Assunto",
+          "obrigatorio": true
+        },
+        "descricao": {
+          "rotuloCampo": "Descrição",
+          "tipo": "textarea",
+          "rotulo": "Descrição",
+          "obrigatorio": true
+        },
+        "conclusao": {
+          "fc": "conclusionExpectation",
+          "tipo": "data",
+          "rotulo": "Expectativa de conclusão"
+        }
+      },
+      "condicionais": [
+        {
+          "se": {
+            "campo": "motivo",
+            "contem": [
+              "Pedido de demissão"
+            ]
+          },
+          "valores": {
+            "avisoDadoPor": "EMPREGADO"
+          },
+          "anexos": [
+            "cartaPedido"
+          ]
+        },
+        {
+          "se": {
+            "campo": "motivo",
+            "contem": [
+              "Demitido SEM justa causa"
+            ]
+          },
+          "valores": {
+            "avisoDadoPor": "EMPREGADOR"
+          }
+        }
+      ],
+      "anexos": [
+        {
+          "id": "cartaPedido",
+          "rotulo": "Carta de pedido de demissão assinada",
+          "documento": "pedidoDemissao",
+          "obrigatorio": false
+        }
+      ],
+      "verificacoes": [
+        {
+          "tipo": "dataNaoFutura",
+          "campo": "dataAviso",
+          "dias": 7,
+          "nivel": "atencao",
+          "mensagem": "A data do aviso está mais de uma semana no futuro. Confira."
+        },
+        {
+          "tipo": "info",
+          "nivel": "info",
+          "condicao": {
+            "campo": "motivo",
+            "contem": [
+              "COM justa causa"
+            ]
+          },
+          "mensagem": "Justa causa exige provas e cuidado jurídico. Recomendamos conversar com o seu analista antes de enviar."
+        }
+      ],
+      "assunto": "Aviso prévio – {empregado} – {motivo}",
+      "descricao": [
+        "Empregado: {empregado}",
+        "Motivo: {motivo}",
+        "Aviso dado pelo: {avisoDadoPor}",
+        "Data do aviso: {dataAviso}",
+        "Tempo de casa: {anosEmpresa} ano(s) — aviso prévio de {diasAviso} dias",
+        "{observacoes}"
+      ],
+      "dicas": [
+        "Aviso prévio: 30 dias + 3 dias por ano completo de trabalho, até 90 dias (Lei 12.506/2011). Use a calculadora.",
+        "Depois do aviso, envie o Cálculo de Rescisão com a data de saída."
+      ]
+    },
+    "calculoRescisao": {
+      "nome": "Cálculo de Rescisão",
+      "slug": "termination-calculation",
+      "api": "termination-calculations",
+      "setor": "Pessoal",
+      "complexidade": "calculo",
+      "campos": {
+        "empregado": {
+          "fc": "employee",
+          "tipo": "combo",
+          "rotulo": "Empregado",
+          "obrigatorio": true,
+          "fonte": "empregado"
+        },
+        "dataDemissao": {
+          "fc": "resignationDate",
+          "tipo": "data",
+          "rotulo": "Data de demissão",
+          "obrigatorio": true,
+          "sinonimos": [
+            "data de demissão",
+            "data do desligamento",
+            "último dia",
+            "data de saída"
+          ]
+        },
+        "motivo": {
+          "fc": "terminationReason",
+          "tipo": "combo",
+          "rotulo": "Motivo da rescisão",
+          "obrigatorio": true
+        },
+        "dataAvisoPrevio": {
+          "fc": "priorNoticeDate",
+          "tipo": "data",
+          "rotulo": "Data do aviso prévio"
+        },
+        "tipoAviso": {
+          "tipo": "radio",
+          "rotulo": "Aviso prévio",
+          "seletores": {
+            "TRABALHADO": "#radioBasic-grantedBy0",
+            "INDENIZADO": "#radioBasic-grantedBy1",
+            "AUSÊNCIA/DISPENSA": "#radioBasic-grantedBy2"
+          }
+        },
+        "assunto": {
+          "rotuloCampo": "Assunto",
+          "tipo": "texto",
+          "rotulo": "Assunto",
+          "obrigatorio": true
+        },
+        "descricao": {
+          "rotuloCampo": "Descrição",
+          "tipo": "textarea",
+          "rotulo": "Descrição",
+          "obrigatorio": true
+        },
+        "conclusao": {
+          "fc": "conclusionExpectation",
+          "tipo": "data",
+          "rotulo": "Expectativa de conclusão"
+        }
+      },
+      "anexos": [
+        {
+          "id": "avisoAssinado",
+          "rotulo": "Aviso prévio ou pedido de demissão assinado",
+          "documento": "pedidoDemissao",
+          "obrigatorio": false
+        },
+        {
+          "id": "asoDemissional",
+          "rotulo": "ASO demissional",
+          "documento": "aso",
+          "obrigatorio": false
+        }
+      ],
+      "verificacoes": [
+        {
+          "tipo": "prazoRescisao",
+          "campo": "dataDemissao",
+          "dias": 10,
+          "complexidade": "calculo",
+          "nivel": "atencao",
+          "mensagem": "As verbas rescisórias devem ser pagas em até 10 dias após o término do contrato (CLT, art. 477, §6º). O escritório precisa de {diasUteis} dias úteis para o cálculo."
+        }
+      ],
+      "assunto": "Cálculo de rescisão – {empregado} – saída em {dataDemissao}",
+      "descricao": [
+        "Empregado: {empregado}",
+        "Data de demissão: {dataDemissao}",
+        "Motivo: {motivo}",
+        "Aviso prévio: {tipoAviso} — dado em {dataAvisoPrevio}",
+        "Pagamento das verbas até: {pagamentoAte}",
+        "{observacoes}"
+      ],
+      "dicas": [
+        "Lembre o funcionário do exame demissional (ASO).",
+        "Informe férias vencidas, faltas e descontos pendentes na descrição."
+      ]
+    },
+    "rubricas": {
+      "nome": "Lançamento de Rubricas",
+      "slug": "payroll-entries",
+      "api": "payroll-entries",
+      "setor": "Pessoal",
+      "complexidade": "simples",
+      "botaoEnviar": "SALVAR E ENVIAR",
+      "campos": {
+        "tipoLancamento": {
+          "tipo": "radio",
+          "rotulo": "Tipo de lançamento",
+          "obrigatorio": true,
+          "seletores": {
+            "ADIANTAMENTO": "#radioBasic-0",
+            "MENSAL": "#radioBasic-1",
+            "PLR": "#radioBasic-2"
+          }
+        },
+        "competencia": {
+          "fc": "basisDate",
+          "tipo": "competencia",
+          "rotulo": "Competência",
+          "obrigatorio": true
+        },
+        "descricao": {
+          "rotuloCampo": "Descrição",
+          "tipo": "textarea",
+          "rotulo": "Descrição"
+        }
+      },
+      "anexos": [],
+      "verificacoes": [
+        {
+          "tipo": "competenciaRecente",
+          "campo": "competencia",
+          "nivel": "atencao",
+          "mensagem": "A competência informada não é o mês atual nem o anterior. Confira."
+        },
+        {
+          "tipo": "diaLimite",
+          "nivel": "atencao",
+          "mensagem": "As variáveis da folha devem chegar até o dia {dia} de cada mês."
+        }
+      ],
+      "assunto": "",
+      "descricao": [
+        "Lançamentos {tipoLancamento} – competência {competencia}",
+        "{tabelaRubricas}",
+        "{observacoes}"
+      ],
+      "planilha": {
+        "colunasEmpregado": [
+          "empregado",
+          "funcionário",
+          "funcionario",
+          "nome",
+          "colaborador"
+        ],
+        "colunasRubrica": [
+          "rubrica",
+          "evento",
+          "verba",
+          "código",
+          "codigo"
+        ],
+        "colunasValor": [
+          "valor",
+          "quantidade",
+          "qtd",
+          "horas",
+          "referência",
+          "referencia"
+        ]
+      },
+      "dicas": [
+        "Arraste uma planilha (Excel ou CSV) com as colunas Empregado, Rubrica e Valor: eu monto o resumo e confiro os nomes.",
+        "Use 'Adicionar funcionários' no portal para lançar os valores na grade."
+      ]
+    },
+    "cadastroEmpregado": {
+      "nome": "Cadastro de Empregado",
+      "slug": "employee-registration",
+      "api": "employees-registrations",
+      "setor": "Pessoal",
+      "complexidade": "simples",
+      "assistente": true,
+      "botaoEnviar": "SALVAR E ENVIAR",
+      "campos": {
+        "nome": {
+          "fc": "name",
+          "tipo": "texto",
+          "rotulo": "Nome",
+          "obrigatorio": true,
+          "sinonimos": [
+            "nome completo",
+            "nome do empregado",
+            "nome do funcionário",
+            "nome"
+          ]
+        },
+        "nomeSocial": {
+          "fc": "socialName",
+          "tipo": "texto",
+          "rotulo": "Nome social",
+          "sinonimos": [
+            "nome social"
+          ]
+        },
+        "cpf": {
+          "fc": "nationalIdentity",
+          "tipo": "cpf",
+          "rotulo": "CPF",
+          "obrigatorio": true,
+          "sinonimos": [
+            "CPF",
+            "C.P.F."
+          ]
+        },
+        "cargo": {
+          "fc": "jobPositionExpanded",
+          "tipo": "combo",
+          "rotulo": "Cargo",
+          "sinonimos": [
+            "cargo"
+          ]
+        },
+        "funcao": {
+          "fc": "occupationExpanded",
+          "tipo": "combo",
+          "rotulo": "Função",
+          "sinonimos": [
+            "função"
+          ]
+        },
+        "departamento": {
+          "fc": "departmentExpanded",
+          "tipo": "combo",
+          "rotulo": "Departamento",
+          "sinonimos": [
+            "departamento",
+            "setor"
+          ]
+        },
+        "centroCusto": {
+          "fc": "costCenterExpanded",
+          "tipo": "combo",
+          "rotulo": "Centro de custo"
+        },
+        "sindicato": {
+          "fc": "laborUnionClientExpanded",
+          "tipo": "combo",
+          "rotulo": "Sindicato"
+        },
+        "primeiroEmprego": {
+          "tipo": "radio",
+          "rotulo": "Primeiro emprego",
+          "seletores": {
+            "Não": "#radioBasic-firstJob0",
+            "Sim": "#radioBasic-firstJob1"
+          }
+        },
+        "dataAdmissao": {
+          "fc": "admissionDate",
+          "tipo": "data",
+          "rotulo": "Data de admissão",
+          "obrigatorio": true,
+          "sinonimos": [
+            "data de admissão",
+            "admissão",
+            "início"
+          ]
+        },
+        "salario": {
+          "fc": "wage",
+          "tipo": "moeda",
+          "rotulo": "Salário",
+          "obrigatorio": true,
+          "sinonimos": [
+            "salário",
+            "salário base",
+            "remuneração"
+          ]
+        },
+        "contratoExperiencia": {
+          "fc": "daysExperience",
+          "tipo": "numero",
+          "rotulo": "Contrato de experiência (dias)",
+          "sinonimos": [
+            "contrato de experiência",
+            "experiência"
+          ]
+        },
+        "prorrogacao": {
+          "fc": "extensionDays",
+          "tipo": "numero",
+          "rotulo": "Dias de prorrogação",
+          "sinonimos": [
+            "prorrogação"
+          ]
+        },
+        "jornada": {
+          "fc": "workDayExpanded",
+          "tipo": "combo",
+          "rotulo": "Jornada",
+          "sinonimos": [
+            "jornada",
+            "horário de trabalho"
+          ]
+        },
+        "cargaHoraria": {
+          "fc": "monthlyHours",
+          "tipo": "numero",
+          "rotulo": "Carga horária mensal",
+          "sinonimos": [
+            "carga horária"
+          ]
+        },
+        "ctpsNumero": {
+          "fc": "workNumber",
+          "tipo": "texto",
+          "rotulo": "CTPS — número",
+          "sinonimos": [
+            "CTPS",
+            "carteira de trabalho",
+            "nº CTPS"
+          ]
+        },
+        "ctpsSerie": {
+          "fc": "workSerial",
+          "tipo": "texto",
+          "rotulo": "CTPS — série",
+          "sinonimos": [
+            "série"
+          ]
+        },
+        "ctpsUf": {
+          "fc": "workState",
+          "tipo": "combo",
+          "rotulo": "CTPS — UF"
+        },
+        "pis": {
+          "fc": "pisNumber",
+          "tipo": "pis",
+          "rotulo": "PIS/PASEP/NIS",
+          "sinonimos": [
+            "PIS",
+            "PASEP",
+            "NIS",
+            "NIT",
+            "PIS/PASEP"
+          ]
+        },
+        "formaPagamento": {
+          "tipo": "radio",
+          "rotulo": "Forma de pagamento",
+          "seletores": {
+            "Dinheiro": "#radioBasic-paymentMethod0",
+            "Cheque": "#radioBasic-paymentMethod1",
+            "Crédito em conta": "#radioBasic-paymentMethod2",
+            "PIX": "#radioBasic-paymentMethod3"
+          }
+        },
+        "tipoConta": {
+          "fc": "paymentAccountType",
+          "tipo": "combo",
+          "rotulo": "Tipo de conta",
+          "sinonimos": [
+            "tipo de conta"
+          ]
+        },
+        "banco": {
+          "fc": "paymentBankExpanded",
+          "tipo": "combo",
+          "rotulo": "Banco",
+          "sinonimos": [
+            "banco"
+          ]
+        },
+        "agencia": {
+          "fc": "paymentBankAgencyDescription",
+          "tipo": "texto",
+          "rotulo": "Agência",
+          "sinonimos": [
+            "agência"
+          ]
+        },
+        "conta": {
+          "fc": "paymentAccount",
+          "tipo": "texto",
+          "rotulo": "Conta",
+          "sinonimos": [
+            "conta corrente",
+            "conta"
+          ]
+        },
+        "digitoConta": {
+          "fc": "paymentDigit",
+          "tipo": "texto",
+          "rotulo": "Dígito da conta"
+        },
+        "cep": {
+          "fc": "zipCode",
+          "tipo": "cep",
+          "rotulo": "CEP",
+          "obrigatorio": true,
+          "sinonimos": [
+            "CEP"
+          ]
+        },
+        "endereco": {
+          "fc": "streetAddress",
+          "tipo": "texto",
+          "rotulo": "Endereço",
+          "sinonimos": [
+            "endereço",
+            "logradouro",
+            "rua"
+          ]
+        },
+        "numero": {
+          "fc": "addressNumber",
+          "tipo": "texto",
+          "rotulo": "Número",
+          "sinonimos": [
+            "número",
+            "nº"
+          ]
+        },
+        "complemento": {
+          "fc": "additionalAddress",
+          "tipo": "texto",
+          "rotulo": "Complemento",
+          "sinonimos": [
+            "complemento"
+          ]
+        },
+        "bairro": {
+          "fc": "neighborhood",
+          "tipo": "texto",
+          "rotulo": "Bairro",
+          "sinonimos": [
+            "bairro"
+          ]
+        },
+        "uf": {
+          "fc": "addressState",
+          "tipo": "combo",
+          "rotulo": "UF",
+          "sinonimos": [
+            "UF",
+            "estado"
+          ]
+        },
+        "municipio": {
+          "fc": "addressCity",
+          "tipo": "combo",
+          "rotulo": "Município",
+          "sinonimos": [
+            "município",
+            "cidade"
+          ]
+        },
+        "email": {
+          "fc": "primaryEmailAddress",
+          "tipo": "email",
+          "rotulo": "E-mail",
+          "sinonimos": [
+            "e-mail",
+            "email"
+          ]
+        },
+        "telefone": {
+          "fc": "primaryPhoneNumber",
+          "tipo": "telefone",
+          "rotulo": "Telefone",
+          "sinonimos": [
+            "telefone",
+            "celular",
+            "fone"
+          ]
+        },
+        "nascimento": {
+          "fc": "birthdate",
+          "tipo": "data",
+          "rotulo": "Data de nascimento",
+          "obrigatorio": true,
+          "sinonimos": [
+            "data de nascimento",
+            "nascimento",
+            "nasc."
+          ]
+        },
+        "nacionalidade": {
+          "fc": "countryOrigin",
+          "tipo": "combo",
+          "rotulo": "País de nacionalidade",
+          "obrigatorio": true,
+          "padrao": "Brasil"
+        },
+        "paisNascimento": {
+          "fc": "birthCountry",
+          "tipo": "combo",
+          "rotulo": "País de nascimento",
+          "obrigatorio": true,
+          "padrao": "Brasil"
+        },
+        "ufNascimento": {
+          "fc": "birthState",
+          "tipo": "combo",
+          "rotulo": "UF de nascimento",
+          "obrigatorio": true,
+          "sinonimos": [
+            "naturalidade UF"
+          ]
+        },
+        "municipioNascimento": {
+          "fc": "birthCity",
+          "tipo": "combo",
+          "rotulo": "Município de nascimento",
+          "obrigatorio": true,
+          "sinonimos": [
+            "naturalidade",
+            "município de nascimento",
+            "local de nascimento"
+          ]
+        },
+        "sexo": {
+          "tipo": "radio",
+          "rotulo": "Sexo",
+          "obrigatorio": true,
+          "seletores": {
+            "Masculino": "#radioBasic-gender0",
+            "Feminino": "#radioBasic-gender1"
+          },
+          "sinonimos": [
+            "sexo"
+          ]
+        },
+        "racaCor": {
+          "fc": "race",
+          "tipo": "combo",
+          "rotulo": "Raça/Cor",
+          "obrigatorio": true,
+          "sinonimos": [
+            "raça/cor",
+            "raça",
+            "cor"
+          ]
+        },
+        "grauInstrucao": {
+          "fc": "schoolingLevel",
+          "tipo": "combo",
+          "rotulo": "Grau de instrução",
+          "sinonimos": [
+            "grau de instrução",
+            "escolaridade"
+          ]
+        },
+        "estadoCivil": {
+          "fc": "maritalStatus",
+          "tipo": "combo",
+          "rotulo": "Estado civil",
+          "sinonimos": [
+            "estado civil"
+          ]
+        },
+        "conjuge": {
+          "fc": "spouseName",
+          "tipo": "texto",
+          "rotulo": "Nome do cônjuge",
+          "sinonimos": [
+            "cônjuge",
+            "nome do cônjuge"
+          ]
+        },
+        "pai": {
+          "fc": "fatherName",
+          "tipo": "texto",
+          "rotulo": "Nome do pai",
+          "sinonimos": [
+            "nome do pai",
+            "pai",
+            "filiação"
+          ]
+        },
+        "mae": {
+          "fc": "motherName",
+          "tipo": "texto",
+          "rotulo": "Nome da mãe",
+          "obrigatorio": true,
+          "sinonimos": [
+            "nome da mãe",
+            "mãe"
+          ]
+        },
+        "possuiDependentes": {
+          "tipo": "radio",
+          "rotulo": "Possui dependentes",
+          "seletores": {
+            "Não": "#radioBasic-hasDependents0",
+            "Sim": "#radioBasic-hasDependents1"
+          }
+        },
+        "deficiencia": {
+          "tipo": "radio",
+          "rotulo": "Pessoa com deficiência",
+          "seletores": {
+            "Não": "#radioBasic-isDisabledPerson0",
+            "Sim": "#radioBasic-isDisabledPerson1"
+          }
+        },
+        "rg": {
+          "fc": "identityCard",
+          "tipo": "texto",
+          "rotulo": "RG",
+          "sinonimos": [
+            "RG",
+            "identidade",
+            "registro geral",
+            "carteira de identidade"
+          ]
+        },
+        "orgaoRg": {
+          "fc": "issuingAgency",
+          "tipo": "texto",
+          "rotulo": "Órgão expedidor",
+          "sinonimos": [
+            "órgão expedidor",
+            "órgão emissor",
+            "expedidor"
+          ]
+        },
+        "ufRg": {
+          "fc": "identityState",
+          "tipo": "combo",
+          "rotulo": "UF do RG"
+        },
+        "dataRg": {
+          "fc": "identityCardIssuingDate",
+          "tipo": "data",
+          "rotulo": "Emissão do RG",
+          "sinonimos": [
+            "data de expedição",
+            "data de emissão",
+            "expedição"
+          ]
+        },
+        "titulo": {
+          "fc": "electoralCard",
+          "tipo": "texto",
+          "rotulo": "Título de eleitor",
+          "sinonimos": [
+            "título de eleitor",
+            "título eleitoral",
+            "inscrição"
+          ]
+        },
+        "zona": {
+          "fc": "electoralWard",
+          "tipo": "texto",
+          "rotulo": "Zona eleitoral",
+          "sinonimos": [
+            "zona"
+          ]
+        },
+        "secao": {
+          "fc": "pollingStation",
+          "tipo": "texto",
+          "rotulo": "Seção eleitoral",
+          "sinonimos": [
+            "seção"
+          ]
+        },
+        "reservista": {
+          "fc": "militaryDischargeCertificate",
+          "tipo": "texto",
+          "rotulo": "Reservista",
+          "sinonimos": [
+            "reservista",
+            "certificado de reservista",
+            "RA"
+          ]
+        },
+        "cnh": {
+          "fc": "driverLicenseNumber",
+          "tipo": "texto",
+          "rotulo": "CNH — número",
+          "sinonimos": [
+            "CNH",
+            "nº registro",
+            "carteira de motorista",
+            "registro"
+          ]
+        },
+        "cnhCategoria": {
+          "fc": "driverLicenseCategory",
+          "tipo": "texto",
+          "rotulo": "CNH — categoria",
+          "sinonimos": [
+            "cat. hab.",
+            "categoria"
+          ]
+        },
+        "cnhValidade": {
+          "fc": "driverLicenseDueDate",
+          "tipo": "data",
+          "rotulo": "CNH — validade",
+          "sinonimos": [
+            "validade"
+          ]
+        },
+        "observacoes": {
+          "fc": "comments",
+          "tipo": "textarea",
+          "rotulo": "Observações"
+        }
+      },
+      "anexos": [
+        {
+          "id": "aso",
+          "rotulo": "ASO admissional (apto)",
+          "documento": "aso",
+          "obrigatorio": true
+        },
+        {
+          "id": "identidade",
+          "rotulo": "RG ou CNH",
+          "documento": "identidade",
+          "obrigatorio": true
+        },
+        {
+          "id": "cpf",
+          "rotulo": "CPF (se não constar no RG/CNH)",
+          "documento": "cpf",
+          "obrigatorio": false
+        },
+        {
+          "id": "endereco",
+          "rotulo": "Comprovante de residência",
+          "documento": "comprovanteEndereco",
+          "obrigatorio": true
+        },
+        {
+          "id": "ctps",
+          "rotulo": "CTPS digital (print) ou carteira física",
+          "documento": "ctps",
+          "obrigatorio": false
+        },
+        {
+          "id": "titulo",
+          "rotulo": "Título de eleitor",
+          "documento": "titulo",
+          "obrigatorio": false
+        },
+        {
+          "id": "certidoes",
+          "rotulo": "Certidões (casamento, filhos) — se houver dependentes",
+          "documento": "certidao",
+          "obrigatorio": false
+        },
+        {
+          "id": "bancario",
+          "rotulo": "Dados bancários / chave PIX",
+          "documento": "bancario",
+          "obrigatorio": false
+        }
+      ],
+      "verificacoes": [
+        {
+          "tipo": "cpf",
+          "campo": "cpf",
+          "nivel": "erro",
+          "mensagem": "O CPF informado não é válido. Confira os números."
+        },
+        {
+          "tipo": "pis",
+          "campo": "pis",
+          "nivel": "atencao",
+          "mensagem": "O PIS/NIS informado não parece válido."
+        },
+        {
+          "tipo": "email",
+          "campo": "email",
+          "nivel": "atencao",
+          "mensagem": "O e-mail parece incompleto."
+        },
+        {
+          "tipo": "idadeMinima",
+          "campo": "nascimento",
+          "anos": 16,
+          "nivel": "erro",
+          "mensagem": "A idade mínima para trabalhar é 16 anos (14 como aprendiz). Confira a data de nascimento."
+        },
+        {
+          "tipo": "antecedenciaMinima",
+          "campo": "dataAdmissao",
+          "diasUteis": 3,
+          "nivel": "atencao",
+          "mensagem": "Envie o cadastro com pelo menos 3 dias úteis de antecedência: o registro no eSocial precisa ser feito antes do primeiro dia de trabalho."
+        },
+        {
+          "tipo": "dataPassada",
+          "campo": "dataAdmissao",
+          "nivel": "erro",
+          "mensagem": "A data de admissão já passou. O registro no eSocial é obrigatório antes do início — fale com o seu analista."
+        },
+        {
+          "tipo": "intervalo",
+          "campo": "contratoExperiencia",
+          "min": 1,
+          "max": 90,
+          "nivel": "erro",
+          "mensagem": "O contrato de experiência tem no máximo 90 dias, somando a prorrogação (CLT, art. 445)."
+        },
+        {
+          "tipo": "somaMaxima",
+          "campos": [
+            "contratoExperiencia",
+            "prorrogacao"
+          ],
+          "max": 90,
+          "nivel": "erro",
+          "mensagem": "Experiência + prorrogação não podem passar de 90 dias."
+        }
+      ],
+      "assunto": "",
+      "descricao": [],
+      "dicas": [
+        "Arraste os documentos do funcionário (RG, CNH, comprovante de endereço, ASO, ficha de admissão): eu leio e preencho as etapas.",
+        "O exame admissional (ASO) precisa ser feito antes do início do trabalho."
+      ]
+    },
+    "cadastroEstagiario": {
+      "nome": "Cadastro de Estagiário",
+      "slug": "intern-registration",
+      "api": "interns-registrations",
+      "setor": "Pessoal",
+      "complexidade": "simples",
+      "assistente": true,
+      "botaoEnviar": "SALVAR E ENVIAR",
+      "herdaCamposDe": "cadastroEmpregado",
+      "campos": {
+        "categoriaEsocial": {
+          "fc": "eSocialCategory",
+          "tipo": "combo",
+          "rotulo": "Categoria eSocial"
+        },
+        "instituicaoEnsino": {
+          "fc": "educationalInstitutionExpanded",
+          "tipo": "combo",
+          "rotulo": "Instituição de ensino",
+          "sinonimos": [
+            "instituição de ensino",
+            "instituição",
+            "faculdade",
+            "escola"
+          ]
+        },
+        "agenteIntegracao": {
+          "fc": "integrationAgentExpanded",
+          "tipo": "combo",
+          "rotulo": "Agente de integração",
+          "sinonimos": [
+            "agente de integração",
+            "CIEE",
+            "IEL",
+            "NUBE"
+          ]
+        },
+        "coordenador": {
+          "fc": "internshipCoordinatorExpanded",
+          "tipo": "combo",
+          "rotulo": "Coordenador de estágio",
+          "sinonimos": [
+            "coordenador",
+            "professor orientador",
+            "orientador"
+          ]
+        },
+        "areaAtuacao": {
+          "fc": "careerField",
+          "tipo": "texto",
+          "rotulo": "Área de atuação",
+          "sinonimos": [
+            "área de atuação",
+            "área"
+          ]
+        },
+        "nivel": {
+          "fc": "schoolarLevel",
+          "tipo": "combo",
+          "rotulo": "Nível",
+          "sinonimos": [
+            "nível",
+            "curso"
+          ]
+        },
+        "salario": {
+          "fc": "wage",
+          "tipo": "moeda",
+          "rotulo": "Bolsa",
+          "sinonimos": [
+            "bolsa",
+            "bolsa-auxílio",
+            "bolsa auxílio"
+          ]
+        }
+      },
+      "anexos": [
+        {
+          "id": "tce",
+          "rotulo": "Termo de Compromisso de Estágio assinado",
+          "documento": "tce",
+          "obrigatorio": true
+        },
+        {
+          "id": "seguro",
+          "rotulo": "Apólice de seguro contra acidentes pessoais",
+          "documento": "seguro",
+          "obrigatorio": true
+        },
+        {
+          "id": "identidade",
+          "rotulo": "RG ou CNH",
+          "documento": "identidade",
+          "obrigatorio": true
+        },
+        {
+          "id": "endereco",
+          "rotulo": "Comprovante de residência",
+          "documento": "comprovanteEndereco",
+          "obrigatorio": false
+        }
+      ],
+      "verificacoes": [
+        {
+          "tipo": "cpf",
+          "campo": "cpf",
+          "nivel": "erro",
+          "mensagem": "O CPF informado não é válido."
+        },
+        {
+          "tipo": "info",
+          "nivel": "info",
+          "mensagem": "Estágio exige Termo de Compromisso e seguro contra acidentes pessoais (Lei 11.788/2008)."
+        }
+      ],
+      "assunto": "",
+      "descricao": [],
+      "dicas": [
+        "Jornada máxima do estágio: 6 horas por dia e 30 por semana (ensino superior/médio regular)."
+      ]
+    },
+    "cadastroContribuinte": {
+      "nome": "Cadastro de Contribuinte",
+      "slug": "partner-registration",
+      "api": "taxpayers-registrations",
+      "setor": "Pessoal",
+      "complexidade": "simples",
+      "assistente": true,
+      "botaoEnviar": "SALVAR E ENVIAR",
+      "herdaCamposDe": "cadastroEmpregado",
+      "campos": {
+        "dataAdmissao": {
+          "fc": "admissionDate",
+          "tipo": "data",
+          "rotulo": "Início do contrato",
+          "sinonimos": [
+            "início do contrato",
+            "data de início",
+            "entrada na sociedade"
+          ]
+        },
+        "categoriaSefip": {
+          "fc": "sefipCategory",
+          "tipo": "combo",
+          "rotulo": "Categoria SEFIP"
+        },
+        "tipoContribuinte": {
+          "fc": "taxpayerType",
+          "tipo": "combo",
+          "rotulo": "Tipo",
+          "sinonimos": [
+            "tipo"
+          ]
+        },
+        "salario": {
+          "fc": "wage",
+          "tipo": "moeda",
+          "rotulo": "Pró-labore",
+          "sinonimos": [
+            "pró-labore",
+            "valor",
+            "remuneração"
+          ]
+        },
+        "categoriaEsocial": {
+          "fc": "eSocialCategory",
+          "tipo": "combo",
+          "rotulo": "Categoria eSocial",
+          "obrigatorio": true
+        },
+        "inss": {
+          "fc": "inssRegistration",
+          "tipo": "texto",
+          "rotulo": "Matrícula INSS",
+          "sinonimos": [
+            "matrícula INSS",
+            "NIT"
+          ]
+        }
+      },
+      "anexos": [
+        {
+          "id": "identidade",
+          "rotulo": "RG ou CNH",
+          "documento": "identidade",
+          "obrigatorio": true
+        },
+        {
+          "id": "endereco",
+          "rotulo": "Comprovante de residência",
+          "documento": "comprovanteEndereco",
+          "obrigatorio": false
+        }
+      ],
+      "verificacoes": [
+        {
+          "tipo": "cpf",
+          "campo": "cpf",
+          "nivel": "erro",
+          "mensagem": "O CPF informado não é válido."
+        }
+      ],
+      "assunto": "",
+      "descricao": [],
+      "dicas": [
+        "Use este cadastro para sócios com pró-labore e autônomos (RPA)."
+      ]
+    }
+  },
+  "documentos": [
+    {
+      "id": "atestado",
+      "nome": "Atestado médico",
+      "tipoSolicitacao": "afastamento",
+      "palavras": [
+        "atestado",
+        "atesto",
+        "crm",
+        "repouso",
+        "afastamento",
+        "médico",
+        "medico",
+        "cid",
+        "paciente",
+        "consulta"
+      ],
+      "minPalavras": 2,
+      "extrair": {
+        "dias": [
+          "(\\d{1,3})\\s*\\(?[a-zà-ú\\s]{0,20}\\)?\\s*dias?",
+          "por\\s+(\\d{1,3})\\s+dias?"
+        ],
+        "dataAfastamento": [
+          "a partir de\\s*(\\d{2}/\\d{2}/\\d{2,4})",
+          "(\\d{2}/\\d{2}/\\d{4})"
+        ],
+        "cid": [
+          "CID[\\s\\-:10]*([A-TV-Z]\\d{2}(?:\\.\\d)?)"
+        ],
+        "medico": [
+          "(CRM[\\s\\-/:]*[A-Z]{0,2}[\\s\\-/:]*\\d{3,7})"
+        ]
+      },
+      "valores": {
+        "tipoAfastamentoSeDiasMaiorQue15": "Doença período superior a 15 dias"
+      }
+    },
+    {
+      "id": "cat",
+      "nome": "CAT — Comunicação de Acidente de Trabalho",
+      "tipoSolicitacao": "afastamento",
+      "palavras": [
+        "comunicação de acidente de trabalho",
+        "cat",
+        "acidente",
+        "acidentado",
+        "emitente",
+        "tipo de cat"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "comunicação de acidente de trabalho"
+      ],
+      "extrair": {
+        "numeroCat": [
+          "n[ºo°]\\.?\\s*(?:da\\s*)?cat\\s*:?\\s*([\\d./\\-]{6,})",
+          "número\\s*(?:da\\s*)?cat\\s*:?\\s*([\\d./\\-]{6,})"
+        ],
+        "dataCat": [
+          "data\\s*(?:de\\s*)?emiss[ãa]o\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})"
+        ],
+        "dataAfastamento": [
+          "data\\s*do\\s*acidente\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})",
+          "(\\d{2}/\\d{2}/\\d{4})"
+        ]
+      },
+      "valores": {
+        "tipoAfastamento": "Acid. Trabalho período superior a 15 dias"
+      },
+      "tipoCatPalavras": {
+        "Trajeto": [
+          "trajeto",
+          "percurso"
+        ],
+        "Doença profissional ou do trabalho": [
+          "doença profissional",
+          "doença do trabalho"
+        ],
+        "Típico": [
+          "típico",
+          "tipico"
+        ]
+      }
+    },
+    {
+      "id": "certidao",
+      "nome": "Certidão de nascimento/casamento",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "certidão",
+        "registro civil",
+        "nascimento",
+        "casamento",
+        "cartório",
+        "oficial"
+      ],
+      "minPalavras": 2
+    },
+    {
+      "id": "pedidoDemissao",
+      "nome": "Pedido de demissão",
+      "tipoSolicitacao": "avisoRescisao",
+      "palavras": [
+        "pedido de demissão",
+        "solicito",
+        "desligamento",
+        "demissão",
+        "venho por meio",
+        "rescisão",
+        "a pedido"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "pedido de demissão",
+        "peço demissão",
+        "solicito meu desligamento"
+      ],
+      "extrair": {
+        "dataAviso": [
+          "(\\d{2}/\\d{2}/\\d{4})",
+          "(\\d{1,2} de [a-zç]+ de \\d{4})"
+        ]
+      },
+      "valores": {
+        "motivo": "Pedido de demissão SEM justa causa",
+        "avisoDadoPor": "EMPREGADO"
+      }
+    },
+    {
+      "id": "avisoEmpregador",
+      "nome": "Aviso prévio do empregador",
+      "tipoSolicitacao": "avisoRescisao",
+      "palavras": [
+        "aviso prévio",
+        "comunicamos",
+        "dispensa",
+        "rescisão do contrato",
+        "sem justa causa",
+        "indenizado",
+        "trabalhado"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "aviso prévio do empregador",
+        "comunicamos que"
+      ],
+      "extrair": {
+        "dataAviso": [
+          "(\\d{2}/\\d{2}/\\d{4})"
+        ]
+      },
+      "valores": {
+        "motivo": "Demitido SEM justa causa",
+        "avisoDadoPor": "EMPREGADOR"
+      }
+    },
+    {
+      "id": "aso",
+      "nome": "ASO — Atestado de Saúde Ocupacional",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "atestado de saúde ocupacional",
+        "aso",
+        "apto",
+        "inapto",
+        "admissional",
+        "demissional",
+        "periódico",
+        "pcmso"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "atestado de saúde ocupacional"
+      ]
+    },
+    {
+      "id": "identidade",
+      "nome": "RG / CNH",
+      "tipoSolicitacao": "cadastroEmpregado",
+      "palavras": [
+        "carteira de identidade",
+        "registro geral",
+        "carteira nacional de habilitação",
+        "habilitação",
+        "filiação",
+        "naturalidade",
+        "doc. identidade",
+        "secretaria de segurança",
+        "detran",
+        "renach"
+      ],
+      "minPalavras": 1
+    },
+    {
+      "id": "cpf",
+      "nome": "Comprovante de CPF",
+      "tipoSolicitacao": "cadastroEmpregado",
+      "palavras": [
+        "cadastro de pessoas físicas",
+        "receita federal",
+        "comprovante de inscrição",
+        "situação cadastral"
+      ],
+      "minPalavras": 2
+    },
+    {
+      "id": "comprovanteEndereco",
+      "nome": "Comprovante de residência",
+      "tipoSolicitacao": "cadastroEmpregado",
+      "palavras": [
+        "fatura",
+        "conta de luz",
+        "energia",
+        "saneamento",
+        "água",
+        "vencimento",
+        "consumo",
+        "kwh",
+        "instalação",
+        "telefone",
+        "internet"
+      ],
+      "minPalavras": 2
+    },
+    {
+      "id": "ctps",
+      "nome": "Carteira de Trabalho",
+      "tipoSolicitacao": "cadastroEmpregado",
+      "palavras": [
+        "carteira de trabalho",
+        "ctps",
+        "contratos de trabalho",
+        "carteira de trabalho digital"
+      ],
+      "minPalavras": 1
+    },
+    {
+      "id": "fichaAdmissao",
+      "nome": "Ficha de admissão / registro",
+      "tipoSolicitacao": "cadastroEmpregado",
+      "palavras": [
+        "ficha de admissão",
+        "ficha de registro",
+        "ficha cadastral",
+        "dados do empregado",
+        "admissão",
+        "nome da mãe",
+        "data de nascimento",
+        "estado civil"
+      ],
+      "minPalavras": 3,
+      "forte": [
+        "ficha de admissão",
+        "ficha de registro",
+        "ficha cadastral"
+      ]
+    },
+    {
+      "id": "tce",
+      "nome": "Termo de Compromisso de Estágio",
+      "tipoSolicitacao": "cadastroEstagiario",
+      "palavras": [
+        "termo de compromisso de estágio",
+        "estagiário",
+        "instituição de ensino",
+        "concedente",
+        "lei 11.788"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "termo de compromisso de estágio"
+      ]
+    },
+    {
+      "id": "seguro",
+      "nome": "Apólice de seguro",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "apólice",
+        "seguro",
+        "acidentes pessoais",
+        "segurado",
+        "seguradora"
+      ],
+      "minPalavras": 2
+    },
+    {
+      "id": "ferias",
+      "nome": "Programação / pedido de férias",
+      "tipoSolicitacao": "avisoFerias",
+      "palavras": [
+        "férias",
+        "período aquisitivo",
+        "período de gozo",
+        "gozo",
+        "abono pecuniário",
+        "aviso de férias"
+      ],
+      "minPalavras": 2,
+      "extrair": {
+        "inicioGozo": [
+          "(?:início|inicio|de)\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})"
+        ],
+        "diasGozo": [
+          "(\\d{1,2})\\s*dias\\s*(?:de\\s*)?(?:gozo|férias)"
+        ],
+        "diasAbono": [
+          "(\\d{1,2})\\s*dias\\s*(?:de\\s*)?abono"
+        ]
+      }
+    },
+    {
+      "id": "avisoFeriasAssinado",
+      "nome": "Aviso de férias",
+      "tipoSolicitacao": "calculoFerias",
+      "palavras": [
+        "aviso de férias",
+        "participamos",
+        "período de gozo",
+        "ciente"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "aviso de férias"
+      ]
+    },
+    {
+      "id": "bancario",
+      "nome": "Dados bancários",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "agência",
+        "conta corrente",
+        "conta salário",
+        "chave pix",
+        "banco"
+      ],
+      "minPalavras": 2
+    }
+  ],
+  "mensagens": {
+    "envioOk": "Tudo certo! Pode enviar.",
+    "envioComPendencias": "Antes de enviar, veja os pontos abaixo. Você pode corrigir agora ou enviar assim mesmo.",
+    "abaErrada": "Isso parece ser um pedido de {tipo}. Usando a solicitação específica, as informações chegam completas e o atendimento é mais rápido.",
+    "semEmpregado": "Não encontrei esse nome na lista de funcionários da empresa. Selecione manualmente no campo Empregado.",
+    "privacidade": "Os arquivos são lidos aqui no seu computador. Nada é enviado para fora do portal."
+  }
+}

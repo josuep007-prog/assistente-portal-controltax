@@ -1,0 +1,60 @@
+<title>Simulador do Assistente ControlTax</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="simulador/portal.css">
+<script>window.__ctVersao = '1.1.0-sim';</script>
+<script src="platform/shim.js"></script>
+
+<div class="sim">
+  <header class="sim-bar">
+    <div class="sim-brand">
+      <span class="sim-mark"><img src="icons/logo.svg" alt=""></span>
+      <div>
+        <strong>Simulador do Assistente</strong>
+        <span>Réplica de testes do Portal do Cliente · nada é enviado ao Onvio</span>
+      </div>
+    </div>
+    <div class="sim-actions">
+      <details class="sim-samples" id="sim-samples">
+        <summary>Documentos de exemplo</summary>
+        <div class="sim-menu" role="menu">
+          <p>Clique para o Assistente ler como se você tivesse arrastado o arquivo:</p>
+          <button type="button" data-file="exemplos/atestado.pdf" role="menuitem"><b>Atestado médico</b><small>PDF com texto · 20 dias</small></button>
+          <button type="button" data-file="exemplos/atestado-foto.png" role="menuitem"><b>Atestado fotografado</b><small>Imagem · lido por OCR</small></button>
+          <button type="button" data-file="exemplos/pedido-demissao.pdf" role="menuitem"><b>Pedido de demissão</b><small>Carta assinada</small></button>
+          <button type="button" data-file="exemplos/ficha-admissao.pdf" role="menuitem"><b>Ficha de admissão</b><small>Dados para o cadastro</small></button>
+          <button type="button" data-file="exemplos/cat.pdf" role="menuitem"><b>CAT</b><small>Acidente de trabalho</small></button>
+          <button type="button" data-file="exemplos/rubricas.csv" role="menuitem"><b>Planilha de variáveis</b><small>Horas extras, faltas, comissão</small></button>
+          <p class="sim-tip">Ou arraste arquivos do seu computador para qualquer lugar da tela.</p>
+        </div>
+      </details>
+      <button type="button" class="sim-ghost" id="sim-reset">Restaurar exemplo</button>
+    </div>
+  </header>
+
+  <div class="portal" id="portal">
+    <div class="p-top">
+      <span class="p-logo" aria-hidden="true">Portal</span>
+      <nav class="p-topnav" aria-label="Áreas do portal">
+        <button type="button" data-top="inicio">INÍCIO</button>
+        <button type="button" data-top="docs">DOCUMENTOS</button>
+        <button type="button" data-top="portal" class="on">PORTAL DO CLIENTE</button>
+      </nav>
+      <span class="p-user">Usuário de teste</span>
+    </div>
+    <div class="p-body">
+      <aside class="p-side">
+        <div class="p-company"><span class="p-avatar">E</span><div><small>EMPRESA</small>
+<b id="p-empresa"></b>
+<small>EXEMPLO | 0001-19</small></div></div>
+        <nav id="p-menu" aria-label="Solicitações"></nav>
+      </aside>
+      <main id="p-main"></main>
+    </div>
+  </div>
+  <div id="p-toast" class="p-toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="simulador/portal.js"></script>
+<script src="content/content.js"></script>
+<script src="simulador/sim.js"></script>
