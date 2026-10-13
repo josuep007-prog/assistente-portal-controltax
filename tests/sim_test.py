@@ -236,10 +236,35 @@ async def main():
         await pg.click('#sim-samples > summary'); await pg.click('[data-file="exemplos/atestado-acompanhante.pdf"]')
         v = await espera_empregado('CAMILA ROCHA', 30)
         await pg.wait_for_timeout(800)
+        check(not v.get('selectedLeaveType') and v.get('leaveDate') == '07/10/2026', 'acompanhante: data lida e tipo deixado para o cliente')
         checks = await pn.locator('#checks').inner_text()
         check('acompanhante' in checks.lower(), 'acompanhante: aviso na conferência')
+        # o painel não repete os campos do portal: só resume e deixa editar o que o portal não tem
+        check(await pn.locator('#f-empregado, #f-dataAfastamento, #f-tipoAfastamento').count() == 0 and await pn.locator('#f-dias').count() == 1, 'painel sem campos repetidos do portal (só dias/CID/médico/observações)')
+        resumo = await pn.locator('#fields').inner_text()
+        check('CAMILA ROCHA' in resumo and 'ASSISTENTE' in resumo.upper(), 'resumo "No portal" mostra o que o Assistente preencheu')
+        if 'ASSISTENTE' not in resumo.upper(): print('   resumo:', resumo.replace('\n', ' | ')[:500])
+        await pn.evaluate("document.querySelector('#fields')?.scrollIntoView()"); await pg.wait_for_timeout(300); await pg.screenshot(path='/tmp/sim-13-resumo.png')
+        # desfazer
+        check(await pn.locator('#btn-undo').is_visible(), 'botão Desfazer aparece na barra depois de preencher')
+        await pn.click('#btn-undo'); await pg.wait_for_timeout(2500)
+        v = await leave()
+        chips = await pg.evaluate("document.querySelectorAll('.p-chip').length")
+        check(not v.get('selectedEmployee') and not v.get('leaveDate') and not v.get('subject') and chips == 0, f"desfazer: formulário volta a como estava, sem o anexo ({ {k: x for k, x in v.items() if x} }, anexos={chips})")
+        await pg.wait_for_timeout(1500); v = await leave()
+        check(not v.get('selectedEmployee'), 'depois de desfazer, não preenche de novo sozinho')
+        await pn.click('#btn-fill')
+        v = await espera_empregado('CAMILA ROCHA', 20)
+        check(v.get('leaveDate') == '07/10/2026', 'Preencher no portal refaz quando o cliente pede')
+        # o cliente corrige a data no portal → assunto e descrição acompanham
+        await pg.fill('main [formcontrolname=leaveDate]', '08/10/2026'); await pg.press('main [formcontrolname=leaveDate]', 'Tab')
+        for _ in range(12):
+            await pg.wait_for_timeout(500); v = await leave()
+            if '08/10/2026' in (v.get('subject') or ''): break
+        check('08/10/2026' in (v.get('subject') or '') and '08/10/2026' in (v.get('description') or ''), f"correção no portal atualiza assunto e descrição ({v.get('subject')})")
+        await pg.wait_for_timeout(800)
+        check(await pn.evaluate("document.querySelector('#fields').innerText.includes('você')"), 'resumo marca o campo como mudado por você')
         await pn.evaluate("document.querySelector('#checks')?.scrollIntoView()"); await pg.wait_for_timeout(300); await pg.screenshot(path='/tmp/sim-13-acomp.png')
-        check(not v.get('selectedLeaveType') and v.get('leaveDate') == '07/10/2026', 'acompanhante: data lida e tipo deixado para o cliente')
         # Início: experiência, dúvidas, repetir
         await pn.click('.tab[data-view="inicio"]'); await pg.wait_for_timeout(2500)
         exp = await pn.locator('#experiencia').inner_text()

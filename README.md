@@ -17,6 +17,11 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 1.3.1
+
+**O portal é onde se preenche.** O painel não tem mais cópias dos campos do portal: a área "No portal" mostra o que está em cada campo (e se veio do Assistente, de você ou se está vazio); clicar numa linha destaca o campo no portal. Para corrigir, mude direto no portal — o Assistente nunca sobrescreve o que você escreveu lá, e o assunto e a descrição se atualizam sozinhos. No painel ficam só as informações que o portal não tem (dias de afastamento, CID, médico, observações para o analista).
+**Desfazer o preenchimento:** depois de preencher, aparece "Desfazer o preenchimento" acima da barra do painel e um aviso com "Desfazer" na própria página. Volta campos e anexos a como estavam; o Assistente não preenche de novo sozinho até você pedir.
+
 ## Novidades da 1.3
 
 **Leitor de atestados mais esperto** (calibrado com atestados reais de UPA, posto de saúde, consultório, hospital, receita digital e manuscritos — nenhum foi guardado no repositório; os testes usam cópias com dados inventados):
@@ -26,7 +31,7 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Avisos na conferência**: atestado de acompanhante (o tipo fica para você escolher), atestado de escola ou em nome de outra pessoa com o mesmo sobrenome, declaração de comparecimento (horas) e leitura difícil.
 - **Fotos de lado** são giradas sozinhas; fotos ruins ganham uma segunda tentativa com tratamento de imagem. Passe o mouse no rótulo do campo para ver o trecho do documento de onde veio o dado.
 
-**Facilidades:** colar um print com **Ctrl+V** (no painel ou na página) · **funcionários recentes** com um clique · aviso de **pedido repetido** · **rascunho**: saiu sem enviar? o Assistente oferece continuar (fica 7 dias só no computador) · **repetir a última solicitação** · alerta de **contratos de experiência** (45 e 90 dias pela data de admissão do portal) · **avisos do escritório** e **dúvidas frequentes** pelas regras · **ajustes por empresa** · mensagem pronta com os **documentos da admissão** (Calcular → Docs. admissão) · **tamanho do texto** · **Copiar diagnóstico** (sem nomes nem valores) · **modo seguro**: se o portal mudar a tela, o Assistente não preenche sozinho.
+**Facilidades:** colar um print com **Ctrl+V** (no painel ou na página) · aviso de **pedido repetido** · **rascunho**: saiu sem enviar? o Assistente oferece continuar (fica 7 dias só no computador) · **repetir a última solicitação** · alerta de **contratos de experiência** (45 e 90 dias pela data de admissão do portal) · **avisos do escritório** e **dúvidas frequentes** pelas regras · **ajustes por empresa** · mensagem pronta com os **documentos da admissão** (Calcular → Docs. admissão) · **tamanho do texto** · **Copiar diagnóstico** (sem nomes nem valores) · **modo seguro**: se o portal mudar a tela, o Assistente não preenche sozinho.
 
 ## Novidades da 1.2
 

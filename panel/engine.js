@@ -607,7 +607,11 @@ function lerNumeroToken(tok) {
   if (NUM_PALAVRA[tok.replace(/\*+$/, '')]) return { n: NUM_PALAVRA[tok.replace(/\*+$/, '')], digito: false };
   return null;
 }
-function trechoDe(text, i, j) { return String(text).slice(Math.max(0, i), Math.min(text.length, j)).replace(/\s+/g, ' ').trim(); }
+function trechoDe(text, i, j) {
+  let t = String(text).slice(Math.max(0, i), Math.min(text.length, j)).replace(/\s+/g, ' ').trim();
+  if (i > 0) t = t.replace(/^\S*\s+/, '');          // não começa no meio de uma palavra
+  return t;
+}
 
 /** Dias de afastamento: "01 (um) dia", "(03) três dias", "2 dia(s)", "repouso por 4 dias", "1 ( hum* ) dia(s)". */
 export function lerDiasAtestado(text) {

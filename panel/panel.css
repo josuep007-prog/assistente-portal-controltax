@@ -324,3 +324,25 @@ details.more > summary::-webkit-details-marker { display: none; }
 .faq-i summary { cursor: pointer; font-weight: 600; }
 .faq-i p { margin: 6px 0 2px; color: var(--ink-2); }
 .li.repetir { width: 100%; text-align: left; cursor: pointer; margin-top: 10px; }
+
+/* 1.3.1 — "No portal": resumo dos campos (o preenchimento é no próprio portal) */
+.frows { padding: 2px 0; }
+.frow { margin: 0; border-bottom: 1px solid var(--rule); }
+.frow:last-child { border-bottom: 0; }
+.frow-b { width: 100%; display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 12px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.frow-b:hover { background: var(--surface-2, rgba(0,0,0,.03)); }
+.frow-b:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
+.frow-l { color: var(--ink-2); font-size: 12px; }
+.frow-v { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow.missing .frow-b { box-shadow: inset 3px 0 0 #E8A317; }
+.frow.low .frow-v { color: var(--warn, #9a6700); }
+.frow .cands, .frow .hint, .frow .miss { margin: 0 12px 8px; }
+.frows-nota { display: block; margin: 6px 2px 0; font-size: 11.5px; }
+.chip.muted { background: var(--surface-3); color: var(--ink-3); }
+.texto-prev { margin-top: 12px; }
+.texto-prev .tp-a { font-weight: 600; margin: 8px 0 4px; }
+.texto-prev .tp-d { white-space: pre-wrap; font: 12px/1.45 var(--f-body); margin: 0; color: var(--ink-2); }
+.dock { flex-wrap: wrap; }
+.dock > .btn-undo { order: -1; flex: 1 0 100%; border-color: var(--blue-deep); color: var(--blue-deep); font-weight: 600; background: var(--info-bg); }
+#f-obs { min-height: 56px; }
+.dock > .btn-undo[hidden] { display: none; }

@@ -56,6 +56,9 @@ function onPage(m) {
     case 'files': handleFiles((m.files || []).map(p => p instanceof File ? p : new File([p.buf], p.name, { type: p.type || 'application/octet-stream', lastModified: p.lastModified })), m.origem); break;
     case 'submitAttempt': onSubmitAttempt(m); break;
     case 'formClosed': onFormClosed(); break;
+    case 'undoState': S.desfazerN = m.n || 0; atualizarBotaoDesfazer(); break;
+    case 'undoStart': S.preenchendo = true; break;
+    case 'undone': aoDesfazer(m); break;
     case 'rulesUpdated': loadRules().then(render); break;
     default: break;
   }
@@ -105,13 +108,15 @@ function onContext(m) {
       const peloAssistente = S.abrindo === m.tipo; S.abrindo = null;
       W0.entrouComDados = !peloAssistente && (Object.values(W0.valores).some(v => v?.valor && v.fonte !== 'gerado') || W0.arquivos.some(a => !a.removido));
       if (!peloAssistente) W0.rascunhoVisto = false;
+      W0.ultimoPreenchido = {}; W0.portalVisto = null;     // formulário novo: nada dele foi preenchido ainda
       loadEmpregados(m.tipo); if (S.view === 'inicio' && !S.sugestao) setView('preencher');
     }
   }
   lastKey = key;
   $('#dot-preencher').hidden = !(m.route?.mode === 'form');
+  if (m.route?.mode === 'form' && m.tipo && !S.preenchendo) sincronizarDoPortal(m.tipo);
   if (S.view === 'preencher' && (prevTipo !== m.tipo || prevMode !== m.route?.mode)) render();
-  else if (S.view === 'preencher') updateChecks();
+  else if (S.view === 'preencher') { updateChecks(); renderFieldsOnlySeMudou(); }
   else if (S.view === 'inicio') renderContextBanner();
 }
 
@@ -813,14 +818,15 @@ function renderPreencher() {
     <div class="files" id="files"></div>
     <div id="outro-tipo"></div>
     <div id="doc-checklist"></div>
-    <h2 class="sec">Dados da solicitação</h2>
-    <div class="fields" id="fields"></div>
+    <h2 class="sec">No portal</h2>
+    <div id="fields"></div>
     <div id="fill-res"></div>
     <h2 class="sec">Conferência</h2>
     <div class="checks" id="checks"></div>
     ${(t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
     <div class="dock" id="dock">
       <button class="btn btn-primary" id="btn-fill">${icon('fill', 'ic-sm')} Preencher no portal</button>
+      <button class="btn btn-undo" id="btn-undo" hidden>${icon('undo', 'ic-sm')} Desfazer o preenchimento</button>
       <button class="btn" id="btn-send" title="Mostra o resumo e envia pelo botão do portal">${icon('check', 'ic-sm')} Conferir e enviar</button>
       <details class="more-menu"><summary class="btn btn-ghost" aria-label="Mais ações">${icon('more')}</summary>
         <div class="menu">
@@ -833,6 +839,7 @@ function renderPreencher() {
   `;
   bindDrop($('#drop-form'));
   $('#btn-fill').addEventListener('click', () => fillPortal(tipo));
+  $('#btn-undo').addEventListener('click', desfazerPreenchimento);
   $('#btn-send').addEventListener('click', () => { S.pedirResumo = true; send({ type: 'requestSubmit' }); });
   $('#btn-copy').addEventListener('click', () => copiarResumo(tipo));
   $('#btn-model').addEventListener('click', () => salvarModeloUI(tipo));
@@ -843,7 +850,7 @@ function renderPreencher() {
   $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
-  renderModoSeguro(tipo); ofertaRascunho(tipo);
+  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer();
 }
 function exemploTexto(tipo) {
   return ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
@@ -918,37 +925,63 @@ function fieldInput(k, c, cur, W) {
   return `<input id="${id}" data-k="${k}" data-t="${c.tipo}" class="${cls}" value="${esc(v)}" placeholder="${ph}" ${im} ${list} autocomplete="off">${dl}`;
 }
 
+/* "No portal": o que está (ou vai) em cada campo do formulário, sem duplicar os campos do portal.
+   Só o que o portal não tem (dias, CID, médico, observações) é editável aqui: alimenta a descrição. */
+let lastFieldsKey = '';
+function renderFieldsOnlySeMudou() {
+  const tipo = S.ctx.tipo; if (!tipo) return;
+  const k = JSON.stringify([S.ctx.form?.campos, Object.entries(w(tipo).valores).map(([a, b]) => [a, b?.valor]), w(tipo).ultimoPreenchido]);
+  if (k !== lastFieldsKey && !document.activeElement?.closest?.('#fields')) renderFieldsOnly();
+}
 function renderFieldsOnly() {
   const el = $('#fields'); if (!el) return;
   const tipo = S.ctx.tipo; const t = tipoDef(tipo); const W = w(tipo);
+  lastFieldsKey = JSON.stringify([S.ctx.form?.campos, Object.entries(W.valores).map(([a, b]) => [a, b?.valor]), W.ultimoPreenchido]);
+  const pf = S.ctx.form?.campos || {};
   const cond = E.activeConditionals(t, valoresParaChecar(tipo));
   const reqCond = new Set(cond.flatMap(c => c.obrigatorios || []));
-  const entries = Object.entries(t.campos);
-  const isMain = ([k, c]) => c.obrigatorio || reqCond.has(k) || W.valores[k] || c.somenteAssistente || ['assunto', 'descricao'].includes(k);
-  const tail = ['assunto', 'descricao', 'conclusao'];
-  const main = entries.filter(isMain).sort((a, b) => tail.indexOf(a[0]) - tail.indexOf(b[0]));
-  const rest = entries.filter(e => !isMain(e));
-  const row = ([k, c]) => {
-    const cur = W.valores[k];
-    const portal = S.ctx.form?.campos?.[k];
-    const disabled = portal?.disabled && !c.somenteAssistente;
-    return `<div class="field" ${disabled ? 'style="opacity:.55"' : ''}>
-      <label for="f-${k}">${esc(c.rotulo)}${c.obrigatorio || reqCond.has(k) ? '<span class="req">*</span>' : ''}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${c.somenteAssistente ? ' <span class="chip">só no texto</span>' : ''}
-      ${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : portal?.valor ? '<span class="src">no portal</span>' : ''}</label>
-      ${fieldInput(k, c, cur || (portal?.valor ? { valor: portal.valor, fonte: 'portal', conf: 1 } : null), W)}
-      ${k === 'empregado' && W.candidatos?.length && !cur?.valor && !portal?.valor ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
-      ${k === 'empregado' && W.pacienteLido && !cur?.valor && !portal?.valor && !W.candidatos?.length ? `<small class="hint">No documento: “${esc(W.pacienteLido)}” — não achei esse nome na lista. Escolha o funcionário.</small>` : ''}
-      ${k === 'empregado' && !cur?.valor && !portal?.valor ? recentesHtml(tipo) : ''}
+  const obrig = (k, c) => c.obrigatorio || reqCond.has(k);
+  // campos do portal: obrigatórios ou com algum valor (no portal ou lido pelo Assistente)
+  const doPortal = Object.entries(t.campos).filter(([k, c]) => !c.somenteAssistente && !TEXTOS.includes(k) && pf[k]?.existe !== false
+    && (obrig(k, c) || pf[k]?.valor || W.valores[k]?.valor));
+  const linha = ([k, c]) => {
+    const p = pf[k] || {}; const v = W.valores[k];
+    const noPortal = p.valor || '';
+    const nosso = noPortal && W.ultimoPreenchido?.[k] === noPortal;
+    const pendente = !noPortal && v?.valor;
+    const estado = p.disabled ? ['muted', 'bloqueado'] : noPortal ? (nosso ? ['ok', 'Assistente'] : ['info', 'você']) : pendente ? ['warn', 'a preencher'] : obrig(k, c) ? ['err', 'vazio'] : ['muted', '—'];
+    const fonte = nosso && v?.fonte ? v.fonte : '';
+    const baixa = nosso && v?.conf != null && v.conf < 0.6;
+    return `<div class="field frow${baixa ? ' low' : ''}">
+      <button type="button" class="frow-b" data-k="${k}" title="${esc(fonte ? 'De: ' + fonte : 'Mostrar no portal')}">
+        <span class="frow-l">${esc(c.rotulo)}${obrig(k, c) ? '<span class="req">*</span>' : ''}</span>
+        <span class="frow-v">${esc(noPortal || v?.valor || '')}${baixa ? ' <small class="chip warn">confira</small>' : ''}</span>
+        <span class="chip ${estado[0]}">${estado[1]}</span>
+      </button>
+      ${k === 'empregado' && W.candidatos?.length && !noPortal ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
+      ${k === 'empregado' && W.pacienteLido && !noPortal && !W.candidatos?.length ? `<small class="hint">No documento: “${esc(W.pacienteLido)}” — não achei esse nome na lista. Escolha o funcionário no portal.</small>` : ''}
     </div>`;
   };
-  const obs = W.valores.observacoes?.valor || '';
-  el.innerHTML = main.map(row).join('') +
-    (t.descricao?.length ? `<div class="field"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(obs)}</textarea></div>` : '') +
-    (t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${S.prefs.incluirCid ? 'checked' : ''}><span>Incluir CID na descrição<small>Dado de saúde (LGPD). Deixe desligado se não for necessário.</small></span></label>` : '') +
-    calcBox(tipo) +
-    (rest.length ? `<details class="more"><summary>Mais campos (${rest.length})</summary><div class="fields" style="margin-top:8px">${rest.map(row).join('')}</div></details>` : '');
+  const extras = Object.entries(t.campos).filter(([, c]) => c.somenteAssistente);
+  const texto = (k) => pf[k]?.valor || W.valores[k]?.valor || '';
+  const editadoNoPortal = TEXTOS.some(k => W.editados.has(k));
+  el.innerHTML = `
+    <div class="card frows">${doPortal.map(linha).join('') || '<p class="muted" style="margin:8px 12px">Nada preenchido ainda. Arraste um documento ou escreva o pedido acima.</p>'}</div>
+    <small class="muted frows-nota">Para corrigir, mude direto no portal — eu acompanho e atualizo o assunto e a descrição.</small>
+    ${extras.length || t.descricao?.length ? `<h2 class="sec">Só para a descrição</h2>
+    <div class="fields">${extras.map(([k, c]) => {
+      const cur = W.valores[k];
+      return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}</div>`;
+    }).join('')}
+    ${t.descricao?.length ? `<div class="field"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(W.valores.observacoes?.valor || '')}</textarea></div>` : ''}
+    ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${S.prefs.incluirCid ? 'checked' : ''}><span>Incluir CID na descrição<small>Dado de saúde (LGPD). Deixe desligado se não for necessário.</small></span></label>` : ''}
+    </div>` : ''}
+    ${t.campos.assunto || t.campos.descricao ? `<details class="more texto-prev"${texto('descricao') ? '' : ' open'}><summary>Assunto e descrição ${editadoNoPortal ? '<small class="chip info">editados por você no portal</small>' : '<small class="chip ok">gerados</small>'}</summary>
+      ${texto('assunto') ? `<p class="tp-a">${esc(texto('assunto'))}</p>` : ''}
+      ${texto('descricao') ? `<pre class="tp-d">${esc(texto('descricao'))}</pre>` : '<p class="muted">Aparecem quando houver dados.</p>'}</details>` : ''}
+    ${calcBox(tipo)}`;
 
-  const onInput = debounce(() => { gerarTextos(tipo); syncGenerated(); updateChecks(); refreshCalc(); }, 250);
+  const onInput = debounce(() => { gerarTextos(tipo); updateChecks(); refreshCalc(); atualizarTextoNoPortal(tipo); }, 400);
   el.querySelectorAll('input[data-k], textarea[data-k]').forEach(inp => {
     inp.addEventListener('input', () => {
       maskInput(inp);
@@ -958,18 +991,14 @@ function renderFieldsOnly() {
       onInput();
     });
   });
-  el.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.k; W.valores[k] = { valor: b.dataset.v, conf: 1, fonte: 'você' }; W.editados.add(k);
-    b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    onInput();
-  }));
+  el.querySelectorAll('.frow-b').forEach(b => b.addEventListener('click', () => { const def = t.campos[b.dataset.k]; if (def) send({ type: 'highlight', locator: def }); }));
   $('#f-obs')?.addEventListener('input', (e) => { W.valores.observacoes = { valor: e.target.value, conf: 1, fonte: 'você' }; onInput(); });
   el.querySelectorAll('[data-cand]').forEach(b => b.addEventListener('click', () => {
-    W.valores.empregado = { valor: b.dataset.cand, conf: 1, fonte: 'você' }; W.editados.add('empregado'); W.candidatos = null;
+    W.valores.empregado = { valor: b.dataset.cand, conf: 1, fonte: 'você' }; W.candidatos = null;
     gerarTextos(tipo); renderFieldsOnly(); updateChecks();
-    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { silencioso: true });
+    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo);
   }));
-  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; savePrefs(); gerarTextos(tipo); syncGenerated(); });
+  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
 }
 function syncGenerated() {
   const W = w(S.ctx.tipo);
@@ -1076,10 +1105,18 @@ function updateChecks() {
 
 async function fillPortal(tipo, { silencioso = false } = {}) {
   const W = w(tipo); const t = tipoDef(tipo);
+  if (!silencioso) W.pausarAuto = false;
+  else if (W.pausarAuto) return;                       // o cliente desfez: só preenche de novo se ele pedir
   gerarTextos(tipo);
   if (silencioso && telaDiferente(tipo) && !W.forcarPreenchimento) { renderModoSeguro(tipo); return; }
   const values = {};
-  for (const [k, v] of Object.entries(W.valores)) if (t.campos[k] && !t.campos[k].somenteAssistente && v?.valor) values[k] = v.valor;
+  const noPortal = portalValores(tipo);
+  for (const [k, v] of Object.entries(W.valores)) {
+    if (!t.campos[k] || t.campos[k].somenteAssistente || !v?.valor) continue;
+    // o que o cliente escreveu direto no portal fica como está
+    if (noPortal[k] && noPortal[k] !== (W.ultimoPreenchido?.[k] ?? null) && noPortal[k] !== v.valor) continue;
+    values[k] = v.valor;
+  }
   // padrões das regras (ex.: país Brasil) só se vazio no portal
   for (const [k, c] of Object.entries(t.campos)) if (c.padrao && !values[k] && !portalValores(tipo)[k]) values[k] = c.padrao;
   // condicionais que definem valores (ex.: pedido de demissão → aviso dado pelo empregado)
@@ -1087,12 +1124,17 @@ async function fillPortal(tipo, { silencioso = false } = {}) {
   const files = W.arquivos.filter(a => !a.removido && !a.jaAnexado && !a.anexado && !a.outroTipo && a.status !== 'lendo').map(a => a.file);
   const btn = $('#btn-fill'); if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Preenchendo…'; }
   const packed = await packFiles(files);
-  const r = await request({ type: 'fill', tipo, values, files: packed, opts: { naoSobrescrever: false } }, 60000, packed.map(p => p.buf));
+  S.preenchendo = true;
+  let r;
+  try { r = await request({ type: 'fill', tipo, values, files: packed, opts: { naoSobrescrever: false } }, 60000, packed.map(p => p.buf)); }
+  finally { S.preenchendo = false; }
   if (btn) { btn.disabled = false; btn.innerHTML = `${icon('fill', 'ic-sm')} Preencher no portal`; }
+  if (r?.depois) W.ultimoPreenchido = { ...(W.ultimoPreenchido || {}), ...Object.fromEntries(Object.entries(r.depois).filter(([, v]) => v)) };
+  W.portalVisto = { ...portalValores(tipo), ...(r?.depois || {}) };
   if (r?.anexados) W.arquivos.forEach(a => { if (files.includes(a.file)) a.anexado = true; });
   W.resultados = r;
   await salvarHistorico(tipo, 'preenchido');
-  if (S.view === 'preencher') { renderFilesOnly(); renderFillResult(); updateChecks(); }
+  if (S.view === 'preencher') { renderFilesOnly(); renderFieldsOnly(); renderFillResult(); updateChecks(); }
   if (!silencioso || r?.resultados?.some(x => !x.ok)) { /* resultado já exibido no painel */ }
   if (r?.resultados) toast(`${r.resultados.filter(x => x.ok).length} campo(s) preenchido(s)${r.anexados ? ` · ${r.anexados} anexo(s)` : ''}. Confira antes de enviar.`);
 }
@@ -1105,6 +1147,64 @@ function renderFillResult() {
   el.innerHTML = `<div class="note ${falhas.length ? 'warn' : 'ok'}" style="margin-top:10px">${icon(falhas.length ? 'alert' : 'check')}<div>
     <b>${ok} campo(s) preenchido(s)${r.anexados ? ` e ${r.anexados} anexo(s)` : ''}.</b> Revise na tela e clique em ${esc((t.botaoEnviar || 'ADICIONAR'))} quando estiver tudo certo.
     ${falhas.length ? `<ul class="tips" style="margin-top:6px">${falhas.map(f => `<li>${esc(t.campos[f.campo]?.rotulo || f.campo)}: ${esc(f.motivo)}</li>`).join('')}</ul>` : ''}</div></div>`;
+}
+
+/* =================== Portal ↔ Assistente =================== */
+/* O portal é onde se preenche e se corrige. O Assistente só acompanha: se o cliente muda um campo
+   lá, vale o que está no portal (e o assunto/descrição gerados se atualizam sozinhos). */
+const TEXTOS = ['assunto', 'descricao'];
+function sincronizarDoPortal(tipo) {
+  const W = S.work[tipo]; if (!W) return;
+  const f = S.ctx.form?.campos || {};
+  const atual = Object.fromEntries(Object.entries(f).filter(([, v]) => v.existe).map(([k, v]) => [k, v.valor || '']));
+  let mudouDado = false;
+  for (const [k, ult] of Object.entries(W.ultimoPreenchido || {})) {
+    if (!(k in atual) || atual[k] === ult) continue;
+    delete W.ultimoPreenchido[k];
+    if (atual[k]) W.valores[k] = { valor: atual[k], conf: 1, fonte: 'você, no portal' }; else delete W.valores[k];
+    W.editados.add(k);
+  }
+  const visto = W.portalVisto || {};
+  for (const [k, v] of Object.entries(atual)) if (!TEXTOS.includes(k) && (visto[k] ?? '') !== v) mudouDado = true;
+  W.portalVisto = atual;
+  if (mudouDado && W.ultimoPreenchido && TEXTOS.some(k => k in W.ultimoPreenchido)) atualizarTextoNoPortal(tipo);
+}
+const atualizarTextoNoPortal = debounce(async (tipo) => {
+  if (S.ctx.tipo !== tipo || S.preenchendo) return;
+  const W = w(tipo); gerarTextos(tipo);
+  const pv = portalValores(tipo); const values = {};
+  for (const k of TEXTOS) {
+    const novo = W.valores[k]?.valor;
+    if (novo && !W.editados.has(k) && (pv[k] || '') === (W.ultimoPreenchido?.[k] || '') && pv[k] !== novo) values[k] = novo;
+  }
+  if (!Object.keys(values).length) return;
+  S.preenchendo = true;
+  let r; try { r = await request({ type: 'fill', tipo, values, files: [], opts: { semDesfazer: true, avisoDesfazer: false, voltarInicio: false } }, 20000); } finally { S.preenchendo = false; }
+  if (r?.depois) Object.assign(W.ultimoPreenchido, r.depois);
+  if (S.view === 'preencher') { renderFieldsOnly(); updateChecks(); }
+}, 700);
+
+/* ---------- Desfazer ---------- */
+function atualizarBotaoDesfazer() {
+  const b = $('#btn-undo'); if (!b) return;
+  b.hidden = !(S.desfazerN > 0 && S.ctx.route?.mode === 'form');
+  b.title = S.desfazerN > 1 ? `Desfaz o último preenchimento (há ${S.desfazerN})` : 'Volta o formulário do portal a como estava antes do último preenchimento';
+}
+async function desfazerPreenchimento() {
+  const b = $('#btn-undo'); if (b) { b.disabled = true; b.innerHTML = '<div class="spin"></div> Desfazendo…'; }
+  await request({ type: 'undo' }, 30000);
+  if (b) { b.disabled = false; b.innerHTML = `${icon('undo', 'ic-sm')} Desfazer o preenchimento`; }
+}
+function aoDesfazer(m) {
+  S.preenchendo = false;
+  const tipo = S.ctx.tipo; if (!tipo) return;
+  const W = w(tipo);
+  for (const k of m.campos || []) { delete W.ultimoPreenchido?.[k]; }
+  W.portalVisto = null;
+  for (const n of m.anexos || []) { const a = W.arquivos.find(x => E.norm(x.nome) === E.norm(n)); if (a) a.anexado = false; }
+  W.pausarAuto = true;
+  W.resultados = null;
+  if (S.view === 'preencher') render();
 }
 
 /* =================== Antes de enviar =================== */
@@ -1208,19 +1308,6 @@ async function onFormClosed() {
 /* =================== Facilidades (1.3) =================== */
 async function carregarHistorico() { const { historico = [] } = await chrome.storage.local.get('historico'); S.historico = historico; return historico; }
 const nomeCurto = (n) => { const p = String(n).trim().split(/\s+/); const t = (x) => x.charAt(0) + x.slice(1).toLowerCase(); return p.length > 1 ? `${t(p[0])} ${t(p[p.length - 1])}` : t(p[0] || ''); };
-
-/** Funcionários usados por último nesta empresa (atalho quando o campo está vazio). */
-function recentesHtml(tipo) {
-  const W = w(tipo); const lista = [];
-  for (const h of S.historico) {
-    if (h.empresa !== S.ctx.empresa) continue;
-    const n = h.valores?.empregado; if (!n || lista.includes(n)) continue;
-    if (W.empregados.length && !W.empregados.includes(n)) continue;
-    lista.push(n); if (lista.length >= 4) break;
-  }
-  if (!lista.length || W.candidatos?.length) return '';
-  return `<div class="cands recentes"><small>Recentes:</small>${lista.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}" title="${esc(n)}">${esc(nomeCurto(n))}</button>`).join('')}</div>`;
-}
 
 /** Mesmo pedido já enviado por este computador (mesmo funcionário e mesma data). */
 const CHAVE_REPETIDO = { afastamento: 'dataAfastamento', avisoFerias: 'inicioGozo', calculoFerias: 'inicioGozo', avisoRescisao: 'dataAviso', calculoRescisao: 'dataDemissao', rubricas: 'competencia' };

@@ -57,6 +57,10 @@
         background:#0E151B;color:#E9EEF2;padding:10px 16px;border-radius:4px;font:500 13px 'IBM Plex Sans',system-ui,sans-serif;transition:all .2s ease;
         box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:80vw}
       .toast.on{opacity:1;transform:translateX(-50%)}
+      .toast.acao{pointer-events:auto;display:flex;align-items:center;gap:14px;padding:8px 8px 8px 16px}
+      .toast .t-btn{border:0;border-radius:4px;background:#E9EEF2;color:#0E151B;font:600 13px 'IBM Plex Sans',system-ui,sans-serif;padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:6px}
+      .toast .t-btn:hover{background:#fff}
+      .toast .t-btn:focus-visible{outline:2px solid #6BAAC9;outline-offset:2px}
     </style>
     <button class="launcher" part="launcher" type="button" aria-label="Abrir o Assistente ControlTax">
       <span class="mark"><img alt="" src="${chrome.runtime.getURL('icons/icon-32.png')}"></span>
@@ -74,9 +78,15 @@
   const toastEl = root.querySelector('.toast');
   let iframe = null;
 
-  function toast(msg, ms = 2600) {
-    toastEl.textContent = msg; toastEl.classList.add('on');
-    clearTimeout(toast._t); toast._t = setTimeout(() => toastEl.classList.remove('on'), ms);
+  function toast(msg, ms = 2600, acao = null) {
+    toastEl.textContent = msg; toastEl.classList.toggle('acao', !!acao);
+    if (acao) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 't-btn'; b.textContent = acao.rotulo;
+      b.addEventListener('click', () => { toastEl.classList.remove('on', 'acao'); acao.fn(); });
+      toastEl.appendChild(b);
+    }
+    toastEl.classList.add('on');
+    clearTimeout(toast._t); toast._t = setTimeout(() => toastEl.classList.remove('on', 'acao'), ms);
   }
 
   function ensureFrame() {
@@ -150,9 +160,11 @@
         case 'fill': {
           const r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {}));
           post({ type: 'fillResult', id: m.id, ...r });
-          sendContext();
+          sendContext(); avisarDesfazer();
+          if (m.opts?.avisoDesfazer !== false && r.mudou) toast('Preenchido pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });
           break;
         }
+        case 'undo': { const r = await desfazer(); post({ type: 'undoResult', id: m.id, ...r }); break; }
         case 'attach': { const n = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n }); sendContext(); break; }
         case 'getOptions': {
           const opts = await comboLock(() => comboOptions(m.locator, m.force));
@@ -498,6 +510,9 @@
       .sort(([a], [b]) => (ORDER[tipo.campos[a].tipo] ?? 3) - (ORDER[tipo.campos[b].tipo] ?? 3));
     const resultados = [];
     const firstStepBtn = document.querySelector('button.bento-wizard-step');
+    // como estava antes: é o que o "Desfazer" devolve
+    const antes = {};
+    for (const [k] of entries) antes[k] = readField(tipo.campos[k]).valor || '';
     for (const [k, v] of entries) {
       const def = tipo.campos[k];
       try {
@@ -518,11 +533,77 @@
         resultados.push({ campo: k, ok: false, motivo: String(e.message || e) });
       }
     }
-    let anexados = 0;
-    if (files?.length) anexados = await attachFiles(files);
+    let anexados = 0, anexadosNomes = [];
+    const nomesAntes = new Set(attachedNames().map(norm));
+    if (files?.length) { anexados = await attachFiles(files); anexadosNomes = attachedNames().filter(n => !nomesAntes.has(norm(n))); }
     if (firstStepBtn && opts.voltarInicio !== false) { firstStepBtn.click(); await sleep(200); }
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    return { ok: true, resultados, anexados };
+    const depois = {};
+    for (const [k] of entries) depois[k] = readField(tipo.campos[k]).valor || '';
+    // guarda só o que de fato mudou
+    const mudancas = Object.fromEntries(Object.keys(antes).filter(k => antes[k] !== depois[k]).map(k => [k, antes[k]]));
+    const mudou = Object.keys(mudancas).length > 0 || anexadosNomes.length > 0;
+    if (mudou && !opts.semDesfazer) { desfazerPilha.push({ path: currentPath(), tipo: tipoKey, antes: mudancas, anexos: anexadosNomes }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
+    return { ok: true, resultados, anexados, depois, mudou };
+  }
+
+  /* ============ Desfazer o último preenchimento ============ */
+  const desfazerPilha = [];
+  const avisarDesfazer = () => { const n = desfazerPilha.filter(d => d.path === currentPath()).length; post({ type: 'undoState', n }); };
+  async function limparCombo(cb) {
+    const inp = cb.querySelector('input'); if (!inp) return { ok: false, motivo: 'campo sem entrada' };
+    inp.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, '');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    inp.blur(); inp.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    await sleep(250);
+    return { ok: !(inp.value || '').trim() };
+  }
+  /** Tira um anexo pelo nome (botão de remover da linha do arquivo). Calibrar no Onvio real. */
+  async function removerAnexo(nome) {
+    const zona = mainEl().querySelector('cc-sr-file-selector, bento-file-selector'); if (!zona) return false;
+    const alvo = [...zona.querySelectorAll('*')].filter(e => e.children.length <= 3 && (e.innerText || '').includes(nome)).sort((a, b) => (a.innerText || '').length - (b.innerText || '').length)[0];
+    let linha = alvo; let btn = null;
+    for (let i = 0; i < 5 && linha && !btn; i++, linha = linha.parentElement) {
+      const bs = [...linha.querySelectorAll('button, [role=button]')];
+      btn = bs.find(b => /remov|exclu|delet|apagar|tirar|×|✕/i.test(`${b.getAttribute('aria-label') || ''} ${b.title || ''} ${b.innerText || ''} ${b.className || ''}`)) || (bs.length === 1 ? bs[0] : null);
+    }
+    if (!btn) return false;
+    btn.click(); await sleep(300);
+    return !attachedNames().map(norm).includes(norm(nome));
+  }
+  async function desfazer() {
+    const i = desfazerPilha.map(d => d.path).lastIndexOf(currentPath());
+    if (i < 0) { toast('Não há preenchimento para desfazer nesta tela.'); return { ok: false, campos: [], anexos: [] }; }
+    const d = desfazerPilha.splice(i, 1)[0];
+    post({ type: 'undoStart' });
+    const tipo = resolveTipoLocal(d.tipo);
+    const campos = [], falhas = [], anexos = [];
+    await comboLock(async () => {
+      for (const [k, v] of Object.entries(d.antes)) {
+        const def = tipo?.campos[k]; if (!def) continue;
+        try {
+          let r;
+          if (def.tipo === 'radio') {
+            if (v) r = await setRadio(def, v);
+            else { for (const sel of Object.values(def.seletores || {})) { const el = mainEl().querySelector(sel); if (el?.checked) { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); } } r = { ok: true }; }
+          } else {
+            const el = findField(def); if (!el) { falhas.push(k); continue; }
+            await reveal(el);
+            if (el.tagName === 'BENTO-COMBOBOX') r = v ? await pickCombo(el, v) : await limparCombo(el);
+            else { setNative(el, v); r = { ok: true }; }
+          }
+          (r?.ok ? campos : falhas).push(k);
+        } catch { falhas.push(k); }
+      }
+      for (const n of d.anexos) { if (await removerAnexo(n)) anexos.push(n); else falhas.push('anexo:' + n); }
+    });
+    sendContext(); avisarDesfazer();
+    toast(falhas.length ? `Desfeito em parte: confira ${falhas.length} item(ns) no formulário.` : 'Preenchimento desfeito: o formulário voltou a como estava.', 4000);
+    post({ type: 'undone', campos, anexos, falhas });
+    return { ok: !falhas.length, campos, anexos, falhas };
   }
 
   async function attachFiles(files) {
@@ -643,6 +724,16 @@
     sendFiles([...inp.files], 'portal');
   }, true);
 
+  // o cliente mexeu num campo do portal → o painel acompanha (assunto/descrição se atualizam)
+  let editTimer = null;
+  const aoEditar = (e) => {
+    const el = e.target;
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) || el.type === 'file' || !mainEl().contains(el)) return;
+    clearTimeout(editTimer); editTimer = setTimeout(sendContext, 450);
+  };
+  document.addEventListener('change', aoEditar, true);
+  document.addEventListener('focusout', aoEditar, true);
+
   /* ============ Mudanças de rota ============ */
   let routeTimer = null;
   const routeChanged = () => {
@@ -654,7 +745,7 @@
       const r = routeInfo();
       // formulário fechou e voltou à lista → provável envio concluído
       if (prev.includes('/add') && r.mode === 'list') post({ type: 'formClosed', from: prev, to: href });
-      sendContext(); atualizarLauncher();
+      sendContext(); atualizarLauncher(); avisarDesfazer();
     }, 600);
   };
   setInterval(routeChanged, 500);
