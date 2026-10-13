@@ -56,6 +56,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 1.2.3 | 2026-10-13 | Férias e desligamento pelo texto livre: pergunta se é aviso ou cálculo. Ao atualizar a extensão, as abas do portal fora de formulário recarregam sozinhas e, nas que estão num formulário, o painel avisa para recarregar (F5) — antes a página continuava com a versão antiga das "mãos". |
 | 1.2.2 | 2026-10-13 | Listas longas do portal (virtualizadas, só ~13 nomes desenhados por vez): o Assistente lê a lista inteira rolando-a e completando com a lista da empresa, e escolhe a opção digitando para filtrar ou rolando até ela — funcionários com qualquer inicial e tipos de afastamento do fim da lista. |
 | 1.2.1 | 2026-10-13 | Funcionário pelo primeiro nome no texto livre: a lista é carregada antes de interpretar (com novas tentativas e, se preciso, a lista completa da empresa pela API do portal); se o primeiro nome servir para mais de um, o painel pergunta qual; listas de combobox não abrem mais duas ao mesmo tempo. |
 | 1.2.0 | 2026-10-13 | Vários atestados de uma vez (uma solicitação por atestado, abertas uma após a outra); tipo de afastamento automático (inclui até 15 dias); assunto "Atestado médico – Nome – data (dias)"; aviso visual no portal e no painel para o que não foi encontrado no documento; texto livre não força mais a solicitação aberta; abrir solicitação mais rápido; regras embutidas mais novas prevalecem sobre as publicadas. |

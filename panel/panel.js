@@ -74,6 +74,7 @@ chrome.runtime.onMessage.addListener((m) => { if (m.type === 'rulesUpdated') { l
 /* =================== Contexto da página =================== */
 let lastKey = '';
 function onContext(m) {
+  avisoVersao(m.versao);
   const prevTipo = S.ctx.tipo, prevMode = S.ctx.route?.mode;
   S.ctx = { route: m.route || {}, tipo: m.tipo, empresa: m.empresa || '', form: m.form };
   $('#empresa').textContent = S.ctx.empresa || 'Portal do Cliente';
@@ -87,6 +88,22 @@ function onContext(m) {
   if (S.view === 'preencher' && (prevTipo !== m.tipo || prevMode !== m.route?.mode)) render();
   else if (S.view === 'preencher') updateChecks();
   else if (S.view === 'inicio') renderContextBanner();
+}
+
+/* A página continua com o script antigo quando a extensão é atualizada sem recarregar o portal:
+   o painel novo conversa com "mãos" velhas e várias coisas falham. Avisa para recarregar. */
+function avisoVersao(versaoPagina) {
+  if (standalone) return;
+  const minha = chrome.runtime.getManifest?.().version;
+  const velho = !!minha && versaoPagina !== minha && !String(versaoPagina || '').endsWith('-sim') && !location.search.includes('sim');
+  let el = document.getElementById('aviso-versao');
+  if (!velho) { el?.remove(); return; }
+  if (el) return;
+  el = document.createElement('div');
+  el.id = 'aviso-versao'; el.className = 'note warn'; el.setAttribute('role', 'alert');
+  el.style.cssText = 'margin:8px 12px 0';
+  el.innerHTML = `${icon('alert')}<div><b>O Assistente foi atualizado.</b> Recarregue a página do portal (tecla F5) para usar a versão nova — sem isso, algumas funções podem não preencher.</div>`;
+  viewEl.parentElement.insertBefore(el, viewEl);
 }
 
 function w(tipo) {
@@ -237,9 +254,24 @@ function renderInicio() {
 /* Texto livre: o pedido é entendido pelo que foi escrito, não pela solicitação que está aberta.
    Só preenche a solicitação aberta quando o texto é sobre ela (ou o cliente escolhe isso). */
 const mesmaFamilia = (a, b) => a === b || FAMILIAS.some(f => f.includes(a) && f.includes(b));
+/* Férias e desligamento têm duas solicitações (aviso e cálculo): no texto livre do Início, pergunta qual. */
+const ESCOLHA_AVISO_CALCULO = [
+  { tipos: ['avisoFerias', 'calculoFerias'], ajuda: { avisoFerias: 'Comunicar as datas para o escritório emitir o aviso de férias (com 30 dias de antecedência).', calculoFerias: 'Pedir o cálculo e o recibo das férias para o pagamento (até 2 dias antes do início).' } },
+  { tipos: ['avisoRescisao', 'calculoRescisao'], ajuda: { avisoRescisao: 'Comunicar a demissão ou o pedido de demissão e emitir o aviso prévio.', calculoRescisao: 'Pedir o cálculo das verbas rescisórias (TRCT) para o pagamento em até 10 dias.' } }
+];
 async function entenderTexto(texto, { origem = 'inicio' } = {}) {
   const tipoAberto = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
   const detectado = E.suggestTipoByText(texto, S.rules, null)?.tipo || null;
+  const escolha = origem === 'inicio' && ESCOLHA_AVISO_CALCULO.find(f => f.tipos.includes(detectado));
+  if (escolha) {
+    const plain = E.norm(texto);
+    const sugerido = /\bAVISO\b/.test(plain) ? escolha.tipos[0] : /CALCUL|RECIBO|VERBAS|TRCT|PAGAR|PAGAMENTO/.test(plain) ? escolha.tipos[1] : null;
+    const base = sugerido || escolha.tipos[0];
+    const r = E.parseFreeText(texto, S.rules, { employees: await empregadosPara(base), tipoAtual: base });
+    S.sugestao = { texto, tipoAberto, escolha, sugerido, analise: { tipoSugerido: base, campos: r.campos, documento: { nome: 'seu pedido' } } };
+    if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+    return;
+  }
   // texto sobre a própria solicitação aberta (ou sem tipo claro, escrito dentro dela) → preenche ali
   if (tipoAberto && ((detectado && mesmaFamilia(detectado, tipoAberto)) || (!detectado && origem === 'preencher'))) {
     await loadEmpregados(tipoAberto);
@@ -562,6 +594,21 @@ function renderSugestao() {
 function renderSugestaoTexto(el, s) {
   const a = s.analise; const tipo = a.tipoSugerido; const t = tipoDef(tipo);
   const achados = Object.entries(a.campos).filter(([k]) => k !== 'observacoes');
+  if (s.escolha) {
+    const nomeCampo = (k) => s.escolha.tipos.map(x => tipoDef(x)?.campos?.[k]?.rotulo).find(Boolean) || k;
+    el.innerHTML = `<div class="card">
+      <div class="card-h">${icon('spark')}<h3>Aviso ou cálculo?</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
+      <div class="card-b">
+        ${Object.keys(a.campos).filter(k => k !== 'observacoes').length ? `<dl class="kv" style="margin-bottom:10px">${Object.entries(a.campos).filter(([k]) => k !== 'observacoes').map(([k, c]) => `<dt>${esc(nomeCampo(k))}</dt><dd>${esc(c.valor)}</dd>`).join('')}</dl>` : ''}
+        <p style="margin:0 0 8px">Qual solicitação você quer abrir?</p>
+        <div class="escolha">${s.escolha.tipos.map(x => `<button type="button" class="opc${x === s.sugerido ? ' sug' : ''}" data-escolha="${esc(x)}">
+          <b>${esc(S.rules.tipos[x]?.nome)}${x === s.tipoAberto ? ' <small class="chip">aberta</small>' : ''}</b><small>${esc(s.escolha.ajuda[x] || '')}</small></button>`).join('')}</div>
+        ${s.tipoAberto && !s.escolha.tipos.includes(s.tipoAberto) ? `<p class="muted" style="margin:10px 0 0;font-size:12px">A solicitação de ${esc(S.rules.tipos[s.tipoAberto]?.nome)} que está aberta será fechada no portal sem enviar. O que eu já tinha preenchido continua guardado aqui.</p>` : ''}
+      </div></div>`;
+    $('#sug-x').addEventListener('click', () => { S.sugestao = null; el.innerHTML = ''; renderSugestao(); });
+    el.querySelectorAll('[data-escolha]').forEach(b => b.addEventListener('click', () => abrirDoTexto(el, s, b.dataset.escolha)));
+    return;
+  }
   el.innerHTML = `<div class="card">
     <div class="card-h">${icon('spark')}<h3>Entendi assim</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
     <div class="card-b">
@@ -573,19 +620,21 @@ function renderSugestaoTexto(el, s) {
       <details class="more" style="margin-top:8px"><summary>Não é isso? Escolher outra solicitação</summary>
         <div class="tool-tabs" style="margin-top:8px">${(S.rules.intencoes || []).map(i => `<button type="button" data-alt="${esc(i.tipo)}">${esc(i.titulo)}</button>`).join('')}</div></details>
     </div></div>`;
-  const abrir = async (destino) => {
-    S.sugestao = null; el.innerHTML = '';
-    await openTipo(destino, { manter: true });
-    for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === destino); k++) await esperar(200);
-    await loadEmpregados(destino);
-    const r = E.parseFreeText(s.texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino });
-    anotarCandidatos(destino, s.texto, r.campos);
-    aplicarCampos(destino, r.campos, 'sua descrição');
-  };
+  const abrir = (destino) => abrirDoTexto(el, s, destino);
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; el.innerHTML = ''; renderSugestao(); });
   $('#sug-go').addEventListener('click', () => abrir(tipo));
   $('#sug-aqui')?.addEventListener('click', () => abrir(s.tipoAberto));
   el.querySelectorAll('[data-alt]').forEach(b => b.addEventListener('click', () => abrir(b.dataset.alt)));
+}
+
+async function abrirDoTexto(el, s, destino) {
+  S.sugestao = null; el.innerHTML = '';
+  await openTipo(destino, { manter: true });
+  for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === destino); k++) await esperar(200);
+  await loadEmpregados(destino);
+  const r = E.parseFreeText(s.texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino });
+  anotarCandidatos(destino, s.texto, r.campos);
+  aplicarCampos(destino, r.campos, 'sua descrição');
 }
 
 /* Documentos neutros (servem a vários pedidos) e famílias de pedidos compatíveis */

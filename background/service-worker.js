@@ -123,9 +123,15 @@ async function reloadOnvioTabsIfNeeded() {
 }
 
 /* ---------- Eventos ---------- */
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   await refreshRules('instalação/atualização');
   await reloadOnvioTabsIfNeeded();
+  // extensão atualizada: abas do portal fora de formulário recarregam para pegar a versão nova
+  // (as que estão num formulário mostram um aviso no painel, para não perder o que foi digitado)
+  if (details?.reason === 'update') {
+    const tabs = await chrome.tabs.query({ url: ONVIO }).catch(() => []);
+    for (const t of tabs) if (!/\/add(\b|$|\?)/.test(t.url || '')) chrome.tabs.reload(t.id).catch(() => {});
+  }
   connectDev();
   chrome.alarms.create('dev', { periodInMinutes: 0.5 });
 });

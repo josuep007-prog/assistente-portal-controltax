@@ -152,12 +152,26 @@ async def main():
         await pn.fill('#free-txt', 'o jorge vai sair de férias dia 16/11 por 20 dias'); await pn.click('#free-go'); await pg.wait_for_timeout(1500)
         sug = await pn.locator('#sugestao').inner_text()
         check('JORGE OLIVEIRA ALVES' in sug, 'o resumo já mostra o funcionário pelo primeiro nome')
-        await pn.click('#sug-go')
+        check('Aviso Prévio de Férias' in sug and 'Cálculo de Férias' in sug, 'férias: pergunta se é aviso ou cálculo')
+        await pn.click('[data-escolha="avisoFerias"]')
         for _ in range(20):
             await pg.wait_for_timeout(700)
             v = await leave()
             if v.get('selectedEmployee'): break
         check(v.get('selectedEmployee') == 'JORGE OLIVEIRA ALVES' and v.get('vacationStartDate') == '16/11/2026', 'abre Aviso de Férias com o funcionário e a data preenchidos')
+        await pn.click('.tab[data-view="inicio"]'); await pg.wait_for_timeout(300)
+        await pn.fill('#free-txt', 'o Ronaldo pediu demissão hoje'); await pn.click('#free-go'); await pg.wait_for_timeout(1500)
+        sug = await pn.locator('#sugestao').inner_text()
+        check('Aviso Prévio de Rescisão' in sug and 'Cálculo de Rescisão' in sug, 'rescisão: pergunta se é aviso ou cálculo')
+        await pn.click('[data-escolha="calculoRescisao"]')
+        for _ in range(20):
+            await pg.wait_for_timeout(700)
+            if 'termination-calculation/add' in await pg.evaluate("window.__ctPlatform.path()"): break
+        for _ in range(25):
+            await pg.wait_for_timeout(700)
+            v = await leave()
+            if 'RONALDO DE SOUZA' in v.values(): break
+        print('   ', await pg.evaluate("window.__ctPlatform.path()"), {k: x for k, x in v.items() if x}); check('termination-calculation/add' in await pg.evaluate("window.__ctPlatform.path()") and 'RONALDO DE SOUZA' in v.values(), 'abre o Cálculo de Rescisão escolhido, com o funcionário')
 
         # lista longa virtualizada: nomes do começo (A) e do meio (I) da lista
         print('\n[lista longa] funcionário fora das primeiras linhas da lista')

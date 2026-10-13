@@ -6,6 +6,7 @@
   window.__ctAssistente = true;
 
   const EXT_ORIGIN = new URL(chrome.runtime.getURL('')).origin;
+  const VERSAO = chrome.runtime.getManifest().version;   // versão desta cópia do script (fica velha se a extensão for atualizada sem recarregar a página)
   // Plataforma: na extensão real não existe (mundo isolado); no simulador, a página fornece rota, navegação e listas.
   const plat = window.__ctPlatform || {};
   const currentPath = () => (plat.path ? plat.path() : location.pathname);
@@ -250,7 +251,7 @@
     const r = routeInfo();
     const tipo = r.slug ? tipoBySlug(r.slug) : null;
     const empresa = companyName(); notaEmpresa(empresa);
-    post({ type: 'context', route: r, tipo, empresa, form: r.mode === 'form' ? snapshot(tipo) : null });
+    post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, form: r.mode === 'form' ? snapshot(tipo) : null });
   }
 
   /* ============ Revelar campos em etapas/abas ============ */
