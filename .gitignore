@@ -4,6 +4,3 @@ node_modules/
 *.pem
 .DS_Store
 __pycache__/
-# bibliotecas e fontes: recriadas por tools/baixar-libs.sh (versões e SHA-256 fixos)
-lib/
-fonts/
