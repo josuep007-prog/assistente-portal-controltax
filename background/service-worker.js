@@ -83,9 +83,19 @@ async function broadcast(msg) {
 
 /* ---------- Modo dev: recarrega sozinho quando você salva um arquivo ---------- */
 let ws = null;
+async function devServerOnline() {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 1000);
+  try { await fetch(`${DEV_HTTP}/regras.json?ping=${Date.now()}`, { cache: 'no-store', signal: ctl.signal }); return true; }
+  catch { return false; }
+  finally { clearTimeout(t); }
+}
 async function connectDev() {
   if (!(await devEnabled())) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  // Só abre o WebSocket se o servidor dev responder: uma tentativa recusada de WebSocket
+  // aparece como erro em chrome://extensions, já um fetch recusado fica silencioso.
+  if (!(await devServerOnline())) return;
   try {
     ws = new WebSocket(DEV_WS);
     ws.onopen = () => { chrome.action.setBadgeText({ text: 'DEV' }); chrome.action.setBadgeBackgroundColor({ color: '#3C659B' }); };
