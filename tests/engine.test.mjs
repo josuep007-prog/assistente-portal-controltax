@@ -92,4 +92,12 @@ t('assunto do afastamento: Atestado – Nome – data (dias), com alternativas',
   assert.equal(E.renderFirst(a, { ...v, diasTexto: '1 dia' }), 'Atestado médico – RONALDO DE SOUZA – 08/10/2026 (1 dia)');
 });
 
+t('primeiro nome: único → preenche; repetido → pergunta', () => {
+  const lista = ['JOAO DA SILVA', 'JOAO PEREIRA', 'RONALDO DE SOUZA'];
+  assert.equal(E.parseFreeText('férias do Ronaldo dia 16/11 por 20 dias', rules, { employees: lista, hoje }).campos.empregado.valor, 'RONALDO DE SOUZA');
+  assert.equal(E.parseFreeText('o João pediu demissão', rules, { employees: lista, hoje }).campos.empregado, undefined);
+  assert.deepEqual(E.employeeCandidates('o João pediu demissão', lista), ['JOAO DA SILVA', 'JOAO PEREIRA']);
+  assert.equal(E.parseFreeText('o João Pereira pediu demissão', rules, { employees: lista, hoje }).campos.empregado.valor, 'JOAO PEREIRA');
+});
+
 console.log(`\n${n} testes ok`);

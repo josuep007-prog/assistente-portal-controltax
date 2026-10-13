@@ -133,17 +133,18 @@
         case 'getContext': sendContext(); break;
         case 'navigate': await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
         case 'fill': {
-          const r = await fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {});
+          const r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {}));
           post({ type: 'fillResult', id: m.id, ...r });
           sendContext();
           break;
         }
         case 'attach': { const n = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n }); sendContext(); break; }
         case 'getOptions': {
-          const opts = await comboOptions(m.locator, m.force);
+          const opts = await comboLock(() => comboOptions(m.locator, m.force));
           post({ type: 'options', id: m.id, options: opts });
           break;
         }
+        case 'employees': post({ type: 'employees', id: m.id, names: await employeeNames() }); break;
         case 'highlight': flash(findField(m.locator)); break;
         case 'markMissing': markMissing(m.campos || []); break;
         case 'requestSubmit': { const b = submitButton(); if (b) b.click(); else toast('Abra o formulário da solicitação para enviar.'); break; }
@@ -248,7 +249,8 @@
     if (!port) return;
     const r = routeInfo();
     const tipo = r.slug ? tipoBySlug(r.slug) : null;
-    post({ type: 'context', route: r, tipo, empresa: companyName(), form: r.mode === 'form' ? snapshot(tipo) : null });
+    const empresa = companyName(); notaEmpresa(empresa);
+    post({ type: 'context', route: r, tipo, empresa, form: r.mode === 'form' ? snapshot(tipo) : null });
   }
 
   /* ============ Revelar campos em etapas/abas ============ */
@@ -324,6 +326,34 @@
     inp.blur();
   }
   const readOpts = (box) => [...(box || document).querySelectorAll('[role=option]')].map(o => ({ el: o, text: o.innerText.trim() })).filter(o => o.text);
+
+  /* Uma operação de combobox por vez (abrir duas listas ao mesmo tempo faz uma fechar a outra) */
+  let comboChain = Promise.resolve();
+  function comboLock(fn) { const r = comboChain.then(fn, fn); comboChain = r.catch(() => {}); return r; }
+
+  /* Lista completa de empregados pela mesma API que o portal usa (a lista da tela é virtualizada
+     e só mostra ~13 nomes por vez). O endereço é o que o próprio portal chamou nesta sessão. */
+  const employeesCache = new Map();
+  let empresaVista = '', empresaDesde = 0;
+  function notaEmpresa(e) { if (e && e !== empresaVista) { empresaVista = e; empresaDesde = performance.now(); } }
+  async function employeeNames() {
+    const empresa = companyName(); notaEmpresa(empresa);
+    // só vale uma chamada feita depois que esta empresa foi selecionada
+    const url = performance.getEntriesByType('resource')
+      .filter(e => e.startTime >= empresaDesde - 2000 && /\/api\/br-payroll-sr\/v1\/clients\/[^/]+\/employees/.test(e.name)).map(e => e.name).pop();
+    if (!url) return employeesCache.get(empresa) || [];
+    const key = url.replace(/[?#].*$/, '');
+    if (employeesCache.has(key)) return employeesCache.get(key);
+    try {
+      const r = await fetch(url, { credentials: 'include', headers: { accept: 'application/json' } });
+      if (!r.ok) return [];
+      const j = await r.json();
+      const arr = Array.isArray(j) ? j : (j.items || j.data || []);
+      const names = [...new Set(arr.map(e => String(e?.name || '').trim()).filter(Boolean))];
+      if (names.length) { employeesCache.set(key, names); employeesCache.set(empresa, names); }
+      return names;
+    } catch { return []; }
+  }
 
   async function comboOptions(loc, force) {
     const key = currentPath() + '|' + (loc.fc || loc.sel);

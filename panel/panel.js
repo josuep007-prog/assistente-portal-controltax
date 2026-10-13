@@ -95,18 +95,46 @@ function w(tipo) {
 }
 const tipoDef = (k) => E.resolveTipo(S.rules, k);
 
-async function loadEmpregados(tipo) {
+/* Empregados: lista do combobox desta tela; se vier vazia, a lista completa da empresa (API do portal).
+   Uma carga por vez por tipo, com novas tentativas enquanto o portal ainda carrega a lista. */
+const cargasEmpregados = new Map();
+const empregadosEmpresa = new Map();   // empresa → nomes (só na memória desta aba)
+function loadEmpregados(tipo) {
+  if (!cargasEmpregados.has(tipo)) cargasEmpregados.set(tipo, carregarEmpregados(tipo).finally(() => cargasEmpregados.delete(tipo)));
+  return cargasEmpregados.get(tipo);
+}
+async function carregarEmpregados(tipo) {
   const t = tipoDef(tipo); if (!t) return;
   const W = w(tipo);
   const combos = Object.entries(t.campos).filter(([, c]) => c.tipo === 'combo' && c.fc);
   const simples = !t.assistente;
+  const naTela = S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo;
   for (const [k, c] of combos) {
     if (!simples && c.fonte !== 'empregado') continue;
-    if (W.opcoes[k]?.length) continue;
-    const r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 6000);
-    if (r?.options?.length) { W.opcoes[k] = r.options; if (c.fonte === 'empregado') W.empregados = r.options; }
+    if (W.opcoes[k]?.length || !naTela) continue;
+    for (let tent = 0; tent < 3; tent++) {
+      const r = await request({ type: 'getOptions', locator: { fc: c.fc }, force: tent > 0 }, 6000);
+      if (r?.options?.length) { W.opcoes[k] = r.options; if (c.fonte === 'empregado') W.empregados = r.options; break; }
+      if (c.fonte !== 'empregado') break;
+      await new Promise(res => setTimeout(res, 700));
+    }
   }
+  if (t.campos.empregado && !W.empregados.length) W.empregados = await empregadosDaEmpresa();
+  if (W.empregados.length && S.ctx.empresa) empregadosEmpresa.set(S.ctx.empresa, [...new Set([...(empregadosEmpresa.get(S.ctx.empresa) || []), ...W.empregados])]);
   if (S.view === 'preencher') renderFieldsOnly();
+}
+async function empregadosDaEmpresa() {
+  const conhecidos = empregadosEmpresa.get(S.ctx.empresa);
+  if (conhecidos?.length) return conhecidos;
+  const r = await request({ type: 'employees' }, 8000);
+  if (r?.names?.length && S.ctx.empresa) empregadosEmpresa.set(S.ctx.empresa, r.names);
+  return r?.names || [];
+}
+/** Lista para entender um texto: a da solicitação, se já carregada; senão, a da empresa. */
+async function empregadosPara(tipo) {
+  const W = w(tipo);
+  if (W.empregados.length) return W.empregados;
+  return empregadosDaEmpresa();
 }
 
 /* =================== Navegação entre abas =================== */
@@ -201,21 +229,31 @@ function renderInicio() {
 /* Texto livre: o pedido é entendido pelo que foi escrito, não pela solicitação que está aberta.
    Só preenche a solicitação aberta quando o texto é sobre ela (ou o cliente escolhe isso). */
 const mesmaFamilia = (a, b) => a === b || FAMILIAS.some(f => f.includes(a) && f.includes(b));
-function entenderTexto(texto, { origem = 'inicio' } = {}) {
+async function entenderTexto(texto, { origem = 'inicio' } = {}) {
   const tipoAberto = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
   const detectado = E.suggestTipoByText(texto, S.rules, null)?.tipo || null;
   // texto sobre a própria solicitação aberta (ou sem tipo claro, escrito dentro dela) → preenche ali
   if (tipoAberto && ((detectado && mesmaFamilia(detectado, tipoAberto)) || (!detectado && origem === 'preencher'))) {
+    await loadEmpregados(tipoAberto);
     const r = E.parseFreeText(texto, S.rules, { employees: w(tipoAberto).empregados, tipoAtual: tipoAberto });
+    anotarCandidatos(tipoAberto, texto, r.campos);
     $('#free-sug') && ($('#free-sug').innerHTML = '');
     aplicarCampos(tipoAberto, r.campos, 'sua descrição');
     return;
   }
   const destino = detectado || tipoAberto || 'geral';  // sem tipo claro: propõe a aberta, mas só preenche se o cliente confirmar
-  const r = E.parseFreeText(texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino });
+  const r = E.parseFreeText(texto, S.rules, { employees: await empregadosPara(destino), tipoAtual: destino });
   S.sugestao = { texto, tipoAberto, analise: { tipoSugerido: destino, campos: r.campos, documento: { nome: 'seu pedido' } } };
   if (origem === 'preencher' && $('#free-sug')) renderSugestaoTexto($('#free-sug'), S.sugestao);
   else if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+}
+/** Primeiro nome que serve para mais de um funcionário: guarda as opções para o cliente escolher. */
+function anotarCandidatos(tipo, texto, campos) {
+  const W = w(tipo);
+  W.candidatos = null;
+  if (campos.empregado || !tipoDef(tipo)?.campos?.empregado) return;
+  const c = E.employeeCandidates(texto, W.empregados);
+  if (c.length > 1) W.candidatos = c;
 }
 function aplicarCampos(tipo, campos, fonte) {
   const W = w(tipo); const t = tipoDef(tipo);
@@ -448,6 +486,7 @@ async function processItem(item, tipoAtual) {
   try {
     const r = await readFile(item.file, onProgress, { ocr: S.prefs.ocrAutomatico });
     item.texto = r.texto; item.metodo = r.metodo; item.tabela = r.tabela;
+    if (tipoAtual && !w(tipoAtual).empregados.length) await loadEmpregados(tipoAtual);
     const empregados = tipoAtual ? w(tipoAtual).empregados : [];
     item.analise = E.analyzeText(r.texto || item.nome, S.rules, { employees: empregados, tipoAtual });
     if (r.tabela && (tipoAtual === 'rubricas' || !tipoAtual)) {
@@ -529,7 +568,11 @@ function renderSugestaoTexto(el, s) {
   const abrir = async (destino) => {
     S.sugestao = null; el.innerHTML = '';
     await openTipo(destino, { manter: true });
-    setTimeout(async () => { await loadEmpregados(destino); const r = E.parseFreeText(s.texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino }); aplicarCampos(destino, r.campos, 'sua descrição'); }, 900);
+    for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === destino); k++) await esperar(200);
+    await loadEmpregados(destino);
+    const r = E.parseFreeText(s.texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino });
+    anotarCandidatos(destino, s.texto, r.campos);
+    aplicarCampos(destino, r.campos, 'sua descrição');
   };
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; el.innerHTML = ''; renderSugestao(); });
   $('#sug-go').addEventListener('click', () => abrir(tipo));
@@ -791,6 +834,7 @@ function renderFieldsOnly() {
       <label for="f-${k}">${esc(c.rotulo)}${c.obrigatorio || reqCond.has(k) ? '<span class="req">*</span>' : ''}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${c.somenteAssistente ? ' <span class="chip">só no texto</span>' : ''}
       ${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : portal?.valor ? '<span class="src">no portal</span>' : ''}</label>
       ${fieldInput(k, c, cur || (portal?.valor ? { valor: portal.valor, fonte: 'portal', conf: 1 } : null), W)}
+      ${k === 'empregado' && W.candidatos?.length && !cur?.valor && !portal?.valor ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
     </div>`;
   };
   const obs = W.valores.observacoes?.valor || '';
@@ -816,6 +860,11 @@ function renderFieldsOnly() {
     onInput();
   }));
   $('#f-obs')?.addEventListener('input', (e) => { W.valores.observacoes = { valor: e.target.value, conf: 1, fonte: 'você' }; onInput(); });
+  el.querySelectorAll('[data-cand]').forEach(b => b.addEventListener('click', () => {
+    W.valores.empregado = { valor: b.dataset.cand, conf: 1, fonte: 'você' }; W.editados.add('empregado'); W.candidatos = null;
+    gerarTextos(tipo); renderFieldsOnly(); updateChecks();
+    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { silencioso: true });
+  }));
   $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; savePrefs(); gerarTextos(tipo); syncGenerated(); });
 }
 function syncGenerated() {

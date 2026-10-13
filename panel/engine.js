@@ -119,6 +119,12 @@ export function findEmployeeInText(text, employees) {
   return firsts.length === 1 ? { option: firsts[0], score: 0.7 } : null;
 }
 
+/** Funcionários cujo primeiro nome aparece no texto (para perguntar quando há mais de um). */
+export function employeeCandidates(text, employees) {
+  const T = ' ' + norm(text) + ' ';
+  return (employees || []).filter(e => { const f = norm(e).split(' ')[0]; return f.length > 2 && T.includes(' ' + f + ' '); });
+}
+
 /* ---------------- Documentos ---------------- */
 export function classifyDocument(text, rules) {
   const T = norm(text);

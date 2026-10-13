@@ -143,6 +143,20 @@ async def main():
         check('Preencher em Afastamento de Empregado' in sug, 'texto sem tipo claro: propõe a solicitação aberta e espera confirmar')
         await pn.click('#sug-go'); await pg.wait_for_timeout(2500)
         check(await pn.evaluate("document.querySelector('#f-dias')?.value") == '5', 'confirmado: completa a solicitação aberta')
+
+        # primeiro nome, sem nenhuma solicitação aberta
+        print('\n[primeiro nome] pedido escrito no Início sem formulário aberto')
+        await pg.click('.p-menu-i[data-s="general-requests"]'); await pg.wait_for_timeout(1200)
+        await pn.click('.tab[data-view="inicio"]'); await pg.wait_for_timeout(300)
+        await pn.fill('#free-txt', 'o jorge vai sair de férias dia 16/11 por 20 dias'); await pn.click('#free-go'); await pg.wait_for_timeout(1500)
+        sug = await pn.locator('#sugestao').inner_text()
+        check('JORGE OLIVEIRA ALVES' in sug, 'o resumo já mostra o funcionário pelo primeiro nome')
+        await pn.click('#sug-go')
+        for _ in range(20):
+            await pg.wait_for_timeout(700)
+            v = await leave()
+            if v.get('selectedEmployee'): break
+        check(v.get('selectedEmployee') == 'JORGE OLIVEIRA ALVES' and v.get('vacationStartDate') == '16/11/2026', 'abre Aviso de Férias com o funcionário e a data preenchidos')
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S)')
