@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.13-1",
+  "versao": "2026.10.13-3",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -28,7 +28,11 @@
       "calculo": 5
     },
     "diaLimiteRubricas": null,
-    "intervaloAtualizacaoRegrasMin": 30
+    "intervaloAtualizacaoRegrasMin": 30,
+    "experienciaDias": [
+      45,
+      90
+    ]
   },
   "feriados": [
     "2026-01-01",
@@ -581,6 +585,15 @@
           ],
           "ate15": "Doença profissional período igual ou inferior a 15 dias",
           "acima15": "Doença profissional superior a 15 dias"
+        },
+        {
+          "palavras": [
+            "por estar acompanhando",
+            "acompanhando o paciente",
+            "acompanhar paciente",
+            "acompanhante"
+          ],
+          "nenhum": true
         },
         {
           "documentos": [
@@ -2062,7 +2075,13 @@
         "medico",
         "cid",
         "paciente",
-        "consulta"
+        "consulta",
+        "atestamos",
+        "declaro",
+        "afastado",
+        "afastada",
+        "necessita",
+        "dia(s)"
       ],
       "minPalavras": 2,
       "extrair": {
@@ -2084,7 +2103,53 @@
       "valores": {
         "tipoAfastamentoSeDiasMaiorQue15": "Doença período superior a 15 dias"
       },
-      "rotuloAssunto": "Atestado médico"
+      "rotuloAssunto": "Atestado médico",
+      "leitor": "atestado",
+      "avisos": [
+        {
+          "id": "acompanhante",
+          "palavras": [
+            "por estar acompanhando",
+            "acompanhando o paciente",
+            "acompanhar paciente",
+            "acompanhante",
+            "acompanhamento de familiar",
+            "acompanhar familiar"
+          ],
+          "cid": [
+            "Z76.3"
+          ],
+          "nivel": "atencao",
+          "mensagem": "Atestado de acompanhante: o funcionário acompanhou outra pessoa (não é doença dele). Confirme com o escritório como lançar — deixei o tipo de afastamento para você escolher."
+        },
+        {
+          "id": "escola",
+          "palavras": [
+            "afastamento da escola",
+            "afastamento da escola",
+            "atividades escolares",
+            "frequência escolar",
+            "frequencia escolar",
+            "da escola"
+          ],
+          "nivel": "atencao",
+          "mensagem": "Este atestado fala em afastamento da escola, não do trabalho. Confira se é o documento do funcionário (às vezes é de um filho ou de outro curso)."
+        },
+        {
+          "id": "comparecimento",
+          "palavras": [
+            "declaração de comparecimento",
+            "declaracao de comparecimento",
+            "compareceu",
+            "esteve presente",
+            "esteve em consulta",
+            "permaneceu nesta unidade"
+          ],
+          "semCampo": "dias",
+          "nivel": "info",
+          "mensagem": "Parece uma declaração de comparecimento (horas), sem dias de afastamento. Se for isso, ela serve para justificar as horas: informe o horário na descrição."
+        }
+      ]
     },
     {
       "id": "cat",
@@ -2395,6 +2460,88 @@
     "envioComPendencias": "Antes de enviar, veja os pontos abaixo. Você pode corrigir agora ou enviar assim mesmo.",
     "abaErrada": "Isso parece ser um pedido de {tipo}. Usando a solicitação específica, as informações chegam completas e o atendimento é mais rápido.",
     "semEmpregado": "Não encontrei esse nome na lista de funcionários da empresa. Selecione manualmente no campo Empregado.",
-    "privacidade": "Os arquivos são lidos aqui no seu computador. Nada é enviado para fora do portal."
-  }
+    "privacidade": "Os arquivos são lidos aqui no seu computador. Nada é enviado para fora do portal.",
+    "admissaoInicio": "Olá! Para fazermos a sua admissão, envie por favor:",
+    "admissaoFim": "Pode mandar foto bem legível ou PDF. Qualquer dúvida, é só chamar. Obrigado!"
+  },
+  "avisosEscritorio": [],
+  "empresas": {},
+  "faq": [
+    {
+      "pergunta": "Quem conclui a solicitação no portal?",
+      "palavras": [
+        "concluir",
+        "finalizar",
+        "encerrar",
+        "trâmite"
+      ],
+      "resposta": "Você. Quando o escritório responde, leia o último trâmite: se estiver tudo certo, conclua a solicitação; se faltar algo, responda no próprio trâmite. Solicitação aberta sem resposta fica como pendente."
+    },
+    {
+      "pergunta": "Como mando vários atestados de uma vez?",
+      "palavras": [
+        "vários",
+        "varios",
+        "lote",
+        "muitos",
+        "atestados"
+      ],
+      "resposta": "Arraste todos juntos no Assistente. Eu leio cada um e abro uma solicitação de afastamento por atestado, uma de cada vez: você confere, clica em ADICIONAR e eu abro a próxima."
+    },
+    {
+      "pergunta": "Posso mandar foto do atestado?",
+      "palavras": [
+        "foto",
+        "print",
+        "imagem",
+        "celular",
+        "escaneado",
+        "colar"
+      ],
+      "resposta": "Pode. Fotos, prints (cole com Ctrl+V) e PDFs escaneados são lidos no seu computador. Foto reta, com boa luz e sem cortes ajuda. Letra à mão nem sempre é lida: os campos que eu não encontrar ficam marcados para você preencher."
+    },
+    {
+      "pergunta": "Meus documentos saem do meu computador?",
+      "palavras": [
+        "privacidade",
+        "segurança",
+        "lgpd",
+        "dados",
+        "enviar"
+      ],
+      "resposta": "Não. O Assistente lê os arquivos no próprio computador e só os anexa à solicitação no portal. Nada é enviado para outro lugar."
+    },
+    {
+      "pergunta": "Atestado de acompanhante (filho, familiar) é afastamento?",
+      "palavras": [
+        "acompanhante",
+        "acompanhar",
+        "filho",
+        "familiar",
+        "acompanhando"
+      ],
+      "resposta": "Não é doença do funcionário. Envie mesmo assim, mas confirme com o escritório como será lançado — eu deixo o tipo de afastamento para você escolher e aviso na conferência."
+    },
+    {
+      "pergunta": "Qual a diferença entre aviso e cálculo de férias?",
+      "palavras": [
+        "aviso",
+        "cálculo",
+        "calculo",
+        "férias",
+        "ferias"
+      ],
+      "resposta": "O aviso comunica as datas e deve ser dado com 30 dias de antecedência. O cálculo é o recibo para pagar, que precisa ser pago até 2 dias antes do início das férias — mande a solicitação de cálculo com antecedência."
+    },
+    {
+      "pergunta": "Até quando posso mandar um atestado?",
+      "palavras": [
+        "prazo",
+        "atestado",
+        "atrasado",
+        "antigo"
+      ],
+      "resposta": "Assim que receber. Atestados antigos podem cair numa folha já fechada e gerar ajustes no mês seguinte."
+    }
+  ]
 }

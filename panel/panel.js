@@ -12,9 +12,12 @@ const S = {
   sugestao: null,        // documento lido fora de formulário
   pend: null, pendLoading: false,
   ultimoEnvio: null,
-  ferramenta: 'ferias'
+  ferramenta: 'ferias',
+  rulesBase: null,       // regras sem os ajustes da empresa
+  historico: [],         // cópia em memória do histórico (para recentes e pedidos repetidos)
+  equipe: new Map()      // empresa → [{ nome, admissao, ativo }] (datas de admissão para os alertas de experiência)
 };
-const DEFAULT_PREFS = { preencherAoLer: true, incluirCid: false, ocrAutomatico: true, usarIa: true, introVista: false };
+const DEFAULT_PREFS = { preencherAoLer: true, incluirCid: false, ocrAutomatico: true, usarIa: true, introVista: false, tamanhoTexto: 'normal', avisosLidos: [] };
 let reqId = 0; const waiters = new Map();
 
 /* =================== Utilidades de UI =================== */
@@ -61,7 +64,8 @@ function onPage(m) {
 /* =================== Regras e preferências =================== */
 async function loadRules() {
   const pack = await chrome.runtime.sendMessage({ type: 'getRules' });
-  S.rules = pack.rules; S.meta = pack;
+  S.rulesBase = pack.rules; S.meta = pack;
+  S.rules = regrasDaEmpresa(S.rulesBase, S.ctx.empresa);
   $('#rules-ver').textContent = `regras ${pack.versao}${pack.origem === 'dev' ? ' · dev' : ''}`;
 }
 async function loadPrefs() {
@@ -69,6 +73,19 @@ async function loadPrefs() {
   S.prefs = { ...DEFAULT_PREFS, ...(prefs || {}) };
 }
 const savePrefs = () => chrome.storage.local.set({ prefs: S.prefs });
+/** Ajustes por empresa (regras.empresas: { "trecho do nome": { config: {…}, avisos: […] } }). */
+function regrasDaEmpresa(base, empresa) {
+  if (!base) return base;
+  const E1 = E.norm(empresa);
+  const ent = E1 && Object.entries(base.empresas || {}).find(([k]) => k && E1.includes(E.norm(k)));
+  if (!ent) return base;
+  const aj = ent[1] || {};
+  return { ...base, config: { ...(base.config || {}), ...(aj.config || {}) }, avisosEscritorio: [...(base.avisosEscritorio || []), ...(aj.avisos || [])], empresaAjustada: ent[0] };
+}
+function aplicarTamanhoTexto() {
+  const z = { normal: '', grande: '1.12', maior: '1.25' }[S.prefs.tamanhoTexto] || '';
+  document.documentElement.style.zoom = z;
+}
 chrome.runtime.onMessage.addListener((m) => { if (m.type === 'rulesUpdated') { loadRules().then(render); } });
 
 /* =================== Contexto da página =================== */
@@ -76,12 +93,20 @@ let lastKey = '';
 function onContext(m) {
   avisoVersao(m.versao);
   const prevTipo = S.ctx.tipo, prevMode = S.ctx.route?.mode;
+  const empresaAntes = S.ctx.empresa;
   S.ctx = { route: m.route || {}, tipo: m.tipo, empresa: m.empresa || '', form: m.form };
   $('#empresa').textContent = S.ctx.empresa || 'Portal do Cliente';
+  if (S.ctx.empresa !== empresaAntes && S.rulesBase) { S.rules = regrasDaEmpresa(S.rulesBase, S.ctx.empresa); if (S.view === 'inicio') renderAvisosInicio(); }
   const key = `${m.route?.path}|${m.tipo}`;
   if (m.route?.mode === 'form' && m.tipo) {
-    w(m.tipo);
-    if (key !== lastKey) { loadEmpregados(m.tipo); if (S.view === 'inicio' && !S.sugestao) setView('preencher'); }
+    const W0 = w(m.tipo);
+    if (key !== lastKey) {
+      // entrou num formulário novo com dados de uma tentativa anterior (saiu sem enviar)? oferece continuar
+      const peloAssistente = S.abrindo === m.tipo; S.abrindo = null;
+      W0.entrouComDados = !peloAssistente && (Object.values(W0.valores).some(v => v?.valor && v.fonte !== 'gerado') || W0.arquivos.some(a => !a.removido));
+      if (!peloAssistente) W0.rascunhoVisto = false;
+      loadEmpregados(m.tipo); if (S.view === 'inicio' && !S.sugestao) setView('preencher');
+    }
   }
   lastKey = key;
   $('#dot-preencher').hidden = !(m.route?.mode === 'form');
@@ -153,6 +178,7 @@ async function empregadosDaEmpresa() {
   if (conhecidos?.length) return conhecidos;
   const r = await request({ type: 'employees' }, 8000);
   if (r?.names?.length && S.ctx.empresa) empregadosEmpresa.set(S.ctx.empresa, r.names);
+  if (r?.detalhes?.length && S.ctx.empresa) guardarEquipe(S.ctx.empresa, r.detalhes);
   return r?.names || [];
 }
 /** Lista para entender um texto: a da solicitação, se já carregada; senão, a da empresa. */
@@ -205,11 +231,13 @@ function renderInicio() {
       </ol>
       <button class="btn btn-primary btn-sm" id="intro-ok">Entendi</button>
     </div>` : ''}
+    <div id="avisos-esc"></div>
     <div>
       <p class="hello">O que você precisa fazer?</p>
       <p class="lead">${esc(R.escritorio?.saudacao || '')}</p>
     </div>
     <div id="lote"></div>
+    <div id="experiencia"></div>
     <div id="ctx-banner"></div>
     <div class="free card">
       <label for="free-txt" class="free-l">${icon('chat', 'ic-sm')} Escreva com suas palavras</label>
@@ -217,13 +245,15 @@ function renderInicio() {
       <div class="free-a"><small class="muted">Eu entendo o pedido e abro a solicitação certa.</small><button class="btn btn-primary btn-sm" id="free-go">Continuar ${icon('arrow', 'ic-sm')}</button></div>
     </div>
     <div id="sugestao"></div>
-    <div class="search">${icon('search')}<input id="q" type="search" placeholder="Ou procure: atestado, férias, demissão…" aria-label="Buscar o que você precisa"></div>
+    <div class="search">${icon('search')}<input id="q" type="search" placeholder="Ou procure: atestado, férias, uma dúvida…" aria-label="Buscar o que você precisa ou uma dúvida"></div>
+    <div id="faq"></div>
     <div class="intents" id="intents"></div>
+    <div id="repetir"></div>
     <div id="modelos-ini"></div>
     <h2 class="sec">Comece por um documento</h2>
     <div class="drop" id="drop-main" role="button" tabindex="0">
       ${icon('upload', 'ic-lg')}
-      <b>Arraste um arquivo ou clique para escolher</b>
+      <b>Arraste um arquivo, clique para escolher ou cole um print (Ctrl+V)</b>
       <small>Atestado, pedido de demissão, ficha de admissão, CAT, planilha de horas… Eu descubro qual solicitação abrir e preencho.</small>
     </div>
     ${links.length ? `<h2 class="sec">Aprenda a usar</h2><div class="list">${links.map(l => `<a class="li" href="${esc(l.url)}" target="_blank" rel="noopener">${icon('external')}<div class="main"><b>${esc(l.rotulo)}</b></div></a>`).join('')}</div>` : ''}
@@ -237,7 +267,7 @@ function renderInicio() {
     $('#intents').querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => openTipo(b.dataset.tipo)));
   };
   draw(R.intencoes || []);
-  $('#q').addEventListener('input', (e) => draw(E.searchIntents(e.target.value, R)));
+  $('#q').addEventListener('input', (e) => { draw(E.searchIntents(e.target.value, R)); renderFaq(e.target.value); });
   const closeIntro = () => { S.prefs.introVista = true; savePrefs(); $('#intro')?.remove(); };
   $('#intro-x')?.addEventListener('click', closeIntro); $('#intro-ok')?.addEventListener('click', closeIntro);
   const go = () => { const t = $('#free-txt').value.trim(); if (t) entenderTexto(t); };
@@ -248,6 +278,7 @@ function renderInicio() {
   renderSugestao();
   renderModelosInicio();
   renderLote();
+  renderAvisosInicio(); renderExperiencia(); renderRepetir();
 }
 
 /* ---------- Texto livre ---------- */
@@ -274,6 +305,7 @@ async function entenderTexto(texto, { origem = 'inicio' } = {}) {
   }
   // texto sobre a própria solicitação aberta (ou sem tipo claro, escrito dentro dela) → preenche ali
   if (tipoAberto && ((detectado && mesmaFamilia(detectado, tipoAberto)) || (!detectado && origem === 'preencher'))) {
+    comecarDoZeroSeAbandonado(tipoAberto);
     await loadEmpregados(tipoAberto);
     const r = E.parseFreeText(texto, S.rules, { employees: w(tipoAberto).empregados, tipoAtual: tipoAberto });
     anotarCandidatos(tipoAberto, texto, r.campos);
@@ -321,6 +353,7 @@ async function openTipo(tipo, { manter = false } = {}) {
   const t = S.rules.tipos[tipo]; if (!t) return;
   if (!manter) S.sugestao = null;
   if (standalone) return;
+  S.abrindo = tipo;
   await request({ type: 'navigate', slug: t.slug, add: true }, 12000);
   w(tipo);
   setView('preencher');
@@ -353,6 +386,7 @@ async function handleFiles(files, origem) {
       await processItem(item, null);
       renderSugestao();
     } else {
+      comecarDoZeroSeAbandonado(S.ctx.tipo);
       const W = w(S.ctx.tipo);
       W.arquivos.push(item);
       if (S.view !== 'preencher') setView('preencher'); else renderFilesOnly();
@@ -379,6 +413,7 @@ async function handleVarios(files, origem) {
   const tipoForm = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
   if (tipoForm) {
     // um pedido só (ou nada reconhecido): tudo vai para a solicitação aberta
+    comecarDoZeroSeAbandonado(tipoForm);
     const W = w(tipoForm);
     for (const it of itens) {
       W.arquivos.push(it);
@@ -525,7 +560,7 @@ async function processItem(item, tipoAtual) {
   };
   try {
     const r = await readFile(item.file, onProgress, { ocr: S.prefs.ocrAutomatico });
-    item.texto = r.texto; item.metodo = r.metodo; item.tabela = r.tabela;
+    item.texto = r.texto; item.metodo = r.metodo; item.tabela = r.tabela; item.confianca = r.confianca ?? null; item.rotacao = r.rotacao || 0;
     if (tipoAtual && !w(tipoAtual).empregados.length) await loadEmpregados(tipoAtual);
     const empregados = tipoAtual ? w(tipoAtual).empregados : [];
     item.analise = E.analyzeText(r.texto || item.nome, S.rules, { employees: empregados, tipoAtual });
@@ -545,7 +580,8 @@ async function processItem(item, tipoAtual) {
       for (const [k, v] of Object.entries(extra)) item.analise.campos[k] = { valor: v, conf: 0.55, fonte: 'IA do Chrome (confira)' };
     }
     item.status = r.metodo === 'nao-suportado' ? 'nao-lido' : 'ok';
-    item.etapa = r.metodo === 'nao-suportado' ? 'Formato não lido — será só anexado' : `${item.analise.documento?.nome || 'Documento'} · ${r.metodo === 'ocr' ? 'lido por OCR' : 'lido'}${item.resumo ? ' · ' + item.resumo : ''}`;
+    const dificil = r.metodo === 'ocr' && item.confianca != null && item.confianca < 60;
+    item.etapa = r.metodo === 'nao-suportado' ? 'Formato não lido — será só anexado' : `${item.analise.documento?.nome || 'Documento'} · ${r.metodo === 'ocr' ? (dificil ? 'leitura difícil, confira' : 'lido por OCR') : 'lido'}${item.rotacao ? ' (imagem girada)' : ''}${item.resumo ? ' · ' + item.resumo : ''}`;
   } catch (err) {
     console.error(err);
     item.status = 'erro'; item.etapa = 'Não consegui ler este arquivo. Ele ainda pode ser anexado.';
@@ -657,6 +693,11 @@ function applyAnalysis(tipo, item, opts = {}) {
     const cur = W.valores[k];
     if (!cur || (cur.conf ?? 0) <= c.conf) W.valores[k] = { valor: c.valor, conf: c.conf, fonte: c.fonte };
   }
+  // nome lido no documento e homônimos (o cliente escolhe)
+  if (!item.outroTipo && t.campos.empregado) {
+    if (item.analise?.paciente) W.pacienteLido = item.analise.paciente;
+    if (item.analise?.candidatos?.length && !W.valores.empregado?.valor) W.candidatos = item.analise.candidatos;
+  }
   // empregado com a lista do portal
   if (t.campos.empregado && W.valores.empregado && W.empregados.length) {
     const m = E.bestMatch(W.valores.empregado.valor, W.empregados, 0.7);
@@ -733,6 +774,7 @@ function gerarTextos(tipo, force = false) {
   if (t.campos.descricao && t.descricao?.length && (force || !W.editados.has('descricao'))) {
     const d = E.renderTemplate(t.descricao, vals); if (d) W.valores.descricao = { valor: d, conf: 0.9, fonte: 'gerado' };
   }
+  salvarRascunho(tipo, S.ctx.empresa);
 }
 
 /* =================== PREENCHER =================== */
@@ -759,7 +801,9 @@ function renderPreencher() {
         <div class="progress" style="margin-top:10px"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>
       </div>
     </div>
-    <div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Eu leio, preencho e anexo.</small></div></div>
+    <div id="modo-seguro"></div>
+    <div id="rascunho"></div>
+    <div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Ou cole um print (Ctrl+V). Eu leio, preencho e anexo.</small></div></div>
     <div class="free mini">
       <label for="free-form" class="sr">Escreva o pedido com suas palavras</label>
       <input id="free-form" class="input" placeholder="Ou escreva: ex. ${esc(exemploTexto(tipo))}" autocomplete="off">
@@ -793,12 +837,13 @@ function renderPreencher() {
   $('#btn-copy').addEventListener('click', () => copiarResumo(tipo));
   $('#btn-model').addEventListener('click', () => salvarModeloUI(tipo));
   $('#btn-regen').addEventListener('click', () => { const W = w(tipo); W.editados.delete('assunto'); W.editados.delete('descricao'); gerarTextos(tipo, true); renderFieldsOnly(); updateChecks(); });
-  $('#btn-clear').addEventListener('click', () => { S.work[tipo] = null; w(tipo); loadEmpregados(tipo); render(); });
+  $('#btn-clear').addEventListener('click', () => { S.work[tipo] = null; w(tipo).rascunhoVisto = true; apagarRascunho(tipo); loadEmpregados(tipo); render(); });
   const ff = () => { const v = $('#free-form').value.trim(); if (v) { entenderTexto(v, { origem: 'preencher' }); } };
   $('#free-form-go').addEventListener('click', ff);
   $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
+  renderModoSeguro(tipo); ofertaRascunho(tipo);
 }
 function exemploTexto(tipo) {
   return ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
@@ -892,6 +937,8 @@ function renderFieldsOnly() {
       ${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : portal?.valor ? '<span class="src">no portal</span>' : ''}</label>
       ${fieldInput(k, c, cur || (portal?.valor ? { valor: portal.valor, fonte: 'portal', conf: 1 } : null), W)}
       ${k === 'empregado' && W.candidatos?.length && !cur?.valor && !portal?.valor ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
+      ${k === 'empregado' && W.pacienteLido && !cur?.valor && !portal?.valor && !W.candidatos?.length ? `<small class="hint">No documento: “${esc(W.pacienteLido)}” — não achei esse nome na lista. Escolha o funcionário.</small>` : ''}
+      ${k === 'empregado' && !cur?.valor && !portal?.valor ? recentesHtml(tipo) : ''}
     </div>`;
   };
   const obs = W.valores.observacoes?.valor || '';
@@ -950,6 +997,18 @@ function calcBox(tipo) {
 function refreshCalc() { const el = $('#calc'); if (el) el.outerHTML = calcBox(S.ctx.tipo); }
 
 let lastChecks = [];
+/** Avisos que não vêm das regras do pedido: o que o leitor viu nos documentos, leitura difícil, pedido repetido. */
+function avisosExtras(tipo, vals) {
+  const W = w(tipo); const out = [];
+  const docs = W.arquivos.filter(a => !a.removido && !a.outroTipo && a.status === 'ok');
+  for (const a of docs) {
+    for (const av of a.analise?.avisos || []) out.push({ nivel: av.nivel, grupo: 'Documento', mensagem: docs.length > 1 ? `${a.nome}: ${av.mensagem}` : av.mensagem });
+    if (a.metodo === 'ocr' && a.confianca != null && a.confianca < 60) out.push({ nivel: 'info', grupo: 'Documento', mensagem: `A leitura de “${a.nome}” foi difícil (letra à mão ou foto). Confira os campos — os duvidosos ficam em amarelo.` });
+  }
+  const dup = duplicado(tipo, vals);
+  if (dup) out.push({ nivel: 'atencao', grupo: 'Pedido repetido?', mensagem: dup });
+  return out;
+}
 /** Campos que não existem nesta tela ou estão bloqueados pelo portal não contam como obrigatórios. */
 function camposAusentes(form) {
   return Object.entries(form?.campos || {}).filter(([, v]) => !v.existe || v.disabled).map(([k]) => k);
@@ -993,7 +1052,7 @@ function updateChecks() {
   const el = $('#checks'); if (!el || !S.ctx.tipo) return;
   const tipo = S.ctx.tipo;
   const vals = valoresParaChecar(tipo);
-  const list = E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(S.ctx.form) });
+  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(S.ctx.form) }), ...avisosExtras(tipo, vals)];
   lastChecks = list;
   marcarFaltando(tipo, list);
   const c = E.summarizeChecks(list);
@@ -1018,6 +1077,7 @@ function updateChecks() {
 async function fillPortal(tipo, { silencioso = false } = {}) {
   const W = w(tipo); const t = tipoDef(tipo);
   gerarTextos(tipo);
+  if (silencioso && telaDiferente(tipo) && !W.forcarPreenchimento) { renderModoSeguro(tipo); return; }
   const values = {};
   for (const [k, v] of Object.entries(W.valores)) if (t.campos[k] && !t.campos[k].somenteAssistente && v?.valor) values[k] = v.valor;
   // padrões das regras (ex.: país Brasil) só se vazio no portal
@@ -1054,7 +1114,7 @@ function onSubmitAttempt(m) {
   const pediu = S.pedirResumo; S.pedirResumo = false;
   if (!tipo) { send({ type: 'confirmSubmit' }); return; }
   const vals = valoresParaChecar(tipo);
-  const list = E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }).filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
+  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
   if (!list.length && !pediu) { S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
   const t = tipoDef(tipo);
@@ -1136,12 +1196,229 @@ async function onFormClosed() {
   if (S.ultimoEnvio && Date.now() - S.ultimoEnvio.quando < 60000) {
     const tipo = S.ultimoEnvio.tipo; enviadoTipo = tipo;
     await salvarHistorico(tipo, 'enviado');
+    await apagarRascunho(tipo);
     S.work[tipo] = null; S.ultimoEnvio = null;
     if (!S.lote) toast('Solicitação enviada. Os próximos prazos estão na Agenda.');
     if (S.view === 'preencher') render();
   }
   loteAoFecharFormulario(enviadoTipo);
   lastMissingKey = '';
+}
+
+/* =================== Facilidades (1.3) =================== */
+async function carregarHistorico() { const { historico = [] } = await chrome.storage.local.get('historico'); S.historico = historico; return historico; }
+const nomeCurto = (n) => { const p = String(n).trim().split(/\s+/); const t = (x) => x.charAt(0) + x.slice(1).toLowerCase(); return p.length > 1 ? `${t(p[0])} ${t(p[p.length - 1])}` : t(p[0] || ''); };
+
+/** Funcionários usados por último nesta empresa (atalho quando o campo está vazio). */
+function recentesHtml(tipo) {
+  const W = w(tipo); const lista = [];
+  for (const h of S.historico) {
+    if (h.empresa !== S.ctx.empresa) continue;
+    const n = h.valores?.empregado; if (!n || lista.includes(n)) continue;
+    if (W.empregados.length && !W.empregados.includes(n)) continue;
+    lista.push(n); if (lista.length >= 4) break;
+  }
+  if (!lista.length || W.candidatos?.length) return '';
+  return `<div class="cands recentes"><small>Recentes:</small>${lista.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}" title="${esc(n)}">${esc(nomeCurto(n))}</button>`).join('')}</div>`;
+}
+
+/** Mesmo pedido já enviado por este computador (mesmo funcionário e mesma data). */
+const CHAVE_REPETIDO = { afastamento: 'dataAfastamento', avisoFerias: 'inicioGozo', calculoFerias: 'inicioGozo', avisoRescisao: 'dataAviso', calculoRescisao: 'dataDemissao', rubricas: 'competencia' };
+function duplicado(tipo, vals) {
+  const k = CHAVE_REPETIDO[tipo]; const quem = vals.empregado || '';
+  if (!k || !vals[k] || (tipo !== 'rubricas' && !quem)) return null;
+  const h = S.historico.find(x => x.status === 'enviado' && x.empresa === S.ctx.empresa && x.tipo === tipo && (x.valores?.empregado || '') === quem && x.valores?.[k] === vals[k] && Date.now() - x.quando < 180 * 864e5);
+  return h ? `Uma solicitação igual já foi enviada em ${new Date(h.quando).toLocaleDateString('pt-BR')} (“${h.resumo}”). Confira se esta não é repetida.` : null;
+}
+
+/* ---------- Rascunho: o que foi preenchido fica guardado neste computador por 7 dias ---------- */
+const RASCUNHO_DIAS = 7;
+const chaveRascunho = (tipo) => `${S.ctx.empresa}|${tipo}`;
+const salvarRascunho = debounce(async (tipo, empresa) => {
+  if (!empresa || !tipo || standalone) return;
+  const W = S.work[tipo]; if (!W) return;
+  const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
+  const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
+  const chave = `${empresa}|${tipo}`;
+  if (!Object.keys(valores).length) delete rascunhos[chave];
+  else rascunhos[chave] = { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
+  for (const [k, r] of Object.entries(rascunhos)) if (Date.now() - r.quando > RASCUNHO_DIAS * 864e5) delete rascunhos[k];
+  await chrome.storage.local.set({ rascunhos });
+}, 900);
+async function apagarRascunho(tipo, empresa = S.ctx.empresa) {
+  const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
+  if (rascunhos[`${empresa}|${tipo}`]) { delete rascunhos[`${empresa}|${tipo}`]; await chrome.storage.local.set({ rascunhos }); }
+}
+/** Formulário novo com dados de uma tentativa abandonada: se o cliente já começou outra coisa
+ *  (arrastou um documento ou escreveu), os dados antigos não se misturam com os novos. */
+function comecarDoZeroSeAbandonado(tipo) {
+  const W = S.work[tipo];
+  if (!W || !W.entrouComDados || W.rascunhoVisto) return;
+  const empregados = W.empregados, opcoes = W.opcoes;
+  S.work[tipo] = null;
+  const N = w(tipo); N.rascunhoVisto = true; N.empregados = empregados; N.opcoes = opcoes;
+  const el = $('#rascunho'); if (el) el.innerHTML = '';
+}
+async function ofertaRascunho(tipo) {
+  const el = $('#rascunho'); if (!el) return;
+  const W = w(tipo);
+  if (W.rascunhoVisto || (S.lote && !S.lote.concluido)) { el.innerHTML = ''; return; }
+  const temAlgo = Object.values(W.valores).some(v => v?.valor && v.fonte !== 'gerado') || W.arquivos.some(a => !a.removido);
+  const portalVazio = !Object.entries(portalValores(tipo)).some(([k, v]) => v && k !== 'conclusao');
+  if (temAlgo && W.entrouComDados && portalVazio) {
+    // saiu do formulário sem enviar e abriu de novo: os dados continuam aqui, o portal está vazio
+    const quem = W.valores.empregado?.valor || W.valores.nome?.valor || '';
+    el.innerHTML = `<div class="note">${icon('info')}<div><b>Você já tinha começado esta solicitação${quem ? ` (${esc(nomeCurto(quem))})` : ''}.</b> Quer continuar de onde parou?
+      <div class="actions" style="margin-top:6px"><button class="btn btn-primary btn-sm" id="rasc-sim">Continuar</button><button class="btn btn-ghost btn-sm" id="rasc-nao">Começar do zero</button></div></div></div>`;
+    $('#rasc-sim').addEventListener('click', () => { W.rascunhoVisto = true; W.entrouComDados = false; W.arquivos.forEach(a => { a.anexado = false; }); el.innerHTML = ''; fillPortal(tipo); });
+    $('#rasc-nao').addEventListener('click', () => { S.work[tipo] = null; w(tipo).rascunhoVisto = true; apagarRascunho(tipo); render(); });
+    return;
+  }
+  if (temAlgo) { el.innerHTML = ''; return; }
+  const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
+  const r = rascunhos[chaveRascunho(tipo)];
+  if (!r || Date.now() - r.quando > RASCUNHO_DIAS * 864e5) { el.innerHTML = ''; return; }
+  const quem = r.valores.empregado?.valor || r.valores.nome?.valor || '';
+  el.innerHTML = `<div class="note">${icon('info')}<div><b>Você começou esta solicitação ${new Date(r.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${quem ? ` (${esc(nomeCurto(quem))})` : ''}.</b> Quer continuar de onde parou?${r.anexos?.length ? ` <small class="muted">Os anexos (${esc(r.anexos.join(', '))}) precisam ser arrastados de novo.</small>` : ''}
+    <div class="actions" style="margin-top:6px"><button class="btn btn-primary btn-sm" id="rasc-sim">Continuar</button><button class="btn btn-ghost btn-sm" id="rasc-nao">Começar do zero</button></div></div></div>`;
+  $('#rasc-sim').addEventListener('click', () => {
+    W.rascunhoVisto = true;
+    for (const [k, v] of Object.entries(r.valores)) W.valores[k] = v;
+    (r.editados || []).forEach(k => W.editados.add(k));
+    gerarTextos(tipo); render();
+    if (S.prefs.preencherAoLer && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { silencioso: true });
+  });
+  $('#rasc-nao').addEventListener('click', () => { W.rascunhoVisto = true; apagarRascunho(tipo); el.innerHTML = ''; });
+}
+
+/* ---------- Avisos do escritório (regras.avisosEscritorio) ---------- */
+function renderAvisosInicio() {
+  const el = $('#avisos-esc'); if (!el) return;
+  const hoje = E.iso(E.today());
+  const lidos = new Set(S.prefs.avisosLidos || []);
+  const lista = (S.rules.avisosEscritorio || []).filter(a => a?.texto && (!a.ate || a.ate >= hoje) && (!a.desde || a.desde <= hoje) && !lidos.has(a.id || a.texto));
+  el.innerHTML = lista.map(a => `<div class="note ${a.nivel === 'importante' ? 'warn' : ''} aviso-esc">${icon(a.nivel === 'importante' ? 'alert' : 'info')}<div>${a.titulo ? `<b>${esc(a.titulo)}</b> ` : ''}${esc(a.texto)}${a.link ? ` <a href="${esc(a.link)}" target="_blank" rel="noopener">Saiba mais</a>` : ''}</div>
+    <button class="icon-btn" data-lido="${esc(a.id || a.texto)}" aria-label="Dispensar aviso">${icon('x', 'ic-sm')}</button></div>`).join('');
+  el.querySelectorAll('[data-lido]').forEach(b => b.addEventListener('click', () => { S.prefs.avisosLidos = [...(S.prefs.avisosLidos || []), b.dataset.lido].slice(-50); savePrefs(); renderAvisosInicio(); }));
+}
+
+/* ---------- Contratos de experiência (data de admissão da lista de empregados do portal) ---------- */
+async function guardarEquipe(empresa, detalhes) {
+  const recentes = detalhes.filter(d => { const a = E.parseDate(d.admissao); return d.ativo !== false && a && E.diffDays(a, E.today()) <= 120; }).map(d => ({ nome: d.nome, admissao: d.admissao }));
+  S.equipe.set(empresa, recentes);
+  const { equipe = {} } = await chrome.storage.local.get('equipe');
+  equipe[empresa] = { quando: Date.now(), recentes };
+  await chrome.storage.local.set({ equipe });
+  if (S.view === 'inicio') renderExperiencia();
+}
+async function renderExperiencia() {
+  const el = $('#experiencia'); if (!el || standalone) return;
+  const emp = S.ctx.empresa; if (!emp) { el.innerHTML = ''; return; }
+  let lista = S.equipe.get(emp);
+  if (!lista) {
+    const { equipe = {} } = await chrome.storage.local.get('equipe');
+    if (equipe[emp] && Date.now() - equipe[emp].quando < 7 * 864e5) { lista = equipe[emp].recentes; S.equipe.set(emp, lista); }
+    else { S.equipe.set(emp, []); request({ type: 'employees' }, 8000).then(r => { if (r?.detalhes?.length) guardarEquipe(emp, r.detalhes); }); return; }
+  }
+  const marcos = (S.rules.config?.experienciaDias || [45, 90]).map(Number).filter(Boolean);
+  const hoje = E.today(); const itens = [];
+  for (const p of lista || []) {
+    const adm = E.parseDate(p.admissao); if (!adm) continue;
+    for (const [i, n] of marcos.entries()) {
+      const fim = E.addDays(adm, n - 1); const falta = E.diffDays(hoje, fim);
+      if (falta >= -2 && falta <= 10) itens.push({ nome: p.nome, fim, falta, n, ultimo: i === marcos.length - 1 });
+    }
+  }
+  if (!itens.length) { el.innerHTML = ''; return; }
+  itens.sort((a, b) => a.fim - b.fim);
+  el.innerHTML = `<div class="card pad exp">${icon('calc', 'ic-sm')} <b>Contratos de experiência</b>
+    <ul>${itens.map(x => `<li><b>${esc(nomeCurto(x.nome))}</b> completa ${x.n} dias em <span class="mono">${E.fmtDate(x.fim)}</span> <span class="chip ${x.falta <= 3 ? 'warn' : 'info'}">${x.falta < 0 ? `há ${-x.falta} dia(s)` : x.falta === 0 ? 'hoje' : `em ${x.falta} dia(s)`}</span></li>`).join('')}</ul>
+    <small class="muted">Contado pela data de admissão no portal (${marcos.join(' e ')} dias). Se for contrato de experiência, avise o escritório se vai ${itens.some(x => !x.ultimo) ? 'prorrogar, efetivar ou desligar' : 'efetivar ou desligar'} — antes da data.</small></div>`;
+}
+
+/* ---------- Repetir a última solicitação ---------- */
+function renderRepetir() {
+  const el = $('#repetir'); if (!el || standalone) return;
+  const h = S.historico.find(x => x.status === 'enviado' && x.empresa === S.ctx.empresa && S.rules.tipos[x.tipo]);
+  if (!h) { el.innerHTML = ''; return; }
+  el.innerHTML = `<button class="li repetir" type="button" id="rep-go">${icon('refresh')}<div class="main"><b>Repetir a última solicitação</b><small>${esc(h.resumo)} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div>${icon('arrow', 'ic-sm')}</button>`;
+  $('#rep-go').addEventListener('click', async () => {
+    const t = tipoDef(h.tipo); const W = w(h.tipo);
+    for (const [k, v] of Object.entries(h.valores || {})) {
+      if (['assunto', 'descricao', 'cid', 'dias'].includes(k) || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
+      W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };
+    }
+    W.rascunhoVisto = true;
+    gerarTextos(h.tipo, true);
+    await openTipo(h.tipo, { manter: true });
+    if (S.prefs.preencherAoLer) setTimeout(() => fillPortal(h.tipo, { silencioso: true }), 900);
+    toast('Repeti os dados da última solicitação, menos as datas. Confira e complete.');
+  });
+}
+
+/* ---------- Perguntas frequentes (regras.faq) ---------- */
+function renderFaq(q) {
+  const el = $('#faq'); if (!el) return;
+  const Q = E.norm(q); const toks = Q.split(' ').filter(t => t.length > 2);
+  if (!toks.length) { el.innerHTML = ''; return; }
+  const achadas = (S.rules.faq || []).map(f => ({ f, n: toks.filter(t => E.norm(`${f.pergunta} ${(f.palavras || []).join(' ')} ${f.resposta}`).includes(t)).length })).filter(x => x.n).sort((a, b) => b.n - a.n).slice(0, 4);
+  el.innerHTML = achadas.length ? `<h2 class="sec">Dúvidas frequentes</h2>${achadas.map(({ f }) => `<details class="faq-i card"><summary>${esc(f.pergunta)}</summary><p>${esc(f.resposta)}</p></details>`).join('')}` : '';
+}
+
+/* ---------- Colar print/arquivo (Ctrl+V) no painel ---------- */
+function renomearColados(files) {
+  const hora = new Date().toTimeString().slice(0, 5).replace(':', 'h');
+  return files.map((f, i) => /^image\.(png|jpe?g)$/i.test(f.name) || !f.name ? new File([f], `print-colado-${hora}${files.length > 1 ? '-' + (i + 1) : ''}.png`, { type: f.type || 'image/png' }) : f);
+}
+document.addEventListener('paste', (e) => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (!files.length) return;
+  e.preventDefault();
+  handleFiles(renomearColados(files), 'colado');
+});
+
+/* ---------- Tela do portal diferente do esperado: não preenche sozinho ---------- */
+function telaDiferente(tipo) {
+  const t = tipoDef(tipo); const f = S.ctx.form?.campos;
+  if (!t || !f || S.ctx.tipo !== tipo) return false;
+  const obr = Object.entries(t.campos).filter(([, c]) => c.obrigatorio && c.fc && !c.somenteAssistente).map(([k]) => k);
+  if (obr.length < 2) return false;
+  const carregou = S.ctx.form.temArquivo || Object.values(f).some(v => v.existe);
+  return carregou && obr.filter(k => f[k]?.existe).length / obr.length < 0.34;
+}
+function renderModoSeguro(tipo) {
+  const el = $('#modo-seguro'); if (!el) return;
+  if (!telaDiferente(tipo) || w(tipo).forcarPreenchimento) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="note warn">${icon('alert')}<div><b>Esta tela do portal está diferente do que eu conheço.</b> Por segurança, não vou preencher sozinho. Você pode preencher assim mesmo ou mandar o diagnóstico para o escritório.
+    <div class="actions" style="margin-top:6px"><button class="btn btn-sm" id="ms-forcar">Preencher assim mesmo</button><button class="btn btn-ghost btn-sm" id="ms-diag">Copiar diagnóstico</button></div></div></div>`;
+  $('#ms-forcar').addEventListener('click', () => { w(tipo).forcarPreenchimento = true; el.innerHTML = ''; fillPortal(tipo); });
+  $('#ms-diag').addEventListener('click', copiarDiagnostico);
+}
+
+/* ---------- Diagnóstico (sem dados pessoais): para o escritório entender um problema ---------- */
+async function textoDiagnostico() {
+  const info = await chrome.runtime.sendMessage({ type: 'getSettings' }).catch(() => null);
+  const tipo = S.ctx.tipo; const W = tipo ? w(tipo) : null; const f = S.ctx.form?.campos || {};
+  const semValores = (m) => String(m || '').replace(/"[^"]*"|“[^”]*”/g, '"…"');
+  return [
+    'Diagnóstico do Assistente ControlTax (sem dados pessoais)',
+    `Quando: ${new Date().toLocaleString('pt-BR')}`,
+    `Extensão: v${info?.versaoExtensao || chrome.runtime.getManifest?.().version || '?'} · ${info?.unpacked ? 'instalada como pasta' : 'pacote'}${info?.simulador ? ' · simulador' : ''}`,
+    `Regras: ${S.meta.versao} (${S.meta.origem})${S.rules?.empresaAjustada ? ' · com ajustes da empresa' : ''}${S.meta.erro ? ' · aviso: ' + S.meta.erro : ''}`,
+    `Navegador: ${(navigator.userAgent.match(/Chrome\/[\d.]+/) || ['?'])[0]} · tela ${screen.width}x${screen.height} · texto ${S.prefs.tamanhoTexto}`,
+    `Página: ${S.ctx.route?.mode || '?'} · ${S.ctx.route?.slug || '-'} · solicitação ${tipo || '-'}`,
+    `Leitura de arquivos: ${await libsPresentes() ? 'bibliotecas ok' : 'pasta lib faltando'}`,
+    tipo ? `Campos do portal (S=existe, B=bloqueado, P=preenchido): ${Object.entries(f).map(([k, v]) => `${k}:${v.existe ? 'S' : 'N'}${v.disabled ? 'B' : ''}${v.valor ? 'P' : ''}`).join(' ')}` : '',
+    tipo ? `Listas carregadas: ${Object.entries(W.opcoes).map(([k, o]) => `${k}=${o.length}`).join(' ') || 'nenhuma'} · empregados=${W.empregados.length} · tela diferente: ${telaDiferente(tipo) ? 'sim' : 'não'}` : '',
+    tipo && W.resultados?.resultados ? `Último preenchimento: ${W.resultados.resultados.filter(x => x.ok).length} ok; falhas: ${W.resultados.resultados.filter(x => !x.ok).map(x => `${x.campo} (${semValores(x.motivo)})`).join('; ') || 'nenhuma'}` : '',
+    tipo ? `Arquivos: ${W.arquivos.map((a, i) => `#${i + 1} ${a.metodo || '?'}${a.confianca != null ? ' conf ' + a.confianca : ''}${a.rotacao ? ' girado ' + a.rotacao + '°' : ''} → ${a.documento || 'não reconhecido'}`).join(' · ') || 'nenhum'}` : '',
+    tipo ? `Verificações: ${lastChecks.filter(i => i.nivel === 'erro' || i.nivel === 'atencao').map(i => `${i.nivel}:${i.campo || i.grupo}`).join(' ') || 'nenhuma pendência'}` : ''
+  ].filter(Boolean).join('\n');
+}
+async function copiarDiagnostico() {
+  const txt = await textoDiagnostico();
+  try { await navigator.clipboard.writeText(txt); toast('Diagnóstico copiado. Cole na conversa com o escritório.'); }
+  catch { const m = $('#modal'); m.hidden = false; m.innerHTML = `<div class="sheet"><h3>Diagnóstico</h3><textarea class="input mono" rows="12" id="m-txt">${esc(txt)}</textarea><div class="actions" style="margin-top:10px"><button class="btn btn-primary" id="m-ok">Fechar</button></div></div>`; $('#m-txt').select(); $('#m-ok').addEventListener('click', () => { m.hidden = true; m.innerHTML = ''; }); }
 }
 
 /* =================== Histórico =================== */
@@ -1156,7 +1433,8 @@ async function salvarHistorico(tipo, status) {
   delete item.valores.cid;
   if (prev >= 0) historico.splice(prev, 1);
   historico.unshift(item);
-  await chrome.storage.local.set({ historico: historico.slice(0, 200) });
+  S.historico = historico.slice(0, 200);
+  await chrome.storage.local.set({ historico: S.historico });
 }
 /* Prazos que nascem das solicitações já preenchidas/enviadas */
 function prazosDoHistorico(historico) {
@@ -1211,7 +1489,7 @@ async function renderHistorico() {
   }));
   $('#h-clear')?.addEventListener('click', async () => {
     const b = $('#h-clear');
-    if (b.dataset.confirm) { await chrome.storage.local.set({ historico: [] }); renderHistorico(); }
+    if (b.dataset.confirm) { await chrome.storage.local.set({ historico: [], rascunhos: {}, equipe: {} }); S.historico = []; S.equipe.clear(); renderHistorico(); }
     else { b.dataset.confirm = '1'; b.innerHTML = `${icon('alert', 'ic-sm')} Clique de novo para confirmar`; setTimeout(() => { if (b.isConnected) { delete b.dataset.confirm; b.innerHTML = `${icon('trash', 'ic-sm')} Limpar histórico`; } }, 4000); }
   });
 }
@@ -1252,7 +1530,13 @@ async function renderPendencias(force = false) {
 }
 
 /* =================== Calculadoras =================== */
-const TOOLS = { ferias: 'Férias', aviso: 'Aviso prévio', rescisao: 'Rescisão', afast: 'Afastamento', exp: 'Experiência', uteis: 'Dias úteis' };
+const TOOLS = { ferias: 'Férias', aviso: 'Aviso prévio', rescisao: 'Rescisão', afast: 'Afastamento', exp: 'Experiência', uteis: 'Dias úteis', admissao: 'Docs. admissão' };
+/** Mensagem pronta (WhatsApp/e-mail) com os documentos que o novo funcionário precisa mandar. */
+function mensagemAdmissao() {
+  const M = S.rules.mensagens || {};
+  const docs = tipoDef('cadastroEmpregado')?.anexos || [];
+  return [M.admissaoInicio || 'Olá! Para fazermos a sua admissão, envie por favor:', ...docs.map(a => `• ${a.rotulo}${a.obrigatorio ? '' : ' (se tiver)'}`), M.admissaoFim || 'Pode mandar foto bem legível ou PDF. Obrigado!'].join('\n');
+}
 function renderFerramentas() {
   viewEl.innerHTML = `<div class="tool-tabs" role="group" aria-label="Calculadoras">${Object.entries(TOOLS).map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${S.ferramenta === k}">${l}</button>`).join('')}</div>
     <div class="card pad" id="tool"></div>
@@ -1268,7 +1552,10 @@ function renderFerramentas() {
     rescisao: F('a', 'Último dia de trabalho') + out,
     afast: `<div class="row2">${F('a', 'Início do afastamento')}${F('b', 'Dias de atestado', '15', 'numero')}</div>${out}`,
     exp: `<div class="row2">${F('a', 'Data de admissão')}${F('b', '1º período (dias)', '45', 'numero')}</div>${F('c', 'Prorrogação (dias)', '45', 'numero')}${out}`,
-    uteis: `<div class="row2">${F('a', 'De')}${F('b', 'Até')}</div>${out}`
+    uteis: `<div class="row2">${F('a', 'De')}${F('b', 'Até')}</div>${out}`,
+    admissao: `<p class="muted" style="margin:0 0 8px">Mensagem pronta para mandar ao novo funcionário pelo WhatsApp ou e-mail, com os documentos que o escritório pede.</p>
+      <textarea class="input" id="adm-msg" rows="11">${esc(mensagemAdmissao())}</textarea>
+      <div class="actions" style="margin-top:8px"><button class="btn btn-primary" id="adm-copy">${icon('copy', 'ic-sm')} Copiar mensagem</button></div>`
   };
   tool.innerHTML = forms[S.ferramenta];
   const g = (id) => $('#' + id)?.value || '';
@@ -1324,6 +1611,7 @@ function renderFerramentas() {
     }
   };
   tool.querySelectorAll('input').forEach(i => i.addEventListener('input', () => { maskInput(i); calc(); }));
+  $('#adm-copy')?.addEventListener('click', async () => { try { await navigator.clipboard.writeText($('#adm-msg').value); toast('Mensagem copiada.'); } catch { $('#adm-msg').select(); toast('Selecionei o texto: use Ctrl+C.'); } });
 }
 
 /* =================== Configurações =================== */
@@ -1340,6 +1628,13 @@ async function renderConfig() {
       <label class="toggle"><input type="checkbox" data-p="ocrAutomatico" ${S.prefs.ocrAutomatico ? 'checked' : ''}><span>Ler fotos e PDFs escaneados (OCR)<small>Pode levar alguns segundos por página.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="incluirCid" ${S.prefs.incluirCid ? 'checked' : ''}><span>Incluir CID nas descrições<small>Dado de saúde — mantenha desligado se não for exigido.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="usarIa" ${S.prefs.usarIa ? 'checked' : ''}><span>Usar a IA do próprio Chrome quando disponível<small>${await aiAvailable() ? 'Disponível neste computador. Roda localmente.' : 'Não disponível neste Chrome — sem efeito.'}</small></span></label>
+      <div class="field" style="margin-top:10px"><label>Tamanho do texto do painel</label>
+        <div class="seg" role="group" aria-label="Tamanho do texto">${[['normal', 'Normal'], ['grande', 'Grande'], ['maior', 'Maior']].map(([v, l]) => `<button type="button" data-tam="${v}" aria-pressed="${S.prefs.tamanhoTexto === v}">${l}</button>`).join('')}</div></div>
+    </div>
+    <h2 class="sec">Ajuda</h2>
+    <div class="card pad">
+      <p class="muted" style="margin:0 0 8px">Algo não funcionou? Copie o diagnóstico e cole na conversa com o escritório. Ele não leva nomes, valores nem documentos — só versões e o que o Assistente encontrou na tela.</p>
+      <button class="btn" id="diag">${icon('copy', 'ic-sm')} Copiar diagnóstico</button>
     </div>
     <h2 class="sec">Regras</h2>
     <div class="card pad">
@@ -1364,6 +1659,8 @@ async function renderConfig() {
     <div class="actions" style="margin-top:14px"><button class="btn" id="intro-again">${icon('info', 'ic-sm')} Ver a introdução de novo</button></div>
     <div class="note" style="margin-top:14px">${icon('lock')}<div>${esc(S.rules.mensagens?.privacidade || '')}</div></div>`;
   viewEl.querySelectorAll('[data-p]').forEach(i => i.addEventListener('change', () => { S.prefs[i.dataset.p] = i.checked; savePrefs(); }));
+  viewEl.querySelectorAll('[data-tam]').forEach(b => b.addEventListener('click', () => { S.prefs.tamanhoTexto = b.dataset.tam; savePrefs(); aplicarTamanhoTexto(); renderConfig(); }));
+  $('#diag').addEventListener('click', copiarDiagnostico);
   $('#save-url').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'setSettings', settings: { rulesUrl: $('#rules-url').value.trim() } }); await loadRules(); renderConfig(); });
   $('#refresh-rules').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'refreshRules' }); await loadRules(); renderConfig(); });
   viewEl.querySelectorAll('[data-dev]').forEach(b => b.addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'setSettings', settings: { devMode: b.dataset.dev } }); renderConfig(); }));
@@ -1377,7 +1674,8 @@ async function renderConfig() {
   syncThemeIcon();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeIcon);
   if (standalone) { $('#btn-close').hidden = true; document.body.style.maxWidth = '520px'; document.body.style.margin = '0 auto'; }
-  await Promise.all([loadRules(), loadPrefs()]);
+  await Promise.all([loadRules(), loadPrefs(), carregarHistorico()]);
+  aplicarTamanhoTexto();
   if (!(await libsPresentes())) {
     const el = document.createElement('div'); el.className = 'note warn'; el.setAttribute('role', 'alert'); el.style.cssText = 'margin:8px 12px 0';
     el.innerHTML = `${icon('alert')}<div><b>Esta cópia da extensão está incompleta</b> (falta a pasta <code>lib</code>). O preenchimento funciona, mas PDFs, fotos e planilhas não serão lidos. Instale pelo .zip completo.</div>`;

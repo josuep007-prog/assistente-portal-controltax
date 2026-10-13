@@ -58,6 +58,9 @@ Extensão Chrome (Manifest V3) que age por cima do Onvio Portal do Cliente na vi
 **Aviso ou cálculo:** no texto livre do Início, férias e desligamento mostram as duas opções (`ESCOLHA_AVISO_CALCULO`), com a mencionada no texto destacada.
 **Não encontrado:** `marcarFaltando` (painel) usa os obrigatórios em erro + `esperadoDoDocumento` do tipo; manda `markMissing` ao conteúdo, que desenha `.ct-missing`/`.ct-miss-tag` no portal. Campos bloqueados pelo portal não contam como obrigatórios.
 **Versão das regras:** se as embutidas tiverem `versao` maior que as remotas/cache, valem as embutidas (atualizar a extensão não depende de publicar). Mantenha as regras compatíveis com versões antigas da extensão (ex.: `assunto` antigo continua; o novo formato fica em `assuntos`). `tests/e2e.py` serve as regras desta pasta no lugar das publicadas.
+**Leitor de atestados (1.3):** `lerAtestado` no `engine.js` (`lerDiasAtestado`, `lerDataAtestado`, `lerPacienteAtestado`, `lerCid`, `lerCrm`) — ativado por `documentos[].leitor = "atestado"` ou quando o documento não é reconhecido dentro de Afastamento. Cada campo leva como `fonte` o trecho do documento. Funcionário: `empregadoPorNome` (nome do paciente, tolerante a OCR); sem paciente na lista, `findEmployeeInText` em `semOutrasPessoas(texto)` (sem linhas de médico/mãe) e sem o atalho de só o primeiro nome. `avisosDoDocumento` lê `documentos[].avisos`. Calibrado com atestados reais que **não** ficam no repositório; os testes usam layouts iguais com dados inventados (`tools/gerar-exemplos-atestados.py`). Para medir de novo com exemplos novos: OCR com `panel/extract.js` num Chromium sem tela e comparar campo a campo — nunca copie o texto ou as imagens para o Git.
+**OCR (1.3):** `ocrMelhor` em `extract.js` tenta 0° e, se a nota da leitura (`notaLeitura`: palavras de documento + confiança) for baixa, 90°/270° (foto deitada primeiro), limiar adaptativo e 180°; `readFile` devolve `confianca` e `rotacao`.
+**Facilidades (1.3):** rascunho (`rascunhos` no storage, 7 dias; na mesma sessão, `entrouComDados` oferece continuar e `comecarDoZeroSeAbandonado` evita misturar dados antigos com um documento novo), recentes e pedido repetido (`S.historico`), experiência (`employees` devolve `detalhes` só com nome/admissão/ativo; `equipe` no storage guarda só admissões dos últimos 120 dias), `avisosEscritorio`, `faq`, `empresas` (ajustes de `config` por trecho do nome da empresa), colar com Ctrl+V (painel e página), `telaDiferente` (modo seguro), `textoDiagnostico` (sem nomes, valores, empresa nem CID).
 **Painel encaixado:** em telas ≥ 1000px a página ganha `margin-right: 420px` (`html.ct-docked`) para o painel não cobrir o botão ADICIONAR.
 **Arquivos atravessam o canal como bytes** (`{name,type,buf}` + transferência do ArrayBuffer) e são remontados com `new File` do outro lado — passar `File` direto entre a página e o iframe da extensão derrubou a aba nos testes.
 
@@ -67,6 +70,7 @@ Mesmo sistema do Control Hub: tokens em `panel/panel.css` (`--masthead #0E151B`,
 
 ## Pendências conhecidas
 
+- 1.3 testado só no simulador: conferir no Onvio real o colar (Ctrl+V) na página, o alerta de experiência (campo `hireDate` da API de empregados — formato ainda não confirmado) e o modo seguro.
 - Lote de atestados e avisos de "não encontrado" (1.2) testados só no simulador: conferir no Onvio real se, depois de ADICIONAR, o portal volta à lista (é isso que dispara a próxima solicitação) e onde a etiqueta de aviso aparece nos campos reais.
 - "Novo afast. mesma doença" não é escolhido automaticamente (depende do histórico do INSS); avaliar com o escritório.
 - Melhorias da versão 1.1 testadas só no simulador: conferir no Onvio real (painel encaixado, "Conferir e enviar", combobox de UF por extenso).
@@ -81,6 +85,8 @@ Mesmo sistema do Control Hub: tokens em `panel/panel.css` (`--masthead #0E151B`,
 
 ```
 bash tools/baixar-libs.sh             # recria lib/ e fonts/ depois de clonar
+python tools/gerar-exemplos-atestados.py   # atestados fictícios do simulador e dos testes
+SIM_SO=13 python tests/sim_test.py <pasta>  # só os testes do simulador da versão 1.3
 python dev/dev_server.py              # recarga automática (deixar aberto)
 node tests/engine.test.mjs            # motor de regras
 python tests/e2e.py                   # extensão carregada numa réplica do formulário (pip install playwright; python -m playwright install chromium)

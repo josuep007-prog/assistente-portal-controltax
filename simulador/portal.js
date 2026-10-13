@@ -125,6 +125,12 @@
       var slug = API[api]; var list = (db.items[slug] || []).map(function (r) { return { id: r.id, status: { description: r.status }, employee: { name: r.empregado }, subject: r.assunto, lastUpdate: r.data }; });
       return Promise.resolve({ ok: !!slug, status: slug ? 200 : 404, json: function () { return Promise.resolve({ items: list, totalItems: list.length }); } });
     },
+    // mesma forma da API do portal (/api/br-payroll-sr/v1/clients/<id>/employees): nome, situação e admissão
+    employees: function () {
+      var d = function (n) { var x = new Date(); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
+      var recentes = { 'VANESSA PRADO': d(40), 'WAGNER SOUSA': d(85) };
+      return Promise.resolve(EMP5.map(function (n) { return { name: n, status: 'Ativo', hireDate: recentes[n] || '2023-01-10' }; }));
+    },
     expose: function (h) { hooks = h; document.dispatchEvent(new CustomEvent('ct-sim-ready')); }
   };
   window.__ctSim = { hooks: function () { return hooks; }, reset: function () { db = seed(); persist(); go(BASE); }, go: function (p) { go(p); } };

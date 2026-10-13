@@ -102,7 +102,7 @@ export function bestMatch(value, options, min = 0.72) {
   return score >= min ? { option: best, score } : null;
 }
 /** Procura no texto qual funcionário da lista aparece (nome completo ou quase). */
-export function findEmployeeInText(text, employees) {
+export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = {}) {
   const T = ' ' + norm(text) + ' ';
   let best = null;
   for (const e of employees || []) {
@@ -114,6 +114,7 @@ export function findEmployeeInText(text, employees) {
     if (toks.length >= 2 && s >= 0.66 && (!best || s > best.score)) best = { option: e, score: s * 0.95 };
   }
   if (best) return best;
+  if (!soPrimeiroNome) return null;
   // só o primeiro nome ("o Jorge pediu demissão"): vale se for único na lista
   const firsts = (employees || []).filter(e => { const f = norm(e).split(' ')[0]; return f.length > 2 && T.includes(' ' + f + ' '); });
   return firsts.length === 1 ? { option: firsts[0], score: 0.7 } : null;
@@ -210,7 +211,16 @@ export function analyzeText(text, rules, ctx = {}) {
 
   if (tipo) for (const [k, v] of Object.entries(extractByLabels(text, tipo.campos))) put(k, v.valor, v.conf, v.fonte);
   for (const [k, v] of Object.entries(extractGeneric(text))) if (!tipo || tipo.campos[k]) put(k, v.valor, v.conf, v.fonte);
-  if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
+  // leitor próprio do documento (atestado): lê dias, data, CID, médico e paciente com mais cuidado
+  const usaLeitor = docRule ? (docRule.leitor || (docRule.id === 'atestado' ? 'atestado' : null)) === 'atestado' : tipoKey === 'afastamento';
+  const leitor = usaLeitor ? lerAtestado(text, ctx.hoje || today()) : null;
+  if (leitor) {
+    const cite = (x) => x?.trecho ? `“${x.trecho}”` : (docRule?.nome || 'documento');
+    if (leitor.dias) put('dias', String(leitor.dias.n), leitor.dias.conf, cite(leitor.dias));
+    if (leitor.data) put('dataAfastamento', leitor.data.data, leitor.data.conf, cite(leitor.data));
+    if (leitor.cid) put('cid', leitor.cid, 0.7, docRule?.nome || 'documento');
+    if (leitor.medico) put('medico', leitor.medico, 0.7, docRule?.nome || 'documento');
+  } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
   if (docRule?.tipoCatPalavras) {
     const T = norm(text);
@@ -233,15 +243,26 @@ export function analyzeText(text, rules, ctx = {}) {
     if (ta) put('tipoAfastamento', ta.valor, 0.7, ta.motivo);
   }
   // funcionário
+  let candidatos = null; const avisosExtra = [];
   if (tipo?.campos?.empregado && ctx.employees?.length) {
-    const m = findEmployeeInText(text, ctx.employees);
-    if (m) put('empregado', m.option, m.score, 'nome encontrado no documento');
+    const pm = leitor?.paciente ? empregadoPorNome(leitor.paciente.nome, ctx.employees) : null;
+    if (pm?.option) put('empregado', pm.option, Math.min(pm.score, leitor.paciente.conf + 0.15), `“${leitor.paciente.trecho}”`);
+    else if (pm?.candidatos) candidatos = pm.candidatos;
+    else {
+      const m = findEmployeeInText(leitor ? semOutrasPessoas(text) : text, ctx.employees, { soPrimeiroNome: !leitor && !doc });
+      const outroNome = leitor?.paciente && leitor.paciente.nome.split(' ').length >= 2;
+      if (m && outroNome) {
+        put('empregado', m.option, Math.min(m.score, 0.45), `sobrenome igual ao de “${leitor.paciente.nome}”`);
+        avisosExtra.push({ nivel: 'atencao', id: 'outroNome', mensagem: `O atestado está em nome de ${leitor.paciente.nome}, que não é exatamente ${m.option}. Confira se é do funcionário (pode ser de um dependente).` });
+      } else if (m) put('empregado', m.option, m.score, 'nome encontrado no documento');
+    }
   }
   if (tipo?.campos?.nome && !campos.nome) {
     const m = String(text).match(/(?:nome|paciente|portador|titular)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú\s]{8,60})(?:\n|\s{2,}|$)/);
     if (m) put('nome', m[1].trim(), 0.5, 'nome em maiúsculas');
   }
-  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos };
+  const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra];
+  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos };
 }
 
 /* ---------------- Tipos e campos ---------------- */
@@ -305,12 +326,14 @@ export function renderFirst(list, values) {
  * Devolve { valor, motivo } ou null (sem dias quando o tipo depende deles).
  */
 export function inferTipoAfastamento(text, dias, docId, regras) {
-  const T = plain(text || '');
+  // linhas que são só uma opção de formulário ("( ) doença", "U acidente do trabalho") não dizem nada
+  const T = plain(String(text || '').split(/\n/).filter(l => !(l.trim().length < 34 && /^\W{0,4}[a-zà-úA-ZÀ-Ú]?\W{0,4}\s*(doen[cç]a|acidente d[eo] trabalho|acidente de trajeto|outros?)\s*\W*$/i.test(l.trim()))).join('\n'));
   const n = parseInt(dias, 10);
   for (const r of regras || []) {
     const porPalavra = r.palavras?.length && r.palavras.some(w => T.includes(plain(w)));
     const porDocumento = r.documentos?.length && docId && r.documentos.includes(docId);
     if (!porPalavra && !porDocumento) continue;
+    if (r.nenhum) return null;          // caso que o escritório decide (ex.: atestado de acompanhante)
     if (r.valor) return { valor: r.valor, motivo: porPalavra ? 'texto do documento' : 'tipo de documento' };
     if (isNaN(n)) return null;
     const lim = r.limiteDias || 15;
@@ -573,6 +596,187 @@ export function parseFreeText(text, rules, ctx = {}) {
 }
 
 /* ================= Leituras específicas ================= */
+/* ---------- Atestado ---------- */
+const NUM_PALAVRA = { um: 1, hum: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, onze: 11, doze: 12, treze: 13, catorze: 14, quatorze: 14, quinze: 15, dezesseis: 16, dezessete: 17, dezoito: 18, dezenove: 19, vinte: 20, trinta: 30, sessenta: 60, noventa: 90, cento: 100 };
+const PARA_DIAS = /\b(?:por|de|durante|periodo|repouso|necessita\w*|necessitando|afastad[oa]s?|afastamento|ficar|permanecer|total|minimo|apenas|somente)\b/;
+/** Número escrito por extenso ou com erro de OCR comum ("OL", "0l", "( 03 )"). */
+function lerNumeroToken(tok) {
+  if (/^\d{1,3}$/.test(tok)) return { n: /^0\d\d$/.test(tok) ? +tok.slice(0, 2) : +tok, digito: true, duvida: /^0\d\d$/.test(tok) };
+  if (/^[c(]?[o0][1lij|]$/.test(tok)) return { n: 1, digito: true, duvida: true };
+  if (/^[o][0-9]$/.test(tok)) return { n: +tok[1], digito: true, duvida: true };
+  if (NUM_PALAVRA[tok.replace(/\*+$/, '')]) return { n: NUM_PALAVRA[tok.replace(/\*+$/, '')], digito: false };
+  return null;
+}
+function trechoDe(text, i, j) { return String(text).slice(Math.max(0, i), Math.min(text.length, j)).replace(/\s+/g, ' ').trim(); }
+
+/** Dias de afastamento: "01 (um) dia", "(03) três dias", "2 dia(s)", "repouso por 4 dias", "1 ( hum* ) dia(s)". */
+export function lerDiasAtestado(text) {
+  const p = plain(String(text || '').normalize('NFC'));
+  const cands = [];
+  for (const m of p.matchAll(/dias?(?:\s*\(s\))?(?=de|[^a-z]|$)/g)) {
+    const idx = m.index;
+    const antes = p.slice(Math.max(0, idx - 36), idx);
+    if (/\b0?1\s*a\s*\d{1,2}\s*$/.test(antes) || /justificativa|justificar/.test(p.slice(Math.max(0, idx - 60), idx))) continue;  // "de 1 a 15 dias" das notas
+    if (/\b(horas?|comprimidos?|capsulas?|gotas|ml|mg|vezes|x ao)\b/.test(p.slice(Math.max(0, idx - 40), idx + 12))) continue;      // receita de remédio
+    const toks = antes.split(/[\s()[\]{}*_=+—–\-:.,;|'"!~]+/).filter(Boolean);
+    let dig = null, pal = null, ruido = 0;
+    for (let k = toks.length - 1; k >= 0 && k >= toks.length - 6; k--) {
+      const t = toks[k];
+      const n = lerNumeroToken(t);
+      if (n) { if (n.digito) { dig = n; break; } if (!pal) pal = n; continue; }
+      if (PARA_DIAS.test(t) || t.length > 4) break;
+      if (++ruido > 3) break;
+    }
+    if (!dig && !pal) continue;
+    const n = dig ? dig.n : pal.n;
+    if (!n || n > 365) continue;
+    let conf = dig && pal ? (dig.n === pal.n ? 0.92 : 0.5) : dig ? (dig.duvida ? 0.5 : 0.78) : 0.7;
+    if (dig && pal && dig.n !== pal.n && !dig.duvida) conf = 0.5;
+    const usado = dig && pal && dig.n !== pal.n && dig.duvida ? pal.n : n;
+    const ctx = p.slice(Math.max(0, idx - 80), idx + 60);
+    const bonus = /afastamento|afastad|repouso|necessit|periodo|durante|atividades|trabalho/.test(ctx) ? 0.05 : 0;
+    cands.push({ n: usado, conf: Math.min(0.95, conf + bonus), trecho: trechoDe(text, idx - 30, idx + 8) });
+  }
+  cands.sort((a, b) => b.conf - a.conf);
+  return cands[0] || null;
+}
+
+const MES_NUM = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12 };
+/** Data de início do afastamento: "a partir de 03/09/2026", "na data de…", "02/09/26", "3 de setembro de 2026";
+ *  "a partir desta data" usa a data do próprio documento. Ignora nascimento, decretos e leis. */
+export function lerDataAtestado(text, hoje = today()) {
+  const orig = String(text || '').normalize('NFC'); const p = plain(orig);
+  const ds = [];
+  const add = (i, len, d, y2) => { if (d && !isNaN(d)) ds.push({ i, len, d, y2 }); };
+  const mk = (dd, mm, yy) => { let y = +yy; if (y < 100) y += 2000; const d = new Date(y, mm - 1, dd); return d.getMonth() === mm - 1 && d.getDate() === +dd ? d : null; };
+  for (const m of p.matchAll(/(?<![\d/])(\d{1,2})\s?[\/.\-]\s?(\d{1,2})\s?[\/.\-]\s?(\d{4}|\d{2})(?![\d/])/g)) add(m.index, m[0].length, mk(+m[1], +m[2], m[3]), m[3].length === 2);
+  for (const m of p.matchAll(/\b(\d{1,2})(?:o|º)?\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/g)) add(m.index, m[0].length, mk(+m[1], MES_NUM[m[2]], m[3]));
+  for (const m of p.matchAll(/\b(\d{1,2})\s+de\s+(\d{1,2})\s+de\s+(\d{2}|\d{4})\b/g)) add(m.index, m[0].length, mk(+m[1], +m[2], m[3]), m[3].length === 2);
+  const min = addDays(hoje, -400), max = addDays(hoje, 90);
+  let best = null;
+  for (const x of ds) {
+    if (x.d < min || x.d > max) continue;
+    const antes = p.slice(Math.max(0, x.i - 40), x.i);
+    let sc = 0;
+    if (/(nasc|nascimento|decreto|portaria|resolucao|\blei\b|validade|vencimento)[^\n]{0,25}$/.test(antes)) sc -= 10;
+    if (/a\s?parti[r]?\s+d[eo]a?\s*[\[(]?\s*$/.test(antes) || /a\s?parti[r]?\s+(?:desta|da presente)\s+data\s*[:,]?\s*$/.test(antes)) sc += 6;
+    else if (/(no dia|na data de|na data|data de emissao|emissao|entrada|atendid[oa]|data e hora|data\s*:|data\/hora)[^\n]{0,14}$/.test(antes)) sc += 3;
+    else if (/,\s*$/.test(antes) || /\b[a-z]{2}\s*[-,]\s*$/.test(antes)) sc += 2;   // "Serra-ES, 17 de setembro de 2026"
+    if (/impressao[^\n]{0,14}$/.test(antes)) sc -= 1;
+    if (x.d > hoje) sc -= 1;
+    if (!best || sc > best.sc) best = { ...x, sc };
+  }
+  if (!best || best.sc < -5) return null;
+  return { data: fmtDate(best.d), conf: best.sc >= 6 ? 0.85 : best.sc >= 2 ? 0.75 : 0.6, trecho: trechoDe(orig, best.i - 28, best.i + best.len) };
+}
+
+/** CID: "CID: A09", "CID10 N390", "CID 10: B349", "C.I.D. F419"; corrige trocas comuns do OCR (2→Z, O→0). */
+export function lerCid(text) {
+  const m = String(text || '').match(/(?:\bC\.?\s?I\.?\s?D\.?|\bCID|\bCl[DO]|\bcio)(?:\s*-?\s*10\b)?\s*[:\-–]?\s*\(?\s*([A-Z0-9])\s?([0-9OIlS]{2})(?:\s?\.?\s?([0-9OIlS]))?(?![A-Za-z0-9])/i);
+  if (!m) return null;
+  const L = { 2: 'Z', 5: 'S', 0: 'O', 1: 'I', 8: 'B', 6: 'G', 7: 'T' }[m[1]] || m[1].toUpperCase();
+  const D = (s) => String(s || '').replace(/[Oo]/g, '0').replace(/[Il]/g, '1').replace(/[Ss]/g, '5');
+  if (!/^[A-TV-Z]$/.test(L)) return null;
+  return L + D(m[2]) + (m[3] ? '.' + D(m[3]) : '');
+}
+
+const CONECTORES = new Set(['DE', 'DA', 'DO', 'DOS', 'DAS', 'E', 'D']);
+const NAO_NOME = new Set(['PORTADOR', 'PORTADORA', 'INSCRITO', 'INSCRITA', 'CPF', 'RG', 'FOI', 'ESTEVE', 'NECESSITA', 'NECESSITANDO', 'SEXO', 'NASC', 'NASCIMENTO', 'IDADE', 'CONVENIO', 'ACIMA', 'ABAIXO', 'PACIENTE', 'PRONTUARIO', 'ATENDIDO', 'ATENDIDA', 'RECEBEU', 'DATA', 'COMPARECEU', 'SOB', 'PARA', 'POR', 'COM', 'QUE', 'NESTA', 'NA', 'NO', 'ENDERECO', 'MAE', 'PAI', 'CARTEIRA', 'IDENTIDADE', 'SENHOR', 'SENHORA', 'SR', 'SRA', 'DR', 'DRA', 'ESTADO', 'CIVIL']);
+function nomeDepois(texto) {
+  const linha = String(texto).split(/\n|\s{3,}|[,;|]/)[0];
+  const out = [];
+  for (const w of linha.split(/\s+/).filter(Boolean)) {
+    const W = norm(w); if (!W) { if (out.length) break; continue; }
+    if (CONECTORES.has(W) && out.length) { out.push(w); continue; }
+    if (NAO_NOME.has(W)) break;
+    if (!/^[A-ZÀ-Ý][A-Za-zÀ-ÿ'´]{1,}$/.test(w.replace(/[.:]+$/, ''))) break;
+    out.push(w.replace(/[.:]+$/, ''));
+    if (/[.:]$/.test(w) || out.length >= 7) break;
+  }
+  while (out.length && CONECTORES.has(norm(out[out.length - 1]))) out.pop();
+  return out.join(' ');
+}
+/** Nome do paciente pelos rótulos e frases comuns dos atestados (ignora médico e nome da mãe). */
+export function lerPacienteAtestado(text) {
+  const t = String(text || '').normalize('NFC');
+  const gatilhos = [
+    /paciente\s*[.…]*\s*:\s*/gi,
+    /\bsr\.?\s*\(\s*a\s*\)\s*:?\s*|\bsr[a]?\.?\s*:\s*|senhor\s*\(a\)\s*:?\s*|\bo\s*\(a\)\s*sr\.?\s*\(a\)\.?\s*:?\s*/gi,
+    /\b(?:a?test[oa](?:mos)?|declaro)\b[^\n]{0,80}?\bque\s+(?:o\s*\(a\)\s*|a\s+|o\s+)?(?:paciente\s+)?(?:sr\.?\s*\(?a?\)?\s*:?\s*)?/gi,
+    /\bpaciente\s+/gi,
+    /\bnome\s*[.…]*\s*:\s*(?!d[ao]\s+m[aã]e)/gi,
+    /(?:^|\n)[^\n]{0,8}?\bque\s+(?:o\s*\(a\)\s*|a\s+|o\s+)?/gi      // "Atesto" cortado pelo OCR: "to que FULANO"
+  ];
+  let um = '';
+  for (const g of gatilhos) {
+    for (const m of t.matchAll(g)) {
+      const antes = t.slice(Math.max(0, m.index - 12), m.index);
+      if (/m[aã]e\s*$|pai\s*$/i.test(antes)) continue;
+      const n = nomeDepois(t.slice(m.index + m[0].length, m.index + m[0].length + 90));
+      const partes = n.split(' ').filter(x => !CONECTORES.has(norm(x)));
+      if (partes.length >= 2) return { nome: n, conf: 0.8, trecho: trechoDe(t, m.index, m.index + m[0].length + n.length) };
+      if (partes.length === 1 && !um && partes[0].length >= 3) um = { nome: n, conf: 0.5, trecho: trechoDe(t, m.index, m.index + m[0].length + n.length) };
+    }
+  }
+  return um || null;
+}
+
+/** Médico: "CRM 18669-ES", "CRM - ES Nº 7076", "CRM: 52-1260251 - RJ". */
+export function lerCrm(text) {
+  const m = String(text || '').match(/C\.?\s?R\.?\s?M\.?\s*[\-\/:.]*\s*(?:([A-Z]{2})\s*)?[\-\/:]*\s*(?:N[º°o.]*\s*:?\s*)?(\d[\d.\-]{2,11}\d)(?:\s*[\-\/]\s*([A-Z]{2})\b)?/);
+  if (!m) return null;
+  const uf = m[1] || m[3] || '';
+  return `CRM ${m[2]}${uf ? '-' + uf : ''}`;
+}
+
+/** Junta tudo o que se lê de um atestado. */
+export function lerAtestado(text, hoje = today()) {
+  const dias = lerDiasAtestado(text);
+  const data = lerDataAtestado(text, hoje);
+  const pac = lerPacienteAtestado(text);
+  return { dias, data, paciente: pac, cid: lerCid(text), medico: lerCrm(text) };
+}
+
+/** Linhas que falam de outras pessoas (médico, mãe, responsável) — fora da busca do funcionário. */
+export function semOutrasPessoas(text) {
+  const L = String(text || '').split(/\n/);
+  const outra = (l) => /\b(dr\.?|dra\.?|c\.?r\.?m|m[eé]dic[oa]|conselho|nome da m[aã]e|m[aã]e\s*:|pai\s*:|profissional|respons[aá]vel|assinad[oa] digitalmente|acompanhando|carimbo)/i.test(l);
+  // a linha acima de "Médico…/CRM…" costuma ser o nome do médico
+  return L.filter((l, i) => !outra(l) && !(L[i + 1] != null && /^\s*(m[eé]dic[oa]|c\.?r\.?m|conselho|dr\.?|dra\.?)\b/i.test(L[i + 1]))).join('\n');
+}
+
+/** Funcionário a partir do nome lido no documento (tolera erros pequenos de OCR e sobrenome cortado). */
+export function empregadoPorNome(nome, employees) {
+  const toks = (s) => norm(s).split(' ').filter(t => t.length > 1 && !CONECTORES.has(t));
+  const P = toks(nome); if (!P.length) return null;
+  const parecido = (a, b) => a === b || (a.length >= 4 && b.startsWith(a)) || (b.length >= 4 && a.startsWith(b)) || (Math.min(a.length, b.length) >= 5 && lev(a, b) <= 1);
+  const res = [];
+  for (const e of employees || []) {
+    const T = toks(e); if (!T.length) continue;
+    if (!parecido(P[0], T[0])) continue;
+    const hit = P.filter(p => T.some(t => parecido(p, t))).length;
+    const score = hit / Math.max(P.length, Math.min(T.length, 3));
+    if (P.length === 1 || score >= 0.5) res.push({ option: e, score: Math.min(0.97, 0.55 + score * 0.42) });
+  }
+  res.sort((a, b) => b.score - a.score);
+  if (!res.length) return null;
+  if (res.length > 1 && res[1].score >= res[0].score - 0.02) return { option: null, candidatos: res.filter(r => r.score >= res[0].score - 0.02).map(r => r.option) };
+  return res[0];
+}
+
+/** Avisos sobre o documento (regras: documentos[].avisos = [{ palavras?, cid?, semCampo?, nivel, mensagem }]). */
+export function avisosDoDocumento(text, docRule, campos = {}) {
+  const T = plain(text); const out = [];
+  for (const a of docRule?.avisos || []) {
+    const porPalavra = a.palavras?.some(w => T.includes(plain(w)));
+    const porCid = a.cid?.some(c => norm(campos.cid?.valor || '').replace(/ /g, '').startsWith(norm(c).replace(/ /g, '')));
+    if (!(porPalavra || porCid)) continue;
+    if (a.semCampo && campos[a.semCampo]) continue;
+    out.push({ nivel: a.nivel || 'atencao', mensagem: a.mensagem, id: a.id || null });
+  }
+  return out;
+}
+
 /** Endereço em contas de consumo e comprovantes. */
 export function extractAddress(text) {
   const out = {}; const T = String(text || '');
@@ -595,7 +799,7 @@ export function readASO(text) {
 /** Uma linha que resume o que foi entendido do documento (aparece embaixo do arquivo). */
 export function summarizeDocument(analise, text) {
   const id = analise?.documento?.id; const c = analise?.campos || {}; const v = (k) => c[k]?.valor;
-  if (id === 'atestado') return [v('empregado'), v('dias') && `${v('dias')} dias`, v('dataAfastamento') && `a partir de ${v('dataAfastamento')}`].filter(Boolean).join(' · ');
+  if (id === 'atestado') return [v('empregado') || (analise.paciente && `paciente: ${analise.paciente}`), v('dias') && `${v('dias')} ${+v('dias') === 1 ? 'dia' : 'dias'}`, v('dataAfastamento') && `a partir de ${v('dataAfastamento')}`].filter(Boolean).join(' · ');
   if (id === 'aso') { const a = readASO(text); return ['ASO', a.tipo, a.resultado, a.data].filter(Boolean).join(' · '); }
   if (id === 'cat') return ['CAT', v('numeroCat'), v('dataAfastamento') && `acidente em ${v('dataAfastamento')}`].filter(Boolean).join(' · ');
   if (id === 'pedidoDemissao') return ['Pedido de demissão', v('empregado'), v('dataAviso')].filter(Boolean).join(' · ');

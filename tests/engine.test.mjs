@@ -106,4 +106,105 @@ t('texto livre não vai literalmente para a descrição', () => {
   assert.ok(!Object.values(r.campos).some(c => String(c.valor).includes('avisa ele')));
 });
 
+/* ---- Leitor de atestados: layouts reais com dados inventados (nomes, CPFs e médicos fictícios) ---- */
+const H = new Date(2026, 9, 13);
+const EMP = ['CARLA MENDES FARIAS', 'BRUNO TEIXEIRA LOPES', 'RENATA DOS ANJOS PRADO', 'OTAVIO LUZ CAMPOS', 'PRISCILA NOVAES REIS', 'HUGO MARTINS VALE', 'SAMANTA RIOS DUARTE'];
+const A = (txt) => E.analyzeText(txt, rules, { employees: EMP, hoje: H });
+const val = (r, k) => r.campos[k]?.valor;
+
+t('atestado UPA: "02 dia(s)", "a partir desta data", data por extenso', () => {
+  const r = A(`UNIDADE DE PRONTO ATENDIMENTO\nATESTADO MÉDICO\nAtesto que o(a) CARLA MENDES FARIAS, Portador do CPF: 111.222.333-96 e\nnecessita de 02 dia(s) de afastamento do trabalho a partir desta data por motivo de doença.\nSerra-ES, 17 de Setembro de 2026\nANA PAULA FICTICIA - C.R.M. 99999\nNota 1) Este atestado será expedido para justificativa de 1 a 15 dias de afastamento do trabalho.\nNota 2) De acordo com a Portaria MPAS 1722 de 25/07/79`);
+  assert.equal(val(r, 'empregado'), 'CARLA MENDES FARIAS');
+  assert.equal(val(r, 'dias'), '2');
+  assert.equal(val(r, 'dataAfastamento'), '17/09/2026');
+  assert.equal(val(r, 'tipoAfastamento'), 'Doença período igual ou inferior a 15 dias');
+});
+
+t('atestado de posto: CID10 colado, "1 (um) dia", data com hora', () => {
+  const r = A(`ATESTADO\nAtesto, para os devidos fins, que BRUNO TEIXEIRA LOPES, portador(a) do CPF 000.111.222-33,\nrecebeu atendimento na Unidade de Saude no dia 15/09/2026 às\n11:40, com o diagnóstico segundo CID10 N390. Em decorrência, deverá permanecer em afastamento de\nsuas atividades laborativas por um período de 1 (um) dia a partir desta data.\nJOANA EXEMPLO - CRM - ES 12345`);
+  assert.equal(val(r, 'empregado'), 'BRUNO TEIXEIRA LOPES');
+  assert.equal(val(r, 'dias'), '1');
+  assert.equal(val(r, 'dataAfastamento'), '15/09/2026');
+  assert.equal(val(r, 'cid'), 'N39.0');
+  assert.match(r.campos.dias.fonte, /1 \(um\) dia/);   // trecho do documento aparece como fonte
+});
+
+t('atestado digital: "Paciente:" e "3 (TRÊS) DIAS"', () => {
+  const r = A(`ATESTADO MÉDICO\nConsultório   Data de emissão: 16/09/2026\nDr(a). MARIA FICTICIA SOUZA   CRM: 52-1234567 - RJ\nPaciente:   Renata dos Anjos Prado    Sexo: Não Informado\nDECLARO PARA OS DEVIDOS FINS QUE A PACIENTE ACIMA NECESSITA FICAR 3 (TRÊS) DIAS AFASTADA DE SUAS ATIVIDADES.\nAtestado Médico assinado digitalmente por MARIA FICTICIA SOUZA em 16/09/2026`);
+  assert.equal(val(r, 'empregado'), 'RENATA DOS ANJOS PRADO');
+  assert.equal(val(r, 'dias'), '3');
+  assert.equal(val(r, 'dataAfastamento'), '16/09/2026');
+});
+
+t('ficha de pronto-socorro: ignora nascimento e nome da mãe; "012 dias" do OCR vira 1', () => {
+  const r = A(`Paciente........: OTAVIO LUZ CAMPOS o MEsoUNO\nNome da Mãe...: SAMANTA RIOS DUARTE\nNascimento......: 04/02/2005\nProfissional, LIGIA EXEMPLO - CRM/18997  Data e Hora Atual......: 25/09/2026 16:29\natestamos que o Sr(a): OTAVIO LUZ CAMPOS\ndeverá ficar afastado de suas atividades diárias durante\n= 012 dias. a parti de [25/09/2026\ncio: A09-DIARRÉIA`);
+  assert.equal(val(r, 'empregado'), 'OTAVIO LUZ CAMPOS');
+  assert.equal(val(r, 'dataAfastamento'), '25/09/2026');
+  assert.equal(val(r, 'dias'), '1');
+  assert.ok(r.campos.dias.conf < 0.6, 'número duvidoso fica marcado para conferir');
+  assert.equal(val(r, 'cid'), 'A09');
+});
+
+t('atestado de acompanhante: aviso e tipo em aberto; CID com 2 no lugar de Z', () => {
+  const r = A(`ATESTADO\nAtesto que PRISCILA NOVAES REIS\ninscrito no CPF Nº 123.456.789-09, necessita de 1 ( hum* ) dia(s) de afastamento do trabalho a\npartir de 22 de setembro de 2026, por estar acompanhando LUCAS NOVAES para o fim de: CONSULTA MÉDICA.\nCID : 2763\nLIGIA FICTICIA\nMédico da estratégia de saúde da família\nConselho: CRM - ES Nº 7076`);
+  assert.equal(val(r, 'empregado'), 'PRISCILA NOVAES REIS');
+  assert.equal(val(r, 'dias'), '1');
+  assert.equal(val(r, 'dataAfastamento'), '22/09/2026');
+  assert.equal(val(r, 'cid'), 'Z76.3');
+  assert.equal(val(r, 'tipoAfastamento'), undefined);
+  assert.ok(r.avisos.some(a => a.id === 'acompanhante'));
+});
+
+t('nome do médico não vira funcionário; OCR que corta "Atesto"', () => {
+  const r = A(`to que HUGO MARTINS VALE '\nCPF Nº 123.456.789-09, necessita de 1 ( um ) dia(s) de afastamento do trabalho a\npartir de 3 de setembro de 2026.\n03/09/2026\nSAMANTA RIOS DUARTE\nMédico dermatologista\nConselho: CRM - ES Nº 18263`);
+  assert.equal(val(r, 'empregado'), 'HUGO MARTINS VALE');
+  const r2 = A(`ATESTADO MÉDICO\nAtesto para os devidos fins que ___ necessita de 02 dias de afastamento.\nSAMANTA RIOS DUARTE\nMédica CRM 1234-ES`);
+  assert.equal(val(r2, 'empregado'), undefined);
+});
+
+t('atestado escolar de dependente: sobrenome igual fica para conferir', () => {
+  const r = A(`ATESTADO MÉDICO\nAtesto que Sr(a) TOMAS RIOS DUARTE, portador(a) do CPF: 229.000.111-22,\nnecessita de 1 (Um) dia(s) de afastamento da Escola a partir desta data por motivo de doença.\nData/Hora Entrada: 23/09/2026 08:05:41`);
+  assert.equal(val(r, 'empregado'), 'SAMANTA RIOS DUARTE');
+  assert.ok(r.campos.empregado.conf < 0.6);
+  assert.ok(r.avisos.some(a => a.id === 'escola'));
+  assert.ok(r.avisos.some(a => a.id === 'outroNome'));
+  assert.equal(val(r, 'dataAfastamento'), '23/09/2026');
+});
+
+t('manuscrito lido pelo OCR: "( OL ) um dias", "(03) dias"; nota "01 a 15 dias" ignorada', () => {
+  const r = A(`ATESTADO MEDICO\nAtesto para os devidos fins, que = MrouQgR JuUtaQ\nNecessitade( OL ) Zum =Z diasdeafastamentode\nTrabalho a partir desta data.\nNOTA: ESTE ATESTADO SERÁ EXPEDIDO PARA JUSTIFICATIVA DE 01 À 15 DIAS DE AFASTAMENTO. DECRETO Nº 89.312 DE 23/01/1984`);
+  assert.equal(val(r, 'dias'), '1');
+  assert.equal(val(r, 'dataAfastamento'), undefined);   // decreto antigo não é a data
+  assert.equal(val(r, 'empregado'), undefined);
+  const r2 = A('ATESTADO\nAtesto para os devidos fins que\nnecessitade (03) WI  (---diasde\nafastamento do trabalho a partir desta data.');
+  assert.equal(val(r2, 'dias'), '3');
+});
+
+t('receita de remédio não conta como dias; data com ano de 2 dígitos e "dd de mm de aa"', () => {
+  assert.equal(E.lerDiasAtestado('SORO FISIOLOGICO 12/12 HORAS POR 5 DIAS'), null);
+  assert.equal(E.lerDataAtestado('Data: 04/09/26', H).data, '04/09/2026');
+  assert.equal(E.lerDataAtestado('Local e data: Vitória, 02 de 09 de 26', H).data, '02/09/2026');
+  assert.equal(E.lerDataAtestado('Nasc: 30/10/2000  atendido em 02/09/2026 às 10:58', H).data, '02/09/2026');
+});
+
+t('opção de formulário "( ) acidente do trabalho" não escolhe acidente', () => {
+  const r = A('Atestado\nO (A) SR. (A) HUGO MARTINS VALE\nesteve em consulta\nORIENTAÇÃO\nem repouso por 02 dias, contados a partir desta data por\nU doença\nÚ acidente do trabalho');
+  assert.equal(val(r, 'tipoAfastamento'), 'Doença período igual ou inferior a 15 dias');
+  assert.equal(val(r, 'dias'), '2');
+  assert.equal(val(r, 'empregado'), 'HUGO MARTINS VALE');
+});
+
+t('declaração de comparecimento sem dias: aviso', () => {
+  const r = A('DECLARAÇÃO DE COMPARECIMENTO\nDeclaro que BRUNO TEIXEIRA LOPES compareceu a esta unidade para consulta médica no dia 10/10/2026 das 08:00 às 10:30. CRM 1234-ES');
+  assert.ok(r.avisos.some(a => a.id === 'comparecimento'));
+  assert.equal(val(r, 'dias'), undefined);
+});
+
+t('CID: variações', () => {
+  assert.equal(E.lerCid('CID 10: B349'), 'B34.9');
+  assert.equal(E.lerCid('CID: JO3'), 'J03');
+  assert.equal(E.lerCid('C.I.D. F419'), 'F41.9');
+  assert.equal(E.lerCid('sem diagnóstico'), null);
+});
+
 console.log(`\n${n} testes ok`);

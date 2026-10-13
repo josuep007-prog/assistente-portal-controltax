@@ -310,3 +310,17 @@ details.more > summary::-webkit-details-marker { display: none; }
 .ag-i .main { flex: 1; min-width: 0; }
 .ag-i .main b { display: block; font-size: 12.5px; }
 .ag-i .main small { color: var(--ink-3); }
+
+/* 1.3 — nome lido, recentes, avisos, experiência, dúvidas, repetir */
+.field .hint { display: block; margin-top: 4px; font-size: 11.5px; color: var(--ink-3); }
+.cands.recentes small { color: var(--ink-3); }
+.aviso-esc { align-items: flex-start; }
+.aviso-esc > div { flex: 1; }
+.aviso-esc .icon-btn { margin: -4px -6px 0 0; }
+.exp ul { margin: 6px 0; padding-left: 18px; }
+.exp li { margin: 3px 0; }
+.exp li .chip { margin-left: 4px; }
+.faq-i { padding: 8px 12px; margin-bottom: 6px; }
+.faq-i summary { cursor: pointer; font-weight: 600; }
+.faq-i p { margin: 6px 0 2px; color: var(--ink-2); }
+.li.repetir { width: 100%; text-align: left; cursor: pointer; margin-top: 10px; }

@@ -60,7 +60,7 @@
     </style>
     <button class="launcher" part="launcher" type="button" aria-label="Abrir o Assistente ControlTax">
       <span class="mark"><img alt="" src="${chrome.runtime.getURL('icons/icon-32.png')}"></span>
-      <span>Assistente</span><span class="badge" hidden></span>
+      <span class="lbl">Assistente</span><span class="badge" hidden></span>
     </button>
     <div class="frame-wrap" aria-hidden="true"></div>
     <div class="drop" role="dialog" aria-label="Solte o arquivo">
@@ -113,6 +113,20 @@
     @media (prefers-reduced-motion: reduce){html.ct-docked{transition:none}}`;
   document.documentElement.appendChild(pageStyle);
 
+  /* ============ Colar (Ctrl+V) um print ou arquivo na página ============ */
+  const editavel = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  document.addEventListener('paste', (e) => {
+    if (editavel(e.target) || editavel(document.activeElement)) return;      // colar texto num campo do portal: não mexe
+    const files = [...(e.clipboardData?.files || [])];
+    if (!files.length) return;
+    e.preventDefault();
+    const hora = new Date().toTimeString().slice(0, 5).replace(':', 'h');
+    const nomeados = files.map((f, i) => /^image\.(png|jpe?g)$/i.test(f.name) || !f.name ? new File([f], `print-colado-${hora}${files.length > 1 ? '-' + (i + 1) : ''}.png`, { type: f.type || 'image/png' }) : f);
+    setPanel(true);
+    setTimeout(() => sendFiles(nomeados, 'colado'), port ? 0 : 900);
+    toast('Arquivo colado: o Assistente vai ler.');
+  }, true);
+
   /* ============ Canal privado com o painel ============ */
   function connectPort() {
     const ch = new MessageChannel();
@@ -145,7 +159,7 @@
           post({ type: 'options', id: m.id, options: opts, virtual: !!opts.virtual });
           break;
         }
-        case 'employees': post({ type: 'employees', id: m.id, names: await employeeNames() }); break;
+        case 'employees': { const names = await employeeNames(); post({ type: 'employees', id: m.id, names, detalhes: employeesInfo.get(companyName()) || [] }); break; }
         case 'highlight': flash(findField(m.locator)); break;
         case 'markMissing': markMissing(m.campos || []); break;
         case 'requestSubmit': { const b = submitButton(); if (b) b.click(); else toast('Abra o formulário da solicitação para enviar.'); break; }
@@ -253,6 +267,14 @@
     const empresa = companyName(); notaEmpresa(empresa);
     post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, form: r.mode === 'form' ? snapshot(tipo) : null });
   }
+  /* Texto do botão conforme a tela: no formulário, convida a preencher */
+  function atualizarLauncher() {
+    const r = routeInfo();
+    const tipo = r.slug ? tipoBySlug(r.slug) : null;
+    const lbl = root.querySelector('.launcher .lbl');
+    const txt = r.mode === 'form' && tipo ? 'Preencher com o Assistente' : 'Assistente';
+    if (lbl && lbl.textContent !== txt) lbl.textContent = txt;
+  }
 
   /* ============ Revelar campos em etapas/abas ============ */
   async function reveal(el) {
@@ -335,10 +357,17 @@
   /* Lista completa de empregados pela mesma API que o portal usa (a lista da tela é virtualizada
      e só mostra ~13 nomes por vez). O endereço é o que o próprio portal chamou nesta sessão. */
   const employeesCache = new Map();
+  const employeesInfo = new Map();   // empresa → [{ nome, admissao, ativo }] (sem CPF nem outros dados)
   let empresaVista = '', empresaDesde = 0;
+  const resumoEmpregado = (e) => ({ nome: String(e?.name || '').trim(), admissao: String(e?.hireDate || e?.admissionDate || '').slice(0, 10), ativo: !/demit|deslig|termin|inativ|dismiss|fired/i.test(String(e?.status ?? '')) });
   function notaEmpresa(e) { if (e && e !== empresaVista) { empresaVista = e; empresaDesde = performance.now(); } }
   async function employeeNames() {
     const empresa = companyName(); notaEmpresa(empresa);
+    if (plat.employees) {   // simulador
+      const arr = await plat.employees();
+      employeesInfo.set(empresa, arr.map(resumoEmpregado));
+      return [...new Set(arr.map(e => String(e?.name || '').trim()).filter(Boolean))];
+    }
     // só vale uma chamada feita depois que esta empresa foi selecionada
     const url = performance.getEntriesByType('resource')
       .filter(e => e.startTime >= empresaDesde - 2000 && /\/api\/br-payroll-sr\/v1\/clients\/[^/]+\/employees/.test(e.name)).map(e => e.name).pop();
@@ -351,7 +380,7 @@
       const j = await r.json();
       const arr = Array.isArray(j) ? j : (j.items || j.data || []);
       const names = [...new Set(arr.map(e => String(e?.name || '').trim()).filter(Boolean))];
-      if (names.length) { employeesCache.set(key, names); employeesCache.set(empresa, names); }
+      if (names.length) { employeesCache.set(key, names); employeesCache.set(empresa, names); employeesInfo.set(empresa, arr.map(resumoEmpregado).filter(e => e.nome)); }
       return names;
     } catch { return []; }
   }
@@ -625,7 +654,7 @@
       const r = routeInfo();
       // formulário fechou e voltou à lista → provável envio concluído
       if (prev.includes('/add') && r.mode === 'list') post({ type: 'formClosed', from: prev, to: href });
-      sendContext();
+      sendContext(); atualizarLauncher();
     }, 600);
   };
   setInterval(routeChanged, 500);
@@ -645,7 +674,7 @@
   window.addEventListener('resize', () => document.documentElement.classList.toggle('ct-docked', panelOpen && innerWidth >= 1000));
 
   loadRules().then(() => {
-    lastHref = currentPath(); ensureFrame();
+    lastHref = currentPath(); ensureFrame(); atualizarLauncher();
     // ganchos para o simulador (soltar exemplos, abrir o painel)
     plat.expose?.({ openPanel: () => setPanel(true), sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); } });
   });

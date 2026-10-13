@@ -17,6 +17,17 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 1.3
+
+**Leitor de atestados mais esperto** (calibrado com atestados reais de UPA, posto de saúde, consultório, hospital, receita digital e manuscritos — nenhum foi guardado no repositório; os testes usam cópias com dados inventados):
+- **Dias** escritos de vários jeitos: "01 (UM) DIA", "(03) três", "2 dia(s)", "1 ( hum* )", "repouso por 4 dias", e erros comuns do OCR ("( OL )", "012 dias"). Ignora a nota "1 a 15 dias de afastamento" e receitas ("por 5 dias").
+- **Data**: "a partir de…", "a partir desta data" (usa a data do documento), datas por extenso e com ano de 2 dígitos. Não confunde com nascimento, decretos ou portarias.
+- **Funcionário**: lê o nome do paciente ("Paciente:", "que o(a) NOME", "Sr(a): NOME") e compara com a lista tolerando erros pequenos e sobrenome cortado; não pega o nome do médico nem da mãe. Se o nome não estiver na lista, o painel mostra o que leu.
+- **Avisos na conferência**: atestado de acompanhante (o tipo fica para você escolher), atestado de escola ou em nome de outra pessoa com o mesmo sobrenome, declaração de comparecimento (horas) e leitura difícil.
+- **Fotos de lado** são giradas sozinhas; fotos ruins ganham uma segunda tentativa com tratamento de imagem. Passe o mouse no rótulo do campo para ver o trecho do documento de onde veio o dado.
+
+**Facilidades:** colar um print com **Ctrl+V** (no painel ou na página) · **funcionários recentes** com um clique · aviso de **pedido repetido** · **rascunho**: saiu sem enviar? o Assistente oferece continuar (fica 7 dias só no computador) · **repetir a última solicitação** · alerta de **contratos de experiência** (45 e 90 dias pela data de admissão do portal) · **avisos do escritório** e **dúvidas frequentes** pelas regras · **ajustes por empresa** · mensagem pronta com os **documentos da admissão** (Calcular → Docs. admissão) · **tamanho do texto** · **Copiar diagnóstico** (sem nomes nem valores) · **modo seguro**: se o portal mudar a tela, o Assistente não preenche sozinho.
+
 ## Novidades da 1.2
 
 **Vários atestados de uma vez:** arraste todos juntos e o Assistente abre **uma solicitação por atestado**, uma de cada vez. Ele preenche e anexa só o atestado daquela solicitação; você confere e clica em ADICIONAR; assim que o portal salva, ele abre e preenche a próxima. O lote mostra o andamento ("2 de 4"), e dá para pular uma ou parar. Documentos de pedidos diferentes arrastados juntos também viram uma solicitação por tipo.
@@ -64,13 +75,16 @@ Só mudanças de **código** (`content/`, `panel/`, `background/`) exigem uma no
 
 | Bloco | Para que serve |
 |---|---|
-| `config` | Bloquear ou só avisar no envio, CID, OCR, prazos internos (`prazoInternoDiasUteis`), dia limite das rubricas, para onde vão atestados de até 15 dias. |
+| `config` | Bloquear ou só avisar no envio, CID, OCR, prazos internos (`prazoInternoDiasUteis`), dia limite das rubricas, para onde vão atestados de até 15 dias, marcos da experiência (`experienciaDias`). |
 | `feriados` | Datas no formato AAAA-MM-DD (nacionais 2026–2027 já incluídos; acrescente os municipais). |
 | `aliasesOpcoes` | Converte o que vem no documento para o que o portal mostra (SP → São Paulo). |
 | `intencoes` | Cartões do Início e palavras que levam a cada solicitação. |
 | `tipos` | Uma entrada por solicitação: `slug` (endereço no portal), `campos` (`fc` = formcontrolname da tela), `anexos`, `condicionais`, `verificacoes`, modelos de `assunto` e `descricao`, `dicas`. |
-| `documentos` | Como reconhecer cada documento (palavras) e o que extrair (expressões regulares). |
-| `mensagens` | Textos exibidos ao cliente. |
+| `documentos` | Como reconhecer cada documento (palavras) e o que extrair (expressões regulares). `leitor: "atestado"` usa o leitor próprio de atestados; `avisos` = `[{ palavras, cid, semCampo, nivel, mensagem }]` aparecem na conferência. |
+| `mensagens` | Textos exibidos ao cliente (inclui `admissaoInicio`/`admissaoFim` da mensagem de documentos da admissão). |
+| `avisosEscritorio` | Recados no Início: `[{ id, titulo, texto, nivel: "importante"?, desde, ate: "AAAA-MM-DD", link }]`. O cliente pode dispensar. |
+| `faq` | Dúvidas frequentes que aparecem na busca do Início: `[{ pergunta, resposta, palavras }]`. |
+| `empresas` | Ajustes por empresa: `{ "trecho do nome": { config: { … }, avisos: [ … ] } }` (ex.: outro prazo interno, `experienciaDias: [30, 90]`). |
 
 Tipos de verificação disponíveis: `antecedenciaMinima`, `dataPassada`, `dataNaoFutura`, `antiguidadeMaxima`, `intervalo`, `somaMaxima`, `diasMaiorQue`, `inicioFerias`, `pagamentoAntesDe`, `prazoEscritorio`, `prazoRescisao`, `prazoCat`, `cpf`, `pis`, `email`, `idadeMinima`, `competenciaRecente`, `diaLimite`, `abaErrada`, `info`.
 
@@ -95,5 +109,7 @@ Abra o Claude Code dentro desta pasta: o `CLAUDE.md` traz o contexto, as regras 
 ## Pontos a confirmar com o escritório
 
 - `config.diaLimiteRubricas` está vazio — defina o dia de corte das variáveis da folha.
+- Atestado de acompanhante: hoje o Assistente avisa e deixa o tipo de afastamento em branco. Se o escritório tiver um padrão (ex.: "Ausência justificada"), troque a regra `nenhum: true` em `tipos.afastamento.tipoAfastamentoAuto` por `valor`.
+- Contratos de experiência: o alerta usa 45 e 90 dias (`config.experienciaDias`); ajuste por empresa se for 30 + 60.
 - O preenchimento da **grade** do Lançamento de Rubricas não foi calibrado (a empresa de teste não tem eventos cadastrados); hoje a planilha vira um resumo na descrição.
 - A tela de **Pendências** lê as listas com o acesso do próprio cliente; o formato dos itens foi tratado de forma genérica porque a empresa de teste não tinha solicitações.

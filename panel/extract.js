@@ -44,15 +44,20 @@ async function getOcr() {
   });
   return ocrWorker;
 }
-/** Fotos de celular: aumenta se for pequena, passa para tons de cinza e estica o contraste. */
-async function prepImage(source) {
+/** Fotos de celular: gira (0/90/180/270), aumenta se for pequena, passa para tons de cinza e estica o contraste.
+ *  binarizar = limiar adaptativo (ajuda em fotos com sombra e papel amarelado). */
+async function prepImage(source, { rot = 0, binarizar = false } = {}) {
   try {
-    const bmp = await createImageBitmap(source);
+    const bmp = source instanceof ImageBitmap ? source : await createImageBitmap(source);
     const alvo = 2000;
     const scale = Math.max(1, Math.min(3, alvo / Math.max(bmp.width, bmp.height)));
-    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const bw = Math.round(bmp.width * scale), bh = Math.round(bmp.height * scale);
+    const deitado = rot === 90 || rot === 270;
+    const w = deitado ? bh : bw, h = deitado ? bw : bh;
     const cv = new OffscreenCanvas(w, h); const ctx = cv.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingQuality = 'high'; ctx.drawImage(bmp, 0, 0, w, h);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.translate(w / 2, h / 2); ctx.rotate(rot * Math.PI / 180); ctx.drawImage(bmp, -bw / 2, -bh / 2, bw, bh);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     const img = ctx.getImageData(0, 0, w, h); const d = img.data;
     const hist = new Uint32Array(256);
     for (let i = 0; i < d.length; i += 4) { const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0; d[i] = g; hist[g]++; }
@@ -60,7 +65,24 @@ async function prepImage(source) {
     for (; lo < 255; lo++) { acc += hist[lo]; if (acc > total * 0.01) break; }
     acc = 0; for (; hi > 0; hi--) { acc += hist[hi]; if (acc > total * 0.01) break; }
     const range = Math.max(1, hi - lo);
-    for (let i = 0; i < d.length; i += 4) { const v = Math.max(0, Math.min(255, ((d[i] - lo) * 255) / range)); d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+    const g = new Uint8ClampedArray(total);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) g[j] = Math.max(0, Math.min(255, ((d[i] - lo) * 255) / range));
+    if (binarizar) {
+      // limiar adaptativo (média local por imagem integral, janela ~1/40 da largura)
+      const r = Math.max(8, Math.round(Math.max(w, h) / 80));
+      const ii = new Float64Array((w + 1) * (h + 1));
+      for (let y = 1; y <= h; y++) { let row = 0; for (let x = 1; x <= w; x++) { row += g[(y - 1) * w + x - 1]; ii[y * (w + 1) + x] = ii[(y - 1) * (w + 1) + x] + row; } }
+      for (let y = 0; y < h; y++) {
+        const y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+        for (let x = 0; x < w; x++) {
+          const x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+          const soma = ii[y1 * (w + 1) + x1] - ii[y0 * (w + 1) + x1] - ii[y1 * (w + 1) + x0] + ii[y0 * (w + 1) + x0];
+          const media = soma / ((x1 - x0) * (y1 - y0));
+          g[y * w + x] = g[y * w + x] < media * 0.86 ? 0 : 255;
+        }
+      }
+    }
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) { d[i] = d[i + 1] = d[i + 2] = g[j]; d[i + 3] = 255; }
     ctx.putImageData(img, 0, 0);
     return await cv.convertToBlob({ type: 'image/png' });
   } catch { return source; }
@@ -69,8 +91,35 @@ async function prepImage(source) {
 async function ocrImage(source, onProgress) {
   ocrProgress = onProgress || (() => {});
   const w = await getOcr();
-  const { data } = await w.recognize(source);
-  return data.text || '';
+  const { data } = await w.recognize(source, { rotateAuto: true });
+  return { texto: data.text || '', conf: data.confidence || 0 };
+}
+
+/** Nota de uma leitura: palavras de documento reconhecidas + confiança do OCR. */
+const PALAVRAS_DOC = /\b(atest|declar|paciente|afastamento|afastad|dias?|data|necessit|trabalho|atividades|medic|consulta|crm|cid|repouso|portador|cpf|nome|assinatura|unidade|sa[uú]de)/gi;
+export function notaLeitura(r) {
+  const palavras = new Set((String(r.texto).match(PALAVRAS_DOC) || []).map(x => x.toLowerCase().slice(0, 6))).size;
+  return palavras * 6 + (r.conf || 0) * 0.6;
+}
+
+/** OCR com segunda chance: se a leitura sai fraca, tenta a imagem girada e/ou com limiar adaptativo. */
+async function ocrMelhor(source, onProgress, faixa = [0, 1]) {
+  const bmp = await createImageBitmap(source);
+  const deitada = bmp.width > bmp.height * 1.1;
+  const tentativas = [{ rot: 0 }, ...(deitada ? [{ rot: 90 }, { rot: 270 }] : []), { rot: 0, binarizar: true }, ...(deitada ? [] : [{ rot: 90 }, { rot: 270 }]), { rot: 180 }];
+  const [a, b] = faixa; const n = tentativas.length;
+  let melhor = null;
+  for (let i = 0; i < n; i++) {
+    const t = tentativas[i];
+    const etapa = i === 0 ? 'Reconhecendo texto (OCR)' : t.rot ? 'Tentando a imagem em outra posição' : 'Tentando melhorar a imagem';
+    const r = await ocrImage(await prepImage(bmp, t), (p) => onProgress?.(a + (b - a) * Math.min(0.95, (i + p) / Math.min(n, i + 2)), etapa));
+    r.rot = t.rot; r.binarizar = !!t.binarizar; r.nota = notaLeitura(r);
+    self.__ctOcrLog?.push({ rot: t.rot, bin: !!t.binarizar, nota: Math.round(r.nota), conf: Math.round(r.conf) });
+    if (!melhor || r.nota > melhor.nota) melhor = r;
+    if (melhor.nota >= 75) break;                 // leitura boa: para aqui
+    if (i >= 1 && melhor.nota >= 55 && !deitada) break;
+  }
+  return melhor;
 }
 
 /* ---------- PDF ---------- */
@@ -105,6 +154,7 @@ async function readPdf(file, onProgress, { ocr = true } = {}) {
   }
   let text = pages.join('\n\n');
   let metodo = 'pdf-texto';
+  const confs = [], rots = [];
   const poor = text.replace(/\s+/g, '').length < 40 * maxPages;
   if (poor && ocr) {
     metodo = 'ocr';
@@ -116,11 +166,12 @@ async function readPdf(file, onProgress, { ocr = true } = {}) {
       const canvas = new OffscreenCanvas(vp.width, vp.height);
       await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
       const blob = await canvas.convertToBlob({ type: 'image/png' });
-      ocrPages.push(await ocrImage(blob, (p) => onProgress?.(0.3 + ((i - 1 + p) / n) * 0.7, 'Reconhecendo texto (OCR)')));
+      const r = await ocrMelhor(blob, onProgress, [0.3 + ((i - 1) / n) * 0.7, 0.3 + (i / n) * 0.7]);
+      ocrPages.push(r.texto); confs.push(r.conf); rots.push(r.rot);
     }
     text = ocrPages.join('\n\n');
   }
-  return { texto: text, paginas: pdf.numPages, metodo };
+  return { texto: text, paginas: pdf.numPages, metodo, confianca: confs.length ? Math.round(Math.min(...confs)) : 100, rotacao: rots.find(Boolean) || 0 };
 }
 
 /* ---------- Planilhas ---------- */
@@ -140,8 +191,8 @@ export async function readFile(file, onProgress, opts = {}) {
   if (isImage(file)) {
     if (opts.ocr === false) return { texto: '', metodo: 'imagem', paginas: 1 };
     onProgress?.(0.05, 'Melhorando a imagem');
-    const texto = await ocrImage(await prepImage(file), (p) => onProgress?.(p, 'Reconhecendo texto (OCR)'));
-    return { texto, metodo: 'ocr', paginas: 1 };
+    const r = await ocrMelhor(file, onProgress);
+    return { texto: r.texto, metodo: 'ocr', paginas: 1, confianca: Math.round(r.conf), rotacao: r.rot };
   }
   if (isSheet(file)) return readSheet(file);
   if (isText(file)) return { texto: await file.text(), metodo: 'texto', paginas: 1 };
