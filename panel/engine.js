@@ -568,7 +568,7 @@ export function parseFreeText(text, rules, ctx = {}) {
     }
     default: break;
   }
-  put('observacoes', String(text).trim(), 0.9);
+  // o texto do cliente serve só para entender o pedido: não vai literalmente para a descrição
   return { tipoSugerido: tipo, campos, datas: datas.map(fmtDate) };
 }
 

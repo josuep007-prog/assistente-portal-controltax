@@ -298,7 +298,7 @@ function anotarCandidatos(tipo, texto, campos) {
 function aplicarCampos(tipo, campos, fonte) {
   const W = w(tipo); const t = tipoDef(tipo);
   for (const [k, c] of Object.entries(campos)) {
-    if (!(t.campos[k] || k === 'observacoes') || W.editados.has(k)) continue;
+    if (!t.campos[k] || W.editados.has(k)) continue;
     if (k === 'empregado' && W.empregados.length) { const m = E.bestMatch(c.valor, W.empregados, 0.6); if (!m) continue; c.valor = m.option; }
     W.valores[k] = { valor: c.valor, conf: c.conf ?? 0.6, fonte: c.fonte || fonte };
   }
@@ -613,7 +613,7 @@ function renderSugestaoTexto(el, s) {
     <div class="card-h">${icon('spark')}<h3>Entendi assim</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
     <div class="card-b">
       <p style="margin:0 0 8px">Solicitação: <b>${esc(t?.nome || 'Solicitação Geral')}</b></p>
-      ${achados.length ? `<dl class="kv" style="margin-bottom:10px">${achados.map(([k, c]) => `<dt>${esc(t?.campos?.[k]?.rotulo || k)}</dt><dd>${esc(c.valor)}</dd>`).join('')}</dl>` : '<p class="muted" style="margin:0 0 10px">Seu texto vai junto, como observação para o analista.</p>'}
+      ${achados.length ? `<dl class="kv" style="margin-bottom:10px">${achados.map(([k, c]) => `<dt>${esc(t?.campos?.[k]?.rotulo || k)}</dt><dd>${esc(c.valor)}</dd>`).join('')}</dl>` : '<p class="muted" style="margin:0 0 10px">Não encontrei dados para preencher no texto. Abra a solicitação e complete os campos.</p>'}
       ${s.tipoAberto && s.tipoAberto !== tipo ? `<p class="muted" style="margin:0 0 10px;font-size:12px">A solicitação de ${esc(S.rules.tipos[s.tipoAberto]?.nome)} que está aberta será fechada no portal sem enviar. O que eu já tinha preenchido continua guardado aqui.</p>` : ''}
       <div class="actions"><button class="btn btn-primary" id="sug-go">${s.tipoAberto === tipo ? 'Preencher em' : 'Abrir'} ${esc(t?.nome || 'Solicitação Geral')} ${icon('arrow', 'ic-sm')}</button>
         ${s.tipoAberto && s.tipoAberto !== tipo ? `<button class="btn" id="sug-aqui">Usar em ${esc(S.rules.tipos[s.tipoAberto]?.nome)}</button>` : ''}</div>

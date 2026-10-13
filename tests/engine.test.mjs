@@ -100,4 +100,10 @@ t('primeiro nome: único → preenche; repetido → pergunta', () => {
   assert.equal(E.parseFreeText('o João Pereira pediu demissão', rules, { employees: lista, hoje }).campos.empregado.valor, 'JOAO PEREIRA');
 });
 
+t('texto livre não vai literalmente para a descrição', () => {
+  const r = E.parseFreeText('o Ronaldo vai sair de férias dia 16/11 por 20 dias, avisa ele por favor', rules, { employees: ['RONALDO DE SOUZA'], hoje, tipoAtual: 'avisoFerias' });
+  assert.equal(r.campos.observacoes, undefined);
+  assert.ok(!Object.values(r.campos).some(c => String(c.valor).includes('avisa ele')));
+});
+
 console.log(`\n${n} testes ok`);

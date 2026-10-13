@@ -159,6 +159,8 @@ async def main():
             v = await leave()
             if v.get('selectedEmployee'): break
         check(v.get('selectedEmployee') == 'JORGE OLIVEIRA ALVES' and v.get('vacationStartDate') == '16/11/2026', 'abre Aviso de Férias com o funcionário e a data preenchidos')
+        await pg.wait_for_timeout(1500); v = await leave()
+        check(not any('vai sair' in str(x) for x in v.values()), 'o texto escrito não vai literalmente para a descrição')
         await pn.click('.tab[data-view="inicio"]'); await pg.wait_for_timeout(300)
         await pn.fill('#free-txt', 'o Ronaldo pediu demissão hoje'); await pn.click('#free-go'); await pg.wait_for_timeout(1500)
         sug = await pn.locator('#sugestao').inner_text()
