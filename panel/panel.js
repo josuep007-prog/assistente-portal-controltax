@@ -1,5 +1,5 @@
 import * as E from './engine.js';
-import { readFile, aiExtract, aiAvailable } from './extract.js';
+import { readFile, aiExtract, aiAvailable, libsPresentes } from './extract.js';
 
 /* =================== Estado =================== */
 const params = new URLSearchParams(location.search);
@@ -1378,6 +1378,11 @@ async function renderConfig() {
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeIcon);
   if (standalone) { $('#btn-close').hidden = true; document.body.style.maxWidth = '520px'; document.body.style.margin = '0 auto'; }
   await Promise.all([loadRules(), loadPrefs()]);
+  if (!(await libsPresentes())) {
+    const el = document.createElement('div'); el.className = 'note warn'; el.setAttribute('role', 'alert'); el.style.cssText = 'margin:8px 12px 0';
+    el.innerHTML = `${icon('alert')}<div><b>Esta cópia da extensão está incompleta</b> (falta a pasta <code>lib</code>). O preenchimento funciona, mas PDFs, fotos e planilhas não serão lidos. Instale pelo .zip completo.</div>`;
+    viewEl.parentElement.insertBefore(el, viewEl);
+  }
   const hash = location.hash.slice(1);
   if (hash && ['config', 'ferramentas', 'historico'].includes(hash)) setView(hash); else render();
   if (!standalone) setTimeout(async () => { const tipos = Object.entries(S.rules.tipos).filter(([, t]) => t.api).map(([key, t]) => ({ key, api: t.api })); const r = await request({ type: 'pendencias', tipos }, 30000); if (r?.data) { S.pend = r.data; const n = r.data.reduce((a, p) => a + (p.itens || []).filter(i => i.aguardando).length, 0); send({ type: 'setBadge', n }); const d = $('#dot-pend'); d.hidden = !n; d.textContent = n; } }, 2500);

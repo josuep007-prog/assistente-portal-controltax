@@ -1,7 +1,17 @@
 // Leitura de arquivos 100% local: PDF (texto), OCR (imagens/PDF escaneado), planilhas e texto.
-import * as pdfjsLib from '../lib/pdfjs/pdf.min.mjs';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('lib/pdfjs/pdf.worker.min.mjs');
+// pdf.js é carregado só quando um PDF é lido: se a pasta lib/ faltar, o painel continua funcionando.
+let pdfjsLib = null;
+async function getPdfjs() {
+  if (pdfjsLib) return pdfjsLib;
+  try { pdfjsLib = await import(chrome.runtime.getURL('lib/pdfjs/pdf.min.mjs')); }
+  catch { throw new Error('A pasta lib/ da extensão está faltando: não consigo ler PDFs. Instale a extensão pelo .zip completo.'); }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('lib/pdfjs/pdf.worker.min.mjs');
+  return pdfjsLib;
+}
+/** true quando as bibliotecas de leitura (lib/) estão na extensão */
+export async function libsPresentes() {
+  try { const r = await fetch(chrome.runtime.getURL('lib/pdfjs/pdf.min.mjs'), { method: 'HEAD' }); return r.ok; } catch { return false; }
+}
 
 const ext = (name) => (String(name).toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || '';
 const isImage = (f) => /^image\//.test(f.type) || ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tif', 'tiff'].includes(ext(f.name));
@@ -85,7 +95,7 @@ function pageTextToLines(content) {
 
 async function readPdf(file, onProgress, { ocr = true } = {}) {
   const data = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  const pdf = await (await getPdfjs()).getDocument({ data, isEvalSupported: false }).promise;
   const pages = [];
   const maxPages = Math.min(pdf.numPages, 15);
   for (let i = 1; i <= maxPages; i++) {

@@ -82,13 +82,13 @@ background/service-worker.js   regras (dev → remota → cache → embutida), r
 content/content.js             age no portal: lê a tela, preenche, anexa, confere o envio, arrastar-e-soltar
 panel/                         painel lateral (HTML/CSS/JS), motor de regras (engine.js), leitura de arquivos (extract.js)
 rules/regras.json              o "cérebro" editável
-lib/                           pdf.js, Tesseract (OCR português), SheetJS — tudo local (fora do Git: `bash tools/baixar-libs.sh`)
+lib/                           pdf.js, Tesseract (OCR português), SheetJS — tudo local
 dev/                           servidor de desenvolvimento (Python, sem dependências)
 ```
 
 ## Continuar no Claude Code
 
-No repositório do GitHub as pastas `lib/` e `fonts/` não vão junto (12 MB): depois de clonar, rode `bash tools/baixar-libs.sh` (baixa do npm as versões exatas e confere o SHA-256). No Claude Code isso roda sozinho ao abrir a sessão (`.claude/settings.json`).
+O repositório do GitHub tem a extensão completa (inclusive `lib/` e `fonts/`): "Code → Download ZIP", descompactar e carregar a pasta no Chrome. Se alguma vez faltar `lib/`, o painel avisa; `bash tools/baixar-libs.sh` recria as pastas (versões e SHA-256 fixos).
 
 Abra o Claude Code dentro desta pasta: o `CLAUDE.md` traz o contexto, as regras de segurança no portal e o jeito de trabalhar; `docs/mapa-portal.md` traz o mapa da tela; `tests/` tem os testes (`node tests/engine.test.mjs` e `python tests/e2e.py`).
 

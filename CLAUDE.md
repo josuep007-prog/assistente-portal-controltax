@@ -31,7 +31,7 @@ Extensão Chrome (Manifest V3) que age por cima do Onvio Portal do Cliente na vi
 
 ## Trabalhando no Claude Code na nuvem
 
-- `lib/` e `fonts/` não estão no Git: o gancho `SessionStart` (`.claude/settings.json`) roda `tools/baixar-libs.sh`, que baixa do npm as versões fixas e confere o SHA-256. Se faltar algo, rode o script à mão. Para trocar a versão de uma biblioteca, atualize o script (versão e hash) junto.
+- `lib/` e `fonts/` estão no Git (desde 1.2.5, para o "Download ZIP" do GitHub virar uma extensão completa). `tools/baixar-libs.sh` recria as pastas a partir do npm com versões e SHA-256 fixos, se faltarem (o gancho `SessionStart` roda o script; ele não faz nada quando as pastas existem). Para trocar a versão de uma biblioteca, atualize o script (versão e hash) junto.
 - Os testes com navegador precisam do Playwright para Python (`pip install playwright`; o Chromium do ambiente já serve — use `channel='chromium'`).
 - Não há acesso ao Chrome do Josué nem ao Onvio real: valide tudo no simulador e nos testes (rodam sem tela: `headless` com `channel='chromium'`).
 - Mudanças que dependem da tela real (ex.: grade de rubricas) ficam marcadas como "a calibrar" e são conferidas depois numa sessão com o Chrome do Josué.
@@ -48,7 +48,7 @@ Extensão Chrome (Manifest V3) que age por cima do Onvio Portal do Cliente na vi
 | `panel/engine.js` | Motor puro, testável em Node: classificação de documentos, extração (rótulos/sinônimos que param no próximo rótulo, regex, endereço de comprovantes, ASO, nome do empregado na lista inclusive só pelo primeiro nome), texto livre (`parseFreeText`, `findDates`), verificações, prazos, modelos de texto, calendário com feriados. |
 | `panel/extract.js` | Leitura local: pdf.js (texto), Tesseract por OCR com pré-tratamento de fotos (escala, cinza, contraste), SheetJS (planilhas), IA do Chrome opcional. |
 | `rules/regras.json` | O "cérebro" editável — ver README para o mapa dos blocos. |
-| `lib/`, `fonts/` | Bibliotecas e fontes empacotadas (não editar; fora do Git, recriadas por `tools/baixar-libs.sh`). |
+| `lib/`, `fonts/` | Bibliotecas e fontes empacotadas (não editar; no Git; `tools/baixar-libs.sh` recria se faltar). pdf.js é importado sob demanda em `extract.js` — sem `lib/` o painel abre e mostra um aviso, em vez de ficar em branco. |
 
 **Comunicação conteúdo ↔ painel:** `MessageChannel` privado (o conteúdo manda `ct-hello` ao iframe). Mensagens: `context`, `files`, `fill`/`fillResult`, `getOptions`, `navigate`, `highlight`, `markMissing`, `requestSubmit` (botão "Conferir e enviar"), `submitAttempt`/`confirmSubmit`, `pendencias`, `formClosed`, `toast`, `setBadge`.
 **Lote (vários arquivos):** `handleVarios` lê tudo, `montarPedidos` separa um pedido por atestado (`config.umPedidoPorDocumento`) e um por tipo para o resto (CAT da mesma data acompanha o atestado; documentos neutros só entram se houver um único pedido possível). `abrirPedido` limpa o trabalho do tipo, abre o formulário, reanalisa com a lista de empregados e preenche; `onFormClosed` → `loteAoFecharFormulario` marca enviado e abre o próximo (fechou sem enviar = pausa).

@@ -56,6 +56,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 1.2.5 | 2026-10-13 | O "Download ZIP" do GitHub agora traz a extensão completa (pastas lib/ e fonts/). Se a pasta lib/ faltar, o painel abre normalmente e avisa, em vez de ficar em branco. |
 | 1.2.4 | 2026-10-13 | O que o cliente escreve em "Escreva com suas palavras" serve só para entender e preencher; não é mais copiado para a descrição da solicitação. |
 | 1.2.3 | 2026-10-13 | Férias e desligamento pelo texto livre: pergunta se é aviso ou cálculo. Ao atualizar a extensão, as abas do portal fora de formulário recarregam sozinhas e, nas que estão num formulário, o painel avisa para recarregar (F5) — antes a página continuava com a versão antiga das "mãos". |
 | 1.2.2 | 2026-10-13 | Listas longas do portal (virtualizadas, só ~13 nomes desenhados por vez): o Assistente lê a lista inteira rolando-a e completando com a lista da empresa, e escolhe a opção digitando para filtrar ou rolando até ela — funcionários com qualquer inicial e tipos de afastamento do fim da lista. |
