@@ -205,7 +205,7 @@ export function analyzeText(text, rules, ctx = {}) {
   if (tipo) for (const [k, v] of Object.entries(extractByLabels(text, tipo.campos))) put(k, v.valor, v.conf, v.fonte);
   for (const [k, v] of Object.entries(extractGeneric(text))) if (!tipo || tipo.campos[k]) put(k, v.valor, v.conf, v.fonte);
   if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
-  if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe')) put(k, v, 0.65, docRule.nome);
+  if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
   if (docRule?.tipoCatPalavras) {
     const T = norm(text);
     for (const [val, words] of Object.entries(docRule.tipoCatPalavras)) if (words.some(w => T.includes(norm(w)))) { put('tipoCat', val, 0.6, docRule.nome); break; }
@@ -221,8 +221,11 @@ export function analyzeText(text, rules, ctx = {}) {
     if (def?.tipo === 'numero') { const n = parseInt(onlyDigits(c.valor), 10); if (isNaN(n)) delete campos[k]; else c.valor = String(n); }
     if (def?.tipo === 'cpf' && c.valor) c.valor = fmtCPF(c.valor);
   }
-  // atestado: dias > 15 sugere o tipo do portal
-  if (docRule?.valores?.tipoAfastamentoSeDiasMaiorQue15 && +campos.dias?.valor > 15) put('tipoAfastamento', docRule.valores.tipoAfastamentoSeDiasMaiorQue15, 0.7, 'mais de 15 dias');
+  // afastamento: o tipo do portal sai do conteúdo do documento e da quantidade de dias
+  if (tipo?.campos?.tipoAfastamento && tipo.tipoAfastamentoAuto) {
+    const ta = inferTipoAfastamento(text, campos.dias?.valor, doc?.id, tipo.tipoAfastamentoAuto);
+    if (ta) put('tipoAfastamento', ta.valor, 0.7, ta.motivo);
+  }
   // funcionário
   if (tipo?.campos?.empregado && ctx.employees?.length) {
     const m = findEmployeeInText(text, ctx.employees);
@@ -270,6 +273,7 @@ export function derived(tipoKey, values, rules) {
     out.avisoAte = fmtDate(addDays(ini, -30));
   }
   const afa = parseDate(values.dataAfastamento), diasAfa = +values.dias || 0;
+  if (diasAfa) out.diasTexto = diasAfa === 1 ? '1 dia' : `${diasAfa} dias`;
   if (afa && diasAfa) { out.dataRetorno = fmtDate(addDays(afa, diasAfa)); if (diasAfa > 15) out.inicioInss = fmtDate(addDays(afa, 15)); }
   const dem = parseDate(values.dataDemissao);
   if (dem) out.pagamentoAte = fmtDate(addDays(dem, 10));
@@ -282,6 +286,33 @@ export function derived(tipoKey, values, rules) {
 }
 
 /* ---------------- Modelos de texto ---------------- */
+/** Primeiro modelo da lista que sai completo (sem variável faltando). */
+export function renderFirst(list, values) {
+  for (const tpl of [].concat(list || [])) { const s = renderTemplate(tpl, values); if (s) return s; }
+  return '';
+}
+
+/**
+ * Tipo de afastamento do portal a partir do texto, do documento e dos dias.
+ * regras = tipos.afastamento.tipoAfastamentoAuto: lista em ordem de prioridade com
+ *   { palavras?, documentos?, valor? | ate15?, acima15?, limiteDias? }
+ * Devolve { valor, motivo } ou null (sem dias quando o tipo depende deles).
+ */
+export function inferTipoAfastamento(text, dias, docId, regras) {
+  const T = plain(text || '');
+  const n = parseInt(dias, 10);
+  for (const r of regras || []) {
+    const porPalavra = r.palavras?.length && r.palavras.some(w => T.includes(plain(w)));
+    const porDocumento = r.documentos?.length && docId && r.documentos.includes(docId);
+    if (!porPalavra && !porDocumento) continue;
+    if (r.valor) return { valor: r.valor, motivo: porPalavra ? 'texto do documento' : 'tipo de documento' };
+    if (isNaN(n)) return null;
+    const lim = r.limiteDias || 15;
+    return { valor: n > lim ? r.acima15 : r.ate15, motivo: `${n} ${n === 1 ? 'dia' : 'dias'} no documento` };
+  }
+  return null;
+}
+
 export function renderTemplate(tpl, values) {
   if (!tpl) return '';
   const lines = Array.isArray(tpl) ? tpl : [tpl];
@@ -490,11 +521,9 @@ export function parseFreeText(text, rules, ctx = {}) {
   switch (tipo) {
     case 'afastamento': {
       put('dataAfastamento', d0); if (dias) put('dias', dias);
-      if (/maternidade|licenca.gestante|parto/.test(t)) put('tipoAfastamento', 'Licença maternidade');
-      else if (/acidente|cat\b/.test(t)) put('tipoAfastamento', 'Acid. Trabalho período superior a 15 dias');
-      else if (/militar/.test(t)) put('tipoAfastamento', 'Serviço militar');
-      else if (/sem vencimento|nao remunerad/.test(t)) put('tipoAfastamento', 'Licença sem vencimento');
-      else if (dias > 15) put('tipoAfastamento', 'Doença período superior a 15 dias');
+      const auto = resolveTipo(rules, 'afastamento')?.tipoAfastamentoAuto;
+      const ta = auto ? inferTipoAfastamento(text, dias, /atestado|medic|doen/.test(t) ? 'atestado' : null, auto) : null;
+      if (ta) put('tipoAfastamento', ta.valor);
       break;
     }
     case 'avisoFerias': case 'calculoFerias': {

@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.09-1",
+  "versao": "2026.10.13-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -392,7 +392,7 @@
           "se": {
             "campo": "tipoAfastamento",
             "contem": [
-              "Acid. Trabalho",
+              "Acid. Trabalho período superior",
               "mesmo acid"
             ]
           },
@@ -409,7 +409,19 @@
           "se": {
             "campo": "tipoAfastamento",
             "contem": [
-              "maternidade"
+              "Acid. Trabalho período igual"
+            ]
+          },
+          "anexos": [
+            "cat"
+          ]
+        },
+        {
+          "se": {
+            "campo": "tipoAfastamento",
+            "contem": [
+              "maternidade",
+              "paternidade"
             ]
           },
           "anexos": [
@@ -431,7 +443,8 @@
               "mandato sindical",
               "Acid. Trabalho",
               "mesmo acid",
-              "maternidade"
+              "maternidade",
+              "paternidade"
             ]
           }
         },
@@ -497,9 +510,97 @@
         "{observacoes}"
       ],
       "dicas": [
-        "Arraste o atestado aqui: eu leio o nome, a data e os dias e preencho para você.",
-        "O CID é um dado de saúde: só é incluído se você ativar essa opção.",
-        "Atestados de até 15 dias: siga a orientação do seu analista sobre onde enviar (o tipo de afastamento do portal começa em 'superior a 15 dias')."
+        "Arraste o atestado aqui: eu leio o nome, a data e os dias, escolho o tipo de afastamento e preencho para você.",
+        "Vários atestados de uma vez? Arraste todos juntos: eu abro uma solicitação para cada atestado, uma de cada vez.",
+        "O CID é um dado de saúde: só é incluído se você ativar essa opção."
+      ],
+      "tipoAfastamentoAuto": [
+        {
+          "palavras": [
+            "aborto"
+          ],
+          "valor": "Aborto não criminoso"
+        },
+        {
+          "palavras": [
+            "licença paternidade",
+            "licença-paternidade",
+            "licenca paternidade"
+          ],
+          "valor": "Licença paternidade"
+        },
+        {
+          "palavras": [
+            "licença maternidade",
+            "licença-maternidade",
+            "salário-maternidade",
+            "salario maternidade",
+            "licença gestante",
+            "licença à gestante"
+          ],
+          "valor": "Licença maternidade"
+        },
+        {
+          "palavras": [
+            "serviço militar",
+            "servico militar"
+          ],
+          "valor": "Serviço militar"
+        },
+        {
+          "palavras": [
+            "licença sem vencimento",
+            "licença não remunerada",
+            "licenca nao remunerada"
+          ],
+          "valor": "Licença sem vencimento"
+        },
+        {
+          "palavras": [
+            "mandato sindical"
+          ],
+          "valor": "Exercício de mandato sindical"
+        },
+        {
+          "documentos": [
+            "cat"
+          ],
+          "palavras": [
+            "acidente de trabalho",
+            "acidente do trabalho",
+            "acidente de trajeto",
+            "comunicação de acidente"
+          ],
+          "ate15": "Acid. Trabalho período igual ou inferior a 15 dias",
+          "acima15": "Acid. Trabalho período superior a 15 dias"
+        },
+        {
+          "palavras": [
+            "doença profissional",
+            "doença ocupacional"
+          ],
+          "ate15": "Doença profissional período igual ou inferior a 15 dias",
+          "acima15": "Doença profissional superior a 15 dias"
+        },
+        {
+          "documentos": [
+            "atestado"
+          ],
+          "ate15": "Doença período igual ou inferior a 15 dias",
+          "acima15": "Doença período superior a 15 dias"
+        }
+      ],
+      "esperadoDoDocumento": [
+        "empregado",
+        "tipoAfastamento",
+        "dataAfastamento",
+        "dias"
+      ],
+      "assuntos": [
+        "{documentoPrincipal} – {empregado} – {dataAfastamento} ({diasTexto})",
+        "{documentoPrincipal} – {empregado} – {dataAfastamento}",
+        "{documentoPrincipal} – {empregado}",
+        "{documentoPrincipal} – {dataAfastamento} ({diasTexto})"
       ]
     },
     "avisoFerias": {
@@ -1982,7 +2083,8 @@
       },
       "valores": {
         "tipoAfastamentoSeDiasMaiorQue15": "Doença período superior a 15 dias"
-      }
+      },
+      "rotuloAssunto": "Atestado médico"
     },
     {
       "id": "cat",
@@ -2013,9 +2115,6 @@
           "(\\d{2}/\\d{2}/\\d{4})"
         ]
       },
-      "valores": {
-        "tipoAfastamento": "Acid. Trabalho período superior a 15 dias"
-      },
       "tipoCatPalavras": {
         "Trajeto": [
           "trajeto",
@@ -2029,7 +2128,11 @@
           "típico",
           "tipico"
         ]
-      }
+      },
+      "valores": {
+        "tipoAfastamento": "Acid. Trabalho período superior a 15 dias"
+      },
+      "rotuloAssunto": "Acidente de trabalho"
     },
     {
       "id": "certidao",

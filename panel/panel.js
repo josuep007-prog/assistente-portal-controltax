@@ -156,6 +156,7 @@ function renderInicio() {
       <p class="hello">O que você precisa fazer?</p>
       <p class="lead">${esc(R.escritorio?.saudacao || '')}</p>
     </div>
+    <div id="lote"></div>
     <div id="ctx-banner"></div>
     <div class="free card">
       <label for="free-txt" class="free-l">${icon('chat', 'ic-sm')} Escreva com suas palavras</label>
@@ -193,16 +194,28 @@ function renderInicio() {
   renderContextBanner();
   renderSugestao();
   renderModelosInicio();
+  renderLote();
 }
 
 /* ---------- Texto livre ---------- */
-function entenderTexto(texto) {
-  const tipoAtual = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
-  const emps = tipoAtual ? w(tipoAtual).empregados : [];
-  const r = E.parseFreeText(texto, S.rules, { employees: emps, tipoAtual });
-  if (tipoAtual) { aplicarCampos(tipoAtual, r.campos, 'sua descrição'); return; }
-  S.sugestao = { texto, analise: { tipoSugerido: r.tipoSugerido, campos: r.campos, documento: { nome: 'seu pedido' } } };
-  renderSugestao();
+/* Texto livre: o pedido é entendido pelo que foi escrito, não pela solicitação que está aberta.
+   Só preenche a solicitação aberta quando o texto é sobre ela (ou o cliente escolhe isso). */
+const mesmaFamilia = (a, b) => a === b || FAMILIAS.some(f => f.includes(a) && f.includes(b));
+function entenderTexto(texto, { origem = 'inicio' } = {}) {
+  const tipoAberto = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
+  const detectado = E.suggestTipoByText(texto, S.rules, null)?.tipo || null;
+  // texto sobre a própria solicitação aberta (ou sem tipo claro, escrito dentro dela) → preenche ali
+  if (tipoAberto && ((detectado && mesmaFamilia(detectado, tipoAberto)) || (!detectado && origem === 'preencher'))) {
+    const r = E.parseFreeText(texto, S.rules, { employees: w(tipoAberto).empregados, tipoAtual: tipoAberto });
+    $('#free-sug') && ($('#free-sug').innerHTML = '');
+    aplicarCampos(tipoAberto, r.campos, 'sua descrição');
+    return;
+  }
+  const destino = detectado || tipoAberto || 'geral';  // sem tipo claro: propõe a aberta, mas só preenche se o cliente confirmar
+  const r = E.parseFreeText(texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino });
+  S.sugestao = { texto, tipoAberto, analise: { tipoSugerido: destino, campos: r.campos, documento: { nome: 'seu pedido' } } };
+  if (origem === 'preencher' && $('#free-sug')) renderSugestaoTexto($('#free-sug'), S.sugestao);
+  else if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
 }
 function aplicarCampos(tipo, campos, fonte) {
   const W = w(tipo); const t = tipoDef(tipo);
@@ -246,11 +259,16 @@ function bindDrop(el) {
 }
 $('#file-input').addEventListener('change', (e) => { handleFiles([...e.target.files], 'painel'); e.target.value = ''; });
 
+function novoItem(file, origem) {
+  return { id: Math.random().toString(36).slice(2), file, nome: file.name, tamanho: file.size, status: 'lendo', progresso: 0, etapa: 'Abrindo', jaAnexado: origem === 'portal', documento: null };
+}
+
 async function handleFiles(files, origem) {
   if (!files?.length) return;
+  if (files.length > 1 && origem !== 'portal') return handleVarios(files, origem);
   const noForm = S.ctx.route?.mode !== 'form' || !S.ctx.tipo;
   for (const file of files) {
-    const item = { id: Math.random().toString(36).slice(2), file, nome: file.name, tamanho: file.size, status: 'lendo', progresso: 0, etapa: 'Abrindo', jaAnexado: origem === 'portal', documento: null };
+    const item = novoItem(file, origem);
     if (noForm) {
       S.sugestao = { item, analise: null };
       if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
@@ -264,6 +282,161 @@ async function handleFiles(files, origem) {
       applyAnalysis(S.ctx.tipo, item);
     }
   }
+}
+
+/* =================== Vários arquivos: uma solicitação por documento =================== */
+/* Lê tudo primeiro; atestados viram uma solicitação cada; documentos de pedidos diferentes
+   viram uma solicitação por tipo. Abre uma de cada vez: o cliente confere e envia, e o
+   Assistente abre e preenche a próxima. */
+async function handleVarios(files, origem) {
+  if (S.lote && !S.lote.concluido) { toast('Termine (ou pare) o lote atual antes de arrastar outros arquivos.'); return; }
+  const itens = files.map(f => novoItem(f, origem));
+  S.loteLeitura = { itens };
+  if (!['inicio', 'preencher'].includes(S.view)) setView(S.ctx.route?.mode === 'form' ? 'preencher' : 'inicio'); else renderLote();
+  for (const it of itens) { await processItem(it, null); renderLote(); }
+  S.loteLeitura = null;
+  const { pedidos, fora } = montarPedidos(itens);
+  if (pedidos.length >= 2) return iniciarLote(pedidos, fora);
+  renderLote();
+  const tipoForm = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
+  if (tipoForm) {
+    // um pedido só (ou nada reconhecido): tudo vai para a solicitação aberta
+    const W = w(tipoForm);
+    for (const it of itens) {
+      W.arquivos.push(it);
+      if (it.texto) it.analise = E.analyzeText(it.texto, S.rules, { employees: W.empregados, tipoAtual: tipoForm });
+      applyAnalysis(tipoForm, it, { preencher: false });
+    }
+    if (S.view !== 'preencher') setView('preencher'); else render();
+    if (S.prefs.preencherAoLer) fillPortal(tipoForm, { silencioso: true });
+    return;
+  }
+  const principal = pedidos[0]?.itens[0] || itens[0];
+  S.sugestao = { item: principal, extras: itens.filter(i => i !== principal) };
+  if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+}
+
+function montarPedidos(itens) {
+  const individuais = S.rules.config?.umPedidoPorDocumento || ['atestado'];
+  const pedidos = []; const grupos = new Map(); const neutros = [];
+  for (const it of itens) {
+    const tipo = it.analise?.tipoSugerido || null;
+    if (individuais.includes(it.documento)) pedidos.push({ tipo: tipo || 'afastamento', itens: [it] });
+    else if (tipo && !DOCS_NEUTROS.includes(it.documento)) { if (!grupos.has(tipo)) grupos.set(tipo, []); grupos.get(tipo).push(it); }
+    else neutros.push(it);
+  }
+  // documento que acompanha um atestado (ex.: CAT da mesma data) entra na mesma solicitação
+  const data = (it) => it.analise?.campos?.dataAfastamento?.valor || null;
+  for (const [tipo, lista] of grupos) {
+    for (const it of [...lista]) {
+      const alvo = pedidos.find(p => p.tipo === tipo && data(p.itens[0]) && data(p.itens[0]) === data(it));
+      if (alvo) { alvo.itens.push(it); lista.splice(lista.indexOf(it), 1); }
+    }
+    if (lista.length) pedidos.push({ tipo, itens: lista });
+  }
+  // documentos neutros (RG, certidão…) só entram se houver uma única solicitação possível
+  let fora = [];
+  if (neutros.length) {
+    const naoIndiv = pedidos.filter(p => !individuais.includes(p.itens[0].documento));
+    if (pedidos.length === 1) pedidos[0].itens.push(...neutros);
+    else if (naoIndiv.length === 1) naoIndiv[0].itens.push(...neutros);
+    else fora = neutros;
+  }
+  return { pedidos, fora };
+}
+
+async function iniciarLote(pedidos, fora) {
+  S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pausado: false, concluido: false };
+  S.sugestao = null;
+  toast(`${pedidos.length} solicitações para abrir, uma de cada vez.`);
+  await abrirPedido(0);
+}
+
+const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+async function abrirPedido(i) {
+  const L = S.lote; if (!L) return;
+  const p = L.pedidos[i]; if (!p) return;
+  L.idx = i; p.status = 'atual'; L.pausado = false; L.navegando = true;
+  renderLote();
+  const t = tipoDef(p.tipo);
+  // começa sempre de um formulário limpo
+  if (S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo && (i > 0 || Object.keys(portalValores(p.tipo)).length)) {
+    await request({ type: 'navigate', slug: t.slug, add: false }, 8000);
+  }
+  S.work[p.tipo] = null;
+  const W = w(p.tipo);
+  p.itens.forEach(it => { it.anexado = false; it.removido = false; it.outroTipo = null; });
+  W.arquivos = [...p.itens];
+  await openTipo(p.tipo, { manter: true });
+  for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo); k++) await esperar(200);
+  await loadEmpregados(p.tipo);
+  for (const it of p.itens) {
+    if (it.texto) it.analise = E.analyzeText(it.texto, S.rules, { employees: W.empregados, tipoAtual: p.tipo });
+    applyAnalysis(p.tipo, it, { preencher: false });
+  }
+  const v = valoresAssistente(p.tipo);
+  p.rotulo = [v.empregado, v.dataAfastamento || v.inicioGozo || v.dataDemissao, v.dias ? `${v.dias} ${+v.dias === 1 ? 'dia' : 'dias'}` : ''].filter(Boolean).join(' · ');
+  await fillPortal(p.tipo, { silencioso: true });
+  L.navegando = false;
+  renderLote();
+}
+
+async function proximoPedido() {
+  const L = S.lote; if (!L) return;
+  const next = L.pedidos.findIndex(p => p.status === 'pendente');
+  if (next < 0) {
+    L.concluido = true; renderLote();
+    const env = L.pedidos.filter(p => p.status === 'enviado').length;
+    toast(`Lote concluído: ${env} de ${L.pedidos.length} solicitação(ões) enviada(s).`);
+    return;
+  }
+  await abrirPedido(next);
+}
+
+async function pularPedido() {
+  const L = S.lote; const p = L?.pedidos[L.idx]; if (!p) return;
+  p.status = 'pulado'; L.navegando = true;
+  await request({ type: 'navigate', slug: tipoDef(p.tipo).slug, add: false }, 8000);
+  await proximoPedido();
+}
+
+/** Chamado quando o formulário fecha: envio concluído → próximo; fechado sem enviar → pausa. */
+function loteAoFecharFormulario(enviadoTipo) {
+  const L = S.lote; if (!L || L.concluido || L.navegando) return;
+  const p = L.pedidos[L.idx]; if (!p || p.status !== 'atual') return;
+  if (enviadoTipo === p.tipo) { p.status = 'enviado'; renderLote(); setTimeout(proximoPedido, 1200); }
+  else { L.pausado = true; renderLote(); }
+}
+
+function renderLote() {
+  const el = $('#lote'); if (!el) return;
+  if (S.loteLeitura) {
+    const its = S.loteLeitura.itens; const lidos = its.filter(i => i.status !== 'lendo').length;
+    el.innerHTML = `<div class="card pad lote"><div class="lote-h"><div class="spin"></div><b>Lendo ${its.length} arquivos…</b><small class="mono">${lidos}/${its.length}</small></div>
+      <div class="prog" style="margin-top:8px"><i style="width:${Math.round(lidos / its.length * 100)}%"></i></div></div>`;
+    return;
+  }
+  const L = S.lote; if (!L) { el.innerHTML = ''; return; }
+  const env = L.pedidos.filter(p => p.status === 'enviado').length;
+  const atual = L.pedidos[L.idx];
+  const st = { enviado: icon('check', 'ic-sm'), pulado: icon('minus', 'ic-sm'), atual: icon('arrow', 'ic-sm') };
+  const nomeTipo = (p) => p.itens.some(i => i.documento === 'atestado') ? 'Atestado' : (S.rules.tipos[p.tipo]?.nome || 'Solicitação');
+  el.innerHTML = `<div class="card pad lote" aria-live="polite">
+    <div class="lote-h">${icon('list', 'ic-sm')}<b>${L.concluido ? 'Lote concluído' : `Solicitação ${L.idx + 1} de ${L.pedidos.length}`}</b><small class="mono">${env} enviada(s)</small></div>
+    <ol>${L.pedidos.map(p => `<li class="${p.status === 'atual' ? 'cur' : p.status === 'enviado' || p.status === 'pulado' ? 'done' : ''}">
+      <span class="n">${st[p.status] || p.n}</span><span class="what" title="${esc(p.itens.map(i => i.nome).join(', '))}">${esc(nomeTipo(p))} — ${esc(p.rotulo || p.itens[0].nome)}</span>
+      <small class="muted">${{ enviado: 'enviada', pulado: 'pulada', atual: 'agora', pendente: 'na fila' }[p.status]}</small></li>`).join('')}</ol>
+    ${L.fora?.length ? `<p class="muted" style="margin:8px 0 0;font-size:12px">Não reconheci e deixei de fora: ${esc(L.fora.map(i => i.nome).join(', '))}. Se precisar, arraste depois na solicitação certa.</p>` : ''}
+    ${L.concluido ? `<div class="actions"><button class="btn btn-sm" id="lote-ok">Fechar</button></div>`
+      : L.pausado ? `<div class="note warn" style="margin-top:8px">${icon('alert')}<div>A solicitação ${L.idx + 1} foi fechada sem enviar.</div></div>
+        <div class="actions"><button class="btn btn-primary btn-sm" id="lote-reabrir">Abrir de novo</button><button class="btn btn-sm" id="lote-pular">Pular</button><button class="btn btn-ghost btn-sm" id="lote-parar">Parar</button></div>`
+      : atual ? `<p class="muted" style="margin:8px 0 0;font-size:12px">${L.navegando ? 'Abrindo e preenchendo…' : `Confira os dados e clique em ${esc(tipoDef(atual.tipo)?.botaoEnviar || 'ADICIONAR')} no portal (ou em “Conferir e enviar”). Quando o portal salvar, eu abro a próxima.`}</p>
+        <div class="actions"><button class="btn btn-sm" id="lote-pular" ${L.navegando ? 'disabled' : ''}>Pular esta</button><button class="btn btn-ghost btn-sm" id="lote-parar">Parar</button></div>` : ''}
+  </div>`;
+  $('#lote-ok')?.addEventListener('click', () => { S.lote = null; renderLote(); });
+  $('#lote-parar')?.addEventListener('click', () => { S.lote = null; renderLote(); toast('Lote parado. O que já foi enviado continua no portal.'); });
+  $('#lote-pular')?.addEventListener('click', pularPedido);
+  $('#lote-reabrir')?.addEventListener('click', () => abrirPedido(S.lote.idx));
 }
 
 async function processItem(item, tipoAtual) {
@@ -317,18 +490,22 @@ function renderSugestao() {
     <div class="card">
       <div class="card-h">${icon('spark')}<h3>${tipo ? 'Encontrei o caminho' : 'Li o arquivo'}</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
       <div class="card-b">
-        <p style="margin:0 0 8px">${esc(it.nome)} parece ser <b>${esc(a.documento?.nome || 'um documento')}</b>${tipo ? ` → <b>${esc(S.rules.tipos[tipo]?.nome)}</b>` : ''}.</p>
+        <p style="margin:0 0 8px">${esc(it.nome)} parece ser <b>${esc(a.documento?.nome || 'um documento')}</b>${tipo ? ` → <b>${esc(S.rules.tipos[tipo]?.nome)}</b>` : ''}.${s.extras?.length ? ` Os outros ${s.extras.length} arquivo(s) vão junto.` : ''}</p>
         ${nCampos ? `<p class="muted" style="margin:0 0 10px">${nCampos} informação(ões) encontradas: ${Object.keys(a.campos).slice(0, 6).map(k => esc(tipoDef(tipo || 'geral')?.campos?.[k]?.rotulo || k)).join(', ')}${nCampos > 6 ? '…' : ''}</p>` : ''}
         ${tipo ? `<button class="btn btn-primary btn-block" id="sug-go">Abrir ${esc(S.rules.tipos[tipo]?.nome)} e preencher ${icon('arrow', 'ic-sm')}</button>` : `<p class="muted">Não reconheci o tipo. Escolha acima o que você precisa fazer — o arquivo vai junto.</p>`}
       </div>
     </div>`;
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
   $('#sug-go')?.addEventListener('click', async () => {
-    const W = w(tipo); W.arquivos.push(it);
+    const W = w(tipo); const todos = [it, ...(s.extras || [])]; W.arquivos.push(...todos);
     S.sugestao = null;
     await openTipo(tipo, { manter: true });
     // Reanalisa com a lista de funcionários desta tela
-    setTimeout(async () => { await loadEmpregados(tipo); if (it.texto) it.analise = E.analyzeText(it.texto, S.rules, { employees: w(tipo).empregados, tipoAtual: tipo }); applyAnalysis(tipo, it); }, 900);
+    setTimeout(async () => {
+      await loadEmpregados(tipo);
+      for (const x of todos) { if (x.texto) x.analise = E.analyzeText(x.texto, S.rules, { employees: w(tipo).empregados, tipoAtual: tipo }); applyAnalysis(tipo, x, { preencher: false }); }
+      if (S.prefs.preencherAoLer) fillPortal(tipo, { silencioso: true });
+    }, 900);
   });
   if (!tipo) {
     $('#intents')?.querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => { const W = w(b.dataset.tipo); if (!W.arquivos.includes(it)) W.arquivos.push(it); }, { once: true }));
@@ -343,17 +520,20 @@ function renderSugestaoTexto(el, s) {
     <div class="card-b">
       <p style="margin:0 0 8px">Solicitação: <b>${esc(t?.nome || 'Solicitação Geral')}</b></p>
       ${achados.length ? `<dl class="kv" style="margin-bottom:10px">${achados.map(([k, c]) => `<dt>${esc(t?.campos?.[k]?.rotulo || k)}</dt><dd>${esc(c.valor)}</dd>`).join('')}</dl>` : '<p class="muted" style="margin:0 0 10px">Seu texto vai junto, como observação para o analista.</p>'}
-      <div class="actions"><button class="btn btn-primary" id="sug-go">Abrir e preencher ${icon('arrow', 'ic-sm')}</button></div>
+      ${s.tipoAberto && s.tipoAberto !== tipo ? `<p class="muted" style="margin:0 0 10px;font-size:12px">A solicitação de ${esc(S.rules.tipos[s.tipoAberto]?.nome)} que está aberta será fechada no portal sem enviar. O que eu já tinha preenchido continua guardado aqui.</p>` : ''}
+      <div class="actions"><button class="btn btn-primary" id="sug-go">${s.tipoAberto === tipo ? 'Preencher em' : 'Abrir'} ${esc(t?.nome || 'Solicitação Geral')} ${icon('arrow', 'ic-sm')}</button>
+        ${s.tipoAberto && s.tipoAberto !== tipo ? `<button class="btn" id="sug-aqui">Usar em ${esc(S.rules.tipos[s.tipoAberto]?.nome)}</button>` : ''}</div>
       <details class="more" style="margin-top:8px"><summary>Não é isso? Escolher outra solicitação</summary>
         <div class="tool-tabs" style="margin-top:8px">${(S.rules.intencoes || []).map(i => `<button type="button" data-alt="${esc(i.tipo)}">${esc(i.titulo)}</button>`).join('')}</div></details>
     </div></div>`;
   const abrir = async (destino) => {
-    S.sugestao = null;
+    S.sugestao = null; el.innerHTML = '';
     await openTipo(destino, { manter: true });
     setTimeout(async () => { await loadEmpregados(destino); const r = E.parseFreeText(s.texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino }); aplicarCampos(destino, r.campos, 'sua descrição'); }, 900);
   };
-  $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
+  $('#sug-x').addEventListener('click', () => { S.sugestao = null; el.innerHTML = ''; renderSugestao(); });
   $('#sug-go').addEventListener('click', () => abrir(tipo));
+  $('#sug-aqui')?.addEventListener('click', () => abrir(s.tipoAberto));
   el.querySelectorAll('[data-alt]').forEach(b => b.addEventListener('click', () => abrir(b.dataset.alt)));
 }
 
@@ -368,7 +548,7 @@ function docDeOutroTipo(item, tipo) {
 }
 
 /* Junta o que foi lido com o que já está no assistente e preenche */
-function applyAnalysis(tipo, item) {
+function applyAnalysis(tipo, item, opts = {}) {
   const W = w(tipo); const t = tipoDef(tipo);
   item.outroTipo = docDeOutroTipo(item, tipo);
   const campos = item.outroTipo ? {} : (item.analise?.campos || {});
@@ -387,7 +567,7 @@ function applyAnalysis(tipo, item) {
   // sugere outro tipo
   gerarTextos(tipo);
   if (S.view === 'preencher') render();
-  if (S.prefs.preencherAoLer && !item.outroTipo && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo && item.status !== 'lendo') fillPortal(tipo, { silencioso: true });
+  if (opts.preencher !== false && S.prefs.preencherAoLer && !item.outroTipo && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo && item.status !== 'lendo') fillPortal(tipo, { silencioso: true });
 }
 
 function tabelaRubricasTexto(rows) {
@@ -429,14 +609,26 @@ function anexosAtuais(tipo) {
   return out;
 }
 
+/** Nome do documento principal para o assunto (ex.: "Atestado médico"); sem documento, o nome curto do pedido. */
+function documentoPrincipal(tipo) {
+  const W = w(tipo);
+  for (const a of W.arquivos) {
+    if (a.removido || !a.documento) continue;
+    const d = (S.rules.documentos || []).find(x => x.id === a.documento);
+    if (d?.rotuloAssunto) return d.rotuloAssunto;
+  }
+  return tipoDef(tipo)?.nomeCurto || (tipo === 'afastamento' ? 'Afastamento' : tipoDef(tipo)?.nome || '');
+}
+
 function gerarTextos(tipo, force = false) {
   const W = w(tipo); const t = tipoDef(tipo);
   const vals = { ...valoresParaChecar(tipo), ...E.derived(tipo, valoresParaChecar(tipo), S.rules) };
   if (!S.prefs.incluirCid && !S.rules.config?.incluirCidNaDescricao) delete vals.cid;
   vals.anexosNomes = anexosAtuais(tipo).map(a => a.nome).join(', ');
   vals.observacoes = W.valores.observacoes?.valor || '';
-  if (t.campos.assunto && t.assunto && (force || !W.editados.has('assunto'))) {
-    const s = E.renderTemplate(t.assunto, vals); if (s) W.valores.assunto = { valor: s, conf: 0.9, fonte: 'gerado' };
+  vals.documentoPrincipal = documentoPrincipal(tipo);
+  if (t.campos.assunto && (t.assuntos || t.assunto) && (force || !W.editados.has('assunto'))) {
+    const s = E.renderFirst(t.assuntos || t.assunto, vals); if (s) W.valores.assunto = { valor: s, conf: 0.9, fonte: 'gerado' };
   }
   if (t.campos.descricao && t.descricao?.length && (force || !W.editados.has('descricao'))) {
     const d = E.renderTemplate(t.descricao, vals); if (d) W.valores.descricao = { valor: d, conf: 0.9, fonte: 'gerado' };
@@ -447,14 +639,16 @@ function gerarTextos(tipo, force = false) {
 function renderPreencher() {
   const { route, tipo } = S.ctx;
   if (standalone || route.mode !== 'form' || !tipo) {
-    viewEl.innerHTML = `
+    viewEl.innerHTML = `<div id="lote"></div>
       <div class="empty">${icon('fill', 'ic-lg')}<p><b>Nenhuma solicitação aberta</b></p><p>Escolha no Início o que você precisa fazer, escreva com suas palavras ou arraste um documento — eu abro a solicitação certa.</p>
       <button class="btn btn-primary" id="go-home">Ir para o Início</button></div>`;
     $('#go-home').addEventListener('click', () => setView('inicio'));
+    renderLote();
     return;
   }
   const t = tipoDef(tipo);
   viewEl.innerHTML = `
+    <div id="lote"></div>
     <div class="card">
       <div class="card-h">
         <div style="flex:1;min-width:0"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small></div>
@@ -471,6 +665,7 @@ function renderPreencher() {
       <input id="free-form" class="input" placeholder="Ou escreva: ex. ${esc(exemploTexto(tipo))}" autocomplete="off">
       <button class="btn btn-sm" id="free-form-go">Preencher</button>
     </div>
+    <div id="free-sug"></div>
     <div class="files" id="files"></div>
     <div id="outro-tipo"></div>
     <div id="doc-checklist"></div>
@@ -499,11 +694,11 @@ function renderPreencher() {
   $('#btn-model').addEventListener('click', () => salvarModeloUI(tipo));
   $('#btn-regen').addEventListener('click', () => { const W = w(tipo); W.editados.delete('assunto'); W.editados.delete('descricao'); gerarTextos(tipo, true); renderFieldsOnly(); updateChecks(); });
   $('#btn-clear').addEventListener('click', () => { S.work[tipo] = null; w(tipo); loadEmpregados(tipo); render(); });
-  const ff = () => { const v = $('#free-form').value.trim(); if (v) { entenderTexto(v); } };
+  const ff = () => { const v = $('#free-form').value.trim(); if (v) { entenderTexto(v, { origem: 'preencher' }); } };
   $('#free-form-go').addEventListener('click', ff);
   $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
-  renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult();
+  renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
 }
 function exemploTexto(tipo) {
   return ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
@@ -649,13 +844,52 @@ function calcBox(tipo) {
 function refreshCalc() { const el = $('#calc'); if (el) el.outerHTML = calcBox(S.ctx.tipo); }
 
 let lastChecks = [];
+/** Campos que não existem nesta tela ou estão bloqueados pelo portal não contam como obrigatórios. */
+function camposAusentes(form) {
+  return Object.entries(form?.campos || {}).filter(([, v]) => !v.existe || v.disabled).map(([k]) => k);
+}
+
+/* Campos que o leitor não encontrou: aviso no painel e no próprio portal */
+let lastMissingKey = '';
+function camposFaltando(tipo, list) {
+  const t = tipoDef(tipo); const W = w(tipo);
+  const leuDocumento = W.arquivos.some(a => a.status === 'ok' && !a.removido && !a.outroTipo);
+  const vals = valoresParaChecar(tipo);
+  const out = new Map();
+  for (const i of list) if (i.nivel === 'erro' && i.grupo === 'Campos obrigatórios' && i.campo && !['assunto', 'descricao'].includes(i.campo)) out.set(i.campo, true);
+  if (leuDocumento) for (const k of t.esperadoDoDocumento || []) {
+    if (!t.campos[k] || (vals[k] != null && String(vals[k]).trim() !== '')) continue;
+    if (S.ctx.form?.campos?.[k]?.disabled) continue;
+    out.set(k, true);
+  }
+  return [...out.keys()].map(k => ({ k, def: t.campos[k], texto: leuDocumento ? 'Não encontrado no documento — preencha aqui' : 'Preencha este campo' }));
+}
+function marcarFaltando(tipo, list) {
+  const falt = camposFaltando(tipo, list);
+  const set = new Set(falt.map(f => f.k));
+  // no painel
+  document.querySelectorAll('#fields .field').forEach(f => {
+    const k = f.querySelector('[data-k]')?.dataset.k; if (!k) return;
+    const on = set.has(k);
+    f.classList.toggle('missing', on);
+    let hint = f.querySelector('.miss');
+    if (on && !hint) { hint = document.createElement('small'); hint.className = 'miss'; f.appendChild(hint); }
+    if (on) hint.textContent = falt.find(x => x.k === k).texto.replace(' — preencha aqui', '');
+    else hint?.remove();
+  });
+  // no portal (só campos que existem lá)
+  const campos = falt.filter(f => !f.def.somenteAssistente).map(f => ({ k: f.k, texto: f.texto, locator: f.def }));
+  const key = JSON.stringify(campos.map(c => [c.k, c.texto]));
+  if (key !== lastMissingKey) { lastMissingKey = key; send({ type: 'markMissing', campos }); }
+}
+
 function updateChecks() {
   const el = $('#checks'); if (!el || !S.ctx.tipo) return;
   const tipo = S.ctx.tipo;
   const vals = valoresParaChecar(tipo);
-  const ausentes = Object.entries(S.ctx.form?.campos || {}).filter(([, v]) => !v.existe).map(([k]) => k);
-  const list = E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes });
+  const list = E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(S.ctx.form) });
   lastChecks = list;
+  marcarFaltando(tipo, list);
   const c = E.summarizeChecks(list);
   const total = list.filter(i => i.nivel !== 'info').length || 1;
   const bar = $('#bar'); if (bar) { bar.querySelector('i').style.width = `${Math.round(c.ok / total * 100)}%`; bar.classList.toggle('has-err', c.erro > 0); }
@@ -714,8 +948,7 @@ function onSubmitAttempt(m) {
   const pediu = S.pedirResumo; S.pedirResumo = false;
   if (!tipo) { send({ type: 'confirmSubmit' }); return; }
   const vals = valoresParaChecar(tipo);
-  const ausentes = Object.entries(m.form?.campos || {}).filter(([, v]) => !v.existe).map(([k]) => k);
-  const list = E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes }).filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
+  const list = E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }).filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
   if (!list.length && !pediu) { S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
   const t = tipoDef(tipo);
@@ -793,13 +1026,16 @@ async function renderModelosInicio() {
 }
 
 async function onFormClosed() {
+  let enviadoTipo = null;
   if (S.ultimoEnvio && Date.now() - S.ultimoEnvio.quando < 60000) {
-    const tipo = S.ultimoEnvio.tipo;
+    const tipo = S.ultimoEnvio.tipo; enviadoTipo = tipo;
     await salvarHistorico(tipo, 'enviado');
     S.work[tipo] = null; S.ultimoEnvio = null;
-    toast('Solicitação enviada. Os próximos prazos estão na Agenda.');
+    if (!S.lote) toast('Solicitação enviada. Os próximos prazos estão na Agenda.');
     if (S.view === 'preencher') render();
   }
+  loteAoFecharFormulario(enviadoTipo);
+  lastMissingKey = '';
 }
 
 /* =================== Histórico =================== */

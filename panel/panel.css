@@ -153,6 +153,21 @@ h2.sec::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
 .input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue-deep); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-deep) 18%, transparent); }
 .input.found { border-color: color-mix(in srgb, var(--ok) 55%, var(--rule-strong)); background: color-mix(in srgb, var(--ok) 5%, var(--surface)); }
 .input.low { border-color: color-mix(in srgb, var(--warn) 60%, var(--rule-strong)); }
+.field.missing .input, .field.missing .seg { border-color: var(--warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 22%, transparent); }
+.field .miss { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: color-mix(in srgb, var(--warn) 70%, var(--ink)); }
+.field .miss::before { content: "!"; display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--warn); color: #fff; font-size: 10px; font-weight: 700; }
+/* Lote: uma solicitação por documento */
+.lote { border-left: 3px solid var(--blue-deep); }
+.lote .lote-h { display: flex; align-items: center; gap: 8px; }
+.lote .lote-h b { flex: 1; min-width: 0; }
+.lote ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.lote li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 5px 8px; border-radius: var(--r); min-width: 0; }
+.lote li small { flex: none; }
+.lote li.cur { background: color-mix(in srgb, var(--blue-deep) 9%, transparent); font-weight: 600; }
+.lote li.done { color: var(--ink-3); }
+.lote li .n { font-family: var(--f-mono); font-size: 11px; width: 18px; text-align: center; }
+.lote li .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lote .actions { margin-top: 8px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .seg { display: flex; border: 1px solid var(--rule-strong); border-radius: var(--r); overflow: hidden; background: var(--surface); }
 .seg button { flex: 1; border: 0; background: none; padding: 7px 6px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--ink-2); }

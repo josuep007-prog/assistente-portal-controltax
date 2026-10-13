@@ -54,4 +54,42 @@ t('aba errada: férias escrita em Solicitação Geral', () => {
   assert.equal(E.suggestTipoByText('Preciso das férias do João em novembro', rules, 'geral').tipo, 'avisoFerias');
 });
 
+const EMPS = ['FRANCISCO DE MOURA', 'JOANA FONSECA', 'JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'];
+t('atestado de até 15 dias → Doença período igual ou inferior a 15 dias', () => {
+  const r = E.analyzeText('ATESTADO MÉDICO\nAtesto que o(a) Sr(a). Ronaldo de Souza deverá permanecer afastado por 3 (três) dias a partir de 08/10/2026.\nCRM/SP 654321', rules, { employees: EMPS, tipoAtual: 'afastamento' });
+  assert.equal(r.campos.empregado.valor, 'RONALDO DE SOUZA');
+  assert.equal(r.campos.dias.valor, '3');
+  assert.equal(r.campos.tipoAfastamento.valor, 'Doença período igual ou inferior a 15 dias');
+});
+
+t('atestado sem quantidade de dias → tipo fica em aberto (aviso)', () => {
+  const r = E.analyzeText('ATESTADO MÉDICO\nAtesto que a paciente Joana Fonseca foi atendida em 09/10/2026, necessitando de afastamento de suas atividades.\nCRM/SP 112233', rules, { employees: EMPS, tipoAtual: 'afastamento' });
+  assert.equal(r.campos.empregado.valor, 'JOANA FONSECA');
+  assert.equal(r.campos.tipoAfastamento, undefined);
+  assert.equal(r.campos.dias, undefined);
+});
+
+t('tipo de afastamento por conteúdo: maternidade, CAT e doença profissional', () => {
+  const auto = rules.tipos.afastamento.tipoAfastamentoAuto;
+  assert.equal(E.inferTipoAfastamento('atestado para licença maternidade de 120 dias', 120, 'atestado', auto).valor, 'Licença maternidade');
+  assert.equal(E.inferTipoAfastamento('Comunicação de Acidente de Trabalho', 10, 'cat', auto).valor, 'Acid. Trabalho período igual ou inferior a 15 dias');
+  assert.equal(E.inferTipoAfastamento('Comunicação de Acidente de Trabalho', 40, 'cat', auto).valor, 'Acid. Trabalho período superior a 15 dias');
+  assert.equal(E.inferTipoAfastamento('afastamento por doença ocupacional', 5, 'atestado', auto).valor, 'Doença profissional período igual ou inferior a 15 dias');
+  assert.equal(E.inferTipoAfastamento('atestado', 16, 'atestado', auto).valor, 'Doença período superior a 15 dias');
+  assert.equal(E.inferTipoAfastamento('atestado', 15, 'atestado', auto).valor, 'Doença período igual ou inferior a 15 dias');
+});
+
+t('todos os tipos sugeridos existem no portal', () => {
+  const portal = fs.readFileSync(new URL('../simulador/portal.js', import.meta.url), 'utf8');
+  for (const r of rules.tipos.afastamento.tipoAfastamentoAuto) for (const v of [r.valor, r.ate15, r.acima15].filter(Boolean)) assert.ok(portal.includes(`'${v}'`), v);
+});
+
+t('assunto do afastamento: Atestado – Nome – data (dias), com alternativas', () => {
+  const a = rules.tipos.afastamento.assuntos;
+  const v = { documentoPrincipal: 'Atestado médico', empregado: 'RONALDO DE SOUZA', dataAfastamento: '08/10/2026', ...E.derived('afastamento', { dataAfastamento: '08/10/2026', dias: '3' }, rules) };
+  assert.equal(E.renderFirst(a, v), 'Atestado médico – RONALDO DE SOUZA – 08/10/2026 (3 dias)');
+  assert.equal(E.renderFirst(a, { documentoPrincipal: 'Atestado médico', empregado: 'JOANA FONSECA', dataAfastamento: '09/10/2026' }), 'Atestado médico – JOANA FONSECA – 09/10/2026');
+  assert.equal(E.renderFirst(a, { ...v, diasTexto: '1 dia' }), 'Atestado médico – RONALDO DE SOUZA – 08/10/2026 (1 dia)');
+});
+
 console.log(`\n${n} testes ok`);

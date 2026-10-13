@@ -17,6 +17,14 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 1.2
+
+**Vários atestados de uma vez:** arraste todos juntos e o Assistente abre **uma solicitação por atestado**, uma de cada vez. Ele preenche e anexa só o atestado daquela solicitação; você confere e clica em ADICIONAR; assim que o portal salva, ele abre e preenche a próxima. O lote mostra o andamento ("2 de 4"), e dá para pular uma ou parar. Documentos de pedidos diferentes arrastados juntos também viram uma solicitação por tipo.
+**Tipo de afastamento automático:** sai do atestado (até 15 dias → "Doença período igual ou inferior a 15 dias"; mais de 15 → "Doença período superior a 15 dias"), da CAT (acidente até/acima de 15 dias), e de termos como licença maternidade/paternidade, aborto, serviço militar, doença ocupacional (regras em `tipos.afastamento.tipoAfastamentoAuto`).
+**Assunto:** `Atestado médico – NOME – data (dias)`, com alternativas quando falta alguma informação (`tipos.afastamento.assuntos`).
+**Escreva com suas palavras, sem ser puxado de volta:** com uma solicitação aberta, um texto sobre outro assunto mostra o que foi entendido e deixa você escolher (abrir a outra ou usar na aberta); nada muda de tela sozinho. Abrir uma solicitação ficou mais rápido.
+**Aviso visual do que não foi encontrado:** campos que o leitor não achou no documento ficam destacados no portal e no painel ("Não encontrado no documento — preencha aqui") e o aviso some quando você preenche.
+
 ## Novidades da 1.1
 
 Painel ao lado da página (não cobre mais o botão ADICIONAR) · introdução para o cliente · "escreva com suas palavras" (ex.: *o João sai de férias dia 10/11 por 20 dias*) · etapas do pedido e barra de ações fixa · resumo antes de enviar · copiar resumo · modelos reutilizáveis · agenda de prazos (fim de experiência, pagamento de férias e rescisão, retorno de afastamento) · checklist de documentos da admissão · leitura melhor de fichas, comprovantes de endereço e ASO · OCR melhor em fotos de celular.
@@ -87,6 +95,5 @@ Abra o Claude Code dentro desta pasta: o `CLAUDE.md` traz o contexto, as regras 
 ## Pontos a confirmar com o escritório
 
 - `config.diaLimiteRubricas` está vazio — defina o dia de corte das variáveis da folha.
-- `config.atestadoAte15DiasVaiPara` — o portal só tem tipos "superior a 15 dias"; confirme onde o cliente deve mandar atestados curtos.
 - O preenchimento da **grade** do Lançamento de Rubricas não foi calibrado (a empresa de teste não tem eventos cadastrados); hoje a planilha vira um resumo na descrição.
 - A tela de **Pendências** lê as listas com o acesso do próprio cliente; o formato dos itens foi tratado de forma genérica porque a empresa de teste não tinha solicitações.

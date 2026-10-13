@@ -54,7 +54,9 @@ async function refreshRules(reason = 'manual') {
     const cache = await readCache();
     if (cache?.rules && validRules(cache.rules) && cache.origem !== 'embutida' && s.rulesUrl) { rules = cache.rules; origem = 'cache'; }
   }
-  if (!rules) { rules = await bundledRules(); origem = 'embutida'; }
+  // regras embutidas mais novas que as remotas/cache (extensão atualizada antes da publicação) prevalecem
+  const embutidas = await bundledRules();
+  if (!rules || (origem !== 'dev' && String(embutidas.versao || '') > String(rules.versao || ''))) { rules = embutidas; origem = 'embutida'; }
   const pack = { rules, origem, versao: rules.versao || '?', atualizadoEm: new Date().toISOString(), erro, reason };
   // guardado como texto: o chrome.storage reordena as chaves de objetos, e a ordem dos campos importa
   await chrome.storage.local.set({ rulesCache: { ...pack, rules: undefined, rulesJson: JSON.stringify(rules) } });

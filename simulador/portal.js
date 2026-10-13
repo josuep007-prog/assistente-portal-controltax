@@ -17,7 +17,7 @@
     'Paraná': ['Curitiba', 'Londrina', 'Maringá', 'Ponta Grossa'],
     'Bahia': ['Salvador', 'Feira de Santana', 'Vitória da Conquista']
   };
-  var LEAVE = ['Afastamento direitos integrais', 'Acid. Trabalho período superior a 15 dias', 'Serviço militar', 'Licença maternidade', 'Doença período superior a 15 dias', 'Licença sem vencimento', 'Novo afast. mesmo acid. Trabalho', 'Antecipação e/ou prorrogação Licença Maternidade', 'Novo afast. mesma doença', 'Exercício de mandato sindical', 'Aposent. por invalid. Acidente de trabalho', 'Aposent. por invalid. doença profissional', 'Aposent. por invalid. exceto acidente e doença profissional'];
+  var LEAVE = ['Afastamento direitos integrais', 'Acid. Trabalho período superior a 15 dias', 'Serviço militar', 'Licença maternidade', 'Doença período superior a 15 dias', 'Licença sem vencimento', 'Novo afast. mesmo acid. Trabalho', 'Antecipação e/ou prorrogação Licença Maternidade', 'Novo afast. mesma doença', 'Exercício de mandato sindical', 'Aposent. por invalid. Acidente de trabalho', 'Aposent. por invalid. doença profissional', 'Aposent. por invalid. exceto acidente e doença profissional', 'Acid. Trabalho período igual ou inferior a 15 dias', 'Doença período igual ou inferior a 15 dias', 'Aborto não criminoso', 'Licença maternidade adoção 1 ano', 'Licença maternidade adoção 1 até 4 anos', 'Licença maternidade adoção 4 até 8 anos', 'Outros motivos de afastamento', 'Prorrogação licença maternidade 60 dias', 'Prorrogação licença maternidade 60 dias adoção 1 ano', 'Prorrogação licença maternidade 30 dias adoção 1 até 4 anos', 'Prorrogação licença maternidade 15 dias adoção 4 até 8 anos', 'Recesso Estagiário', 'Falecimento do contribuinte', 'Licença paternidade', 'Afastamento por irregularidade no FGTS', 'Cárcere', 'Participação de curso ou programa de qualificação', 'Ausência justificada', 'Encerramento de estágio', 'Licença maternidade por morte da genitora', 'Acid. Trabalho período superior a 30 dias', 'Doença período superior a 30 dias', 'Acid. Trabalho período igual ou inferior a 30 dias', 'Doença período igual ou inferior a 30 dias', 'Doença profissional período igual ou inferior a 15 dias', 'Doença profissional superior a 15 dias'];
   var MOTIVOS = ['Demitido SEM justa causa', 'Demitido COM justa causa', 'Pedido de demissão SEM justa causa', 'Cessão de empregado', 'Rescisão contrato experiência antecipado pelo empregador', 'Rescisão contrato experiência antecipado pelo empregado', 'Término de contrato de trabalho por tempo determinado', 'Antecipado pelo empregador (tempo determinado)', 'Antecipado pelo empregado (tempo determinado)', 'Culpa recíproca', 'Extinção da empresa'];
   var L = {
     dept: ['MASTER', 'CONTÁBIL', 'PESSOAL', 'FINANCEIRO', 'ADMINISTRATIVO', 'TI', 'FISCAL', 'Patrimônio'],
@@ -348,7 +348,7 @@
 
     function applyDeps() {
       var leave = ctx.value('selectedLeaveType');
-      var cat = /Acid\. Trabalho|mesmo acid/i.test(leave || '');
+      var cat = /Acid\. Trabalho período superior|mesmo acid/i.test(leave || '');
       ctx.dependents.forEach(function (d) {
         var on = d.rule === 'cat' ? cat : d.rule === 'emp' ? !!ctx.value('employee') : true;
         if (d.el.__setDisabled) d.el.__setDisabled(!on); else { d.el.disabled = !on; if (!on && d.el.type !== 'radio') d.el.value = ''; if (!on && d.el.type === 'radio') d.el.checked = false; }

@@ -56,6 +56,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 1.2.0 | 2026-10-13 | Vários atestados de uma vez (uma solicitação por atestado, abertas uma após a outra); tipo de afastamento automático (inclui até 15 dias); assunto "Atestado médico – Nome – data (dias)"; aviso visual no portal e no painel para o que não foi encontrado no documento; texto livre não força mais a solicitação aberta; abrir solicitação mais rápido; regras embutidas mais novas prevalecem sobre as publicadas. |
 | 1.1.1 | 2026-10-13 | Modo dev só tenta o WebSocket quando o servidor de recarga está ligado (sem erros em chrome://extensions). |
 | 1.1.0 | 2026-10-09 | Painel encaixado ao lado da página; introdução; "escreva com suas palavras"; etapas do pedido; barra de ações; resumo antes do envio; copiar resumo; modelos; agenda de prazos; checklist de documentos; leitura melhor de fichas, comprovantes de endereço e ASO; pré-tratamento de fotos no OCR; simulador para testes. |
 | 1.0.0 | 2026-10-09 | Primeira versão: 10 tipos de solicitação, leitura de PDF/foto/planilha, conferência antes do envio, pendências, calculadoras, histórico, regras remotas e modo dev. |

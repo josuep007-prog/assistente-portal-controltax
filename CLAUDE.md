@@ -50,7 +50,10 @@ Extensão Chrome (Manifest V3) que age por cima do Onvio Portal do Cliente na vi
 | `rules/regras.json` | O "cérebro" editável — ver README para o mapa dos blocos. |
 | `lib/`, `fonts/` | Bibliotecas e fontes empacotadas (não editar; fora do Git, recriadas por `tools/baixar-libs.sh`). |
 
-**Comunicação conteúdo ↔ painel:** `MessageChannel` privado (o conteúdo manda `ct-hello` ao iframe). Mensagens: `context`, `files`, `fill`/`fillResult`, `getOptions`, `navigate`, `highlight`, `requestSubmit` (botão "Conferir e enviar"), `submitAttempt`/`confirmSubmit`, `pendencias`, `formClosed`, `toast`, `setBadge`.
+**Comunicação conteúdo ↔ painel:** `MessageChannel` privado (o conteúdo manda `ct-hello` ao iframe). Mensagens: `context`, `files`, `fill`/`fillResult`, `getOptions`, `navigate`, `highlight`, `markMissing`, `requestSubmit` (botão "Conferir e enviar"), `submitAttempt`/`confirmSubmit`, `pendencias`, `formClosed`, `toast`, `setBadge`.
+**Lote (vários arquivos):** `handleVarios` lê tudo, `montarPedidos` separa um pedido por atestado (`config.umPedidoPorDocumento`) e um por tipo para o resto (CAT da mesma data acompanha o atestado; documentos neutros só entram se houver um único pedido possível). `abrirPedido` limpa o trabalho do tipo, abre o formulário, reanalisa com a lista de empregados e preenche; `onFormClosed` → `loteAoFecharFormulario` marca enviado e abre o próximo (fechou sem enviar = pausa).
+**Não encontrado:** `marcarFaltando` (painel) usa os obrigatórios em erro + `esperadoDoDocumento` do tipo; manda `markMissing` ao conteúdo, que desenha `.ct-missing`/`.ct-miss-tag` no portal. Campos bloqueados pelo portal não contam como obrigatórios.
+**Versão das regras:** se as embutidas tiverem `versao` maior que as remotas/cache, valem as embutidas (atualizar a extensão não depende de publicar). Mantenha as regras compatíveis com versões antigas da extensão (ex.: `assunto` antigo continua; o novo formato fica em `assuntos`). `tests/e2e.py` serve as regras desta pasta no lugar das publicadas.
 **Painel encaixado:** em telas ≥ 1000px a página ganha `margin-right: 420px` (`html.ct-docked`) para o painel não cobrir o botão ADICIONAR.
 **Arquivos atravessam o canal como bytes** (`{name,type,buf}` + transferência do ArrayBuffer) e são remontados com `new File` do outro lado — passar `File` direto entre a página e o iframe da extensão derrubou a aba nos testes.
 
@@ -60,12 +63,14 @@ Mesmo sistema do Control Hub: tokens em `panel/panel.css` (`--masthead #0E151B`,
 
 ## Pendências conhecidas
 
+- Lote de atestados e avisos de "não encontrado" (1.2) testados só no simulador: conferir no Onvio real se, depois de ADICIONAR, o portal volta à lista (é isso que dispara a próxima solicitação) e onde a etiqueta de aviso aparece nos campos reais.
+- "Novo afast. mesma doença" não é escolhido automaticamente (depende do histórico do INSS); avaliar com o escritório.
 - Melhorias da versão 1.1 testadas só no simulador: conferir no Onvio real (painel encaixado, "Conferir e enviar", combobox de UF por extenso).
 - Num teste sem tela, cliques nos últimos ~30px da altura do painel não chegavam ao iframe; o aviso "Antes de enviar" foi centralizado. Conferir no Chrome real se a barra de ações fixa no rodapé responde bem.
 - Grade do Lançamento de Rubricas não mapeada (empresa de teste sem eventos) — hoje a planilha vira resumo na descrição.
 - Formato dos itens das listas (pendências) não visto; tratamento genérico em `fetchPendencias`.
 - Endpoint da lista de Solicitação Geral não identificado.
-- Definir com o escritório: `config.diaLimiteRubricas` e o destino de atestados de até 15 dias.
+- Definir com o escritório: `config.diaLimiteRubricas`.
 - Existe outro protótipo no repositório josuep007-prog/Assistente-Onvio (v0.2.0, branch `claude/clever-cerf-pdwl3u`) — decidir com o Josué se vira a base ou se é arquivado.
 
 ## Comandos

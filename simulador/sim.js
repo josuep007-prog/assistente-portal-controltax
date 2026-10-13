@@ -4,16 +4,18 @@
   document.querySelectorAll('[data-file]').forEach(function (b) {
     b.addEventListener('click', async function () {
       details.open = false;
-      var url = b.dataset.file;
+      var urls = b.dataset.file.split(',');
       try {
-        var r = await fetch(url);
-        var blob = await r.blob();
-        var name = url.split('/').pop();
-        var type = /\.pdf$/.test(name) ? 'application/pdf' : /\.png$/.test(name) ? 'image/png' : /\.csv$/.test(name) ? 'text/csv' : blob.type;
-        var file = new File([blob], name, { type: type, lastModified: Date.now() });
+        var files = await Promise.all(urls.map(async function (url) {
+          var r = await fetch(url);
+          var blob = await r.blob();
+          var name = url.split('/').pop();
+          var type = /\.pdf$/.test(name) ? 'application/pdf' : /\.png$/.test(name) ? 'image/png' : /\.csv$/.test(name) ? 'text/csv' : blob.type;
+          return new File([blob], name, { type: type, lastModified: Date.now() });
+        }));
         var hooks = window.__ctSim && window.__ctSim.hooks();
-        if (hooks) hooks.sendFiles([file]);
-        else document.addEventListener('ct-sim-ready', function () { window.__ctSim.hooks().sendFiles([file]); }, { once: true });
+        if (hooks) hooks.sendFiles(files);
+        else document.addEventListener('ct-sim-ready', function () { window.__ctSim.hooks().sendFiles(files); }, { once: true });
       } catch (e) {
         console.error(e);
       }

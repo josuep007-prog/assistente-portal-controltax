@@ -7,6 +7,7 @@ Rodar:                 python tests/e2e.py
 No Linux sem tela:     xvfb-run -a python tests/e2e.py
 """
 import asyncio, json, os, sys, tempfile, shutil
+os.environ.setdefault('PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS', '1')  # para interceptar o que o service worker baixa
 from playwright.async_api import async_playwright
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -24,7 +25,10 @@ async def abrir(p, tmp):
         args=[f'--disable-extensions-except={ROOT}', f'--load-extension={ROOT}', '--disable-dev-shm-usage', '--no-sandbox'])
     async def route(r):
         u = r.request.url
-        if '/api/br-payroll-sr/' in u:
+        if u.startswith('https://raw.githubusercontent.com/') and u.split('?')[0].endswith('/regras.json'):
+            # testa sempre as regras desta pasta (não as publicadas)
+            await r.fulfill(status=200, content_type='application/json', body=open(os.path.join(ROOT, 'rules', 'regras.json'), encoding='utf-8').read())
+        elif '/api/br-payroll-sr/' in u:
             itens = [{'id': 77, 'status': {'description': 'Aguardando o cliente'}, 'employee': {'name': 'JOAO DA SILVA'}}] if 'vacation' in u else []
             await r.fulfill(status=200, content_type='application/json', body=json.dumps({'items': itens, 'totalItems': len(itens)}))
         elif u.startswith('https://onvio.com.br/'):
@@ -54,6 +58,7 @@ async def cenario_preencher(p, arquivo, nome):
         if 'files:' in await log_mock(page): break
     await page.wait_for_timeout(1200)
     v = dict(await page.evaluate("""() => [...document.querySelectorAll('[formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value])"""))
+    print('       regras:', await pn.locator('#rules-ver').inner_text(), '| tipo:', v.get('selectedLeaveType'), '| assunto:', v.get('subject'))
     check(v.get('selectedEmployee') == 'JOAO DA SILVA', 'empregado reconhecido na lista')
     check(v.get('selectedLeaveType') == 'Doença período superior a 15 dias', 'tipo de afastamento (>15 dias)')
     check(v.get('leaveDate') == '05/10/2026', 'data de afastamento')

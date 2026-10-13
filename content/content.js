@@ -105,6 +105,9 @@
   pageStyle.textContent = `
     .ct-filled{box-shadow:0 0 0 2px rgba(60,101,155,.55)!important;transition:box-shadow .3s}
     .ct-flash{box-shadow:0 0 0 3px #C2000C!important;transition:box-shadow .3s}
+    .ct-missing{box-shadow:0 0 0 2px #E8A317!important;border-radius:4px}
+    .ct-miss-tag{display:flex;align-items:center;gap:6px;width:fit-content;max-width:100%;margin:4px 0 2px;padding:3px 8px;border-left:3px solid #E8A317;border-radius:3px;background:#FFF6E0;color:#6B4500;font:500 12px/1.35 system-ui,sans-serif}
+    .ct-miss-tag::before{content:"!";display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#E8A317;color:#fff;font-weight:700;font-size:10px}
     html.ct-docked{margin-right:420px!important;transition:margin-right .22s ease}
     @media (prefers-reduced-motion: reduce){html.ct-docked{transition:none}}`;
   document.documentElement.appendChild(pageStyle);
@@ -128,7 +131,7 @@
       switch (m.type) {
         case 'close': setPanel(false); break;
         case 'getContext': sendContext(); break;
-        case 'navigate': await navigate(m.slug, m.add !== false); break;
+        case 'navigate': await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
         case 'fill': {
           const r = await fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {});
           post({ type: 'fillResult', id: m.id, ...r });
@@ -142,6 +145,7 @@
           break;
         }
         case 'highlight': flash(findField(m.locator)); break;
+        case 'markMissing': markMissing(m.campos || []); break;
         case 'requestSubmit': { const b = submitButton(); if (b) b.click(); else toast('Abra o formulário da solicitação para enviar.'); break; }
         case 'confirmSubmit': {
           bypassGuard = true;
@@ -276,6 +280,36 @@
   }
   function mark(el) { const t = el?.tagName === 'BENTO-COMBOBOX' ? el.querySelector('input') : el; if (!t) return; t.classList.add('ct-filled'); setTimeout(() => t.classList.remove('ct-filled'), 2500); }
   function flash(el) { if (!el) return; reveal(el).then(() => { const t = el.tagName === 'BENTO-COMBOBOX' ? el.querySelector('input') : el; t.classList.add('ct-flash'); t.focus?.(); setTimeout(() => t.classList.remove('ct-flash'), 1800); }); }
+
+  /* ============ Aviso visual de campo não encontrado ============ */
+  let missingKey = '';
+  function missingTarget(loc) {
+    if (loc.seletores) { const r = mainEl().querySelector(Object.values(loc.seletores)[0]); return r?.closest('fieldset, [role=radiogroup], .form-group') || r?.parentElement?.parentElement || null; }
+    return findField(loc);
+  }
+  function clearMissing() {
+    document.querySelectorAll('.ct-miss-tag').forEach(t => t.remove());
+    document.querySelectorAll('.ct-missing').forEach(e => e.classList.remove('ct-missing'));
+  }
+  function markMissing(campos) {
+    const key = JSON.stringify(campos.map(c => [c.k, c.texto]));
+    if (key === missingKey && (!campos.length || document.querySelector('.ct-miss-tag'))) return;
+    missingKey = key;
+    clearMissing();
+    for (const c of campos) {
+      const el = missingTarget(c.locator); if (!el) continue;
+      const box = el.tagName === 'BENTO-COMBOBOX' ? (el.querySelector('.bento-combobox-container, input')?.closest('div') || el) : el;
+      box.classList.add('ct-missing');
+      const tag = document.createElement('div');
+      tag.className = 'ct-miss-tag'; tag.setAttribute('role', 'note'); tag.textContent = c.texto;
+      const anchor = el.tagName === 'BENTO-COMBOBOX' ? el : (el.closest('bento-datepicker, .input-group, .bento-input-group') || el);
+      anchor.insertAdjacentElement('afterend', tag);
+      const done = () => { box.classList.remove('ct-missing'); tag.remove(); };
+      (el.tagName === 'BENTO-COMBOBOX' ? el.querySelector('input') : el)?.addEventListener('change', done, { once: true });
+      if (el.matches?.('input, textarea')) el.addEventListener('input', () => { if (el.value.trim()) done(); });
+      el.addEventListener?.('click', (e) => { if (e.target.matches?.('input[type=radio], label')) setTimeout(done, 50); });
+    }
+  }
 
   async function openCombo(cb) {
     const inp = cb.querySelector('input');
