@@ -68,7 +68,7 @@ async def main():
         check(v2.get('name') == 'MARIA APARECIDA SOUZA LIMA', 'cadastro: nome')
         check(v2.get('motherName') == 'ANA SOUZA LIMA', 'cadastro: mãe (outra etapa)')
         check(v2.get('addressState') == 'São Paulo', 'cadastro: UF convertida (SP → São Paulo)')
-        check(v2.get('addressCity') == 'São Paulo', 'cadastro: município depois da UF')
+        check(v2.get('addressCity') == 'São Paulo', f"cadastro: município depois da UF ({v2.get('addressCity')})")
         print('   cadastro:', {k: v for k, v in v2.items() if v})
         await pg.screenshot(path='/tmp/sim-2.png')
 
@@ -117,6 +117,7 @@ async def main():
         await pg.screenshot(path='/tmp/sim-lote-3.png')
         # completa o tipo: o aviso some
         await pg.click('bento-combobox[formcontrolname=selectedLeaveType] input'); await pg.wait_for_timeout(300)
+        await pg.keyboard.type('igual ou inferior a 15'); await pg.wait_for_timeout(300)
         await pg.click('[role=option]:has-text("Doença período igual ou inferior a 15 dias")'); await pg.wait_for_timeout(1800)
         tags = await pg.evaluate("[...document.querySelectorAll('.ct-miss-tag')].map(t => t.previousElementSibling?.getAttribute('formcontrolname'))")
         check('selectedLeaveType' not in tags, 'aviso some quando o cliente escolhe o tipo')
@@ -157,6 +158,19 @@ async def main():
             v = await leave()
             if v.get('selectedEmployee'): break
         check(v.get('selectedEmployee') == 'JORGE OLIVEIRA ALVES' and v.get('vacationStartDate') == '16/11/2026', 'abre Aviso de Férias com o funcionário e a data preenchidos')
+
+        # lista longa virtualizada: nomes do começo (A) e do meio (I) da lista
+        print('\n[lista longa] funcionário fora das primeiras linhas da lista')
+        for nome, esperado in [('Adriana', 'ADRIANA MOTA LIMA'), ('Ivone', 'IVONE CARDOSO'), ('Wagner', 'WAGNER SOUSA')]:
+            await pg.click('.p-menu-i[data-s="employee-leave"]'); await pg.click('[data-add]'); await pg.wait_for_timeout(1500)
+            await pn.click('.tab[data-view="preencher"]'); await pg.wait_for_timeout(300)
+            await pn.fill('#free-form', f'atestado da {nome} de 2 dias a partir de 08/10/2026'); await pn.click('#free-form-go')
+            for _ in range(25):
+                await pg.wait_for_timeout(700)
+                v = await leave()
+                if v.get('selectedEmployee') and v.get('selectedLeaveType'): break
+            check(v.get('selectedEmployee') == esperado, f'{nome}: funcionário escolhido na lista longa ({v.get("selectedEmployee")})')
+            check(v.get('selectedLeaveType') == 'Doença período igual ou inferior a 15 dias', f'{nome}: tipo escolhido na lista de 39 opções')
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S)')

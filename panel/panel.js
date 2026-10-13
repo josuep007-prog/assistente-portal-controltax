@@ -114,7 +114,15 @@ async function carregarEmpregados(tipo) {
     if (W.opcoes[k]?.length || !naTela) continue;
     for (let tent = 0; tent < 3; tent++) {
       const r = await request({ type: 'getOptions', locator: { fc: c.fc }, force: tent > 0 }, 6000);
-      if (r?.options?.length) { W.opcoes[k] = r.options; if (c.fonte === 'empregado') W.empregados = r.options; break; }
+      if (r?.options?.length) {
+        W.opcoes[k] = r.options;
+        if (c.fonte === 'empregado') {
+          W.empregados = r.options;
+          // lista da tela incompleta (virtualizada): completa com a lista da empresa
+          if (r.virtual) { const todos = await empregadosDaEmpresa(); W.empregados = [...new Set([...r.options, ...todos])]; }
+        }
+        break;
+      }
       if (c.fonte !== 'empregado') break;
       await new Promise(res => setTimeout(res, 700));
     }

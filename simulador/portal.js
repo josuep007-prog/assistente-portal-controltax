@@ -7,7 +7,8 @@
   var BASE = '/clientcenter/pt/actions';
   var SR = BASE + '/service-request/';
   var EMPRESA = 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA';
-  var EMP5 = ['FRANCISCO DE MOURA', 'JOANA FONSECA', 'JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'];
+  // lista longa (como numa empresa real): o portal só desenha ~13 nomes por vez (lista virtualizada)
+  var EMP5 = ['ADRIANA MOTA LIMA', 'ALEXANDRE PIRES', 'BEATRIZ CAMPOS', 'BRUNO TEIXEIRA', 'CAMILA ROCHA', 'DANIEL FERREIRA', 'EDUARDO NUNES', 'FABIANA LOPES', 'FRANCISCO DE MOURA', 'GABRIEL MENDES', 'HELENA DUARTE', 'IVONE CARDOSO', 'JOANA FONSECA', 'JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'KARINA BASTOS', 'LUCAS MOREIRA', 'MARCOS VIEIRA', 'PATRICIA GOMES', 'RONALDO DE SOUZA', 'SILVIA RAMOS', 'THIAGO CARVALHO', 'VANESSA PRADO', 'WAGNER SOUSA'];
   var EMP3 = ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'];
   var UFS = ['Acre', 'Alagoas', 'Amapá', 'Amazonas', 'Bahia', 'Ceará', 'Distrito Federal', 'Espírito Santo', 'Goiás', 'Maranhão', 'Mato Grosso', 'Mato Grosso do Sul', 'Minas Gerais', 'Pará', 'Paraíba', 'Paraná', 'Pernambuco', 'Piauí', 'Rio de Janeiro', 'Rio Grande do Norte', 'Rio Grande do Sul', 'Rondônia', 'Roraima', 'Santa Catarina', 'São Paulo', 'Sergipe', 'Tocantins'];
   var CIDADES = {
@@ -160,13 +161,21 @@
       var box = h('bento-combobox-list', { id: cb.getAttribute('aria-owns'), role: 'listbox', class: 'p-list' });
       var q = inp.value && options().indexOf(inp.value) < 0 ? inp.value.toUpperCase() : '';
       var norm = function (s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); };
-      options().filter(function (o) { return !q || norm(o).indexOf(norm(q)) >= 0; }).forEach(function (o, i) {
+      var lista = options().filter(function (o) { return !q || norm(o).indexOf(norm(q)) >= 0; });
+      function linha(o, i) {
         var row = h('div', { role: 'option', id: 'bui-combobox-list-' + n + '-' + i, class: 'bento-list-row', 'aria-selected': String(o === inp.value) }, '<span class="combobox__row"> ' + esc(o) + ' </span>');
         row.addEventListener('mousedown', function (e) { e.preventDefault(); });
         row.addEventListener('click', function () { inp.value = o; close(); cb.classList.add('ng-dirty'); cb.classList.remove('p-invalid'); inp.dispatchEvent(new Event('change', { bubbles: true })); ctx.changed(f.fc, o); });
-        box.appendChild(row);
-      });
-      if (!box.children.length) box.appendChild(h('div', { class: 'p-empty' }, 'Nenhum resultado'));
+        return row;
+      }
+      if (lista.length > 13) {
+        // como o cdk-virtual-scroll do portal: só as linhas visíveis existem no DOM
+        var H = 40, vp = h('cdk-virtual-scroll-viewport', { class: 'cdk-virtual-scroll-viewport bento-list-viewport', style: 'display:block;height:' + (8 * H) + 'px;overflow:auto;position:relative' });
+        var spacer = h('div', { style: 'height:' + (lista.length * H) + 'px;position:relative' }); vp.appendChild(spacer);
+        var desenhar = function () { var ini = Math.floor(vp.scrollTop / H); spacer.innerHTML = ''; lista.slice(ini, ini + 13).forEach(function (o, k) { var r = linha(o, ini + k); r.style.cssText = 'position:absolute;left:0;right:0;top:' + ((ini + k) * H) + 'px;height:' + H + 'px'; spacer.appendChild(r); }); };
+        vp.addEventListener('scroll', desenhar); desenhar(); box.appendChild(vp);
+      } else lista.forEach(function (o, i) { box.appendChild(linha(o, i)); });
+      if (!lista.length) box.appendChild(h('div', { class: 'p-empty' }, 'Nenhum resultado'));
       cb.appendChild(box);
     }
     inp.addEventListener('click', function () { cb.getAttribute('aria-expanded') === 'true' ? close() : open(); });

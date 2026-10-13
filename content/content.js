@@ -141,7 +141,7 @@
         case 'attach': { const n = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n }); sendContext(); break; }
         case 'getOptions': {
           const opts = await comboLock(() => comboOptions(m.locator, m.force));
-          post({ type: 'options', id: m.id, options: opts });
+          post({ type: 'options', id: m.id, options: opts, virtual: !!opts.virtual });
           break;
         }
         case 'employees': post({ type: 'employees', id: m.id, names: await employeeNames() }); break;
@@ -365,7 +365,21 @@
     const { box } = await openCombo(cb);
     let opts = readOpts(box).map(o => o.text);
     for (let i = 0; i < 6 && !opts.length; i++) { await sleep(300); opts = readOpts(document.getElementById(cb.getAttribute('aria-owns'))).map(o => o.text); }
+    // lista virtualizada (cdk-virtual-scroll): só ~13 itens existem na tela; rola para juntar os outros
+    const vp = (document.getElementById(cb.getAttribute('aria-owns')) || document).querySelector('cdk-virtual-scroll-viewport')
+      || [...document.querySelectorAll('cdk-virtual-scroll-viewport')].find(v => v.offsetParent);
+    let virtual = false;
+    if (vp && vp.scrollHeight > vp.clientHeight + 5) {
+      virtual = true;
+      const t0 = Date.now();
+      for (let y = 0; y <= vp.scrollHeight && Date.now() - t0 < 4000; y += Math.max(120, vp.clientHeight - 40)) {
+        vp.scrollTop = y; vp.dispatchEvent(new Event('scroll')); await sleep(90);
+        for (const o of readOpts(vp)) if (!opts.includes(o.text)) opts.push(o.text);
+      }
+      vp.scrollTop = 0; vp.dispatchEvent(new Event('scroll'));
+    }
     await closeCombo(cb);
+    opts = Object.assign([...opts], { virtual });
     if (opts.length) optionsCache.set(key, opts);
     return opts;
   }
@@ -391,12 +405,30 @@
     if (alias && !opts.some(o => norm(o.text) === norm(value))) value = alias;
     const score1 = () => { for (const o of opts) { const s = similarity(value, o.text); if (s > score) { score = s; best = o; } } };
     score1();
-    if (score < 0.99 && (opts.length >= 50 || !opts.length)) {
-      // listas longas (cargos, municípios): digita para filtrar
-      setNative(inp, value); inp.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
-      await sleep(600);
+    if (score < 0.99) {
+      // não achou exato entre os itens visíveis (listas longas ou virtualizadas): digita para filtrar
+      // digita sem tirar o foco (blur fecharia a lista)
+      inp.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, value);
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+      await sleep(500);
+      if (cb.getAttribute('aria-expanded') !== 'true') { inp.click(); await sleep(350); }
       box = document.getElementById(cb.getAttribute('aria-owns'));
       opts = readOpts(box); best = null; score = 0; score1();
+      // a lista não filtrou (ou filtrou pouco): procura rolando a lista virtualizada
+      if (score < 0.99) {
+        const vp = (box || document).querySelector?.('cdk-virtual-scroll-viewport') || [...document.querySelectorAll('cdk-virtual-scroll-viewport')].find(v => v.offsetParent);
+        if (vp && vp.scrollHeight > vp.clientHeight + 5) {
+          const t0 = Date.now();
+          for (let y = 0; y <= vp.scrollHeight && score < 0.99 && Date.now() - t0 < 4000; y += Math.max(120, vp.clientHeight - 40)) {
+            vp.scrollTop = y; vp.dispatchEvent(new Event('scroll')); await sleep(90);
+            opts = readOpts(vp); score1();
+          }
+          if (best && !best.el.isConnected) { vp.scrollTop = Math.max(0, vp.scrollTop - vp.clientHeight); vp.dispatchEvent(new Event('scroll')); await sleep(90); opts = readOpts(vp); best = null; score = 0; score1(); }
+        }
+      }
+      if (!(best && score >= 0.6)) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, ''); inp.dispatchEvent(new Event('input', { bubbles: true })); }
     }
     if (best && score >= 0.6) {
       best.el.scrollIntoView({ block: 'nearest' });
