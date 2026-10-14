@@ -8,6 +8,12 @@ export const norm = (s) => String(s ?? '')
 export const onlyDigits = (s) => String(s ?? '').replace(/\D+/g, '');
 
 /* ---------------- Datas ---------------- */
+/** Data só existe se o mês e o dia continuarem os pedidos: o JS rola 30/02 para 02/03 em silêncio. */
+export function dataValida(ano, mesIndice, dia) {
+  if (!(ano >= 1900 && ano <= 2100) || mesIndice < 0 || mesIndice > 11 || dia < 1 || dia > 31) return null;
+  const d = new Date(ano, mesIndice, dia);
+  return d.getMonth() === mesIndice && d.getDate() === dia ? d : null;
+}
 export function parseDate(v) {
   if (!v) return null;
   if (v instanceof Date) return isNaN(v) ? null : new Date(v.getFullYear(), v.getMonth(), v.getDate());
@@ -15,16 +21,15 @@ export function parseDate(v) {
   let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
   if (m) {
     let y = +m[3]; if (y < 100) y += 2000;
-    const d = new Date(y, +m[2] - 1, +m[1]);
-    return d.getMonth() === +m[2] - 1 ? d : null;
+    return dataValida(y, +m[2] - 1, +m[1]);
   }
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  if (m) return dataValida(+m[1], +m[2] - 1, +m[3]);
   m = norm(s).match(/^(\d{1,2}) DE ([A-Z]+) DE (\d{4})$/);
   if (m) {
     const meses = ['JANEIRO', 'FEVEREIRO', 'MARCO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
     const i = meses.indexOf(m[2]);
-    if (i >= 0) return new Date(+m[3], i, +m[1]);
+    if (i >= 0) return dataValida(+m[3], i, +m[1]);
   }
   return null;
 }
@@ -288,6 +293,27 @@ export function activeConditionals(tipo, values) {
   return (tipo.condicionais || []).filter(c => matchCond(c.se, values));
 }
 
+/* ---------------- Regras de prazo compartilhadas ---------------- */
+/** Súmula 380 do TST (art. 132 do Código Civil): não conta o dia do aviso, conta o último. */
+export const fimDoAviso = (dataAviso, dias = 30) => addDays(dataAviso, dias);
+const SEM_AVISO = ['COM JUSTA CAUSA', 'EXPERIENCIA', 'TEMPO DETERMINADO', 'CULPA RECIPROCA'];
+/** Dispensa por justa causa e fim de contrato não geram aviso prévio. */
+export function temAviso(values, rules) {
+  const m = norm(values.motivo || '');
+  if (!m) return true;   // sem motivo escolhido, não dá para afirmar que não há aviso
+  return !(rules?.config?.motivosSemAviso || SEM_AVISO).some(x => m.includes(norm(x)));
+}
+/** O proporcional vale a favor do empregado; quem pede demissão cumpre 30 dias (NT 184/2012 do MTE). */
+export const avisoPeloEmpregador = (values) => norm(values.avisoDadoPor || '') !== 'EMPREGADO';
+/** Os 15 primeiros dias pela empresa e o INSS a partir do 16º valem para doença e acidente
+    (Lei 8.213/91, art. 60 §3º), não para maternidade, licença sem vencimento ou serviço militar. */
+const COM_INSS = ['Doença', 'Acid. Trabalho', 'mesma doença', 'mesmo acid', 'Doença profissional'];
+export function vaiAoInss(tipoAfastamento, rules) {
+  const t = norm(tipoAfastamento || '');
+  if (!t) return true;   // sem tipo escolhido, mantém o aviso geral
+  return (rules?.tipos?.afastamento?.tiposComInss || COM_INSS).some(x => t.includes(norm(x)));
+}
+
 /* ---------------- Valores derivados ---------------- */
 export function derived(tipoKey, values, rules) {
   const cal = makeCalendar(rules.feriados);
@@ -301,11 +327,19 @@ export function derived(tipoKey, values, rules) {
   }
   const afa = parseDate(values.dataAfastamento), diasAfa = +values.dias || 0;
   if (diasAfa) out.diasTexto = diasAfa === 1 ? '1 dia' : `${diasAfa} dias`;
-  if (afa && diasAfa) { out.dataRetorno = fmtDate(addDays(afa, diasAfa)); if (diasAfa > 15) out.inicioInss = fmtDate(addDays(afa, 15)); }
+  if (afa && diasAfa) { out.dataRetorno = fmtDate(addDays(afa, diasAfa)); if (diasAfa > 15 && vaiAoInss(values.tipoAfastamento, rules)) out.inicioInss = fmtDate(addDays(afa, 15)); }
   const dem = parseDate(values.dataDemissao);
   if (dem) out.pagamentoAte = fmtDate(addDays(dem, 10));
   const anos = +values.anosEmpresa;
-  if (!isNaN(anos) && values.anosEmpresa !== '' && values.anosEmpresa != null) out.diasAviso = String(Math.min(90, 30 + 3 * Math.max(0, Math.floor(anos))));
+  // proporcional (Lei 12.506/2011) é direito do empregado: só quando a empresa demite
+  if (!isNaN(anos) && values.anosEmpresa !== '' && values.anosEmpresa != null && temAviso(values, rules)) {
+    out.diasAviso = avisoPeloEmpregador(values) ? String(Math.min(90, 30 + 3 * Math.max(0, Math.floor(anos)))) : '30';
+  }
+  if (dem || parseDate(values.dataAviso)) {
+    const base = parseDate(values.dataAviso) || dem;
+    const d = +out.diasAviso || 30;
+    if (base && temAviso(values, rules)) out.fimAviso = fmtDate(fimDoAviso(base, d));
+  }
   const tipo = resolveTipo(rules, tipoKey);
   if (tipo?.complexidade) out.diasUteis = String(rules.config?.prazoInternoDiasUteis?.[tipo.complexidade] ?? '');
   void cal;
@@ -389,9 +423,13 @@ export function runChecks(tipoKey, values, anexos, rules, hoje = today(), portal
   conds.forEach(c => (c.anexos || []).forEach(id => { const a = reqAnexos.find(x => x.id === id); if (a) a.obrigatorio = true; }));
   for (const a of reqAnexos) {
     if (a.excetoQuando && matchCond(a.excetoQuando, values)) continue;
-    const has = (anexos || []).some(f => f.documento === a.documento);
-    const temAlgum = (anexos || []).length > 0;
+    // só conta como anexado o que está mesmo no portal: o que está só na lista do
+    // Assistente ainda não foi para a solicitação (pendente)
+    const has = (anexos || []).some(f => f.documento === a.documento && !f.pendente);
+    const soNoAssistente = !has && (anexos || []).find(f => f.documento === a.documento && f.pendente);
+    const temAlgum = (anexos || []).some(f => !f.pendente);
     if (has) add('ok', 'Anexos', `${a.rotulo} anexado`);
+    else if (soNoAssistente) add('erro', 'Anexos', (rules?.mensagens?.anexoSoNoAssistente || 'O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.').replace('{arquivo}', soNoAssistente.nome));
     else if (a.obrigatorio) add(temAlgum ? 'atencao' : 'erro', 'Anexos', temAlgum ? `Confira se o anexo inclui: ${a.rotulo}` : `Anexe: ${a.rotulo}`);
     else add('info', 'Anexos', `Se tiver, anexe: ${a.rotulo}`);
   }
@@ -519,7 +557,8 @@ export function findDates(text, hoje = today()) {
   }
   for (const m of t.matchAll(/\b(\d{1,2})\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de\s+(\d{4}))?/g)) {
     const mi = MESES.indexOf(m[2]); let y = m[3] ? +m[3] : hoje.getFullYear();
-    let d = new Date(y, mi, +m[1]); if (!m[3] && d < addDays(hoje, -60)) d = new Date(y + 1, mi, +m[1]);
+    let d = dataValida(y, mi, +m[1]);
+    if (d && !m[3] && d < addDays(hoje, -60)) d = dataValida(y + 1, mi, +m[1]);
     push(m.index, d);
   }
   for (const m of t.matchAll(/\b(hoje|amanha|ontem|depois de amanha)\b/g)) push(m.index, addDays(hoje, { hoje: 0, amanha: 1, ontem: -1, 'depois de amanha': 2 }[m[1]]));
@@ -527,7 +566,13 @@ export function findDates(text, hoje = today()) {
     const alvo = DIAS_SEMANA.indexOf(m[1]); let d = addDays(hoje, 1); while (d.getDay() !== alvo) d = addDays(d, 1); push(m.index, d);
   }
   for (const m of t.matchAll(/\bdia (\d{1,2})\b(?!\s*(?:[\/.-]|de\s+[a-z]))/g)) {
-    let d = new Date(hoje.getFullYear(), hoje.getMonth(), +m[1]); if (d < hoje) d = new Date(hoje.getFullYear(), hoje.getMonth() + 1, +m[1]); push(m.index, d);
+    // "dia 31" num mês de 30 dias não vira 01 do mês seguinte: sem data, o cliente confirma
+    let d = dataValida(hoje.getFullYear(), hoje.getMonth(), +m[1]);
+    if (d && d < hoje) {
+      const prox = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);   // dezembro → janeiro do ano seguinte
+      d = dataValida(prox.getFullYear(), prox.getMonth(), +m[1]);
+    }
+    push(m.index, d);
   }
   const seen = new Set();
   return out.sort((a, b) => a.idx - b.idx).filter(x => { const k = iso(x.d); if (seen.has(k)) return false; seen.add(k); return true; }).map(x => x.d);
