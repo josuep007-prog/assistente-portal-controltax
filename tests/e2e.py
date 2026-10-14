@@ -2,7 +2,7 @@
 Teste ponta a ponta do Assistente numa réplica local do formulário do portal.
 Nada é enviado ao Onvio: todas as requisições para onvio.com.br são respondidas aqui.
 
-Requisitos (uma vez):  pip install playwright  &&  python -m playwright install chromium
+Requisitos (uma vez):  pip install -r tests/requirements.txt  &&  python -m playwright install chromium
 Rodar:                 python tests/e2e.py
 No Linux sem tela:     xvfb-run -a python tests/e2e.py
 """

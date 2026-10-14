@@ -32,7 +32,7 @@ Extensão Chrome (Manifest V3) que age por cima do Onvio Portal do Cliente na vi
 ## Trabalhando no Claude Code na nuvem
 
 - `lib/` e `fonts/` estão no Git (desde 1.2.5, para o "Download ZIP" do GitHub virar uma extensão completa). `tools/baixar-libs.sh` recria as pastas a partir do npm com versões e SHA-256 fixos, se faltarem (o gancho `SessionStart` roda o script; ele não faz nada quando as pastas existem). Para trocar a versão de uma biblioteca, atualize o script (versão e hash) junto.
-- Os testes com navegador precisam do Playwright para Python (`pip install playwright`; o Chromium do ambiente já serve — use `channel='chromium'`).
+- Os testes com navegador precisam do Playwright para Python (`pip install -r tests/requirements.txt`, que fixa o Playwright 1.56.0 — versões mais novas pedem outro Chromium; o do ambiente já serve — use `channel='chromium'`).
 - Não há acesso ao Chrome do Josué nem ao Onvio real: valide tudo no simulador e nos testes (rodam sem tela: `headless` com `channel='chromium'`).
 - Mudanças que dependem da tela real (ex.: grade de rubricas) ficam marcadas como "a calibrar" e são conferidas depois numa sessão com o Chrome do Josué.
 - Commits pequenos, em português, um assunto por commit.
@@ -92,6 +92,6 @@ python tools/gerar-exemplos-atestados.py   # atestados fictícios do simulador e
 SIM_SO=13 python tests/sim_test.py <pasta>  # só os testes do simulador da versão 1.3
 python dev/dev_server.py              # recarga automática (deixar aberto)
 node tests/engine.test.mjs            # motor de regras
-python tests/e2e.py                   # extensão carregada numa réplica do formulário (pip install playwright; python -m playwright install chromium)
+python tests/e2e.py                   # extensão carregada numa réplica do formulário (pip install -r tests/requirements.txt; python -m playwright install chromium)
 bash tools/build-simulador.sh ../simulador-artefato && python tests/sim_test.py ../simulador-artefato   # simulador completo
 ```

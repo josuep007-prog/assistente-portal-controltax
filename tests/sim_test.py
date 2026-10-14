@@ -285,6 +285,7 @@ async def main():
         await pg.screenshot(path='/tmp/sim-13.png')
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await b.close()
-    print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S)')
+    print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 
 asyncio.run(main())
+sys.exit(1 if falhas else 0)
