@@ -174,12 +174,22 @@
         case 'employees': { const names = await employeeNames(); post({ type: 'employees', id: m.id, names, detalhes: employeesInfo.get(companyName()) || [] }); break; }
         case 'highlight': flash(findField(m.locator)); break;
         case 'markMissing': markMissing(m.campos || []); break;
-        case 'requestSubmit': { const b = submitButton(); if (b) b.click(); else toast('Abra o formulário da solicitação para enviar.'); break; }
+        // "Conferir e enviar": nunca clica no portal — manda o resumo ao painel, aconteça o que
+        // acontecer com as regras. Só o confirmSubmit (clique do cliente) aciona o botão do portal.
+        case 'requestSubmit': {
+          const b = submitButton();
+          if (!b) { toast('Abra o formulário da solicitação para enviar.'); break; }
+          const r = routeInfo();
+          setPanel(true);
+          post({ type: 'submitAttempt', pedido: true, tipo: tipoBySlug(r.slug), form: snapshot(tipoBySlug(r.slug)) });
+          break;
+        }
         case 'confirmSubmit': {
           bypassGuard = true;
           const btn = submitButton();
           if (btn) btn.click();
           setTimeout(() => { bypassGuard = false; }, 1500);
+          vigiarEnvio();
           break;
         }
         case 'pendencias': post({ type: 'pendencias', id: m.id, data: await fetchPendencias(m.tipos) }); break;
@@ -372,7 +382,16 @@
   const employeesInfo = new Map();   // empresa → [{ nome, admissao, ativo }] (sem CPF nem outros dados)
   let empresaVista = '', empresaDesde = 0;
   const resumoEmpregado = (e) => ({ nome: String(e?.name || '').trim(), admissao: String(e?.hireDate || e?.admissionDate || '').slice(0, 10), ativo: !/demit|deslig|termin|inativ|dismiss|fired/i.test(String(e?.status ?? '')) });
-  function notaEmpresa(e) { if (e && e !== empresaVista) { empresaVista = e; empresaDesde = performance.now(); } }
+  /** Trocar de empresa sem recarregar: o que foi lido da empresa anterior não vale mais. */
+  function notaEmpresa(e) {
+    if (!e || e === empresaVista) return;
+    const antes = empresaVista;
+    empresaVista = e; empresaDesde = performance.now();
+    if (!antes) return;                 // primeira leitura: nada a limpar
+    optionsCache.clear();               // listas (empregados, motivos…) são de outra empresa
+    desfazerPilha.length = 0;           // o desfazer não pode atravessar empresas
+    avisarDesfazer();
+  }
   async function employeeNames() {
     const empresa = companyName(); notaEmpresa(empresa);
     if (plat.employees) {   // simulador
@@ -676,8 +695,20 @@
     // as telas usam classes diferentes (form__buttons--add, btn-primary…): o texto é o que é estável
     return [...mainEl().querySelectorAll('button')].find(b => /^(ADICIONAR|SALVAR E ENVIAR(\s+PARA\s+(O\s+)?ESCRIT[ÓO]RIO)?)$/i.test(b.innerText.trim()) && !b.closest('bento-toolbar'));
   }
+  /** Depois de confirmar: se o portal recusou, a tela continua no mesmo formulário. */
+  let envioVigiado = null;
+  function vigiarEnvio() {
+    const onde = currentPath();
+    clearTimeout(envioVigiado);
+    envioVigiado = setTimeout(() => {
+      if (currentPath() === onde && submitButton()) post({ type: 'envioNaoConcluido' });
+    }, 4500);
+  }
+
+  // A conferência é a trava principal do projeto: só sai do caminho se a regra disser
+  // explicitamente que não quer (sem regra carregada, ela continua valendo).
   document.addEventListener('click', (ev) => {
-    if (bypassGuard || !rules?.config?.confirmarAntesDeEnviar) return;
+    if (bypassGuard || rules?.config?.confirmarAntesDeEnviar === false) return;
     const btn = ev.target.closest?.('button');
     if (!btn || btn !== submitButton()) return;
     if (!port) return;
@@ -689,7 +720,7 @@
 
   // Enter dentro do formulário também envia: passa pela mesma conferência
   document.addEventListener('submit', (ev) => {
-    if (bypassGuard || !rules?.config?.confirmarAntesDeEnviar || !port) return;
+    if (bypassGuard || rules?.config?.confirmarAntesDeEnviar === false || !port) return;
     const form = ev.target; const btn = submitButton();
     if (!btn || !mainEl().contains(form) || !form.contains(btn)) return;
     if (ev.submitter && ev.submitter !== btn) return;
@@ -736,15 +767,21 @@
 
   /* ============ Mudanças de rota ============ */
   let routeTimer = null;
+  let ultimoForm = '';   // último /add visto (prev se perde quando há rota intermediária)
   const routeChanged = () => {
     const href = currentPath();
     if (href === lastHref) return;
     const prev = lastHref; lastHref = href;
+    // saiu do formulário: o desfazer daquela tela não vale mais (cancelar, enviar, lote)
+    if (prev.includes('/add') && !href.includes('/add')) {
+      for (let i = desfazerPilha.length - 1; i >= 0; i--) if (desfazerPilha[i].path === prev) desfazerPilha.splice(i, 1);
+    }
+    if (prev.includes('/add')) ultimoForm = prev;
     clearTimeout(routeTimer);
     routeTimer = setTimeout(() => {
       const r = routeInfo();
       // formulário fechou e voltou à lista → provável envio concluído
-      if (prev.includes('/add') && r.mode === 'list') post({ type: 'formClosed', from: prev, to: href });
+      if (ultimoForm && !href.includes('/add') && r.mode === 'list') { post({ type: 'formClosed', from: ultimoForm, to: href }); ultimoForm = ''; }
       sendContext(); atualizarLauncher(); avisarDesfazer();
     }, 600);
   };
