@@ -222,7 +222,7 @@
         case 'pendencias': post({ type: 'pendencias', id: m.id, data: await fetchPendencias(m.tipos) }); break;
         // plataforma: dados do portal lidos com a sessão do próprio cliente (nada sai do computador)
         case 'solicitacoes': post({ type: 'solicitacoes', id: m.id, data: await fetchSolicitacoes(m.tipos || [], m.maxPaginas) }); break;
-        case 'portalInfo': post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos }); break;
+        case 'portalInfo': await estadoAcesso(); post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos, acesso: { visto: apiEstado.visto, nomes: apiEstado.nomes }, status: { ...ultimosStatus } }); break;
         case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : { disponivel: false, motivo: 'calibrar' }) }); break;
         case 'baixarDocumento': {
           const f = plat.baixarDocumento ? await plat.baixarDocumento(m.docId) : null;
@@ -448,7 +448,7 @@
     const key = url.replace(/[?#].*$/, '');
     if (employeesCache.has(key)) return employeesCache.get(key);
     try {
-      const r = await fetch(url, { credentials: 'include', headers: { accept: 'application/json' } });
+      const r = await apiGet(url);
       if (!r.ok) return [];
       const j = await r.json();
       const arr = Array.isArray(j) ? j : (j.items || j.data || []);
@@ -705,7 +705,7 @@
     const out = [];
     for (const t of tipos) {
       try {
-        const r = plat.fetchList ? await plat.fetchList(t.api) : await fetch(`/api/br-payroll-sr/v1/${t.api}?pageIndex=0&itemsPerPage=50&assignedtome=false`, { credentials: 'include', headers: { accept: 'application/json' } });
+        const r = plat.fetchList ? await plat.fetchList(t.api) : await apiGet(`/api/br-payroll-sr/v1/${t.api}?pageIndex=0&itemsPerPage=50&assignedtome=false`);
         if (!r.ok) { out.push({ tipo: t.key, erro: r.status }); continue; }
         const j = await r.json();
         const itens = (j.items || []).map(it => {
@@ -732,14 +732,53 @@
   /** Id da empresa no portal, tirado de uma chamada que o próprio portal fez depois da troca de empresa (só na memória). */
   function clientId() {
     if (plat.clientId) return plat.clientId();
+    if (apiEstado.clienteId) return apiEstado.clienteId;
     const e = performance.getEntriesByType('resource').filter(x => x.startTime >= empresaDesde - 2000).map(x => x.name.match(/\/api\/br-payroll-sr\/v1\/clients\/([^/?#]+)/)).filter(Boolean).pop();
     return e ? decodeURIComponent(e[1]) : '';
   }
-  async function getJson(url) {
-    const r = await fetch(url, { credentials: 'include', headers: { accept: 'application/json' } });
-    if (r.status === 401) atencao('A sessão do portal expirou. Entre de novo no portal.', true);
+  /* ============ Leituras da API com o mesmo acesso que o portal usa (ajudante content/pagina.js) ============ */
+  /* O cookie sozinho recebe 401 no Onvio real: o portal manda um cabeçalho de acesso em cada chamada.
+     O ajudante (mundo da página) faz a leitura com esse acesso; o valor nunca chega até aqui. */
+  let apiSeq = 0, apiEsperou = false;
+  const apiEspera = new Map();
+  let apiEstado = { visto: false, nomes: [], clienteId: '' };
+  const ultimosStatus = {};
+  document.addEventListener('ct-api-resposta', (e) => {
+    let d; try { d = JSON.parse(e.detail); } catch { return; }
+    const f = apiEspera.get(d.id); if (f) { apiEspera.delete(d.id); f(d); }
+  });
+  function pedirPagina(p, ms = 30000) {
+    return new Promise((res) => {
+      const id = `ct${++apiSeq}`;
+      const t = setTimeout(() => { apiEspera.delete(id); res(null); }, ms);
+      apiEspera.set(id, (d) => { clearTimeout(t); res(d); });
+      document.dispatchEvent(new CustomEvent('ct-api-pedido', { detail: JSON.stringify({ ...p, id }) }));
+    });
+  }
+  let ajudante = null;   // o ajudante da página respondeu? (no simulador ele não existe: as listas vêm de __ctPlatform)
+  async function estadoAcesso() {
+    if (ajudante === false) return null;
+    const d = await pedirPagina({ tipo: 'estado' }, 800);
+    ajudante = !!d;
+    if (d) apiEstado = { visto: !!d.visto, nomes: d.nomes || [], clienteId: d.clienteId || '' };
+    return d ? apiEstado : null;
+  }
+  const resposta = (status, texto) => ({ ok: status >= 200 && status < 300, status, text: async () => texto || '', json: async () => JSON.parse(texto || 'null') });
+  const chaveStatus = (url) => String(url).replace(/^https?:\/\/[^/]+/, '').replace(/[?#].*$/, '').replace(/\/clients\/[^/]+/, '/clients/…');
+  async function apiGet(url) {
+    let st = await estadoAcesso();
+    // o portal ainda não fez nenhuma chamada nesta página: espera um pouco pela primeira (é dela que vem o acesso)
+    for (let i = 0; st && !st.visto && !apiEsperou && i < 8; i++) { await sleep(500); st = await estadoAcesso(); }
+    if (st && !st.visto) apiEsperou = true;
+    let r;
+    if (st) { const d = await pedirPagina({ tipo: 'get', url }); if (d?.status) r = resposta(d.status, d.texto); }
+    // sem o ajudante: só com o cookie, como antes
+    if (!r) r = await fetch(url, { credentials: 'include', headers: { accept: 'application/json' } });
+    ultimosStatus[chaveStatus(url)] = r.status;
     return r;
   }
+  // 401/403 aqui quer dizer "leitura sem acesso", não sessão expirada: quem avisa a sessão é a janela do próprio portal (verAtencao)
+  const getJson = (url) => apiGet(url);
   const listaPagina = (api, pageIndex, itemsPerPage) => plat.fetchList
     ? plat.fetchList(api, { pageIndex, itemsPerPage })
     : getJson(`/api/br-payroll-sr/v1/${api}?pageIndex=${pageIndex}&itemsPerPage=${itemsPerPage}&assignedtome=false`);
@@ -798,7 +837,6 @@
   }
   /* O portal abriu uma janela (ou a sessão expirou) enquanto está coberto pela plataforma */
   let atencaoVista = '';
-  function atencao(texto, sessao = false) { post({ type: 'portalAtencao', texto, sessao }); }
   function verAtencao() {
     if (modo !== 'plataforma' || preenchendoAgora || navInterna) return;
     const d = [...document.querySelectorAll('[role=dialog], [role=alertdialog], .modal.show')].find(e => visible(e) && (e.innerText || '').trim());
@@ -931,6 +969,7 @@
     if (plat.modoInicial) return plat.modoInicial();
     try { const { prefs } = await chrome.storage.local.get('prefs'); return prefs?.abrirComo === 'painel' ? 'painel' : 'plataforma'; } catch { return 'plataforma'; }
   }
+  estadoAcesso();
   Promise.all([loadRules(), modoInicial()]).then(([, inicial]) => {
     lastHref = currentPath(); ensureFrame(); atualizarLauncher();
     modoAberto = inicial;
