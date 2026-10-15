@@ -388,4 +388,27 @@ t('funcionário: experiência, tempo de casa e férias (estimativa)', () => {
   assert.equal(E.situacaoEmpregado({ nome: 'X', admissao: '2020-01-01', ativo: false }, hoje, rules).proxima, null);
 });
 
+t('solicitações do Onvio: genericStatus por família, vez do cliente e prescrição (mapa do Control Onvio)', () => {
+  const h = new Date(2026, 9, 15);
+  const f = E.normalizarSolicitacao({ id: 'a1b2', identifier: 1041, genericStatus: 4, lastUpdated: '2026-09-25T10:00:00', clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, staffResponsibleExpanded: { name: 'ANA ANALISTA' }, subject: 'Férias' }, 'avisoFerias', rules, h);
+  assert.equal(f.estado, 'aguardando'); assert.equal(f.lado, 'cli'); assert.equal(f.numero, '1041'); assert.equal(f.empregado, 'JOAO DA SILVA'); assert.equal(f.responsavel, 'ANA ANALISTA');
+  assert.equal(f.parado, 20); assert.equal(f.prescreveEm, 10);
+  assert.equal(E.motivoCliente(f, h, rules), 'prescreve');
+  // "Aguardando resposta" (3) é a vez do escritório; em Cadastro, 3 é "Aguardando o cliente"
+  assert.equal(E.normalizarSolicitacao({ genericStatus: 3 }, 'afastamento', rules, h).estado, 'andamento');
+  const c = E.normalizarSolicitacao({ genericStatus: 3, name: 'MARIA' }, 'cadastroEmpregado', rules, h);
+  assert.equal(c.estado, 'aguardando'); assert.equal(c.prescreveEm, null); assert.equal(c.empregado, 'MARIA');
+  assert.equal(E.normalizarSolicitacao({ genericStatus: 8 }, 'rubricas', rules, h).estado, 'concluida');
+  assert.equal(E.normalizarSolicitacao({ genericStatus: 6 }, 'geral', rules, h).estado, 'prescrita');
+  assert.match(E.normalizarSolicitacao({ genericStatus: 42 }, 'geral', rules, h).status, /desconhecida \(código 42\)/);
+  // expectativa vencida com o escritório
+  const atr = E.normalizarSolicitacao({ genericStatus: 2, dueDate: '2026-10-10T00:00:00', lastUpdated: '2026-10-09' }, 'calculoFerias', rules, h);
+  assert.equal(E.motivoCliente(atr, h, rules), 'atrasada');
+  const pri = E.prioridadesCliente([atr, f, c], h, rules).map(p => p.motivo);
+  assert.deepEqual(pri, ['prescreve', 'responder', 'atrasada']);
+  assert.equal(E.progressoCliente(f, rules).limite, 30);
+  // todos os tipos com lista têm caminho e família
+  for (const [k, t] of Object.entries(rules.tipos)) assert.ok(t.apiLista && t.apiTramites && t.familiaStatus, `${k} sem apiLista/apiTramites/familiaStatus`);
+});
+
 console.log(`\n${n} testes ok`);

@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.15-4",
+  "versao": "2026.10.15-5",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -39,9 +39,9 @@
       "tempo determinado",
       "Culpa recíproca"
     ],
-    "solicitacoesMaxPaginas": 4,
+    "solicitacoesMaxPaginas": 2,
     "statusSolicitacao": {
-      "_comentario": "Expressões (sem diferenciar maiúsculas) aplicadas à situação de cada solicitação lida das listas do portal. A calibrar com os itens reais do Onvio.",
+      "_comentario": "Situação de cada solicitação. No Onvio o item traz genericStatus (número), com sentido diferente por família (mapeado no Onvio real em 15/10/2026 pelo Control Onvio, a extensão do escritório). lado: cli = vez do cliente (aguardando você), esc = com o escritório, fim = encerrada. As expressões (aguardando/concluida/cancelada) valem para situações em texto.",
       "aguardando": [
         "aguardando[^\"]{0,20}(cliente|voc[eê])",
         "waiting[_ ]?(for[_ ]?)?(client|customer)",
@@ -62,9 +62,140 @@
         "aguardando": "Aguardando você",
         "andamento": "Em andamento",
         "concluida": "Concluída",
-        "cancelada": "Cancelada"
-      }
-    }
+        "cancelada": "Cancelada",
+        "prescrita": "Prescrita"
+      },
+      "familias": {
+        "padrao": {
+          "1": [
+            "Sem análise",
+            "esc"
+          ],
+          "2": [
+            "Em análise",
+            "esc"
+          ],
+          "3": [
+            "Aguardando resposta do escritório",
+            "esc"
+          ],
+          "4": [
+            "Respondido pelo escritório",
+            "cli"
+          ],
+          "5": [
+            "Concluído",
+            "fim"
+          ],
+          "6": [
+            "Prescrita",
+            "prescrita"
+          ],
+          "7": [
+            "Encaminhado no escritório",
+            "esc"
+          ],
+          "8": [
+            "Em análise interna",
+            "esc"
+          ],
+          "9": [
+            "Encaminhado",
+            "esc"
+          ]
+        },
+        "cadastro": {
+          "1": [
+            "Sem análise",
+            "esc"
+          ],
+          "2": [
+            "Enviado para o escritório",
+            "esc"
+          ],
+          "3": [
+            "Aguardando você",
+            "cli"
+          ],
+          "4": [
+            "Respondido por você",
+            "esc"
+          ],
+          "5": [
+            "Cadastro efetuado",
+            "cli"
+          ],
+          "6": [
+            "Concluído",
+            "fim"
+          ],
+          "7": [
+            "Encaminhado no escritório",
+            "esc"
+          ]
+        },
+        "rubricas": {
+          "0": [
+            "Sem análise",
+            "esc"
+          ],
+          "1": [
+            "Sem análise",
+            "esc"
+          ],
+          "2": [
+            "Em análise",
+            "esc"
+          ],
+          "3": [
+            "Importação realizada",
+            "cli"
+          ],
+          "4": [
+            "Respondido pelo escritório",
+            "cli"
+          ],
+          "5": [
+            "Aguardando resposta do escritório",
+            "esc"
+          ],
+          "6": [
+            "Aguardando correção",
+            "cli"
+          ],
+          "7": [
+            "Em análise interna",
+            "esc"
+          ],
+          "8": [
+            "Concluído",
+            "fim"
+          ],
+          "9": [
+            "Encaminhado",
+            "esc"
+          ],
+          "10": [
+            "Prescrita",
+            "prescrita"
+          ],
+          "11": [
+            "Enviado para o escritório",
+            "esc"
+          ],
+          "12": [
+            "Respondido por você",
+            "esc"
+          ]
+        }
+      },
+      "prescreve": [
+        "padrao",
+        "rubricas"
+      ]
+    },
+    "prescricaoDias": 30,
+    "prescricaoAvisoDias": 10
   },
   "feriados": [
     "2026-01-01",
@@ -326,7 +457,11 @@
       "dicas": [
         "Escolha o departamento certo: Pessoal (folha e funcionários), Fiscal (notas e impostos), Contábil (balanços e lançamentos).",
         "Para férias, rescisões, admissões e afastamentos use a solicitação específica — ela já leva os dados certos direto para o sistema do escritório."
-      ]
+      ],
+      "apiLista": "service-requesting/v1/tickets/generic",
+      "apiExpand": "clientExpanded,staffResponsibleExpanded,requesterExpanded",
+      "apiTramites": "service-requesting/v1/tickets",
+      "familiaStatus": "padrao"
     },
     "afastamento": {
       "nome": "Afastamento de Empregado",
@@ -653,7 +788,11 @@
         "mesma doença",
         "mesmo acid",
         "Doença profissional"
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/employee-leave",
+      "apiExpand": "clientEmployeeExpanded,clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/tickets",
+      "familiaStatus": "padrao"
     },
     "avisoFerias": {
       "nome": "Aviso Prévio de Férias",
@@ -808,7 +947,11 @@
       "dicas": [
         "Primeiro envie o Aviso (com 30 dias de antecedência). Depois, mais perto da data, envie o Cálculo de Férias.",
         "Férias podem ser divididas em até 3 períodos: um deles com pelo menos 14 dias e os outros com pelo menos 5."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/prior-notice-vacations",
+      "apiExpand": "clientEmployeeExpanded,clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/tickets",
+      "familiaStatus": "padrao"
     },
     "calculoFerias": {
       "nome": "Cálculo de Férias",
@@ -923,7 +1066,11 @@
       "dicas": [
         "O abono pecuniário (\"vender\" 10 dias) precisa ser pedido pelo funcionário.",
         "A 1ª parcela do 13º pode ser adiantada nas férias se o funcionário pedir em janeiro."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/vacation-calculations",
+      "apiExpand": "clientEmployeeExpanded,clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/tickets",
+      "familiaStatus": "padrao"
     },
     "avisoRescisao": {
       "nome": "Aviso Prévio de Rescisão",
@@ -1054,7 +1201,11 @@
       "dicas": [
         "Aviso prévio: 30 dias + 3 dias por ano completo de trabalho, até 90 dias (Lei 12.506/2011). Use a calculadora.",
         "Depois do aviso, envie o Cálculo de Rescisão com a data de saída."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/prior-notice-terminations",
+      "apiExpand": "clientEmployeeExpanded,clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/tickets",
+      "familiaStatus": "padrao"
     },
     "calculoRescisao": {
       "nome": "Cálculo de Rescisão",
@@ -1156,7 +1307,11 @@
       "dicas": [
         "Lembre o funcionário do exame demissional (ASO).",
         "Informe férias vencidas, faltas e descontos pendentes na descrição."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/termination-calculations",
+      "apiExpand": "clientEmployeeExpanded,clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/tickets",
+      "familiaStatus": "padrao"
     },
     "rubricas": {
       "nome": "Lançamento de Rubricas",
@@ -1235,7 +1390,11 @@
       "dicas": [
         "Arraste uma planilha (Excel ou CSV) com as colunas Empregado, Rubrica e Valor: eu monto o resumo e confiro os nomes.",
         "Use 'Adicionar funcionários' no portal para lançar os valores na grade."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/payroll-entries",
+      "apiExpand": "clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/payroll-entries",
+      "familiaStatus": "rubricas"
     },
     "cadastroEmpregado": {
       "nome": "Cadastro de Empregado",
@@ -1946,7 +2105,11 @@
       "dicas": [
         "Arraste os documentos do funcionário (RG, CNH, comprovante de endereço, ASO, ficha de admissão): eu leio e preencho as etapas.",
         "O exame admissional (ASO) precisa ser feito antes do início do trabalho."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/employees-registrations",
+      "apiExpand": "clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/employees-registrations",
+      "familiaStatus": "cadastro"
     },
     "cadastroEstagiario": {
       "nome": "Cadastro de Estagiário",
@@ -2067,7 +2230,11 @@
       "descricao": [],
       "dicas": [
         "Jornada máxima do estágio: 6 horas por dia e 30 por semana (ensino superior/médio regular)."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/interns-registrations",
+      "apiExpand": "clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/employees-registrations",
+      "familiaStatus": "cadastro"
     },
     "cadastroContribuinte": {
       "nome": "Cadastro de Contribuinte",
@@ -2154,7 +2321,11 @@
       "descricao": [],
       "dicas": [
         "Use este cadastro para sócios com pró-labore e autônomos (RPA)."
-      ]
+      ],
+      "apiLista": "br-payroll-sr/v1/taxpayers-registrations",
+      "apiExpand": "clientExpanded,staffResponsibleExpanded",
+      "apiTramites": "br-payroll-sr/v1/employees-registrations",
+      "familiaStatus": "cadastro"
     }
   },
   "documentos": [
