@@ -207,4 +207,65 @@ t('CID: variações', () => {
   assert.equal(E.lerCid('sem diagnóstico'), null);
 });
 
+/* ---- 1.3.2: correções de envio, datas e prazos ---- */
+
+t('data que não existe não vira outra data', () => {
+  assert.equal(E.parseDate('2026-02-30'), null);
+  assert.equal(E.parseDate('31 de fevereiro de 2026'), null);
+  assert.equal(E.parseDate('30/02/2026'), null);
+  assert.equal(E.fmtDate(E.parseDate('29/02/2028')), '29/02/2028');   // ano bissexto continua valendo
+  // "dia 31" num mês de 30 dias não pode virar o dia 1 do mês seguinte
+  assert.deepEqual(E.findDates('ferias dia 31', new Date(2026, 10, 10)), []);
+  assert.equal(E.fmtDate(E.findDates('ferias dia 20', new Date(2026, 10, 10))[0]), '20/11/2026');
+  assert.deepEqual(E.findDates('31 de setembro de 2026', hoje), []);
+});
+
+t('dia pedido já passou: vai para o mês seguinte, inclusive na virada do ano', () => {
+  assert.equal(E.fmtDate(E.findDates('dia 5', new Date(2026, 11, 20))[0]), '05/01/2027');
+});
+
+t('fim do aviso prévio inclui o último dia (Súmula 380 do TST)', () => {
+  assert.equal(E.fmtDate(E.fimDoAviso(new Date(2026, 8, 15), 30)), '15/10/2026');
+  assert.equal(E.fmtDate(E.fimDoAviso(new Date(2026, 8, 15), 45)), '30/10/2026');
+});
+
+t('aviso proporcional só quando a empresa demite', () => {
+  const base = { anosEmpresa: '5', motivo: 'Dispensa SEM justa causa' };
+  assert.equal(E.derived('avisoRescisao', { ...base, avisoDadoPor: 'EMPREGADOR' }, rules).diasAviso, '45');
+  assert.equal(E.derived('avisoRescisao', { ...base, motivo: 'Pedido de demissão SEM justa causa', avisoDadoPor: 'EMPREGADO' }, rules).diasAviso, '30');
+  // "EMPREGADOR" contém "EMPREGADO": a comparação não pode ser por trecho
+  assert.equal(E.derived('avisoRescisao', { ...base, avisoDadoPor: 'EMPREGADOR' }, rules).diasAviso, '45');
+});
+
+t('justa causa não gera aviso prévio', () => {
+  const r = E.derived('avisoRescisao', { anosEmpresa: '5', motivo: 'Dispensa COM justa causa', avisoDadoPor: 'EMPREGADOR', dataAviso: '15/09/2026' }, rules);
+  assert.equal(r.diasAviso, undefined);
+  assert.equal(r.fimAviso, undefined);
+});
+
+t('INSS a partir do 16º dia só em doença e acidente', () => {
+  const com = E.derived('afastamento', { dataAfastamento: '05/10/2026', dias: '20', tipoAfastamento: 'Doença período superior a 15 dias' }, rules);
+  assert.equal(com.inicioInss, '20/10/2026');
+  const sem = E.derived('afastamento', { dataAfastamento: '05/10/2026', dias: '120', tipoAfastamento: 'Licença maternidade' }, rules);
+  assert.equal(sem.inicioInss, undefined);
+  // sem tipo escolhido, mantém o aviso geral
+  assert.equal(E.derived('afastamento', { dataAfastamento: '05/10/2026', dias: '20' }, rules).inicioInss, '20/10/2026');
+});
+
+t('anexo que está só no Assistente não conta como anexado', () => {
+  const vals = { empregado: 'JOAO DA SILVA', dataAfastamento: '05/10/2026', dias: '3' };
+  const soNoPainel = E.runChecks('afastamento', vals, [{ nome: 'atestado.pdf', documento: 'atestado', pendente: true }], rules, hoje);
+  assert.ok(!soNoPainel.some(i => i.nivel === 'ok' && /anexado/.test(i.mensagem)), 'não pode dar "anexado"');
+  assert.ok(soNoPainel.some(i => i.nivel === 'erro' && /atestado\.pdf/.test(i.mensagem)), 'avisa que falta anexar no portal');
+  const noPortal = E.runChecks('afastamento', vals, [{ nome: 'atestado.pdf', documento: 'atestado' }], rules, hoje);
+  assert.ok(noPortal.some(i => i.nivel === 'ok' && /anexado/.test(i.mensagem)));
+});
+
+t('recados do escritório têm datas em AAAA-MM-DD', () => {
+  for (const a of rules.avisosEscritorio || []) {
+    assert.ok(a.id && a.titulo && a.texto, `recado sem id/título/texto: ${JSON.stringify(a)}`);
+    for (const k of ['desde', 'ate']) if (a[k]) assert.match(a[k], /^\d{4}-\d{2}-\d{2}$/, `${a.id}.${k} fora do formato`);
+  }
+});
+
 console.log(`\n${n} testes ok`);

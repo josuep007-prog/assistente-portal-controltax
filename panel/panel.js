@@ -18,6 +18,11 @@ const S = {
   equipe: new Map()      // empresa → [{ nome, admissao, ativo }] (datas de admissão para os alertas de experiência)
 };
 const DEFAULT_PREFS = { preencherAoLer: true, incluirCid: false, ocrAutomatico: true, usarIa: true, introVista: false, tamanhoTexto: 'normal', avisosLidos: [] };
+/** O CID entra na descrição se o cliente ligar o interruptor ou se o escritório pedir pelas
+ *  regras. O interruptor precisa mostrar esse valor efetivo: antes dizia "desligado" enquanto
+ *  o dado de saúde ia para o portal. A escolha explícita do cliente vence sempre. */
+const cidPeloEscritorio = () => !!S.rules?.config?.incluirCidNaDescricao;
+const cidAtivo = () => (S.prefs.cidEscolhido ? S.prefs.incluirCid : (S.prefs.incluirCid || cidPeloEscritorio()));
 let reqId = 0; const waiters = new Map();
 
 /* =================== Utilidades de UI =================== */
@@ -56,6 +61,7 @@ function onPage(m) {
     case 'files': handleFiles((m.files || []).map(p => p instanceof File ? p : new File([p.buf], p.name, { type: p.type || 'application/octet-stream', lastModified: p.lastModified })), m.origem); break;
     case 'submitAttempt': onSubmitAttempt(m); break;
     case 'formClosed': onFormClosed(); break;
+    case 'envioNaoConcluido': onEnvioNaoConcluido(); break;
     case 'undoState': S.desfazerN = m.n || 0; atualizarBotaoDesfazer(); break;
     case 'undoStart': S.preenchendo = true; break;
     case 'undone': aoDesfazer(m); break;
@@ -100,6 +106,8 @@ function onContext(m) {
   S.ctx = { route: m.route || {}, tipo: m.tipo, empresa: m.empresa || '', form: m.form };
   $('#empresa').textContent = S.ctx.empresa || 'Portal do Cliente';
   if (S.ctx.empresa !== empresaAntes && S.rulesBase) { S.rules = regrasDaEmpresa(S.rulesBase, S.ctx.empresa); if (S.view === 'inicio') renderAvisosInicio(); }
+  // trocou de empresa sem recarregar: o que estava em andamento é da empresa anterior
+  if (empresaAntes && S.ctx.empresa && S.ctx.empresa !== empresaAntes) trocouDeEmpresa(empresaAntes);
   const key = `${m.route?.path}|${m.tipo}`;
   if (m.route?.mode === 'form' && m.tipo) {
     const W0 = w(m.tipo);
@@ -118,6 +126,16 @@ function onContext(m) {
   if (S.view === 'preencher' && (prevTipo !== m.tipo || prevMode !== m.route?.mode)) render();
   else if (S.view === 'preencher') { updateChecks(); renderFieldsOnlySeMudou(); }
   else if (S.view === 'inicio') renderContextBanner();
+}
+
+/** Guarda o que estava em andamento com o nome da empresa anterior e começa limpo: listas de
+ *  empregados, valores lidos e lote não valem para outra empresa. */
+function trocouDeEmpresa(empresaAntes) {
+  const pares = Object.entries(S.work).filter(([, W]) => W).map(([tipo, W]) => ({ tipo, empresa: empresaAntes, dados: rascunhoDe(W) })).filter(x => x.dados);
+  if (pares.length) gravarRascunhos(pares);
+  S.work = {}; cargasEmpregados.clear(); S.sugestao = null; S.ultimoEnvio = null;
+  if (S.lote && !S.lote.concluido) { S.lote.pausado = true; renderLote(); }
+  lastKey = '';
 }
 
 /* A página continua com o script antigo quando a extensão é atualizada sem recarregar o portal:
@@ -690,6 +708,7 @@ function docDeOutroTipo(item, tipo) {
 
 /* Junta o que foi lido com o que já está no assistente e preenche */
 function applyAnalysis(tipo, item, opts = {}) {
+  if (item.removido) return;   // o cliente tirou o arquivo da lista enquanto a leitura corria
   const W = w(tipo); const t = tipoDef(tipo);
   item.outroTipo = docDeOutroTipo(item, tipo);
   const campos = item.outroTipo ? {} : (item.analise?.campos || {});
@@ -769,7 +788,7 @@ function documentoPrincipal(tipo) {
 function gerarTextos(tipo, force = false) {
   const W = w(tipo); const t = tipoDef(tipo);
   const vals = { ...valoresParaChecar(tipo), ...E.derived(tipo, valoresParaChecar(tipo), S.rules) };
-  if (!S.prefs.incluirCid && !S.rules.config?.incluirCidNaDescricao) delete vals.cid;
+  if (!cidAtivo()) delete vals.cid;
   vals.anexosNomes = anexosAtuais(tipo).map(a => a.nome).join(', ');
   vals.observacoes = W.valores.observacoes?.valor || '';
   vals.documentoPrincipal = documentoPrincipal(tipo);
@@ -974,7 +993,7 @@ function renderFieldsOnly() {
       return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}</div>`;
     }).join('')}
     ${t.descricao?.length ? `<div class="field"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(W.valores.observacoes?.valor || '')}</textarea></div>` : ''}
-    ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${S.prefs.incluirCid ? 'checked' : ''}><span>Incluir CID na descrição<small>Dado de saúde (LGPD). Deixe desligado se não for necessário.</small></span></label>` : ''}
+    ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID na descrição<small>${cidAtivo() && !S.prefs.incluirCid ? 'Ligado pelo escritório para esta empresa — você pode desligar.' : 'Dado de saúde (LGPD). Deixe desligado se não for necessário.'}</small></span></label>` : ''}
     </div>` : ''}
     ${t.campos.assunto || t.campos.descricao ? `<details class="more texto-prev"${texto('descricao') ? '' : ' open'}><summary>Assunto e descrição ${editadoNoPortal ? '<small class="chip info">editados por você no portal</small>' : '<small class="chip ok">gerados</small>'}</summary>
       ${texto('assunto') ? `<p class="tp-a">${esc(texto('assunto'))}</p>` : ''}
@@ -998,7 +1017,7 @@ function renderFieldsOnly() {
     gerarTextos(tipo); renderFieldsOnly(); updateChecks();
     if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo);
   }));
-  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
+  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; S.prefs.cidEscolhido = true; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
 }
 function syncGenerated() {
   const W = w(S.ctx.tipo);
@@ -1133,10 +1152,14 @@ async function fillPortal(tipo, { silencioso = false } = {}) {
   W.portalVisto = { ...portalValores(tipo), ...(r?.depois || {}) };
   if (r?.anexados) W.arquivos.forEach(a => { if (files.includes(a.file)) a.anexado = true; });
   W.resultados = r;
-  await salvarHistorico(tipo, 'preenchido');
+  // sem resposta (o preenchimento não terminou): não grava como "preenchido", para a Agenda
+  // não criar prazos de um pedido que não existe
+  if (r) await salvarHistorico(tipo, 'preenchido');
   if (S.view === 'preencher') { renderFilesOnly(); renderFieldsOnly(); renderFillResult(); updateChecks(); }
   if (!silencioso || r?.resultados?.some(x => !x.ok)) { /* resultado já exibido no painel */ }
-  if (r?.resultados) toast(`${r.resultados.filter(x => x.ok).length} campo(s) preenchido(s)${r.anexados ? ` · ${r.anexados} anexo(s)` : ''}. Confira antes de enviar.`);
+  if (!r) toast('O preenchimento não terminou. Confira o portal — o botão “Desfazer” volta tudo.');
+  // quando a página já mostrou o aviso com "↶ Desfazer", não sobrescreve (apagaria o botão)
+  else if (r.resultados && !r.mudou) toast(`${r.resultados.filter(x => x.ok).length} campo(s) preenchido(s)${r.anexados ? ` · ${r.anexados} anexo(s)` : ''}. Confira antes de enviar.`);
 }
 function renderFillResult() {
   const el = $('#fill-res'); if (!el) return;
@@ -1291,6 +1314,15 @@ async function renderModelosInicio() {
   }));
 }
 
+/* O portal não aceitou o envio: a tela continua no formulário. Sem isso, um CANCELAR
+   logo depois virava "enviado" no histórico, com prazos na Agenda e o rascunho apagado. */
+function onEnvioNaoConcluido() {
+  if (!S.ultimoEnvio) return;
+  S.ultimoEnvio = null;
+  if (S.lote) { S.lote.pausado = true; renderLote(); }
+  toast(S.rules.mensagens?.envioNaoConcluido || 'O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo.');
+}
+
 async function onFormClosed() {
   let enviadoTipo = null;
   if (S.ultimoEnvio && Date.now() - S.ultimoEnvio.quando < 60000) {
@@ -1321,16 +1353,27 @@ function duplicado(tipo, vals) {
 /* ---------- Rascunho: o que foi preenchido fica guardado neste computador por 7 dias ---------- */
 const RASCUNHO_DIAS = 7;
 const chaveRascunho = (tipo) => `${S.ctx.empresa}|${tipo}`;
+/** O que vale guardar de um formulário (sem CID e sem os textos gerados). */
+function rascunhoDe(W) {
+  const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
+  if (!Object.keys(valores).length) return null;
+  return { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
+}
+/** Grava já (sem esperar o debounce), numa só leitura e escrita — usado ao trocar de empresa. */
+async function gravarRascunhos(pares) {
+  if (standalone || !pares.length) return;
+  const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
+  for (const { tipo, empresa, dados } of pares) {
+    if (!tipo || !empresa) continue;
+    if (dados) rascunhos[`${empresa}|${tipo}`] = dados; else delete rascunhos[`${empresa}|${tipo}`];
+  }
+  for (const [k, r] of Object.entries(rascunhos)) if (Date.now() - r.quando > RASCUNHO_DIAS * 864e5) delete rascunhos[k];
+  await chrome.storage.local.set({ rascunhos });
+}
 const salvarRascunho = debounce(async (tipo, empresa) => {
   if (!empresa || !tipo || standalone) return;
   const W = S.work[tipo]; if (!W) return;
-  const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
-  const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
-  const chave = `${empresa}|${tipo}`;
-  if (!Object.keys(valores).length) delete rascunhos[chave];
-  else rascunhos[chave] = { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
-  for (const [k, r] of Object.entries(rascunhos)) if (Date.now() - r.quando > RASCUNHO_DIAS * 864e5) delete rascunhos[k];
-  await chrome.storage.local.set({ rascunhos });
+  await gravarRascunhos([{ tipo, empresa, dados: rascunhoDe(W) }]);
 }, 900);
 async function apagarRascunho(tipo, empresa = S.ctx.empresa) {
   const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
@@ -1515,9 +1558,12 @@ async function salvarHistorico(tipo, status) {
   if (!Object.keys(valores).length) return;
   const { historico = [] } = await chrome.storage.local.get('historico');
   const chave = `${S.ctx.empresa}|${tipo}|${valores.empregado || valores.nome || ''}`;
-  const prev = historico.findIndex(h => h.chave === chave && h.status === 'preenchido' && Date.now() - h.quando < 6 * 3600e3);
+  const prev = status === 'enviado'
+    ? historico.findIndex(h => h.chave === chave && h.status === 'preenchido')
+    : historico.findIndex(h => h.chave === chave && h.status === 'preenchido' && Date.now() - h.quando < 6 * 3600e3);
   const item = { chave, quando: Date.now(), empresa: S.ctx.empresa, tipo, status, resumo: valores.assunto || S.rules.tipos[tipo]?.nome, valores, anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
-  delete item.valores.cid;
+  // a descrição pode trazer o CID; nada disso é usado para reaproveitar o pedido
+  delete item.valores.cid; delete item.valores.descricao; delete item.valores.observacoes;
   if (prev >= 0) historico.splice(prev, 1);
   historico.unshift(item);
   S.historico = historico.slice(0, 200);
@@ -1537,8 +1583,10 @@ function prazosDoHistorico(historico) {
         add(pag, 'Pagamento das férias (limite)', h, quem); add(i, 'Início das férias', h, quem);
         if (+v.diasGozo) add(E.addDays(i, +v.diasGozo), 'Retorno das férias', h, quem); break; }
       case 'calculoFerias': { const i = dd(v.inicioGozo); if (!i) break; add(E.addDays(i, -2), 'Pagamento das férias (limite)', h, quem); if (+v.diasGozo) add(E.addDays(i, +v.diasGozo), 'Retorno das férias', h, quem); break; }
-      case 'afastamento': { const i = dd(v.dataAfastamento); if (!i || !+v.dias) break; add(E.addDays(i, +v.dias), 'Retorno do afastamento', h, quem); if (+v.dias > 15) add(E.addDays(i, 15), 'Encaminhamento ao INSS (16º dia)', h, quem); break; }
-      case 'avisoRescisao': { const i = dd(v.dataAviso); if (!i) break; add(E.addDays(i, 29), 'Fim do aviso trabalhado (30 dias)', h, quem); break; }
+      case 'afastamento': { const i = dd(v.dataAfastamento); if (!i || !+v.dias) break; add(E.addDays(i, +v.dias), 'Retorno do afastamento', h, quem); if (+v.dias > 15 && E.vaiAoInss(v.tipoAfastamento, S.rules)) add(E.addDays(i, 15), 'Encaminhamento ao INSS (16º dia)', h, quem); break; }
+      case 'avisoRescisao': { const i = dd(v.dataAviso); if (!i || !E.temAviso(v, S.rules)) break;
+        const dias = +v.diasAviso || 30;
+        add(E.fimDoAviso(i, dias), `Fim do aviso, se trabalhado (${dias} dias)`, h, quem); break; }
       case 'calculoRescisao': { const i = dd(v.dataDemissao); if (!i) break; add(E.addDays(i, 10), 'Pagamento das verbas rescisórias (limite)', h, quem); break; }
       case 'cadastroEmpregado': { const i = dd(v.dataAdmissao); const e1 = +v.contratoExperiencia; if (!i || !e1) break;
         add(E.addDays(i, e1 - 1), 'Fim do 1º período de experiência', h, quem);
@@ -1550,7 +1598,8 @@ function prazosDoHistorico(historico) {
 }
 async function renderHistorico() {
   const { historico = [] } = await chrome.storage.local.get('historico');
-  const prazos = prazosDoHistorico(historico.filter(h => h.status === 'enviado' || h.status === 'preenchido'));
+  const prazos = prazosDoHistorico(historico.filter(h => h.status === 'enviado'));
+  const inacabados = historico.filter(h => h.status === 'preenchido' && Date.now() - h.quando < RASCUNHO_DIAS * 864e5);
   const hoje = E.today();
   const quando = (d) => { const n = E.diffDays(hoje, d); return n < 0 ? ['err', `há ${-n} dia(s)`] : n === 0 ? ['warn', 'hoje'] : n <= 7 ? ['warn', `em ${n} dia(s)`] : ['info', `em ${n} dias`]; };
   viewEl.innerHTML = `
@@ -1560,6 +1609,12 @@ async function renderHistorico() {
       <div class="ag-i"><div class="ag-d"><b>${String(p.d.getDate()).padStart(2, '0')}</b><small>${p.d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</small></div>
         <div class="main"><b>${esc(p.titulo)}</b><small>${esc(p.detalhe || '')}${p.detalhe ? ' · ' : ''}${esc(S.rules.tipos[p.h.tipo]?.nome || '')}</small></div>
         <span class="chip ${c}">${txt}</span></div>`; }).join('')}</div>` : `<div class="empty" style="padding:16px">${icon('calc', 'ic-lg')}<p>Sem prazos por enquanto. Eles aparecem quando você preenche férias, afastamentos, rescisões ou admissões.</p></div>`}
+    ${inacabados.length ? `<h2 class="sec">Começou e não enviou</h2>
+    <p class="muted" style="margin:0 0 8px;font-size:12px">Preenchidas no portal, mas o envio não foi confirmado. Clique para continuar.</p>
+    <div class="list">${inacabados.map(h => `
+      <button class="li" type="button" data-cont="${esc(String(historico.indexOf(h)))}" style="text-align:left;cursor:pointer">
+        <div class="main"><b>${esc(h.resumo)}</b><small>${esc(S.rules.tipos[h.tipo]?.nome || h.tipo)} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div>
+        <span class="chip warn">continuar</span></button>`).join('')}</div>` : ''}
     <h2 class="sec">Histórico</h2>
     ${historico.length ? `<p class="muted" style="margin:0 0 8px;font-size:12px">Clique para reaproveitar os dados em uma nova solicitação.</p><div class="list">${historico.map((h, i) => `
       <button class="li" type="button" data-i="${i}" style="text-align:left;cursor:pointer">
@@ -1567,6 +1622,12 @@ async function renderHistorico() {
         <span class="chip ${h.status === 'enviado' ? 'ok' : 'info'}">${h.status}</span>
       </button>`).join('')}</div>
     <div class="actions" style="margin-top:12px"><button class="btn btn-ghost" id="h-clear">${icon('trash', 'ic-sm')} Limpar histórico</button></div>` : '<p class="muted">As solicitações que você preencher com o Assistente aparecem aqui.</p>'}`;
+  viewEl.querySelectorAll('[data-cont]').forEach(b => b.addEventListener('click', async () => {
+    const h = historico[+b.dataset.cont]; const W = w(h.tipo);
+    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    gerarTextos(h.tipo, true);
+    await openTipo(h.tipo, { manter: true });
+  }));
   viewEl.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', async () => {
     const h = historico[+b.dataset.i];
     const W = w(h.tipo);
@@ -1665,7 +1726,7 @@ function renderFerramentas() {
         let anos = b.getFullYear() - a.getFullYear(); const m = new Date(a); m.setFullYear(b.getFullYear()); if (m > b) anos--;
         anos = Math.max(0, anos);
         const dias = Math.min(90, 30 + 3 * anos);
-        show([['Anos completos', String(anos)], ['Dias de aviso prévio', `${dias} dias (Lei 12.506/2011)`], ['Fim do aviso (se trabalhado 30 dias)', E.fmtDate(E.addDays(b, 29))], ['Projeção total do aviso', E.fmtDate(E.addDays(b, dias - 1))]], dias > 30 ? ['O aviso trabalhado é de 30 dias; os dias adicionais são indenizados.'] : []);
+        show([['Anos completos', String(anos)], ['Dias de aviso prévio', `${dias} dias (Lei 12.506/2011)`], ['Fim do aviso (se trabalhado 30 dias)', E.fmtDate(E.fimDoAviso(b, 30))], ['Projeção total do aviso', E.fmtDate(E.fimDoAviso(b, dias))]], dias > 30 ? ['O aviso trabalhado é de 30 dias; os dias adicionais são indenizados.', 'A contagem exclui o dia do aviso e inclui o último (Súmula 380 do TST).'] : ['A contagem exclui o dia do aviso e inclui o último (Súmula 380 do TST).']);
         break;
       }
       case 'rescisao': {
@@ -1713,7 +1774,7 @@ async function renderConfig() {
     <div class="card pad">
       <label class="toggle"><input type="checkbox" data-p="preencherAoLer" ${S.prefs.preencherAoLer ? 'checked' : ''}><span>Preencher o portal assim que ler um documento<small>Você sempre revisa antes de enviar.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="ocrAutomatico" ${S.prefs.ocrAutomatico ? 'checked' : ''}><span>Ler fotos e PDFs escaneados (OCR)<small>Pode levar alguns segundos por página.</small></span></label>
-      <label class="toggle"><input type="checkbox" data-p="incluirCid" ${S.prefs.incluirCid ? 'checked' : ''}><span>Incluir CID nas descrições<small>Dado de saúde — mantenha desligado se não for exigido.</small></span></label>
+      <label class="toggle"><input type="checkbox" data-p="incluirCid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID nas descrições<small>Dado de saúde — mantenha desligado se não for exigido.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="usarIa" ${S.prefs.usarIa ? 'checked' : ''}><span>Usar a IA do próprio Chrome quando disponível<small>${await aiAvailable() ? 'Disponível neste computador. Roda localmente.' : 'Não disponível neste Chrome — sem efeito.'}</small></span></label>
       <div class="field" style="margin-top:10px"><label>Tamanho do texto do painel</label>
         <div class="seg" role="group" aria-label="Tamanho do texto">${[['normal', 'Normal'], ['grande', 'Grande'], ['maior', 'Maior']].map(([v, l]) => `<button type="button" data-tam="${v}" aria-pressed="${S.prefs.tamanhoTexto === v}">${l}</button>`).join('')}</div></div>
@@ -1745,7 +1806,7 @@ async function renderConfig() {
     </div>
     <div class="actions" style="margin-top:14px"><button class="btn" id="intro-again">${icon('info', 'ic-sm')} Ver a introdução de novo</button></div>
     <div class="note" style="margin-top:14px">${icon('lock')}<div>${esc(S.rules.mensagens?.privacidade || '')}</div></div>`;
-  viewEl.querySelectorAll('[data-p]').forEach(i => i.addEventListener('change', () => { S.prefs[i.dataset.p] = i.checked; savePrefs(); }));
+  viewEl.querySelectorAll('[data-p]').forEach(i => i.addEventListener('change', () => { S.prefs[i.dataset.p] = i.checked; if (i.dataset.p === 'incluirCid') S.prefs.cidEscolhido = true; savePrefs(); }));
   viewEl.querySelectorAll('[data-tam]').forEach(b => b.addEventListener('click', () => { S.prefs.tamanhoTexto = b.dataset.tam; savePrefs(); aplicarTamanhoTexto(); renderConfig(); }));
   $('#diag').addEventListener('click', copiarDiagnostico);
   $('#save-url').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'setSettings', settings: { rulesUrl: $('#rules-url').value.trim() } }); await loadRules(); renderConfig(); });

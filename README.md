@@ -17,6 +17,13 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 1.3.2
+
+**Conferência mais segura.** Um arquivo que está na lista do Assistente mas ainda não foi para o portal não conta mais como anexado: antes a conferência dava "Atestado anexado" e a solicitação podia chegar ao escritório sem o documento. "Conferir e enviar" sempre mostra o resumo antes de acionar o botão do portal. Se o portal recusar o envio, o Assistente avisa, mantém o rascunho e não registra a solicitação como enviada.
+**Desfazer no lugar certo:** o botão só aparece no formulário que o Assistente preencheu. Trocar de empresa sem recarregar guarda o rascunho da anterior e começa do zero.
+**Prazos corrigidos:** o fim do aviso prévio passa a incluir o último dia (Súmula 380 do TST — saía um dia antes); o aviso proporcional vale só quando a empresa demite (quem pede demissão cumpre 30 dias); o aviso de "15 dias pela empresa e INSS a partir do 16º" só aparece em doença e acidente, não em licença-maternidade. Datas que não existem ("dia 31" em novembro, 30/02) não viram outra data em silêncio.
+**CID:** o interruptor mostra o estado real, inclusive quando é o escritório que pede, e você sempre pode desligar. A descrição deixou de ser guardada no histórico.
+
 ## Novidades da 1.3.1
 
 **O portal é onde se preenche.** O painel não tem mais cópias dos campos do portal: a área "No portal" mostra o que está em cada campo (e se veio do Assistente, de você ou se está vazio); clicar numa linha destaca o campo no portal. Para corrigir, mude direto no portal — o Assistente nunca sobrescreve o que você escreveu lá, e o assunto e a descrição se atualizam sozinhos. No painel ficam só as informações que o portal não tem (dias de afastamento, CID, médico, observações para o analista).

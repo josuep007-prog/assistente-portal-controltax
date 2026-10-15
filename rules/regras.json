@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.13-3",
+  "versao": "2026.10.15-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -32,6 +32,12 @@
     "experienciaDias": [
       45,
       90
+    ],
+    "motivosSemAviso": [
+      "COM justa causa",
+      "experiência",
+      "tempo determinado",
+      "Culpa recíproca"
     ]
   },
   "feriados": [
@@ -614,6 +620,13 @@
         "{documentoPrincipal} – {empregado} – {dataAfastamento}",
         "{documentoPrincipal} – {empregado}",
         "{documentoPrincipal} – {dataAfastamento} ({diasTexto})"
+      ],
+      "tiposComInss": [
+        "Doença",
+        "Acid. Trabalho",
+        "mesma doença",
+        "mesmo acid",
+        "Doença profissional"
       ]
     },
     "avisoFerias": {
@@ -2462,9 +2475,34 @@
     "semEmpregado": "Não encontrei esse nome na lista de funcionários da empresa. Selecione manualmente no campo Empregado.",
     "privacidade": "Os arquivos são lidos aqui no seu computador. Nada é enviado para fora do portal.",
     "admissaoInicio": "Olá! Para fazermos a sua admissão, envie por favor:",
-    "admissaoFim": "Pode mandar foto bem legível ou PDF. Qualquer dúvida, é só chamar. Obrigado!"
+    "admissaoFim": "Pode mandar foto bem legível ou PDF. Qualquer dúvida, é só chamar. Obrigado!",
+    "anexoSoNoAssistente": "O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.",
+    "envioNaoConcluido": "O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo."
   },
-  "avisosEscritorio": [],
+  "avisosEscritorio": [
+    {
+      "id": "13o-1a-parcela-2026",
+      "titulo": "13º salário — 1ª parcela",
+      "texto": "A 1ª parcela do 13º deve ser paga até 30/11. Peça o cálculo ao escritório com alguns dias de antecedência. Quem pediu o adiantamento junto com as férias já recebeu.",
+      "desde": "2026-11-01",
+      "ate": "2026-11-30"
+    },
+    {
+      "id": "13o-2a-parcela-2026",
+      "titulo": "13º salário — 2ª parcela",
+      "texto": "A 2ª parcela do 13º vence em 20/12, que neste ano cai num domingo: pague até sexta-feira, 18/12.",
+      "desde": "2026-12-01",
+      "ate": "2026-12-18",
+      "nivel": "importante"
+    },
+    {
+      "id": "ferias-coletivas-2026",
+      "titulo": "Férias coletivas de fim de ano",
+      "texto": "Vai dar férias coletivas? Avise o escritório com pelo menos 15 dias de antecedência: é preciso comunicar o sindicato e afixar o aviso no local de trabalho (CLT, art. 139).",
+      "desde": "2026-11-01",
+      "ate": "2026-12-20"
+    }
+  ],
   "empresas": {},
   "faq": [
     {
