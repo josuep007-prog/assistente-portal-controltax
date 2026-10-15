@@ -253,3 +253,198 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 }
 .pn-li .main small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .dp-toolbar .seg button { white-space: nowrap; }
+
+/* =================== Hoje (2.1) =================== */
+/* Tela "Hoje" do Control Onvio (repositório do escritório), adaptada à visão do cliente: rosca "% em dia",
+   carrossel, próximos passos, situações e cartões por motivo. Cada motivo define --c (bolinha, barra,
+   etiqueta e rodapé); o texto fica sempre com a tinta de texto. Paleta dos gráficos validada, claro e escuro. */
+:root {
+  --viz-s1:#2a78d6; --viz-s2:#eb6834;
+  --viz-ok:#0ca30c; --viz-warn:#fab219; --viz-serious:#ec835a; --viz-crit:#d03b3b;
+  --hj-late: var(--brand-red); --hj-today: var(--warn);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --viz-s1:#3987e5; --viz-s2:#d95926; } }
+:root[data-theme="dark"] { --viz-s1:#3987e5; --viz-s2:#d95926; }
+
+.dica { position: fixed; z-index: 90; pointer-events: none; background: var(--ink); color: var(--page); font-size: 12px; line-height: 1.4; padding: 7px 10px; border-radius: 4px; box-shadow: var(--shadow-2); max-width: 280px; white-space: pre-line; }
+.aviso-linha { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--rule); border-left: 3px solid var(--blue-deep); border-radius: var(--r); background: var(--surface); font-size: 12.5px; color: var(--ink-2); }
+.aviso-linha.late { border-left-color: var(--hj-late); }
+.aviso-linha > .ic { flex: none; color: var(--blue-deep); } .aviso-linha.late > .ic { color: var(--hj-late); }
+.aviso-linha.ok { border-left-color: var(--ok); } .aviso-linha.ok > .ic { color: var(--ok); }
+.hj-saud { margin: -4px 0 0; font-size: 13px; color: var(--ink-2); }
+.hj-saud b { font: 700 15px var(--f-head); color: var(--ink); }
+.hj-barra .dp-count { margin-left: auto; }
+
+/* rosca */
+.anel { display: block; }
+.an-svg { flex: none; width: 150px; height: 150px; overflow: visible; }
+.an-f { cursor: pointer; transition: stroke-width .15s, opacity .15s; }
+.an-f:hover, .an-f.ativo { stroke-width: 15px; }
+.an-f.apagado { opacity: .25; }
+.an-f.entra { animation: an-entra .9s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes an-entra { from { stroke-dasharray: 0 var(--c); } }
+.an-svg .an-total, .an-svg .an-rot { pointer-events: none; }
+.an-svg .an-total { font: 700 34px var(--f-head); fill: var(--ink); font-variant-numeric: tabular-nums; }
+.an-svg .an-rot { font-size: 10.5px; fill: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; }
+
+/* destaque: rosca + título + carrossel (esquerda) e próximos passos (direita) */
+.hj-hero { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-1); }
+.hj-hero-g { display: flex; align-items: center; gap: 26px; padding: 22px 24px; min-width: 0; }
+.hj-donut { flex: none; }
+.hj-hero-tx { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.hj-eyebrow { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); }
+.hj-hero-tx h2 { margin: 0; font: 700 24px/1.2 var(--f-head); letter-spacing: -.01em; color: var(--ink); }
+.hj-hero-tx h2 em { font-style: normal; color: var(--hj-late); font-variant-numeric: tabular-nums; }
+.hj-hero-tx h2 .ic { width: 22px; height: 22px; color: var(--ok); vertical-align: -3px; }
+.hj-hero-tx p { margin: 0; font-size: 13px; color: var(--ink-2); }
+.hj-legenda { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 11.5px; color: var(--ink-2); }
+.hj-legenda span { display: inline-flex; align-items: center; gap: 5px; }
+.hj-legenda i { width: 9px; height: 9px; border-radius: 3px; }
+.hj-legenda b { color: var(--ink); }
+
+/* carrossel: um aviso por vez; a bolinha mostra que a leitura do portal está em dia */
+.hj-tick { position: relative; display: flex; align-items: center; gap: 12px; margin-top: 6px; padding: 10px 12px; border-radius: 4px; background: var(--surface-2); min-width: 0; }
+.hj-bola { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); animation: hj-bola 2s ease-out infinite; }
+@keyframes hj-bola { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--ok) 0%, transparent); } }
+.hj-tick.parado .hj-bola { background: var(--ink-3); animation: none; }
+.hj-tick.erro .hj-bola { background: var(--hj-late); animation: none; }
+.hj-tick-palco { position: relative; flex: 1; min-width: 0; min-height: 58px; }
+.hj-tk { all: unset; box-sizing: border-box; position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; cursor: pointer; opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .45s ease, transform .45s cubic-bezier(.2,.7,.2,1); }
+.hj-tk.on { opacity: 1; transform: none; pointer-events: auto; }
+.hj-tk.sai { transform: translateY(-12px); }
+.hj-tk.vazio { cursor: default; }
+.hj-tk:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; border-radius: 4px; }
+.hj-tk-tag { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); }
+.hj-tk-tag::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
+.hj-tk b, .hj-tk small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hj-tk b { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.hj-tk small { font-size: 11.5px; color: var(--ink-3); }
+.hj-tk:hover b { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.hj-tick-relogio { position: absolute; left: 0; bottom: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; }
+.hj-tick-relogio i { display: block; width: 100%; height: 100%; animation: hj-relogio 5s linear infinite; }
+.hj-tick:hover .hj-tick-relogio i, .hj-tick:focus-within .hj-tick-relogio i, .hj-tick.uno .hj-tick-relogio i { animation-play-state: paused; }
+@keyframes hj-relogio { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* próximos passos */
+.hj-passos { display: flex; flex-direction: column; min-width: 0; padding: 18px 20px; border-left: 1px solid var(--rule); background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.hj-passos h3 { margin: 0 0 10px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); }
+.hj-passos-l { list-style: none; margin: 0; padding: 0 6px 0 0; display: flex; flex-direction: column; gap: 6px; max-height: 268px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.hj-passos-l.rola { -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 22px), transparent 100%); }
+.hj-passos-l.rola.fim { -webkit-mask-image: none; mask-image: none; }
+.hj-step { box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: transform .15s, box-shadow .15s, border-color .15s; }
+.hj-step:hover { transform: translateX(2px); border-color: color-mix(in srgb, var(--c, var(--blue-deep)) 45%, var(--rule)); box-shadow: 0 4px 14px rgba(16,24,32,.08); }
+.hj-step:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; }
+.hj-step > i { width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--blue-deep)); animation: hj-pulsa 3s ease-out infinite; }
+.hj-passos-l li:nth-child(2) .hj-step > i { animation-delay: .26s; } .hj-passos-l li:nth-child(3) .hj-step > i { animation-delay: .52s; } .hj-passos-l li:nth-child(n+4) .hj-step > i { animation-delay: .78s; }
+@keyframes hj-pulsa { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c, var(--blue-deep)) 32%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c, var(--blue-deep)) 0%, transparent); } }
+.hj-step b { display: block; font-size: 12.5px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.hj-step small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; line-height: 1.3; color: var(--ink-3); }
+.hj-step > .ic { color: var(--ink-3); }
+.hj-zen { display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: 4px; font-size: 13px; font-weight: 600; color: var(--ok); background: color-mix(in srgb, var(--ok) 9%, transparent); }
+.hj-zen.big { justify-content: center; padding: 34px; color: var(--ink-3); background: var(--surface); border: 1px dashed var(--rule-strong); }
+
+/* situações: filtros com bolinha e número */
+.hj-sits { display: flex; flex-wrap: wrap; gap: 8px; }
+.hj-sit { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px 8px 12px; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); font-size: 12.5px; color: var(--ink-2); cursor: pointer; transition: background .15s, border-color .15s; }
+.hj-sit:hover { border-color: var(--rule-strong); background: var(--surface-2); }
+.hj-sit:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.hj-sit-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.hj-sit-l { font-weight: 600; color: var(--ink); }
+.hj-sit b { font: 700 13px var(--f-mono); color: var(--ink); }
+.hj-sit.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--surface)); box-shadow: inset 0 0 0 1px var(--c); }
+.hj-sit.zero { opacity: .55; } .hj-sit.zero .hj-sit-dot { background: var(--ink-3); } .hj-sit.zero.on { opacity: 1; }
+
+/* grupos de cartões */
+.hj-sec h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font: 700 13px var(--f-head); color: var(--ink); }
+.hj-sec h3 > .ic { color: var(--c); }
+.hj-sec h3 > span { padding: 1px 8px; border-radius: 3px; font: 700 11.5px var(--f-mono); color: var(--ink); background: color-mix(in srgb, var(--c) 16%, var(--surface)); }
+.hj-sec h3::after { content: ""; flex: 1; order: 9; height: 1px; background: linear-gradient(90deg, color-mix(in srgb, var(--c) 40%, var(--rule)), transparent); }
+.hj-sec-mais { order: 10; border: 0; background: none; padding: 0; display: inline-flex; align-items: center; gap: 2px; font: 600 12px var(--f-body); color: var(--blue-deep); cursor: pointer; }
+.hj-sec-mais:hover { text-decoration: underline; }
+.hj-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.hj-card { position: relative; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 14px 16px 0; overflow: hidden; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: transform .18s cubic-bezier(.2,.7,.2,1), box-shadow .18s, border-color .18s; }
+.hj-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--c); }
+.hj-card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--c) 40%, var(--rule)); box-shadow: 0 14px 34px rgba(16,24,32,.13); }
+.hj-card:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.hj-card header { display: flex; align-items: center; gap: 6px; }
+.hj-card .spacer { flex: 1; }
+.hj-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; border-radius: 3px; font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--ink); background: color-mix(in srgb, var(--c) 16%, var(--surface)); }
+.hj-chip .ic { color: var(--c); }
+.hj-num { font-size: 12px; color: var(--ink-3); }
+.hj-card-id { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
+.hj-card-id h4 { margin: 0 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 15px/1.25 var(--f-head); color: var(--ink); }
+.hj-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-2); }
+.hj-lim { margin-top: 4px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.ap { position: relative; display: inline-block; flex: none; width: var(--sz); height: var(--sz); }
+.ap-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ap-svg circle { fill: none; stroke-width: 3.4; }
+.ap-svg .bg { stroke: color-mix(in srgb, var(--ink) 9%, transparent); }
+.ap-svg .fg { stroke: var(--c, var(--blue-deep)); stroke-linecap: round; }
+.ap-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.ap-c b { font: 800 calc(var(--sz) * .3) var(--f-head); color: var(--ink); font-variant-numeric: tabular-nums; }
+.ap-c small { margin-top: 2px; font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+.hj-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border: 1px solid var(--rule); border-radius: 4px; background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); }
+.hj-stats > div { min-width: 0; padding: 8px 10px; }
+.hj-stats > div + div { border-left: 1px solid var(--rule); }
+.hj-stats dt { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); }
+.hj-stats dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; line-height: 1.25; color: var(--ink); }
+.hj-cta { display: flex; align-items: center; gap: 8px; margin: 0 -16px; padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12.5px; font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--c) 9%, var(--surface)); }
+.hj-cta .ic { flex: none; color: var(--c); transition: transform .15s; }
+.hj-cta span { flex: 1; min-width: 0; }
+.hj-card:hover .hj-cta .ic { transform: translateX(3px); }
+
+/* lista: etiqueta do motivo · nº · solicitação · responsável · dias */
+.hj-lista { overflow: hidden; }
+.prio { display: grid; grid-template-columns: 150px 64px minmax(0, 1fr) minmax(70px, 140px) 56px; align-items: center; gap: 12px; width: 100%; padding: 9px 16px; border: 0; border-top: 1px solid var(--rule); border-left: 3px solid transparent; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.hj-lista .prio:first-child { border-top: 0; }
+.prio:hover { background: var(--surface-2); }
+.prio:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
+.pr-tag { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--pc) 16%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 45%, transparent); }
+.pr-tag::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--pc); vertical-align: 1px; }
+.prio.m-prescreve { --pc: var(--viz-crit); border-left-color: var(--viz-crit); }
+.prio.m-responder { --pc: var(--viz-serious); border-left-color: var(--viz-serious); }
+.prio.m-atrasada { --pc: var(--viz-warn); }
+.prio.m-escritorio { --pc: var(--viz-s1); }
+.prio.m-concluida { --pc: var(--viz-ok); }
+.pr-num { color: var(--ink-3); font-size: 12px; }
+.pr-tx { min-width: 0; }
+.pr-tx b, .pr-tx small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-tx b { font-weight: 600; }
+.pr-tx small { font-size: 12px; color: var(--ink-3); }
+.pr-resp { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-d { justify-self: end; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+
+/* trâmites no detalhe (linha do tempo, como no Control Onvio) */
+.tl { position: relative; padding-left: 28px; }
+.tl::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--rule); }
+.tl-item { position: relative; margin-bottom: 14px; }
+.tl-item::before { content: ""; position: absolute; left: -26px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--blue-deep); }
+.tl-item.cli::before { border-color: var(--viz-s2); }
+.tl-item:first-child::before { background: var(--blue-deep); }
+.tl-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); margin-bottom: 5px; }
+.tl-meta b { color: var(--ink-2); }
+.tl-tx { background: var(--surface-2); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; font-size: 13px; }
+.tl-anx { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.tl-anx span { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 3px; padding: 2px 8px; }
+.dlg-sec { margin: 6px 0 0; font: 700 13px var(--f-head); }
+
+/* entrada animada: só ao chegar na tela */
+@keyframes hj-sobe { from { opacity: 0; transform: translateY(10px); } }
+@keyframes hj-desenha { from { stroke-dasharray: 0 100; } }
+.hj-anim .hj-hero, .hj-anim .hj-sit, .hj-anim .hj-card, .hj-anim .hj-passos li { animation: hj-sobe .55s cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--i, 0) * 55ms); }
+.hj-anim .ap-svg .fg { animation: hj-desenha 1.1s cubic-bezier(.3,.7,.2,1) both; animation-delay: .15s; }
+
+@media (max-width: 1180px) { .hj-hero { grid-template-columns: minmax(0, 1fr); } .hj-passos { border-left: 0; border-top: 1px solid var(--rule); } }
+@media (max-width: 760px) {
+  .hj-hero-g { flex-direction: column; align-items: flex-start; gap: 14px; padding: 18px 16px; }
+  .hj-donut { align-self: center; }
+  .hj-hero-tx h2 { font-size: 20px; }
+  .hj-grade { grid-template-columns: minmax(0, 1fr); }
+  .prio { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .prio .pr-num, .prio .pr-resp { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .an-f.entra, .hj-bola, .hj-step > i, .hj-anim .hj-hero, .hj-anim .hj-sit, .hj-anim .hj-card, .hj-anim .hj-passos li, .hj-anim .ap-svg .fg { animation: none; }
+  .an-f, .hj-step, .hj-card, .hj-tk { transition: none; }
+  .hj-tick-relogio i { animation-duration: 8s; }
+}
