@@ -54,6 +54,7 @@ O que a plataforma usa e ainda não foi visto no Onvio real. No simulador tudo i
 
 | O quê | Como a 2.0 faz hoje | Conferir |
 |---|---|---|
+| Acesso à API | Só o cookie recebe **401** no Onvio real (visto na 2.0, em 15/10/2026). O portal manda um cabeçalho de acesso em cada chamada; o ajudante `content/pagina.js` reaproveita esse acesso. | Nome real do cabeçalho (o diagnóstico mostra), se expira e é renovado pelo portal. |
 | Itens das listas (`/api/br-payroll-sr/v1/<api>?pageIndex=N&itemsPerPage=50`) | Lê todas as páginas (até `config.solicitacoesMaxPaginas`), procura situação/empregado/assunto/datas em vários nomes de campo (`normalizarSolicitacao`). O diagnóstico mostra só os nomes dos campos. | Nomes reais dos campos, valores de situação ("Aguardando o cliente"?), `totalItems`. Ajustar `config.statusSolicitacao`. |
 | Detalhe de uma solicitação | "Ver no portal" abre a lista do tipo (ou `/<slug>/<id>` se `config.rotaDetalheSolicitacao` estiver ligado). | Rota do detalhe e dos trâmites; se existe API de trâmites. |
 | Solicitação Geral | Sem API conhecida: a plataforma oferece "Abrir no portal". | Endpoint da lista. |
