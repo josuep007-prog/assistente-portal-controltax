@@ -3,14 +3,14 @@
  * A API do portal (/api/br-payroll-sr/…) não aceita só o cookie: o próprio portal manda um
  * cabeçalho de acesso em cada chamada. Este ajudante observa as chamadas que o PORTAL faz,
  * guarda esses cabeçalhos só na memória desta página e faz as leituras que o Assistente pede
- * (só GET, só no mesmo site, só /api/br-payroll-sr/) com o mesmo acesso.
+ * (só GET, só no mesmo site, só /api/br-payroll-sr/ e /api/service-requesting/) com o mesmo acesso.
  * O valor do acesso nunca sai daqui: não vai para a extensão, para o armazenamento nem para logs.
  * Para o diagnóstico, informa apenas os NOMES dos cabeçalhos. */
 (() => {
   if (window.__ctPagina) return;
   window.__ctPagina = true;
 
-  const PREFIXO = '/api/br-payroll-sr/';
+  const PREFIXOS = ['/api/br-payroll-sr/', '/api/service-requesting/'];   // listas, trâmites e funcionários
   const acesso = new Map();          // nome do cabeçalho → valor (memória da página)
   let clienteId = '';
   const ignorar = /^(content-type|content-length|accept|accept-language|cache-control|pragma)$/i;
@@ -58,7 +58,7 @@
     if (p.tipo === 'estado') { responder({ id: p.id, ...estado() }); return; }
     if (p.tipo !== 'get') return;
     let u; try { u = new URL(p.url, location.href); } catch { responder({ id: p.id, status: 0, erro: 'url' }); return; }
-    if (u.origin !== location.origin || !u.pathname.startsWith(PREFIXO)) { responder({ id: p.id, status: 0, erro: 'recusado' }); return; }
+    if (u.origin !== location.origin || !PREFIXOS.some(x => u.pathname.startsWith(x))) { responder({ id: p.id, status: 0, erro: 'recusado' }); return; }
     try {
       const headers = { accept: 'application/json, text/plain, */*' };
       acesso.forEach((v, k) => { headers[k] = v; });
