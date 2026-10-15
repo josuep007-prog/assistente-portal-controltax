@@ -17,6 +17,13 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.2
+
+- **Equipe no Hoje:** avisos de férias e rescisão perto do pagamento **sem a solicitação de cálculo** (as datas vêm do detalhe do aviso no portal: início das férias, pagamento, data do aviso), experiência vencendo e férias a vencer — cada linha com o atalho para o pedido certo, já com o funcionário.
+- **Várias empresas no mesmo acesso:** por padrão, só a empresa aberta no portal; seletor para outra ou "Todas as empresas", e cada solicitação mostra a sua.
+- **Leitura automática a cada 30 segundos** (`config.leituraAutomaticaSegundos` nas regras): a resposta do escritório aparece sozinha; a tela só muda quando algo mudou e você não está digitando.
+- **Novo pedido** concentra a criação (escolha do tipo, texto livre, documento, repetir, modelos, dúvidas). Clicar de novo em Novo pedido volta para a escolha do tipo; "Continuar o pedido" retoma o que está aberto.
+
 ## Novidades da 2.1 — Hoje
 
 Referências do **Control Onvio** (a extensão da visão do escritório, `josuep007-prog/Assistente-interno-portal-do-cliente-`) trazidas para a visão do cliente:
