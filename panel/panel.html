@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Assistente ControlTax</title>
   <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="plataforma.css">
   <script src="../platform/shim.js"></script>
   <script src="theme.js"></script>
 </head>
@@ -45,6 +46,14 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
     <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3l-5.5 2.9 1-6.2L3 9.6l6.2-.9Z"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2.2h8.8A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><rect x="6" y="14" width="12" height="7"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
   </defs>
 </svg>
@@ -57,6 +66,7 @@
       <div class="emp" id="empresa">ControlTax</div>
     </div>
     <div class="acts">
+      <button class="icon-btn" id="btn-plat" type="button" aria-label="Abrir a plataforma em tela cheia" title="Tela cheia"><svg class="ic"><use href="#i-expand"/></svg></button>
       <button class="icon-btn" id="btn-theme" type="button" aria-label="Alternar tema claro/escuro"><svg class="ic"><use href="#i-moon"/></svg></button>
       <button class="icon-btn" id="btn-config" type="button" aria-label="Configurações"><svg class="ic"><use href="#i-gear"/></svg></button>
       <button class="icon-btn" id="btn-close" type="button" aria-label="Fechar o assistente"><svg class="ic"><use href="#i-x"/></svg></button>
@@ -78,6 +88,33 @@
     <span class="sp"></span><span class="mono" id="rules-ver"></span>
   </footer>
 </div>
+
+<!-- Plataforma (2.0): tela cheia por cima do portal, no estilo do módulo DP do Control Hub -->
+<div class="plat" id="plat" hidden>
+  <nav class="rail" id="rail" aria-label="Módulos">
+    <div class="rail-brand"><span class="rail-logo"><img src="../icons/logo.svg" alt=""></span><div class="rail-brand-tx"><b>Control<span>Tax</span></b><small>Portal do Cliente</small></div></div>
+    <div class="rail-list" id="rail-mods"></div>
+    <div class="rail-sep"></div>
+    <div class="rail-list rail-bottom" id="rail-bottom"></div>
+  </nav>
+  <div class="plat-main">
+    <header class="plat-head">
+      <div class="ph-t"><h2 id="plat-titulo">Painel</h2><span class="ph-emp" id="plat-empresa"></span></div>
+      <span class="ph-sync" id="plat-sync"></span>
+      <button type="button" class="ph-search" id="plat-busca"><svg class="ic ic-sm"><use href="#i-search"/></svg><span>Buscar funcionário, solicitação ou dúvida…</span><kbd>Ctrl K</kbd></button>
+    </header>
+    <div id="plat-aviso"></div>
+    <div class="plat-body" id="plat-body"></div>
+  </div>
+  <div class="plat-drop" id="plat-drop" hidden><div><b>Solte aqui para o Assistente ler</b>Atestados, documentos, pedidos de demissão, planilhas…<small>O arquivo é lido no seu computador.</small></div></div>
+</div>
+<div class="cmdk" id="cmdk" hidden>
+  <div class="cmdk-box" role="dialog" aria-label="Buscar">
+    <div class="cmdk-in"><svg class="ic"><use href="#i-search"/></svg><input id="cmdk-q" type="search" placeholder="Buscar funcionário, solicitação, pedido ou dúvida…" autocomplete="off" aria-controls="cmdk-res"><kbd>Esc</kbd></div>
+    <div class="cmdk-res" id="cmdk-res" role="listbox"></div>
+  </div>
+</div>
+<div id="print-area" aria-hidden="true"></div>
 
 <input type="file" id="file-input" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.xlsx,.xls,.csv,.txt">
 <div class="modal" id="modal" hidden></div>

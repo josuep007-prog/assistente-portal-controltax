@@ -1,5 +1,6 @@
 import * as E from './engine.js';
 import { readFile, aiExtract, aiAvailable, libsPresentes } from './extract.js';
+import { montarPlataforma } from './plataforma.js';
 
 /* =================== Estado =================== */
 const params = new URLSearchParams(location.search);
@@ -8,6 +9,7 @@ const S = {
   rules: null, meta: {}, prefs: {}, settingsInfo: null,
   ctx: { route: {}, tipo: null, empresa: '', form: null },
   view: 'inicio', port: null,
+  modo: null,            // 'plataforma' (tela cheia por cima do portal) ou 'painel' (encaixado ao lado)
   work: {},              // por tipo: { valores, arquivos, editados, empregados, opcoes }
   sugestao: null,        // documento lido fora de formulário
   pend: null, pendLoading: false,
@@ -60,12 +62,14 @@ function onPage(m) {
     case 'context': onContext(m); break;
     case 'files': handleFiles((m.files || []).map(p => p instanceof File ? p : new File([p.buf], p.name, { type: p.type || 'application/octet-stream', lastModified: p.lastModified })), m.origem); break;
     case 'submitAttempt': onSubmitAttempt(m); break;
-    case 'formClosed': onFormClosed(); break;
+    case 'formClosed': onFormClosed(m); break;
     case 'envioNaoConcluido': onEnvioNaoConcluido(); break;
     case 'undoState': S.desfazerN = m.n || 0; atualizarBotaoDesfazer(); break;
     case 'undoStart': S.preenchendo = true; break;
     case 'undone': aoDesfazer(m); break;
     case 'rulesUpdated': loadRules().then(render); break;
+    case 'modo': aplicarModo(m.modo); break;
+    case 'portalAtencao': P?.atencao(m); break;
     default: break;
   }
 }
@@ -101,6 +105,7 @@ chrome.runtime.onMessage.addListener((m) => { if (m.type === 'rulesUpdated') { l
 let lastKey = '';
 function onContext(m) {
   avisoVersao(m.versao);
+  aplicarModo(m.modo);
   const prevTipo = S.ctx.tipo, prevMode = S.ctx.route?.mode;
   const empresaAntes = S.ctx.empresa;
   S.ctx = { route: m.route || {}, tipo: m.tipo, empresa: m.empresa || '', form: m.form };
@@ -108,6 +113,7 @@ function onContext(m) {
   if (S.ctx.empresa !== empresaAntes && S.rulesBase) { S.rules = regrasDaEmpresa(S.rulesBase, S.ctx.empresa); if (S.view === 'inicio') renderAvisosInicio(); }
   // trocou de empresa sem recarregar: o que estava em andamento é da empresa anterior
   if (empresaAntes && S.ctx.empresa && S.ctx.empresa !== empresaAntes) trocouDeEmpresa(empresaAntes);
+  P?.aoContexto(!!(S.ctx.empresa && S.ctx.empresa !== empresaAntes));
   const key = `${m.route?.path}|${m.tipo}`;
   if (m.route?.mode === 'form' && m.tipo) {
     const W0 = w(m.tipo);
@@ -126,6 +132,23 @@ function onContext(m) {
   if (S.view === 'preencher' && (prevTipo !== m.tipo || prevMode !== m.route?.mode)) render();
   else if (S.view === 'preencher') { updateChecks(); renderFieldsOnlySeMudou(); }
   else if (S.view === 'inicio') renderContextBanner();
+}
+
+/* =================== Modo da tela: plataforma (tela cheia) ou painel encaixado =================== */
+const VIEWS_PAINEL = ['inicio', 'preencher', 'pendencias', 'ferramentas', 'historico', 'config'];
+function aplicarModo(modo) {
+  if (!['plataforma', 'painel'].includes(modo) || modo === S.modo) return;   // 'fechado' mantém o último desenho
+  S.modo = modo;
+  const plat = modo === 'plataforma';
+  document.body.classList.toggle('plat', plat);
+  $('#plat').hidden = !plat;
+  const app = $('.app');
+  if (plat) $('#plat-body').appendChild(viewEl);
+  else { app.insertBefore(viewEl, $('.foot')); viewEl.className = 'view'; }
+  if (!plat && !VIEWS_PAINEL.includes(S.view)) S.view = 'inicio';
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === S.view)));
+  if (plat) P?.entrou();
+  render();
 }
 
 /** Guarda o que estava em andamento com o nome da empresa anterior e começa limpo: listas de
@@ -155,7 +178,8 @@ function avisoVersao(versaoPagina) {
 }
 
 function w(tipo) {
-  if (!S.work[tipo]) S.work[tipo] = { valores: {}, arquivos: [], editados: new Set(), empregados: [], opcoes: {}, resultados: null };
+  // fonteVerdade[k] = 'plataforma': o cliente escreveu no formulário da plataforma; vale mais que o portal até ser enviado
+  if (!S.work[tipo]) S.work[tipo] = { valores: {}, arquivos: [], editados: new Set(), empregados: [], opcoes: {}, resultados: null, fonteVerdade: {} };
   return S.work[tipo];
 }
 const tipoDef = (k) => E.resolveTipo(S.rules, k);
@@ -213,6 +237,7 @@ async function empregadosPara(tipo) {
 
 /* =================== Navegação entre abas =================== */
 function setView(v) {
+  if (S.modo !== 'plataforma' && !VIEWS_PAINEL.includes(v)) v = 'inicio';
   S.view = v;
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
   render();
@@ -221,13 +246,15 @@ function setView(v) {
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 $('#btn-close').addEventListener('click', () => send({ type: 'close' }));
 $('#btn-config').addEventListener('click', () => setView('config'));
-$('#btn-theme').addEventListener('click', () => {
+function alternarTema() {
   const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   const next = cur === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   try { localStorage.setItem('ct-tema', next); } catch { /* sem armazenamento */ }
   syncThemeIcon();
-});
+}
+$('#btn-theme').addEventListener('click', alternarTema);
+$('#btn-plat').addEventListener('click', () => send({ type: 'modo', modo: 'plataforma' }));
 function syncThemeIcon() {
   const dark = (document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
   $('#btn-theme').innerHTML = icon(dark ? 'sun' : 'moon');
@@ -235,6 +262,7 @@ function syncThemeIcon() {
 
 function render() {
   if (!S.rules) { viewEl.innerHTML = `<div class="empty"><div class="spin" style="margin:auto"></div><p>Carregando…</p></div>`; return; }
+  if (S.modo === 'plataforma' && P) return P.render(S.view);
   ({ inicio: renderInicio, preencher: renderPreencher, pendencias: renderPendencias, ferramentas: renderFerramentas, historico: renderHistorico, config: renderConfig }[S.view] || renderInicio)();
 }
 
@@ -635,6 +663,7 @@ function renderSugestao() {
     </div>`;
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
   $('#sug-go')?.addEventListener('click', async () => {
+    comecarDoZeroSeAbandonado(tipo);
     const W = w(tipo); const todos = [it, ...(s.extras || [])]; W.arquivos.push(...todos);
     S.sugestao = null;
     await openTipo(tipo, { manter: true });
@@ -688,6 +717,7 @@ function renderSugestaoTexto(el, s) {
 
 async function abrirDoTexto(el, s, destino) {
   S.sugestao = null; el.innerHTML = '';
+  comecarDoZeroSeAbandonado(destino);
   await openTipo(destino, { manter: true });
   for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === destino); k++) await esperar(200);
   await loadEmpregados(destino);
@@ -761,7 +791,11 @@ function valoresAssistente(tipo) {
 }
 /** Para conferir: o que está no portal vale mais (o cliente pode ter mudado lá). */
 function valoresParaChecar(tipo) {
-  return { ...valoresAssistente(tipo), ...portalValores(tipo) };
+  const v = { ...valoresAssistente(tipo), ...portalValores(tipo) };
+  // plataforma: o que o cliente escreveu aqui vale até o portal receber
+  const W = w(tipo);
+  for (const [k, f] of Object.entries(W.fonteVerdade || {})) if (f === 'plataforma' && W.valores[k]?.valor) v[k] = W.valores[k].valor;
+  return v;
 }
 function anexosAtuais(tipo) {
   const W = w(tipo);
@@ -813,9 +847,11 @@ function renderPreencher() {
     return;
   }
   const t = tipoDef(tipo);
-  viewEl.innerHTML = `
-    <div id="lote"></div>
-    <div class="card">
+  const plat = S.modo === 'plataforma';
+  const cab = `<div class="card${plat ? ' pd-head' : ''}">
+      ${plat ? `<div class="pd-t"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small> <span class="chip sector">${esc(t.setor)}</span></div><ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
+        <button type="button" class="btn btn-ghost btn-sm" id="ver-portal" title="Mostra o formulário original do portal">${icon('external', 'ic-sm')} Ver no portal</button>
+        <div class="progress"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>` : `
       <div class="card-h">
         <div style="flex:1;min-width:0"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small></div>
         <span class="chip sector">${esc(t.setor)}</span>
@@ -823,27 +859,18 @@ function renderPreencher() {
       <div class="card-b">
         <ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
         <div class="progress" style="margin-top:10px"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>
-      </div>
-    </div>
-    <div id="modo-seguro"></div>
-    <div id="rascunho"></div>
-    <div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Ou cole um print (Ctrl+V). Eu leio, preencho e anexo.</small></div></div>
-    <div class="free mini">
+      </div>`}
+    </div>`;
+  const drop = `<div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Ou cole um print (Ctrl+V). Eu leio, preencho e anexo.</small></div></div>`;
+  const livre = `<div class="free mini">
       <label for="free-form" class="sr">Escreva o pedido com suas palavras</label>
       <input id="free-form" class="input" placeholder="Ou escreva: ex. ${esc(exemploTexto(tipo))}" autocomplete="off">
       <button class="btn btn-sm" id="free-form-go">Preencher</button>
     </div>
-    <div id="free-sug"></div>
-    <div class="files" id="files"></div>
-    <div id="outro-tipo"></div>
-    <div id="doc-checklist"></div>
-    <h2 class="sec">No portal</h2>
-    <div id="fields"></div>
-    <div id="fill-res"></div>
-    <h2 class="sec">Conferência</h2>
-    <div class="checks" id="checks"></div>
-    ${(t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
-    <div class="dock" id="dock">
+    <div id="free-sug"></div>`;
+  const arquivos = `<div class="files" id="files"></div><div id="outro-tipo"></div><div id="doc-checklist"></div>`;
+  const dicas = (t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : '';
+  const dock = `<div class="dock" id="dock">
       <button class="btn btn-primary" id="btn-fill">${icon('fill', 'ic-sm')} Preencher no portal</button>
       <button class="btn btn-undo" id="btn-undo" hidden>${icon('undo', 'ic-sm')} Desfazer o preenchimento</button>
       <button class="btn" id="btn-send" title="Mostra o resumo e envia pelo botão do portal">${icon('check', 'ic-sm')} Conferir e enviar</button>
@@ -854,12 +881,37 @@ function renderPreencher() {
           <button type="button" id="btn-regen">${icon('refresh', 'ic-sm')} Gerar assunto e descrição de novo</button>
           <button type="button" id="btn-clear">${icon('trash', 'ic-sm')} Limpar o que o assistente guardou</button>
         </div></details>
-    </div>
+    </div>`;
+  // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
+  viewEl.innerHTML = plat ? `
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div>
+    <div class="pd-grid">
+      <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
+        <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div></section></div>
+      <aside class="pd-side">${drop}${livre}${arquivos}
+        <section class="pn-card"><div class="pn-card-head"><h3>Conferência</h3></div><div class="pn-card-body"><div class="checks" id="checks"></div></div></section>
+        ${dicas}</aside>
+    </div>${dock}` : `
+    <div id="lote"></div>
+    ${cab}
+    <div id="modo-seguro"></div>
+    <div id="rascunho"></div>
+    ${drop}
+    ${livre}
+    ${arquivos}
+    <h2 class="sec">No portal</h2>
+    <div id="fields"></div>
+    <div id="fill-res"></div>
+    <h2 class="sec">Conferência</h2>
+    <div class="checks" id="checks"></div>
+    ${dicas}
+    ${dock}
   `;
+  $('#ver-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
   bindDrop($('#drop-form'));
   $('#btn-fill').addEventListener('click', () => fillPortal(tipo));
   $('#btn-undo').addEventListener('click', desfazerPreenchimento);
-  $('#btn-send').addEventListener('click', () => { S.pedirResumo = true; send({ type: 'requestSubmit' }); });
+  $('#btn-send').addEventListener('click', async () => { await enviarPendenteAgora(tipo); S.pedirResumo = true; send({ type: 'requestSubmit' }); });
   $('#btn-copy').addEventListener('click', () => copiarResumo(tipo));
   $('#btn-model').addEventListener('click', () => salvarModeloUI(tipo));
   $('#btn-regen').addEventListener('click', () => { const W = w(tipo); W.editados.delete('assunto'); W.editados.delete('descricao'); gerarTextos(tipo, true); renderFieldsOnly(); updateChecks(); });
@@ -937,8 +989,9 @@ function fieldInput(k, c, cur, W) {
     return `<div class="seg" role="group" aria-label="${esc(c.rotulo)}">${opts.map(o => `<button type="button" data-k="${k}" data-v="${esc(o)}" aria-pressed="${E.norm(o) === E.norm(v)}">${esc(o)}</button>`).join('')}</div>`;
   }
   if (c.tipo === 'textarea') return `<textarea id="${id}" data-k="${k}" class="${cls}" rows="${k === 'descricao' ? 8 : 3}">${esc(v)}</textarea>`;
-  const list = W.opcoes[k]?.length ? `list="dl-${k}"` : '';
-  const dl = W.opcoes[k]?.length ? `<datalist id="dl-${k}">${W.opcoes[k].map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
+  const temLista = W.opcoes[k]?.length || c.tipo === 'combo';
+  const list = temLista ? `list="dl-${k}"` : '';
+  const dl = temLista ? `<datalist id="dl-${k}">${(W.opcoes[k] || []).map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
   const ph = { data: 'DD/MM/AAAA', competencia: 'MM/AAAA', cpf: '000.000.000-00', cep: '00000-000', moeda: '0,00' }[c.tipo] || (c.tipo === 'combo' ? 'Digite ou escolha' : '');
   const im = ['data', 'competencia', 'numero', 'cpf', 'cep', 'pis', 'moeda', 'telefone'].includes(c.tipo) ? 'inputmode="numeric"' : '';
   return `<input id="${id}" data-k="${k}" data-t="${c.tipo}" class="${cls}" value="${esc(v)}" placeholder="${ph}" ${im} ${list} autocomplete="off">${dl}`;
@@ -950,10 +1003,13 @@ let lastFieldsKey = '';
 function renderFieldsOnlySeMudou() {
   const tipo = S.ctx.tipo; if (!tipo) return;
   const k = JSON.stringify([S.ctx.form?.campos, Object.entries(w(tipo).valores).map(([a, b]) => [a, b?.valor]), w(tipo).ultimoPreenchido]);
-  if (k !== lastFieldsKey && !document.activeElement?.closest?.('#fields')) renderFieldsOnly();
+  if (k === lastFieldsKey) return;
+  if (!document.activeElement?.closest?.('#fields')) renderFieldsOnly();
+  else if (S.modo === 'plataforma') atualizarEstadosPlat(tipo);
 }
 function renderFieldsOnly() {
   const el = $('#fields'); if (!el) return;
+  if (S.modo === 'plataforma') return renderFormularioProprio(el, S.ctx.tipo);
   const tipo = S.ctx.tipo; const t = tipoDef(tipo); const W = w(tipo);
   lastFieldsKey = JSON.stringify([S.ctx.form?.campos, Object.entries(W.valores).map(([a, b]) => [a, b?.valor]), W.ultimoPreenchido]);
   const pf = S.ctx.form?.campos || {};
@@ -1016,6 +1072,114 @@ function renderFieldsOnly() {
     W.valores.empregado = { valor: b.dataset.cand, conf: 1, fonte: 'você' }; W.candidatos = null;
     gerarTextos(tipo); renderFieldsOnly(); updateChecks();
     if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo);
+  }));
+  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; S.prefs.cidEscolhido = true; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
+}
+/* =================== Formulário próprio (plataforma) =================== */
+/* Com a plataforma em tela cheia, o formulário é daqui: cada campo do portal aparece aqui, e o que o
+   cliente escreve vai para o portal por baixo (ao sair do campo, em lote). Assim que o portal confirma,
+   o estado do campo mostra se ficou igual lá. O resumo antes de enviar continua lendo o próprio portal. */
+const envioPendente = new Map();
+function agendarEnvioPortal(tipo) {
+  clearTimeout(envioPendente.get(tipo));
+  envioPendente.set(tipo, setTimeout(() => { envioPendente.delete(tipo); if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true }); }, 900));
+}
+async function enviarPendenteAgora(tipo) {
+  if (!envioPendente.has(tipo)) return;
+  clearTimeout(envioPendente.get(tipo)); envioPendente.delete(tipo);
+  await fillPortal(tipo, { daPlataforma: true });
+}
+/** Estado de um campo do formulário próprio: o que está no portal comparado com o que o cliente escreveu aqui. */
+function estadoCampoPlat(tipo, k, obrigatorio) {
+  const W = w(tipo); const p = S.ctx.form?.campos?.[k] || {}; const cur = W.valores[k];
+  const valor = W.fonteVerdade?.[k] === 'plataforma' ? (cur?.valor ?? '') : (p.valor || cur?.valor || '');
+  if (p.disabled) return ['muted', 'bloqueado'];
+  if (valor && E.norm(valor) !== E.norm(p.valor || '')) return ['warn', 'ainda não está no portal'];
+  if (p.valor) return W.ultimoPreenchido?.[k] === p.valor && cur?.fonte && cur.fonte !== 'você' ? ['ok', 'lido pelo Assistente'] : ['info', 'no portal'];
+  return obrigatorio ? ['err', 'obrigatório'] : ['', ''];
+}
+/** Enquanto o cliente digita no formulário, não redesenha os campos (perderia o cursor): só os estados. */
+function atualizarEstadosPlat(tipo) {
+  const t = tipoDef(tipo); if (!t) return;
+  document.querySelectorAll('#fields .field.pf[data-campo]').forEach(f => {
+    const k = f.dataset.campo; const lbl = f.querySelector('label'); if (!lbl) return;
+    const [cls, txt] = estadoCampoPlat(tipo, k, !!(t.campos[k]?.obrigatorio && !S.ctx.form?.campos?.[k]?.disabled));
+    let chip = lbl.querySelector('.pf-st');
+    if (!txt) { chip?.remove(); return; }
+    if (!chip) { chip = document.createElement('span'); lbl.insertBefore(chip, lbl.querySelector('.src')); }
+    chip.className = `chip ${cls} pf-st`; chip.textContent = txt;
+  });
+}
+function renderFormularioProprio(el, tipo) {
+  const t = tipoDef(tipo); const W = w(tipo);
+  lastFieldsKey = JSON.stringify([S.ctx.form?.campos, Object.entries(W.valores).map(([a, b]) => [a, b?.valor]), W.ultimoPreenchido]);
+  const pf = S.ctx.form?.campos || {};
+  const cond = E.activeConditionals(t, valoresParaChecar(tipo));
+  const reqCond = new Set(cond.flatMap(c => c.obrigatorios || []));
+  const obrig = (k, c) => (c.obrigatorio || reqCond.has(k)) && !pf[k]?.disabled;
+  const doPortal = Object.entries(t.campos).filter(([k, c]) => !c.somenteAssistente && !TEXTOS.includes(k) && pf[k]?.existe !== false);
+  const grupos = new Map();
+  for (const par of doPortal) { const g = par[1].grupo || ''; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(par); }
+  const fv = W.fonteVerdade || (W.fonteVerdade = {});
+  const campo = ([k, c]) => {
+    const p = pf[k] || {}; const cur = W.valores[k];
+    const daqui = fv[k] === 'plataforma';
+    const valor = daqui ? (cur?.valor ?? '') : (p.valor || cur?.valor || '');
+    const estado = estadoCampoPlat(tipo, k, obrig(k, c));
+    const fonte = cur?.fonte && !['você', 'gerado'].includes(cur.fonte) && !daqui ? cur.fonte : '';
+    const baixa = cur?.conf != null && cur.conf < 0.6 && !W.editados.has(k) && !daqui;
+    return `<div class="field pf${c.tipo === 'textarea' ? ' wide' : ''}${baixa ? ' low' : ''}" data-campo="${k}">
+      <label for="f-${k}">${esc(c.rotulo)}${obrig(k, c) ? '<span class="req">*</span>' : ''}${estado[1] ? ` <span class="chip ${estado[0]} pf-st">${estado[1]}</span>` : ''}${fonte ? `<span class="src" title="${esc('De: ' + fonte)}">${esc(fonte)}</span>` : ''}</label>
+      ${fieldInput(k, c, { ...(cur || {}), valor }, W)}
+      ${p.disabled ? '<small class="hint">O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).</small>' : ''}
+      ${baixa ? '<small class="hint">Leitura com dúvida: confira.</small>' : ''}
+      ${k === 'empregado' && W.candidatos?.length && !p.valor ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
+      ${k === 'empregado' && W.pacienteLido && !valor && !W.candidatos?.length ? `<small class="hint">No documento: “${esc(W.pacienteLido)}” — não achei esse nome na lista. Escolha o funcionário.</small>` : ''}
+    </div>`;
+  };
+  const extras = Object.entries(t.campos).filter(([, c]) => c.somenteAssistente);
+  const textos = TEXTOS.filter(k => t.campos[k] && pf[k]?.existe !== false);
+  el.innerHTML = `
+    ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" ${i === 0 || lista.some(([k, c]) => obrig(k, c) && !(pf[k]?.valor || W.valores[k]?.valor)) ? 'open' : ''}><summary>${esc(g)}</summary><div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
+      || '<p class="muted">Abrindo o formulário no portal…</p>'}
+    ${extras.length || t.descricao?.length ? `<div class="pf-sec">Só para a descrição</div><div class="pf-grid">${extras.map(([k, c]) => {
+      const cur = W.valores[k];
+      return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}</div>`;
+    }).join('')}
+      ${t.descricao?.length ? `<div class="field wide"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(W.valores.observacoes?.valor || '')}</textarea></div>` : ''}</div>
+      ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID na descrição<small>${cidAtivo() && !S.prefs.incluirCid ? 'Ligado pelo escritório para esta empresa — você pode desligar.' : 'Dado de saúde (LGPD). Deixe desligado se não for necessário.'}</small></span></label>` : ''}` : ''}
+    ${textos.length ? `<div class="pf-sec">Assunto e descrição ${textos.some(k => W.editados.has(k)) ? '<small class="chip info">editados por você</small>' : '<small class="chip ok">gerados</small>'}</div>
+      <div class="pf-grid">${textos.map(k => campo([k, t.campos[k]])).join('')}</div>` : ''}
+    ${calcBox(tipo)}`;
+  // campos bloqueados pelo portal
+  for (const [k] of doPortal) if (pf[k]?.disabled) el.querySelectorAll(`[data-k="${k}"]`).forEach(i => { i.disabled = true; });
+  const aoDigitar = debounce(() => { gerarTextos(tipo); syncGenerated(); updateChecks(); refreshCalc(); }, 400);
+  const marcar = (k, valor) => {
+    W.valores[k] = { valor, conf: 1, fonte: 'você' }; W.editados.add(k);
+    if (!t.campos[k]?.somenteAssistente) fv[k] = 'plataforma';
+  };
+  el.querySelectorAll('input[data-k], textarea[data-k]').forEach(inp => {
+    const k = inp.dataset.k; const c = t.campos[k];
+    inp.addEventListener('input', () => { maskInput(inp); marcar(k, inp.value); inp.classList.remove('found', 'low'); aoDigitar(); });
+    inp.addEventListener('change', () => { if (c?.somenteAssistente) atualizarTextoNoPortal(tipo); else agendarEnvioPortal(tipo); });
+    // listas do portal (motivos, cargos…): busca as opções quando o campo ganha o foco
+    if (c?.tipo === 'combo' && c.fc) inp.addEventListener('focus', async () => {
+      if (W.opcoes[k]?.length) return;
+      const r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000);
+      if (r?.options?.length) { W.opcoes[k] = r.options; const dl = $(`#dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
+      if (document.activeElement !== inp) inp.focus();
+    }, { once: true });
+  });
+  el.querySelectorAll('.seg [data-k]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k; marcar(k, b.dataset.v);
+    b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    gerarTextos(tipo); updateChecks(); agendarEnvioPortal(tipo);
+  }));
+  $('#f-obs')?.addEventListener('input', (e) => { W.valores.observacoes = { valor: e.target.value, conf: 1, fonte: 'você' }; aoDigitar(); });
+  $('#f-obs')?.addEventListener('change', () => atualizarTextoNoPortal(tipo));
+  el.querySelectorAll('[data-cand]').forEach(b => b.addEventListener('click', () => {
+    marcar('empregado', b.dataset.cand); W.candidatos = null;
+    gerarTextos(tipo); renderFieldsOnly(); updateChecks(); fillPortal(tipo, { daPlataforma: true });
   }));
   $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; S.prefs.cidEscolhido = true; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
 }
@@ -1122,7 +1286,7 @@ function updateChecks() {
   renderStepper(list); renderDocChecklist();
 }
 
-async function fillPortal(tipo, { silencioso = false } = {}) {
+async function fillPortal(tipo, { silencioso = false, daPlataforma = false } = {}) {
   const W = w(tipo); const t = tipoDef(tipo);
   if (!silencioso) W.pausarAuto = false;
   else if (W.pausarAuto) return;                       // o cliente desfez: só preenche de novo se ele pedir
@@ -1133,7 +1297,7 @@ async function fillPortal(tipo, { silencioso = false } = {}) {
   for (const [k, v] of Object.entries(W.valores)) {
     if (!t.campos[k] || t.campos[k].somenteAssistente || !v?.valor) continue;
     // o que o cliente escreveu direto no portal fica como está
-    if (noPortal[k] && noPortal[k] !== (W.ultimoPreenchido?.[k] ?? null) && noPortal[k] !== v.valor) continue;
+    if (noPortal[k] && noPortal[k] !== (W.ultimoPreenchido?.[k] ?? null) && noPortal[k] !== v.valor && W.fonteVerdade?.[k] !== 'plataforma') continue;
     values[k] = v.valor;
   }
   // padrões das regras (ex.: país Brasil) só se vazio no portal
@@ -1145,8 +1309,11 @@ async function fillPortal(tipo, { silencioso = false } = {}) {
   const packed = await packFiles(files);
   S.preenchendo = true;
   let r;
-  try { r = await request({ type: 'fill', tipo, values, files: packed, opts: { naoSobrescrever: false } }, 60000, packed.map(p => p.buf)); }
+  // o preenchimento foca campos do portal: guarda onde o cliente estava digitando na plataforma
+  const foco = document.activeElement?.id;
+  try { r = await request({ type: 'fill', tipo, values, files: packed, opts: { naoSobrescrever: false, avisoDesfazer: !daPlataforma } }, 60000, packed.map(p => p.buf)); }
   finally { S.preenchendo = false; }
+  if (S.modo === 'plataforma' && foco && document.activeElement?.id !== foco) document.getElementById(foco)?.focus();
   if (btn) { btn.disabled = false; btn.innerHTML = `${icon('fill', 'ic-sm')} Preencher no portal`; }
   if (r?.depois) W.ultimoPreenchido = { ...(W.ultimoPreenchido || {}), ...Object.fromEntries(Object.entries(r.depois).filter(([, v]) => v)) };
   W.portalVisto = { ...portalValores(tipo), ...(r?.depois || {}) };
@@ -1155,9 +1322,9 @@ async function fillPortal(tipo, { silencioso = false } = {}) {
   // sem resposta (o preenchimento não terminou): não grava como "preenchido", para a Agenda
   // não criar prazos de um pedido que não existe
   if (r) await salvarHistorico(tipo, 'preenchido');
-  if (S.view === 'preencher') { renderFilesOnly(); renderFieldsOnly(); renderFillResult(); updateChecks(); }
-  if (!silencioso || r?.resultados?.some(x => !x.ok)) { /* resultado já exibido no painel */ }
+  if (S.view === 'preencher') { renderFilesOnly(); if (S.modo === 'plataforma') renderFieldsOnlySeMudou(); else renderFieldsOnly(); renderFillResult(); updateChecks(); }
   if (!r) toast('O preenchimento não terminou. Confira o portal — o botão “Desfazer” volta tudo.');
+  else if (daPlataforma) { /* ajuste de um campo: o estado aparece no próprio formulário, sem aviso */ }
   // quando a página já mostrou o aviso com "↶ Desfazer", não sobrescreve (apagaria o botão)
   else if (r.resultados && !r.mudou) toast(`${r.resultados.filter(x => x.ok).length} campo(s) preenchido(s)${r.anexados ? ` · ${r.anexados} anexo(s)` : ''}. Confira antes de enviar.`);
 }
@@ -1184,6 +1351,7 @@ function sincronizarDoPortal(tipo) {
   for (const [k, ult] of Object.entries(W.ultimoPreenchido || {})) {
     if (!(k in atual) || atual[k] === ult) continue;
     delete W.ultimoPreenchido[k];
+    if (W.fonteVerdade) delete W.fonteVerdade[k];
     if (atual[k]) W.valores[k] = { valor: atual[k], conf: 1, fonte: 'você, no portal' }; else delete W.valores[k];
     W.editados.add(k);
   }
@@ -1237,7 +1405,7 @@ function onSubmitAttempt(m) {
   const pediu = S.pedirResumo; S.pedirResumo = false;
   if (!tipo) { send({ type: 'confirmSubmit' }); return; }
   const vals = valoresParaChecar(tipo);
-  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
+  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals), ...naoAceitosPeloPortal(tipo, m.form)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
   if (!list.length && !pediu) { S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
   const t = tipoDef(tipo);
@@ -1260,6 +1428,12 @@ function onSubmitAttempt(m) {
   $('#m-fix').addEventListener('click', () => { close(); setView('preencher'); });
   $('#m-send')?.addEventListener('click', () => { close(); S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); });
   ($('#m-send') && !list.length ? $('#m-send') : $('#m-fix')).focus();
+}
+/** Plataforma: o cliente escreveu um valor aqui que o portal não ficou com ele (ex.: opção que não existe na lista). */
+function naoAceitosPeloPortal(tipo, form) {
+  const W = w(tipo); const t = tipoDef(tipo); const f = form?.campos || {};
+  return Object.entries(W.fonteVerdade || {}).filter(([k, o]) => o === 'plataforma' && f[k]?.existe && !f[k].disabled && W.valores[k]?.valor && E.norm(f[k].valor) !== E.norm(W.valores[k].valor))
+    .map(([k]) => ({ nivel: 'atencao', grupo: 'Portal', campo: k, mensagem: `${t.campos[k]?.rotulo || k}: o portal está com “${f[k].valor || 'vazio'}”, e não com “${W.valores[k].valor}”. Confira esse campo.` }));
 }
 function textoResumo(tipo) {
   const v = valoresParaChecar(tipo); const t = tipoDef(tipo);
@@ -1323,14 +1497,19 @@ function onEnvioNaoConcluido() {
   toast(S.rules.mensagens?.envioNaoConcluido || 'O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo.');
 }
 
-async function onFormClosed() {
+async function onFormClosed(m = {}) {
   let enviadoTipo = null;
+  // saiu do formulário sem enviar: o que ficou guardado não se mistura com o próximo documento ou pedido
+  const slugSaiu = String(m.from || '').match(/service-request\/([a-z-]+)/)?.[1];
+  const tipoSaiu = slugSaiu && E.tipoBySlug(S.rules, slugSaiu);
+  if (tipoSaiu && S.work[tipoSaiu] && S.ultimoEnvio?.tipo !== tipoSaiu) S.work[tipoSaiu].abandonado = true;
   if (S.ultimoEnvio && Date.now() - S.ultimoEnvio.quando < 60000) {
     const tipo = S.ultimoEnvio.tipo; enviadoTipo = tipo;
     await salvarHistorico(tipo, 'enviado');
     await apagarRascunho(tipo);
     S.work[tipo] = null; S.ultimoEnvio = null;
     if (!S.lote) toast('Solicitação enviada. Os próximos prazos estão na Agenda.');
+    P?.aoEnviar(tipo);
     if (S.view === 'preencher') render();
   }
   loteAoFecharFormulario(enviadoTipo);
@@ -1383,7 +1562,7 @@ async function apagarRascunho(tipo, empresa = S.ctx.empresa) {
  *  (arrastou um documento ou escreveu), os dados antigos não se misturam com os novos. */
 function comecarDoZeroSeAbandonado(tipo) {
   const W = S.work[tipo];
-  if (!W || !W.entrouComDados || W.rascunhoVisto) return;
+  if (!W || !((W.entrouComDados && !W.rascunhoVisto) || W.abandonado)) return;
   const empregados = W.empregados, opcoes = W.opcoes;
   S.work[tipo] = null;
   const N = w(tipo); N.rascunhoVisto = true; N.empregados = empregados; N.opcoes = opcoes;
@@ -1400,7 +1579,7 @@ async function ofertaRascunho(tipo) {
     const quem = W.valores.empregado?.valor || W.valores.nome?.valor || '';
     el.innerHTML = `<div class="note">${icon('info')}<div><b>Você já tinha começado esta solicitação${quem ? ` (${esc(nomeCurto(quem))})` : ''}.</b> Quer continuar de onde parou?
       <div class="actions" style="margin-top:6px"><button class="btn btn-primary btn-sm" id="rasc-sim">Continuar</button><button class="btn btn-ghost btn-sm" id="rasc-nao">Começar do zero</button></div></div></div>`;
-    $('#rasc-sim').addEventListener('click', () => { W.rascunhoVisto = true; W.entrouComDados = false; W.arquivos.forEach(a => { a.anexado = false; }); el.innerHTML = ''; fillPortal(tipo); });
+    $('#rasc-sim').addEventListener('click', () => { W.rascunhoVisto = true; W.entrouComDados = false; W.abandonado = false; W.arquivos.forEach(a => { a.anexado = false; }); el.innerHTML = ''; fillPortal(tipo); });
     $('#rasc-nao').addEventListener('click', () => { S.work[tipo] = null; w(tipo).rascunhoVisto = true; apagarRascunho(tipo); render(); });
     return;
   }
@@ -1776,6 +1955,9 @@ async function renderConfig() {
       <label class="toggle"><input type="checkbox" data-p="ocrAutomatico" ${S.prefs.ocrAutomatico ? 'checked' : ''}><span>Ler fotos e PDFs escaneados (OCR)<small>Pode levar alguns segundos por página.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="incluirCid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID nas descrições<small>Dado de saúde — mantenha desligado se não for exigido.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="usarIa" ${S.prefs.usarIa ? 'checked' : ''}><span>Usar a IA do próprio Chrome quando disponível<small>${await aiAvailable() ? 'Disponível neste computador. Roda localmente.' : 'Não disponível neste Chrome — sem efeito.'}</small></span></label>
+      <div class="field" style="margin-top:10px"><label>Ao abrir o portal</label>
+        <div class="seg" role="group" aria-label="Ao abrir o portal">${[['plataforma', 'Abrir a plataforma (tela cheia)'], ['painel', 'Só o botão Assistente']].map(([v, l]) => `<button type="button" data-abrir="${v}" aria-pressed="${(S.prefs.abrirComo || 'plataforma') === v}">${l}</button>`).join('')}</div>
+        <small class="muted">A plataforma cobre o portal e preenche por trás. Você pode ver o portal a qualquer momento.</small></div>
       <div class="field" style="margin-top:10px"><label>Tamanho do texto do painel</label>
         <div class="seg" role="group" aria-label="Tamanho do texto">${[['normal', 'Normal'], ['grande', 'Grande'], ['maior', 'Maior']].map(([v, l]) => `<button type="button" data-tam="${v}" aria-pressed="${S.prefs.tamanhoTexto === v}">${l}</button>`).join('')}</div></div>
     </div>
@@ -1808,6 +1990,7 @@ async function renderConfig() {
     <div class="note" style="margin-top:14px">${icon('lock')}<div>${esc(S.rules.mensagens?.privacidade || '')}</div></div>`;
   viewEl.querySelectorAll('[data-p]').forEach(i => i.addEventListener('change', () => { S.prefs[i.dataset.p] = i.checked; if (i.dataset.p === 'incluirCid') S.prefs.cidEscolhido = true; savePrefs(); }));
   viewEl.querySelectorAll('[data-tam]').forEach(b => b.addEventListener('click', () => { S.prefs.tamanhoTexto = b.dataset.tam; savePrefs(); aplicarTamanhoTexto(); renderConfig(); }));
+  viewEl.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => { S.prefs.abrirComo = b.dataset.abrir; savePrefs(); renderConfig(); }));
   $('#diag').addEventListener('click', copiarDiagnostico);
   $('#save-url').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'setSettings', settings: { rulesUrl: $('#rules-url').value.trim() } }); await loadRules(); renderConfig(); });
   $('#refresh-rules').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'refreshRules' }); await loadRules(); renderConfig(); });
@@ -1816,6 +1999,14 @@ async function renderConfig() {
   $('#intro-again').addEventListener('click', () => { S.prefs.introVista = false; savePrefs(); setView('inicio'); });
   if (info.simulador) viewEl.querySelectorAll('.dev-only').forEach(e => e.remove());
 }
+
+/* =================== Plataforma (2.0) =================== */
+const P = montarPlataforma({
+  S, $, esc, icon, request, send, toast, viewEl, debounce, ICONS,
+  setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
+  renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
+  prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado
+});
 
 /* =================== Início =================== */
 (async () => {
@@ -1831,5 +2022,8 @@ async function renderConfig() {
   }
   const hash = location.hash.slice(1);
   if (hash && ['config', 'ferramentas', 'historico'].includes(hash)) setView(hash); else render();
-  if (!standalone) setTimeout(async () => { const tipos = Object.entries(S.rules.tipos).filter(([, t]) => t.api).map(([key, t]) => ({ key, api: t.api })); const r = await request({ type: 'pendencias', tipos }, 30000); if (r?.data) { S.pend = r.data; const n = r.data.reduce((a, p) => a + (p.itens || []).filter(i => i.aguardando).length, 0); send({ type: 'setBadge', n }); const d = $('#dot-pend'); d.hidden = !n; d.textContent = n; } }, 2500);
+  if (S.modo === 'plataforma') P.entrou();
+  if (!standalone) setTimeout(async () => {
+    if (S.modo === 'plataforma') return;   /* a plataforma lê as solicitações por conta própria */
+    const tipos = Object.entries(S.rules.tipos).filter(([, t]) => t.api).map(([key, t]) => ({ key, api: t.api })); const r = await request({ type: 'pendencias', tipos }, 30000); if (r?.data) { S.pend = r.data; const n = r.data.reduce((a, p) => a + (p.itens || []).filter(i => i.aguardando).length, 0); send({ type: 'setBadge', n }); const d = $('#dot-pend'); d.hidden = !n; d.textContent = n; } }, 2500);
 })();
