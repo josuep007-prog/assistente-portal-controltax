@@ -17,6 +17,14 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 1.3.3
+
+**Leitura mais confiável.** Formulários impressos trazem todas as opções escritas ("( ) Apto (X) Inapto"): o Assistente agora olha qual está marcada. Antes, um ASO apto aparecia como INAPTO na conferência e uma CAT de acidente típico virava Trajeto.
+**Funcionário certo:** quando o nome lido serve para duas pessoas da lista (dois "José Carlos"), o Assistente pergunta em vez de escolher pela ordem.
+**Documento certo:** dois documentos com a mesma pontuação deixam de ser desempatados pela ordem do arquivo de regras — o aviso de férias assinado ia para Programação de férias.
+**Datas certas:** num pedido de demissão com "admitido em…", a data do aviso não é mais a da admissão; e o início das férias não é mais o do período aquisitivo.
+**Documentos novos:** título de eleitor (o item do checklist da admissão nunca ficava marcado), termo de rescisão (TRCT) e holerite — estes dois com uma explicação de qual solicitação usar.
+
 ## Novidades da 1.3.2
 
 **Conferência mais segura.** Um arquivo que está na lista do Assistente mas ainda não foi para o portal não conta mais como anexado: antes a conferência dava "Atestado anexado" e a solicitação podia chegar ao escritório sem o documento. "Conferir e enviar" sempre mostra o resumo antes de acionar o botão do portal. Se o portal recusar o envio, o Assistente avisa, mantém o rascunho e não registra a solicitação como enviada.

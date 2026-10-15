@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.15-1",
+  "versao": "2026.10.15-2",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -1685,8 +1685,7 @@
           "rotulo": "Título de eleitor",
           "sinonimos": [
             "título de eleitor",
-            "título eleitoral",
-            "inscrição"
+            "título eleitoral"
           ]
         },
         "zona": {
@@ -2162,6 +2161,10 @@
           "nivel": "info",
           "mensagem": "Parece uma declaração de comparecimento (horas), sem dias de afastamento. Se for isso, ela serve para justificar as horas: informe o horário na descrição."
         }
+      ],
+      "negativas": [
+        "atestado de saúde ocupacional",
+        "pcmso"
       ]
     },
     {
@@ -2189,8 +2192,8 @@
           "data\\s*(?:de\\s*)?emiss[ãa]o\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})"
         ],
         "dataAfastamento": [
-          "data\\s*do\\s*acidente\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})",
-          "(\\d{2}/\\d{2}/\\d{4})"
+          "data\\s*(?:e\\s*hora\\s*)?do\\s*acidente\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "data\\s*do\\s*afastamento\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})"
         ]
       },
       "tipoCatPalavras": {
@@ -2247,8 +2250,9 @@
       ],
       "extrair": {
         "dataAviso": [
-          "(\\d{2}/\\d{2}/\\d{4})",
-          "(\\d{1,2} de [a-zç]+ de \\d{4})"
+          "(?:a\\s*partir\\s*(?:de|do\\s*dia)|solicito\\s*(?:o\\s*)?(?:meu\\s*)?desligamento\\s*(?:a\\s*partir\\s*de|em|no\\s*dia)?|desligamento\\s*(?:a\\s*partir\\s*de|em|no\\s*dia)|data\\s*do\\s*(?:aviso|pedido))\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "(?:a\\s*partir\\s*(?:de|do\\s*dia)|data\\s*do\\s*(?:aviso|pedido))\\s*:?\\s*(\\d{1,2} de [a-zç]+ de \\d{4})",
+          ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
       "valores": {
@@ -2276,13 +2280,20 @@
       ],
       "extrair": {
         "dataAviso": [
-          "(\\d{2}/\\d{2}/\\d{4})"
+          "(?:data\\s*do\\s*aviso|a\\s*partir\\s*(?:de|do\\s*dia)|comunicamos.{0,40}?(?:em|no\\s*dia))\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
       "valores": {
         "motivo": "Demitido SEM justa causa",
         "avisoDadoPor": "EMPREGADOR"
-      }
+      },
+      "negativas": [
+        "termo de rescisão",
+        "verbas rescisórias",
+        "trct",
+        "homologação"
+      ]
     },
     {
       "id": "aso",
@@ -2301,7 +2312,20 @@
       "minPalavras": 2,
       "forte": [
         "atestado de saúde ocupacional"
-      ]
+      ],
+      "opcoes": {
+        "resultado": [
+          "Apto",
+          "Inapto"
+        ],
+        "tipo": [
+          "Admissional",
+          "Demissional",
+          "Periódico",
+          "Retorno ao trabalho",
+          "Mudança de função"
+        ]
+      }
     },
     {
       "id": "identidade",
@@ -2429,7 +2453,7 @@
       "minPalavras": 2,
       "extrair": {
         "inicioGozo": [
-          "(?:início|inicio|de)\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})"
+          "(?:per[íi]odo\\s*de\\s*gozo|in[íi]cio\\s*(?:do\\s*gozo|das\\s*f[ée]rias)?|gozar[áa]?\\s*(?:as\\s*f[ée]rias)?\\s*(?:a\\s*partir\\s*de|de))\\s*:?\\s*(?:de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})"
         ],
         "diasGozo": [
           "(\\d{1,2})\\s*dias\\s*(?:de\\s*)?(?:gozo|férias)"
@@ -2437,7 +2461,12 @@
         "diasAbono": [
           "(\\d{1,2})\\s*dias\\s*(?:de\\s*)?abono"
         ]
-      }
+      },
+      "negativas": [
+        "participamos",
+        "ciente",
+        "recibo de férias"
+      ]
     },
     {
       "id": "avisoFeriasAssinado",
@@ -2466,6 +2495,79 @@
         "banco"
       ],
       "minPalavras": 2
+    },
+    {
+      "id": "titulo",
+      "nome": "Título de eleitor",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "título de eleitor",
+        "justiça eleitoral",
+        "zona",
+        "seção",
+        "eleitor",
+        "tribunal superior eleitoral"
+      ],
+      "forte": [
+        "justiça eleitoral"
+      ],
+      "minPalavras": 2
+    },
+    {
+      "id": "trct",
+      "nome": "Termo de rescisão (TRCT)",
+      "tipoSolicitacao": "calculoRescisao",
+      "palavras": [
+        "termo de rescisão",
+        "trct",
+        "verbas rescisórias",
+        "saldo de salário",
+        "aviso prévio indenizado",
+        "homologação"
+      ],
+      "forte": [
+        "termo de rescisão do contrato de trabalho"
+      ],
+      "minPalavras": 2,
+      "avisos": [
+        {
+          "palavras": [
+            "termo de rescisão"
+          ],
+          "nivel": "info",
+          "mensagem": "Este é o termo de rescisão, que o escritório emite. Para pedir o cálculo, use o Cálculo de Rescisão; para comunicar o desligamento, o Aviso Prévio de Rescisão."
+        }
+      ]
+    },
+    {
+      "id": "holerite",
+      "nome": "Recibo de pagamento (holerite)",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "recibo de pagamento",
+        "demonstrativo de pagamento",
+        "holerite",
+        "contracheque",
+        "proventos",
+        "descontos",
+        "valor líquido",
+        "base cálc"
+      ],
+      "forte": [
+        "recibo de pagamento de salário"
+      ],
+      "minPalavras": 3,
+      "avisos": [
+        {
+          "palavras": [
+            "recibo de pagamento",
+            "holerite",
+            "contracheque"
+          ],
+          "nivel": "info",
+          "mensagem": "O holerite é feito pelo escritório. Se algum valor estiver errado, abra uma Solicitação Geral explicando o que mudou."
+        }
+      ]
     }
   ],
   "mensagens": {

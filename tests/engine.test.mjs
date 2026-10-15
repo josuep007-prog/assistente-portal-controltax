@@ -268,4 +268,71 @@ t('recados do escritório têm datas em AAAA-MM-DD', () => {
   }
 });
 
+/* ---- 1.3.3: leitura de documentos ---- */
+
+t('ASO: opção impressa não conta como marcada', () => {
+  const aso = 'ATESTADO DE SAÚDE OCUPACIONAL\nTipo de exame: ( ) Admissional (X) Demissional ( ) Periódico\nParecer: (X) Apto ( ) Inapto\nData: 05/10/2026';
+  const r = E.readASO(aso);
+  assert.equal(r.resultado, 'APTO', 'ASO apto não pode sair como INAPTO');
+  assert.equal(r.tipo, 'demissional', 'o tipo é o marcado, não o primeiro da lista');
+  // sem nenhuma marca visível, não chuta
+  assert.equal(E.readASO('Parecer: ( ) Apto ( ) Inapto').resultado, null);
+  // texto corrido continua funcionando
+  assert.equal(E.readASO('O trabalhador foi considerado inapto para a função.').resultado, 'INAPTO');
+});
+
+t('opcaoMarcada entende (X), [x], ☒ e a marca depois da opção', () => {
+  assert.equal(E.opcaoMarcada('( ) Típico (X) Trajeto', ['Típico', 'Trajeto']), 'Trajeto');
+  assert.equal(E.opcaoMarcada('[x] Típico [ ] Trajeto', ['Típico', 'Trajeto']), 'Típico');
+  assert.equal(E.opcaoMarcada('Típico ☒  Trajeto ☐', ['Típico', 'Trajeto']), 'Típico');
+  assert.equal(E.opcaoMarcada('(X) Típico (X) Trajeto', ['Típico', 'Trajeto']), null, 'duas marcadas: não escolhe');
+});
+
+t('empate de nome: pergunta em vez de decidir pela ordem da lista', () => {
+  const txt = 'Eu, JOSE CARLOS, venho pedir demissão.';
+  const lista = ['JOSE CARLOS DA SILVA', 'JOSE CARLOS DA COSTA'];
+  const r = E.findEmployeeInText(txt, lista);
+  assert.equal(r.option, null);
+  assert.deepEqual(r.candidatos.slice().sort(), lista.slice().sort());
+  // invertendo a lista, o resultado é o mesmo (antes vencia o último)
+  const r2 = E.findEmployeeInText(txt, lista.slice().reverse());
+  assert.equal(r2.option, null);
+  // nome completo e único continua sendo escolhido
+  assert.equal(E.findEmployeeInText(txt, ['JOSE CARLOS DA SILVA', 'ANA PAULA REIS']).option, 'JOSE CARLOS DA SILVA');
+});
+
+t('classificação: empate não é decidido pela ordem do regras.json', () => {
+  const aviso = 'AVISO DE FÉRIAS\nParticipamos-lhe que suas férias serão concedidas.\nPeríodo aquisitivo: 01/03/2025 a 29/02/2026\nPeríodo de gozo: 03/11/2026 a 22/11/2026\nCiente: ______';
+  const docs = E.classifyDocument(aviso, rules);
+  assert.equal(docs[0].id, 'avisoFeriasAssinado', `saiu ${docs[0].id}`);
+});
+
+t('pedido de demissão: a data do aviso não é a da admissão', () => {
+  const txt = 'PEDIDO DE DEMISSÃO\nEu, MARIA APARECIDA LIMA, admitida em 10/01/2024, solicito meu desligamento a partir de 20/10/2026.\nSerra-ES, 05 de outubro de 2026.';
+  const r = E.analyzeText(txt, rules, { employees: ['MARIA APARECIDA LIMA'] });
+  assert.equal(r.campos.dataAviso?.valor, '20/10/2026', `saiu ${r.campos.dataAviso?.valor}`);
+});
+
+t('férias: início do gozo não é o do período aquisitivo', () => {
+  const txt = 'AVISO DE FÉRIAS\nPeríodo aquisitivo de 01/03/2025 a 29/02/2026\nPeríodo de gozo: 03/11/2026\n20 dias de gozo';
+  const r = E.analyzeText(txt, rules, { tipoAtual: 'avisoFerias' });
+  assert.equal(r.campos.inicioGozo?.valor, '03/11/2026', `saiu ${r.campos.inicioGozo?.valor}`);
+});
+
+t('documentos novos: título de eleitor, TRCT e holerite', () => {
+  const ids = new Set((rules.documentos || []).map(d => d.id));
+  for (const id of ['titulo', 'trct', 'holerite']) assert.ok(ids.has(id), `falta o documento ${id}`);
+  assert.equal(E.classifyDocument('JUSTIÇA ELEITORAL\nTÍTULO DE ELEITOR\nZona 015  Seção 0123', rules)[0].id, 'titulo');
+  // todo anexo exigido precisa de um documento que o reconheça
+  for (const [k, t] of Object.entries(rules.tipos)) {
+    for (const a of t.anexos || []) if (a.documento) assert.ok(ids.has(a.documento), `${k}: anexo aponta para documento inexistente "${a.documento}"`);
+  }
+});
+
+t('comprovante do CPF não vira título de eleitor no cadastro', () => {
+  const txt = 'COMPROVANTE DE SITUAÇÃO CADASTRAL NO CPF\nNome: MARIA APARECIDA LIMA\nCPF: 529.982.247-25\nData da Inscrição: 03/02/2010';
+  const r = E.analyzeText(txt, rules, { tipoAtual: 'cadastroEmpregado' });
+  assert.equal(r.campos.titulo, undefined, `saiu ${JSON.stringify(r.campos.titulo)}`);
+});
+
 console.log(`\n${n} testes ok`);

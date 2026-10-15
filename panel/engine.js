@@ -109,15 +109,20 @@ export function bestMatch(value, options, min = 0.72) {
 /** Procura no texto qual funcionário da lista aparece (nome completo ou quase). */
 export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = {}) {
   const T = ' ' + norm(text) + ' ';
-  let best = null;
+  let best = null; const empates = new Set();
   for (const e of employees || []) {
     const E = norm(e); if (!E) continue;
     if (T.includes(' ' + E + ' ')) return { option: e, score: 1 };
     const toks = E.split(' ').filter(t => t.length > 2);
     const hit = toks.filter(t => T.includes(' ' + t + ' ')).length;
     const s = toks.length ? hit / toks.length : 0;
-    if (toks.length >= 2 && s >= 0.66 && (!best || s > best.score)) best = { option: e, score: s * 0.95 };
+    if (toks.length >= 2 && s >= 0.66) {
+      if (!best || s > best.bruto) best = { option: e, score: s * 0.95, bruto: s };
+      else if (s === best.bruto && best.option !== e) empates.add(e);
+    }
   }
+  // empate (mesmo nome parcial para duas pessoas): quem decide é o cliente, não a ordem da lista
+  if (best && empates.size) return { option: null, score: 0, candidatos: [best.option, ...empates] };
   if (best) return best;
   if (!soPrimeiroNome) return null;
   // só o primeiro nome ("o Jorge pediu demissão"): vale se for único na lista
@@ -140,11 +145,13 @@ export function classifyDocument(text, rules) {
     for (const p of d.palavras || []) { const P = norm(p); if (P && (' ' + T + ' ').includes(' ' + P + ' ')) { hits++; found.push(p); } }
     let strong = 0; for (const f of d.forte || []) if (T.includes(norm(f))) strong++;
     if (hits >= (d.minPalavras || 1) || strong) {
-      const score = Math.min(1, (hits / Math.max(3, (d.palavras || []).length * 0.6)) + strong * 0.5);
-      out.push({ id: d.id, nome: d.nome, tipoSolicitacao: d.tipoSolicitacao, score, found });
+      const bruto = (hits / Math.max(3, (d.palavras || []).length * 0.6)) + strong * 0.5;
+      // palavras que derrubam a nota (ex.: "TRCT" num aviso de rescisão)
+      const contra = (d.negativas || []).filter(x => T.includes(norm(x))).length;
+      out.push({ id: d.id, nome: d.nome, tipoSolicitacao: d.tipoSolicitacao, score: Math.min(1, Math.max(0, bruto - contra * 0.5)), bruto: bruto - contra * 0.5, found });
     }
   }
-  return out.sort((a, b) => b.score - a.score);
+  return out.sort((a, b) => b.bruto - a.bruto);
 }
 
 /** Extração genérica "Rótulo: valor" usando os sinônimos dos campos.
@@ -228,8 +235,15 @@ export function analyzeText(text, rules, ctx = {}) {
   } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
   if (docRule?.tipoCatPalavras) {
+    // a CAT imprime todas as opções ("( ) Típico ( ) Trajeto"): só vale a marcada
     const T = norm(text);
-    for (const [val, words] of Object.entries(docRule.tipoCatPalavras)) if (words.some(w => T.includes(norm(w)))) { put('tipoCat', val, 0.6, docRule.nome); break; }
+    const candidatos = Object.entries(docRule.tipoCatPalavras).filter(([, words]) => words.some(w => T.includes(norm(w))));
+    if (candidatos.length === 1) put('tipoCat', candidatos[0][0], 0.6, docRule.nome);
+    else if (candidatos.length > 1) {
+      const marcada = opcaoMarcada(text, candidatos.flatMap(([, words]) => words));
+      const dono = marcada && candidatos.find(([, words]) => words.some(w => norm(w) === norm(marcada)));
+      if (dono) put('tipoCat', dono[0], 0.6, docRule.nome);
+    }
   }
   // comprovante de endereço (ou qualquer documento com endereço) para cadastros
   if (tipo?.campos?.cep && (doc?.id === 'comprovanteEndereco' || !campos.endereco)) {
@@ -256,7 +270,8 @@ export function analyzeText(text, rules, ctx = {}) {
     else {
       const m = findEmployeeInText(leitor ? semOutrasPessoas(text) : text, ctx.employees, { soPrimeiroNome: !leitor && !doc });
       const outroNome = leitor?.paciente && leitor.paciente.nome.split(' ').length >= 2;
-      if (m && outroNome) {
+      if (m?.candidatos) candidatos = m.candidatos;       // empate: o cliente escolhe
+      else if (m && outroNome) {
         put('empregado', m.option, Math.min(m.score, 0.45), `sobrenome igual ao de “${leitor.paciente.nome}”`);
         avisosExtra.push({ nivel: 'atencao', id: 'outroNome', mensagem: `O atestado está em nome de ${leitor.paciente.nome}, que não é exatamente ${m.option}. Confira se é do funcionário (pode ser de um dependente).` });
       } else if (m) put('empregado', m.option, m.score, 'nome encontrado no documento');
@@ -590,7 +605,8 @@ export function parseFreeText(text, rules, ctx = {}) {
   const datas = findDates(text, hoje);
   const diasM = t.match(/(\d{1,3})\s*dias?\b(?!\s*(?:de\s+)?abono)/); const dias = diasM ? +diasM[1] : null;
   const abonoM = t.match(/(?:vender|abono(?:\s+de)?)\s*(\d{1,2})\s*dias?|(\d{1,2})\s*dias?\s*(?:de\s+)?abono/);
-  if (ctx.employees?.length) { const m = findEmployeeInText(text, ctx.employees); if (m) put('empregado', m.option, m.score); }
+  let candidatosNome = null;
+  if (ctx.employees?.length) { const m = findEmployeeInText(text, ctx.employees); if (m?.option) put('empregado', m.option, m.score); else if (m?.candidatos) candidatosNome = m.candidatos; }
   const d0 = datas[0] ? fmtDate(datas[0]) : null;
   switch (tipo) {
     case 'afastamento': {
@@ -637,7 +653,7 @@ export function parseFreeText(text, rules, ctx = {}) {
     default: break;
   }
   // o texto do cliente serve só para entender o pedido: não vai literalmente para a descrição
-  return { tipoSugerido: tipo, campos, datas: datas.map(fmtDate) };
+  return { tipoSugerido: tipo, campos, datas: datas.map(fmtDate), ...(candidatosNome ? { candidatos: candidatosNome } : {}) };
 }
 
 /* ================= Leituras específicas ================= */
@@ -838,12 +854,45 @@ export function extractAddress(text) {
   return out;
 }
 /** ASO: resultado, tipo de exame e data. */
+/** Qual opção está marcada num formulário impresso ("( ) Apto (X) Inapto", "[x]", "☒").
+ *  ASO e CAT trazem todas as opções escritas: procurar a palavra solta elegia a errada.
+ *  Devolve null quando nenhuma ou mais de uma está marcada — aí o cliente confere. */
+export function opcaoMarcada(text, opcoes) {
+  const t = plain(text);
+  const esc = (x) => plain(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const lista = (opcoes || []).filter(Boolean);
+  if (!lista.length) return null;
+  // onde cada opção aparece no texto
+  const ondes = [];
+  for (const o of lista) {
+    const re = new RegExp(`\\b${esc(o)}\\b`, 'gi');
+    for (let m; (m = re.exec(t));) ondes.push({ o, ini: m.index, fim: m.index + m[0].length });
+  }
+  if (!ondes.length) return null;
+  // cada marca pertence à opção colada nela: a que começa logo depois, senão a que termina logo antes
+  const marcas = /[(\[]\s*(?:x|☒|■|▣|✓|✔)\s*[)\]]|(?:^|\s)(?:☒|■|▣|✓|✔)(?=\s|$)/gi;
+  const marcadas = new Set();
+  for (let m; (m = marcas.exec(t));) {
+    const ini = m.index, fim = m.index + m[0].length;
+    const depois = ondes.filter(x => x.ini >= fim && x.ini - fim <= 2).sort((a, b) => a.ini - b.ini)[0];
+    const antes = ondes.filter(x => x.fim <= ini && ini - x.fim <= 2).sort((a, b) => b.fim - a.fim)[0];
+    // "(X) Opção" vem antes da opção; um símbolo solto ("Opção ☒") vem depois dela
+    const dono = /[(\[]/.test(m[0]) ? (depois || antes) : (antes || depois);
+    if (dono) marcadas.add(dono.o);
+  }
+  if (marcadas.size === 1) return [...marcadas][0];
+  if (marcadas.size > 1) return null;
+  // sem marca nenhuma: só vale quando o documento traz uma única opção (texto corrido)
+  const presentes = [...new Set(ondes.map(x => x.o))];
+  return presentes.length === 1 ? presentes[0] : null;
+}
+const ASO_TIPOS = ['admissional', 'demissional', 'periodico', 'retorno ao trabalho', 'mudanca de funcao'];
 export function readASO(text) {
   const t = plain(text);
-  const resultado = /\binapto\b/.test(t) ? 'INAPTO' : (/\bapto\b/.test(t) ? 'APTO' : null);
-  const tipo = ['admissional', 'demissional', 'periodico', 'retorno ao trabalho', 'mudanca de funcao'].find(x => t.includes(x)) || null;
+  const resultado = opcaoMarcada(t, ['inapto', 'apto']);
+  const tipo = opcaoMarcada(t, ASO_TIPOS);
   const datas = findDates(text); const data = datas.length ? fmtDate(datas[datas.length - 1]) : null;
-  return { resultado, tipo, data };
+  return { resultado: resultado ? resultado.toUpperCase() : null, tipo, data };
 }
 /** Uma linha que resume o que foi entendido do documento (aparece embaixo do arquivo). */
 export function summarizeDocument(analise, text) {
