@@ -423,4 +423,43 @@ t('trâmites do Onvio: ordem, situação pela família, autor e anexos', () => {
   assert.deepEqual(E.tramitesDe(null, 'geral', rules), []);
 });
 
+t('Hoje: avisos sem cálculo e equipe vencendo', () => {
+  const h = new Date(2026, 9, 15);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  const avF = N({ id: 'f1', genericStatus: 4, created: '2026-10-01', lastUpdated: '2026-10-10', clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, vacationStartDate: '2026-11-03' }, 'avisoFerias');
+  assert.equal(E.fmtDate(avF.datas.inicioFerias), '03/11/2026');
+  const avR = N({ id: 'r1', genericStatus: 2, created: '2026-10-11', clientEmployeeExpanded: { name: 'MARIA SOUZA' }, adviceDate: '2026-10-12' }, 'avisoRescisao');
+  let l = E.avisosSemCalculo([avF, avR], h, rules);
+  assert.deepEqual(l.map(x => x.tipo), ['rescisao', 'ferias']);   // a rescisão paga antes (12/10 + 10)
+  assert.equal(E.fmtDate(l[1].pagamento), '01/11/2026');           // 2 dias antes do início
+  assert.ok(l[1].enviarAte < l[1].pagamento);
+  // com o cálculo criado, o aviso sai da lista
+  const calc = N({ id: 'c1', genericStatus: 2, created: '2026-10-12', clientEmployeeExpanded: { name: 'João da Silva' } }, 'calculoFerias');
+  l = E.avisosSemCalculo([avF, avR, calc], h, rules);
+  assert.deepEqual(l.map(x => x.tipo), ['rescisao']);
+  // aviso antigo, pagamento muito para trás: fora
+  const velho = N({ id: 'f2', genericStatus: 5, created: '2026-05-01', clientEmployeeExpanded: { name: 'ANA' }, paymentDate: '2026-05-20' }, 'avisoFerias');
+  assert.equal(E.avisosSemCalculo([velho], h, rules).length, 0);
+  // equipe: experiência em 30 dias e férias a vencer em 60
+  const eq = E.equipeVencendo([{ nome: 'NOVO', admissao: '2026-09-04', ativo: true }, { nome: 'ANTIGO', admissao: '2024-11-20', ativo: true }, { nome: 'SAIU', admissao: '2026-09-04', ativo: false }], [], h, rules);
+  assert.deepEqual(eq.experiencia.map(x => x.nome), ['NOVO']);
+  assert.deepEqual(eq.ferias.map(x => x.nome), ['ANTIGO']);
+  // com aviso de férias recente, não pede de novo
+  const comAviso = N({ genericStatus: 2, created: '2026-10-01', clientEmployeeExpanded: { name: 'ANTIGO' } }, 'avisoFerias');
+  assert.equal(E.equipeVencendo([{ nome: 'ANTIGO', admissao: '2024-11-20', ativo: true }], [comAviso], h, rules).ferias.length, 0);
+});
+
+t('várias empresas no mesmo login: filtra pela empresa aberta no portal', () => {
+  const N = (emp, id) => E.normalizarSolicitacao({ id, genericStatus: 4, clientExpanded: { name: emp, nickname: emp.split(' ')[0] } }, 'geral', rules);
+  const l = [N('EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', 'a'), N('OUTRA COMERCIO LTDA', 'b'), N('OUTRA COMERCIO LTDA', 'c')];
+  assert.equal(l[0].empresa, 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA'); assert.equal(l[0].empresaApelido, 'EMPRESA');
+  assert.deepEqual(E.filtrarPorEmpresa(l, '', 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA').map(i => i.id), ['a']);
+  assert.equal(E.filtrarPorEmpresa(l, '*', 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA').length, 3);
+  assert.deepEqual(E.filtrarPorEmpresa(l, 'OUTRA COMERCIO LTDA', 'X').map(i => i.id), ['b', 'c']);
+  assert.equal(E.filtrarPorEmpresa(l, '', 'NOME QUE NAO BATE').length, 3);   // não achou a empresa do portal: mostra tudo
+  assert.equal(E.empresaDoFiltro(l, '', 'empresa exemplo simples nacional ltda'), 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA');
+  assert.deepEqual(E.empresasDasSolicitacoes(l).map(e => e.n), [1, 2]);
+  assert.equal(E.filtrarPorEmpresa([l[0]], '', 'OUTRA').length, 1);   // uma empresa só: sem filtro
+});
+
 console.log(`\n${n} testes ok`);
