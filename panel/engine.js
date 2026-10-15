@@ -905,3 +905,124 @@ export function summarizeDocument(analise, text) {
   if (id === 'fichaAdmissao') return [v('nome'), v('cpf')].filter(Boolean).join(' · ');
   return '';
 }
+
+/* =================== Plataforma (2.0) =================== */
+/* Solicitações lidas das listas do portal. O formato dos itens do Onvio ainda não foi visto
+   (a calibrar): procura a situação, o funcionário e as datas em vários nomes de campo, e as
+   expressões que dizem "aguardando você" ficam nas regras (config.statusSolicitacao). */
+const PADRAO_STATUS = {
+  aguardando: ['aguardando[^"]{0,20}(cliente|voc[eê])', 'waiting[_ ]?(for[_ ]?)?(client|customer)', 'awaiting'],
+  concluida: ['conclu', 'finaliz', 'complet', 'encerrad'],
+  cancelada: ['cancel']
+};
+const reLista = (lista) => (lista || []).map(s => { try { return new RegExp(s, 'i'); } catch { return null; } }).filter(Boolean);
+/** 'aguardando' | 'andamento' | 'concluida' | 'cancelada' */
+export function classificarEstado(status, bruto, regras) {
+  const cfg = { ...PADRAO_STATUS, ...(regras?.config?.statusSolicitacao || {}) };
+  const s = String(status || '');
+  const tudo = `${s} ${typeof bruto === 'string' ? bruto : JSON.stringify(bruto || '')}`;
+  if (reLista(cfg.aguardando).some(r => r.test(tudo))) return 'aguardando';
+  if (reLista(cfg.cancelada).some(r => r.test(s))) return 'cancelada';
+  if (reLista(cfg.concluida).some(r => r.test(s))) return 'concluida';
+  return 'andamento';
+}
+const texto1 = (...vs) => { for (const v of vs) { if (v == null || v === '') continue; if (typeof v === 'string' || typeof v === 'number') return String(v); if (typeof v === 'object') { const d = v.description || v.name || v.label || v.value; if (d) return String(d); } } return ''; };
+/** Item cru da lista → { tipo, id, status, estado, aguardando, empregado, assunto, atualizado (Date|null) } */
+export function normalizarSolicitacao(it, tipo, regras) {
+  const status = texto1(it?.status, it?.situation, it?.statusDescription, it?.state);
+  const estado = classificarEstado(status, it, regras);
+  const quando = texto1(it?.lastUpdate, it?.updatedAt, it?.lastProceedingDate, it?.modifiedDate, it?.createdAt, it?.creationDate, it?.date);
+  return {
+    tipo,
+    id: texto1(it?.id, it?.requestNumber, it?.number, it?.protocol),
+    numero: texto1(it?.requestNumber, it?.number, it?.protocol, it?.id),
+    status: status || (regras?.config?.statusSolicitacao?.rotulos || {})[estado] || '',
+    estado,
+    aguardando: estado === 'aguardando',
+    empregado: texto1(it?.employee?.name, it?.employeeName, it?.selectedEmployee?.name, it?.employee),
+    assunto: texto1(it?.subject, it?.title, it?.description),
+    atualizado: parseDate(quando),
+    tramite: texto1(it?.lastProceeding?.description, it?.lastProceeding, it?.lastComment)
+  };
+}
+
+/* Lembretes do cliente (guardados só no computador) com repetição.
+   l = { data:'AAAA-MM-DD', rep:'nao'|'diaria'|'util'|'semanal'|'mensal'|'anual', intervalo?, ate?, pular?:[iso] } */
+export function ocorrencias(l, de, ate, cal = makeCalendar()) {
+  const ini = parseDate(l?.data); if (!ini || !de || !ate) return [];
+  const fim = l.ate ? parseDate(l.ate) : null;
+  const pular = new Set(l.pular || []);
+  const passo = Math.max(1, parseInt(l.intervalo, 10) || 1);
+  const out = [];
+  const ok = (d) => d >= de && d <= ate && (!fim || d <= fim) && !pular.has(iso(d));
+  const rep = l.rep || 'nao';
+  if (rep === 'nao') return ok(ini) ? [ini] : [];
+  // mensal/anual no dia 31 (ou 29/02): nos meses sem esse dia, vale o último dia do mês
+  const noMes = (y, m, dia) => new Date(y, m, Math.min(dia, new Date(y, m + 1, 0).getDate()));
+  for (let i = 0, d = ini; d <= ate && i < 5000; i++) {
+    if (fim && d > fim) break;
+    if (ok(d) && (rep !== 'util' || cal.isBusiness(d))) out.push(d);
+    if (rep === 'diaria' || rep === 'util') d = addDays(d, rep === 'util' ? 1 : passo);
+    else if (rep === 'semanal') d = addDays(d, 7 * passo);
+    else if (rep === 'mensal') d = noMes(ini.getFullYear(), ini.getMonth() + passo * (i + 1), ini.getDate());
+    else if (rep === 'anual') d = noMes(ini.getFullYear() + passo * (i + 1), ini.getMonth(), ini.getDate());
+    else break;
+  }
+  return out;
+}
+/** Texto curto da repetição ("Todo mês, dia 10, até 31/12/2026"). */
+export function resumoRepeticao(l) {
+  const d = parseDate(l?.data); if (!d) return '';
+  const n = Math.max(1, parseInt(l.intervalo, 10) || 1);
+  const cada = (um, varios) => n === 1 ? um : `A cada ${n} ${varios}`;
+  const base = { nao: `Só em ${fmtDate(d)}`, diaria: cada('Todo dia', 'dias'), util: 'Todo dia útil (seg. a sex.)', semanal: `${cada('Toda semana', 'semanas')}, ${weekday(d)}`, mensal: `${cada('Todo mês', 'meses')}, dia ${d.getDate()}`, anual: `${cada('Todo ano', 'anos')}, em ${fmtDate(d).slice(0, 5)}` }[l.rep || 'nao'] || '';
+  return base + (l.rep && l.rep !== 'nao' && l.ate ? `, até ${fmtDate(parseDate(l.ate))}` : '');
+}
+
+/* Prazos que valem todo mês (regras.agendaFixa): { dia, mes?, ajuste:'antecipa'|'prorroga' } ou { diaUtil: N } */
+export function prazosFixos(regras, ano, mes, cal = makeCalendar(regras?.feriados)) {
+  const out = [];
+  for (const it of regras?.agendaFixa?.itens || []) {
+    const q = it.quando || {};
+    if (q.mes && q.mes - 1 !== mes) continue;
+    let d = null;
+    if (q.diaUtil) {
+      d = new Date(ano, mes, 1); let n = cal.isBusiness(d) ? 1 : 0;
+      while (n < q.diaUtil) { d = addDays(d, 1); if (cal.isBusiness(d)) n++; }
+    } else if (q.dia) {
+      d = new Date(ano, mes, Math.min(q.dia, new Date(ano, mes + 1, 0).getDate()));
+      if (q.ajuste && !cal.isBusiness(d)) d = cal.addBusinessDays(d, q.ajuste === 'antecipa' ? -1 : 1);
+    }
+    if (d) out.push({ id: it.id, d, titulo: it.titulo, detalhe: it.detalhe || '' });
+  }
+  const lim = parseInt(regras?.config?.diaLimiteRubricas, 10);
+  if (lim) { let d = new Date(ano, mes, Math.min(lim, new Date(ano, mes + 1, 0).getDate())); if (!cal.isBusiness(d)) d = cal.addBusinessDays(d, -1); out.push({ id: 'rubricas', d, titulo: 'Enviar as variáveis da folha (rubricas)', detalhe: 'Prazo combinado com o escritório.' }); }
+  return out.sort((a, b) => a.d - b.d);
+}
+
+/* Situação de um funcionário a partir do que o portal informa (nome, admissão, ativo).
+   Férias são estimativa: o portal não informa férias já gozadas. */
+export function situacaoEmpregado(e, hoje = today(), regras = {}) {
+  const adm = parseDate(e?.admissao);
+  const out = { nome: e?.nome || '', ativo: e?.ativo !== false, admissao: adm, tempoCasa: '', experiencia: [], ferias: null, proxima: null };
+  if (!adm) return out;
+  let meses = (hoje.getFullYear() - adm.getFullYear()) * 12 + hoje.getMonth() - adm.getMonth();
+  if (hoje.getDate() < adm.getDate()) meses--;
+  meses = Math.max(0, meses);
+  const anos = Math.floor(meses / 12), m = meses % 12;
+  out.tempoCasa = anos ? `${anos} ano${anos > 1 ? 's' : ''}${m ? ` e ${m} ${m > 1 ? 'meses' : 'mês'}` : ''}` : meses ? `${meses} ${meses > 1 ? 'meses' : 'mês'}` : `${diffDays(adm, hoje)} dia(s)`;
+  if (!out.ativo) return out;
+  const marcos = (regras?.config?.experienciaDias || [45, 90]).map(Number).filter(Boolean);
+  for (const n of marcos) { const fim = addDays(adm, n - 1); out.experiencia.push({ n, fim, falta: diffDays(hoje, fim) }); }
+  // período aquisitivo atual e prazo para conceder as férias do período vencido (CLT 134 e 137)
+  if (anos >= 1) {
+    const ini = new Date(adm.getFullYear() + anos - 1, adm.getMonth(), adm.getDate());
+    const fimAq = addDays(new Date(adm.getFullYear() + anos, adm.getMonth(), adm.getDate()), -1);
+    const limite = addDays(new Date(adm.getFullYear() + anos + 1, adm.getMonth(), adm.getDate()), -1);
+    out.ferias = { aquisitivo: `${fmtDate(ini)} a ${fmtDate(fimAq)}`, limite, falta: diffDays(hoje, limite) };
+  }
+  const exp = out.experiencia.find(x => x.falta >= -2);
+  if (exp && exp.falta <= 30) out.proxima = { d: exp.fim, titulo: `Fim da experiência (${exp.n} dias)`, nivel: exp.falta <= 5 ? 'late' : 'soon', falta: exp.falta };
+  else if (out.ferias && out.ferias.falta <= 90) out.proxima = { d: out.ferias.limite, titulo: 'Conceder férias até (estimativa)', nivel: out.ferias.falta <= 30 ? 'late' : 'soon', falta: out.ferias.falta };
+  return out;
+}
