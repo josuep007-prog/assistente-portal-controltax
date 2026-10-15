@@ -17,6 +17,18 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.0 — a plataforma
+
+**O Assistente virou uma plataforma em tela cheia por cima do Portal do Cliente**, no estilo do módulo de Departamento Pessoal do Control Hub (trilho lateral, abas com selos, indicadores, listas). O portal continua aberto por baixo e é a plataforma que preenche; **Ver no portal** mostra a tela original com o painel ao lado, e o botão de tela cheia volta.
+- **Painel:** o que espera por você, solicitações em andamento, prazos da semana, contratos de experiência, atalhos e "escreva com suas palavras".
+- **Solicitações:** todas as listas do portal num só lugar (com todas as páginas), abas Aguardando você / Em andamento / Concluídas, busca, último trâmite e "Responder no portal".
+- **Novo pedido:** formulário próprio, gerado das regras. O que você escreve vai para o portal; antes de enviar, o resumo lê o próprio portal e avisa se ele não aceitou algum valor. O envio continua sendo só pelo botão do portal, depois da sua confirmação.
+- **Funcionários:** lista do portal com admissão, tempo de casa, experiência e férias a conceder (estimativa), e atalhos para pedir férias, afastamento ou desligamento já com o funcionário escolhido.
+- **Agenda:** calendário do mês com prazos legais (salário, FGTS, INSS, 13º — `agendaFixa` nas regras), prazos das solicitações, experiências e **lembretes** que se repetem (dia útil, semana, mês, ano; "excluir só este dia"). Fica só no computador.
+- **Documentos:** do escritório (no simulador; no Onvio real, a calibrar), anexos das solicitações, **modelos para assinar** (`modelosDocumento` nas regras, para imprimir ou salvar em PDF) e listas de documentos.
+- **Busca Ctrl+K** (ou /) por funcionário, solicitação, pedido ou dúvida. Aviso quando o portal pede atenção por baixo (janela, sessão).
+- Configurações → "Ao abrir o portal": plataforma (padrão) ou só o botão Assistente.
+
 ## Novidades da 1.3.3
 
 **Leitura mais confiável.** Formulários impressos trazem todas as opções escritas ("( ) Apto (X) Inapto"): o Assistente agora olha qual está marcada. Antes, um ASO apto aparecia como INAPTO na conferência e uma CAT de acidente típico virava Trajeto.
@@ -104,6 +116,9 @@ Só mudanças de **código** (`content/`, `panel/`, `background/`) exigem uma no
 | `mensagens` | Textos exibidos ao cliente (inclui `admissaoInicio`/`admissaoFim` da mensagem de documentos da admissão). |
 | `avisosEscritorio` | Recados no Início: `[{ id, titulo, texto, nivel: "importante"?, desde, ate: "AAAA-MM-DD", link }]`. O cliente pode dispensar. |
 | `faq` | Dúvidas frequentes que aparecem na busca do Início: `[{ pergunta, resposta, palavras }]`. |
+| `agendaFixa` | Prazos de todo mês ou de todo ano na Agenda: `itens: [{ id, titulo, detalhe, quando: { dia, mes?, ajuste: "antecipa"\|"prorroga" } \| { diaUtil: N } }]`. |
+| `modelosDocumento` | Modelos para assinar (Documentos): `[{ id, titulo, descricao, revisarComEscritorio, campos: [{ k, rotulo, tipo: "empregado"\|"data"\|"numero"\|"texto"\|"opcoes" }], texto: [linhas com {campo\|padrão}] }]`. `{empresa}` e `{hoje}` vêm prontos. |
+| `config.statusSolicitacao` | Expressões que dizem se uma solicitação está aguardando você, concluída ou cancelada (a calibrar com o Onvio real). `solicitacoesMaxPaginas`: até quantas páginas de 50 ler por tipo. `campos.*.grupo`: agrupa os campos no formulário da plataforma (cadastro). |
 | `empresas` | Ajustes por empresa: `{ "trecho do nome": { config: { … }, avisos: [ … ] } }` (ex.: outro prazo interno, `experienciaDias: [30, 90]`). |
 
 Tipos de verificação disponíveis: `antecedenciaMinima`, `dataPassada`, `dataNaoFutura`, `antiguidadeMaxima`, `intervalo`, `somaMaxima`, `diasMaiorQue`, `inicioFerias`, `pagamentoAntesDe`, `prazoEscritorio`, `prazoRescisao`, `prazoCat`, `cpf`, `pis`, `email`, `idadeMinima`, `competenciaRecente`, `diaLimite`, `abaErrada`, `info`.
@@ -114,7 +129,7 @@ Tipos de verificação disponíveis: `antecedenciaMinima`, `dataPassada`, `dataN
 manifest.json
 background/service-worker.js   regras (dev → remota → cache → embutida), recarga automática, atalho, selo
 content/content.js             age no portal: lê a tela, preenche, anexa, confere o envio, arrastar-e-soltar
-panel/                         painel lateral (HTML/CSS/JS), motor de regras (engine.js), leitura de arquivos (extract.js)
+panel/                         plataforma (plataforma.js/.css) e painel encaixado (panel.*), motor de regras (engine.js), leitura de arquivos (extract.js)
 rules/regras.json              o "cérebro" editável
 lib/                           pdf.js, Tesseract (OCR português), SheetJS — tudo local
 dev/                           servidor de desenvolvimento (Python, sem dependências)
@@ -127,6 +142,9 @@ O repositório do GitHub tem a extensão completa (inclusive `lib/` e `fonts/`):
 Abra o Claude Code dentro desta pasta: o `CLAUDE.md` traz o contexto, as regras de segurança no portal e o jeito de trabalhar; `docs/mapa-portal.md` traz o mapa da tela; `tests/` tem os testes (`node tests/engine.test.mjs` e `python tests/e2e.py`).
 
 ## Pontos a confirmar com o escritório
+
+- **Modelos para assinar** (`modelosDocumento`): os textos são sugestões e aparecem com o aviso "confirme com o escritório". Revise e, quando aprovar, troque `revisarComEscritorio` para `false`.
+- **Prazos da Agenda** (`agendaFixa`): confira se salário, FGTS, INSS e 13º estão como o escritório orienta (ex.: antecipar ou prorrogar quando cai em feriado).
 
 - `config.diaLimiteRubricas` está vazio — defina o dia de corte das variáveis da folha.
 - Atestado de acompanhante: hoje o Assistente avisa e deixa o tipo de afastamento em branco. Se o escritório tiver um padrão (ex.: "Ausência justificada"), troque a regra `nenhum: true` em `tipos.afastamento.tipoAfastamentoAuto` por `valor`.

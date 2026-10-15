@@ -1717,6 +1717,7 @@ async function textoDiagnostico() {
     `Navegador: ${(navigator.userAgent.match(/Chrome\/[\d.]+/) || ['?'])[0]} · tela ${screen.width}x${screen.height} · texto ${S.prefs.tamanhoTexto}`,
     `Página: ${S.ctx.route?.mode || '?'} · ${S.ctx.route?.slug || '-'} · solicitação ${tipo || '-'}`,
     `Leitura de arquivos: ${await libsPresentes() ? 'bibliotecas ok' : 'pasta lib faltando'}`,
+    `Tela: ${S.modo || '?'}${S.plat?.sol ? ` · solicitações lidas: ${S.plat.sol.itens.length}${S.plat.sol.erros.length ? ` (falharam: ${S.plat.sol.erros.join(',')})` : ''} · situações: ${[...new Set(S.plat.sol.itens.map(i => i.estado))].join(',') || '-'} · campos dos itens: ${S.plat.sol.chaves.join(',') || '-'}` : ''}${S.plat?.emp ? ` · funcionários: ${S.plat.emp.lista.length}` : ''}`,
     tipo ? `Campos do portal (S=existe, B=bloqueado, P=preenchido): ${Object.entries(f).map(([k, v]) => `${k}:${v.existe ? 'S' : 'N'}${v.disabled ? 'B' : ''}${v.valor ? 'P' : ''}`).join(' ')}` : '',
     tipo ? `Listas carregadas: ${Object.entries(W.opcoes).map(([k, o]) => `${k}=${o.length}`).join(' ') || 'nenhuma'} · empregados=${W.empregados.length} · tela diferente: ${telaDiferente(tipo) ? 'sim' : 'não'}` : '',
     tipo && W.resultados?.resultados ? `Último preenchimento: ${W.resultados.resultados.filter(x => x.ok).length} ok; falhas: ${W.resultados.resultados.filter(x => !x.ok).map(x => `${x.campo} (${semValores(x.motivo)})`).join('; ') || 'nenhuma'}` : '',
