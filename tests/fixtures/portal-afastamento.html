@@ -66,5 +66,7 @@ function onChange(cb, v) {
 const fi = document.querySelector('input[type=file]');
 fi.addEventListener('change', () => { [...fi.files].forEach(f => { const c=document.createElement('span'); c.className='chip'; c.textContent = f.name + ' (' + f.size + 'B)'; document.querySelector('.chips').appendChild(c); }); log('files:' + [...fi.files].map(f=>f.name).join(',')); });
 document.getElementById('add').addEventListener('click', () => { log('SUBMITTED ' + JSON.stringify([...document.querySelectorAll('[formcontrolname]')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX'? e.querySelector('input').value : e.value]))); });
+// como o portal real (Angular): as chamadas da API levam um cabeçalho de acesso; só o cookie recebe 401
+if (!location.search.includes('semacesso')) setTimeout(() => { const x = new XMLHttpRequest(); x.open('GET', '/api/br-payroll-sr/v1/clients/teste-1/employees?expand=clientEmployeeRelationshipExpanded'); x.setRequestHeader('Authorization', 'Bearer teste-123'); x.send(); }, 200);
 </script>
 </body></html>
