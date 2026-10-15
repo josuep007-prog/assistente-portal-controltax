@@ -1,6 +1,7 @@
 import * as E from './engine.js';
 import { readFile, aiExtract, aiAvailable, libsPresentes } from './extract.js';
 import { montarPlataforma } from './plataforma.js';
+import { renderSimulacao } from './calcular.js';
 
 /* =================== Estado =================== */
 const params = new URLSearchParams(location.search);
@@ -14,7 +15,7 @@ const S = {
   sugestao: null,        // documento lido fora de formulário
   pend: null, pendLoading: false,
   ultimoEnvio: null,
-  ferramenta: 'ferias',
+  ferramenta: 'simRescisao',
   rulesBase: null,       // regras sem os ajustes da empresa
   historico: [],         // cópia em memória do histórico (para recentes e pedidos repetidos)
   equipe: new Map()      // empresa → [{ nome, admissao, ativo }] (datas de admissão para os alertas de experiência)
@@ -1859,7 +1860,7 @@ async function renderPendencias(force = false) {
 }
 
 /* =================== Calculadoras =================== */
-const TOOLS = { ferias: 'Férias', aviso: 'Aviso prévio', rescisao: 'Rescisão', afast: 'Afastamento', exp: 'Experiência', uteis: 'Dias úteis', admissao: 'Docs. admissão' };
+const TOOLS = { simRescisao: 'Simular rescisão', simFerias: 'Simular férias', ferias: 'Prazos das férias', aviso: 'Aviso prévio', rescisao: 'Prazo da rescisão', afast: 'Afastamento', exp: 'Experiência', uteis: 'Dias úteis', admissao: 'Docs. admissão' };
 /** Mensagem pronta (WhatsApp/e-mail) com os documentos que o novo funcionário precisa mandar. */
 function mensagemAdmissao() {
   const M = S.rules.mensagens || {};
@@ -1872,6 +1873,16 @@ function renderFerramentas() {
     <p class="muted" style="font-size:11.5px">Cálculos de apoio com base na CLT e nos feriados nacionais cadastrados nas regras. O cálculo oficial é feito pelo escritório.</p>`;
   viewEl.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => { S.ferramenta = b.dataset.t; renderFerramentas(); }));
   const tool = $('#tool');
+  // simulações de férias e rescisão (2.3): a função principal do Calcular
+  if (S.ferramenta === 'simRescisao' || S.ferramenta === 'simFerias') {
+    viewEl.querySelector('.muted:last-child')?.remove();
+    renderSimulacao(tool, S.ferramenta === 'simRescisao' ? 'rescisao' : 'ferias', {
+      S, esc, icon, toast, maskInput,
+      empregados: () => (S.plat?.emp?.lista?.length ? S.plat.emp.lista : (S.equipe.get(S.ctx.empresa) || [])).filter(e => e.ativo !== false),
+      pedir: (tipo, o) => P.novoPedido(tipo, o)
+    });
+    return;
+  }
   const cal = E.makeCalendar(S.rules.feriados);
   const F = (id, label, ph = 'DD/MM/AAAA', t = 'data') => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" data-t="${t}" placeholder="${ph}" inputmode="numeric"></div>`;
   const out = '<div class="calc" id="out" style="margin-top:12px"><span class="muted">Preencha os campos acima.</span></div>';
