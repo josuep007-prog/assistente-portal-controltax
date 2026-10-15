@@ -9,7 +9,7 @@ Navegar sem recarregar: `history.pushState({}, '', path)` + `dispatchEvent(new P
 
 | Solicitação | slug | API da lista (GET, cookie de sessão) |
 |---|---|---|
-| Solicitação Geral | general-requests | (não identificada) |
+| Solicitação Geral | general-requests | /api/service-requesting/v1/tickets/generic |
 | Cadastro de Empregado | employee-registration | /api/br-payroll-sr/v1/employees-registrations |
 | Cadastro de Contribuinte | partner-registration | /api/br-payroll-sr/v1/taxpayers-registrations |
 | Cadastro de Estagiário | intern-registration | /api/br-payroll-sr/v1/interns-registrations |
@@ -48,6 +48,17 @@ Parâmetros das listas: `?pageIndex=0&itemsPerPage=30&filter=…&expand=…&assi
 - Lançamento de Rubricas: tipo (ADIANTAMENTO/MENSAL/PLR = `#radioBasic-0..2`), competência `basisDate` (MM/AAAA), grade "Rubricas" com "Adicionar todos os funcionários" — empresa de teste sem eventos ("Este cliente não possui nenhum evento cadastrado"), **grade não mapeada**.
 - Rótulos de i18n de todas as telas: `/clientcenter/pt/assets/service-request/i18n/pt-BR.json` (só acessível pelo navegador logado).
 
+## API das listas e dos trâmites (Onvio real, 15/10/2026)
+
+Mapeado pelo **Control Onvio** (extensão da visão do escritório, `josuep007-prog/Assistente-interno-portal-do-cliente-`, `mapeamento/onvio-2026-10-15.md`). As rotas são as mesmas na visão do cliente; o que muda é o que o login enxerga.
+
+- **Lista:** `GET /api/<lista>?itemsPerPage=200&pageIndex=1&startIndex=0&orderBy=lastUpdated%20desc&expand=<…>&assignedtome=false` (em Rubricas o portal omite `assignedtome` quando é falso). `pageIndex` começa em **1**. Resposta `{items, totalItems, totalPages}`. Os caminhos e o `expand` de cada tipo estão nas regras (`tipos.*.apiLista`, `apiExpand`).
+- **Campos do item:** `id` (GUID), `identifier` (o nº que o cliente vê), `genericStatus` (número; em Cadastro também `clientStatus`), `lastUpdated` (Rubricas: `genericLastUpdated`), `created`, `dueDate` (expectativa de conclusão), `subject`, `clientEmployeeExpanded.name` (Cadastro: `name`), `staffResponsibleExpanded.name` (responsável no escritório), `effectiveDate` (competência).
+- **Situações por família** (`config.statusSolicitacao.familias`, `[rótulo, vez]`): padrão — 4 Respondido pelo escritório = **vez do cliente**, 3 Aguardando resposta do escritório = vez do escritório, 5 Concluído, 6 Prescrita; cadastro — 3 Aguardando você e 5 Cadastro efetuado = vez do cliente, 6 Concluído; rubricas — 3, 4 e 6 = vez do cliente, 8 Concluído, 10 Prescrita. Código desconhecido aparece como "Situação desconhecida (código N)".
+- **Prescrição:** na família padrão e em rubricas, 30 dias na vez do cliente sem resposta (`config.prescricaoDias`); o Hoje avisa a partir de `config.prescricaoAvisoDias` dias do fim.
+- **Trâmites:** `GET /api/<base>/<id GUID>/topics?expand=all&itemsPerPage=1000&orderBy=created%20asc&pageIndex=0`. Bases (`tipos.*.apiTramites`): Geral `service-requesting/v1/tickets`; Cadastros `br-payroll-sr/v1/employees-registrations`; Férias, Rescisão e Afastamento `br-payroll-sr/v1/tickets`; Rubricas `br-payroll-sr/v1/payroll-entries`. Cada trâmite: `created`, `status` (código da família), `description` (HTML), `createdByContactExpanded.name`/`createdByExpanded.name`, `attachmentsExpanded[].name`.
+- **Abrir uma solicitação:** não há rota de detalhe conhecida; o Control Onvio abre a lista do tipo e procura o nº na tela.
+
 ## A calibrar para a plataforma (2.0)
 
 O que a plataforma usa e ainda não foi visto no Onvio real. No simulador tudo isso existe (`simulador/portal.js`, `window.__ctPlatform`).
@@ -55,9 +66,9 @@ O que a plataforma usa e ainda não foi visto no Onvio real. No simulador tudo i
 | O quê | Como a 2.0 faz hoje | Conferir |
 |---|---|---|
 | Acesso à API | Só o cookie recebe **401** no Onvio real (visto na 2.0, em 15/10/2026). O portal manda um cabeçalho de acesso em cada chamada; o ajudante `content/pagina.js` reaproveita esse acesso. | Nome real do cabeçalho (o diagnóstico mostra), se expira e é renovado pelo portal. |
-| Itens das listas (`/api/br-payroll-sr/v1/<api>?pageIndex=N&itemsPerPage=50`) | Lê todas as páginas (até `config.solicitacoesMaxPaginas`), procura situação/empregado/assunto/datas em vários nomes de campo (`normalizarSolicitacao`). O diagnóstico mostra só os nomes dos campos. | Nomes reais dos campos, valores de situação ("Aguardando o cliente"?), `totalItems`. Ajustar `config.statusSolicitacao`. |
-| Detalhe de uma solicitação | "Ver no portal" abre a lista do tipo (ou `/<slug>/<id>` se `config.rotaDetalheSolicitacao` estiver ligado). | Rota do detalhe e dos trâmites; se existe API de trâmites. |
-| Solicitação Geral | Sem API conhecida: a plataforma oferece "Abrir no portal". | Endpoint da lista. |
+| Itens das listas | Desde a 2.1, como no mapa acima (Control Onvio): até `config.solicitacoesMaxPaginas` páginas de 200, situação pelo `genericStatus` da família. | Se o login de cliente vê os mesmos códigos e campos que o do escritório (o diagnóstico mostra só os nomes dos campos). |
+| Detalhe de uma solicitação | Trâmites lidos pela API (2.1). "Ver no portal" abre a lista do tipo (ou `/<slug>/<nº>` se `config.rotaDetalheSolicitacao` estiver ligado). | Se o cliente lê `/topics` com o próprio acesso; procurar o nº na lista ao abrir, como o Control Onvio. |
+| Solicitação Geral | Lida em `service-requesting/v1/tickets/generic` (2.1). | Se o login de cliente recebe a lista. |
 | Empresa (`clientId`) | Tirado de uma chamada `/api/br-payroll-sr/v1/clients/<id>/...` que o portal fez depois da troca de empresa. | Se o id aparece em outras chamadas; como trocar de empresa. |
 | Lista de empregados | Sem chamada registrada, abre por baixo `employee-leave/add`, espera o portal pedir `/clients/<id>/employees` e volta (só sem formulário aberto). | Se a navegação por baixo é aceita; formato de `hireDate` e `status`. |
 | Documentos do escritório | "Abrir Documentos no portal" clica no link/botão "DOCUMENTOS" do topo. | Rota e API da área de documentos; download. |

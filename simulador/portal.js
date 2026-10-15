@@ -99,11 +99,11 @@
   TYPES['partner-registration'] = cadastro('Cadastro de Contribuinte', 'briefcase', 'contrib');
   TYPES['intern-registration'] = cadastro('Cadastro de Estagiário', 'grad', 'estag');
   var ORDER = ['general-requests', 'employee-registration', 'partner-registration', 'intern-registration', 'vacation-notice', 'vacation-calculation', 'termination-notice', 'termination-calculation', 'employee-leave', 'payroll-entries'];
-  var API = { 'employee-leave': 'employee-leave', 'employees-registrations': 'employee-registration', 'taxpayers-registrations': 'partner-registration', 'interns-registrations': 'intern-registration', 'prior-notice-vacations': 'vacation-notice', 'vacation-calculations': 'vacation-calculation', 'prior-notice-terminations': 'termination-notice', 'termination-calculations': 'termination-calculation', 'payroll-entries': 'payroll-entries' };
+  var API = { 'tickets/generic': 'general-requests', 'employee-leave': 'employee-leave', 'employees-registrations': 'employee-registration', 'taxpayers-registrations': 'partner-registration', 'interns-registrations': 'intern-registration', 'prior-notice-vacations': 'vacation-notice', 'vacation-calculations': 'vacation-calculation', 'prior-notice-terminations': 'termination-notice', 'termination-calculations': 'termination-calculation', 'payroll-entries': 'payroll-entries' };
 
   /* ---------- Dados (só neste navegador) ---------- */
   var SKEY = 'ct-sim-portal';
-  var SEED_V = 2;
+  var SEED_V = 3;
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
     var items = {
@@ -112,13 +112,13 @@
       'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) }]
     };
     // histórico maior (inventado): o afastamento passa de 50 itens para testar a paginação
-    var ST = ['Concluída', 'Concluída', 'Concluída', 'Em andamento', 'Aberta', 'Cancelada'];
+    var ST = ['Concluída', 'Concluída', 'Concluída', 'Concluída', 'Concluída', 'Cancelada'];   // só as duas mais novas ficam em aberto
     var seq = 900;
     for (var i = 0; i < 54; i++) {
       var nome = EMP5[(i * 7) % EMP5.length];
-      items['employee-leave'].push({ id: seq++, status: ST[i % ST.length], empregado: nome, assunto: 'Atestado médico – ' + nome + ' – ' + d(12 + i * 5) + ' (' + (1 + i % 5) + ' dias)', tramite: 'Escritório: lançado na folha.', data: d(12 + i * 5) });
+      items['employee-leave'].push({ id: seq++, status: i < 2 ? ['Em andamento', 'Aberta'][i] : ST[i % ST.length], empregado: nome, assunto: 'Atestado médico – ' + nome + ' – ' + d(12 + i * 5) + ' (' + (1 + i % 5) + ' dias)', tramite: 'Escritório: lançado na folha.', data: d(12 + i * 5) });
     }
-    items['vacation-calculation'] = [{ id: seq++, status: 'Aguardando o cliente', empregado: 'CAMILA ROCHA', assunto: 'Cálculo de férias – CAMILA ROCHA', tramite: 'Escritório: confirme se haverá abono pecuniário.', data: d(1) },
+    items['vacation-calculation'] = [{ id: seq++, status: 'Aguardando o cliente', empregado: 'CAMILA ROCHA', assunto: 'Cálculo de férias – CAMILA ROCHA', tramite: 'Escritório: confirme se haverá abono pecuniário.', data: d(23) },
       { id: seq++, status: 'Concluída', empregado: 'BRUNO TEIXEIRA', assunto: 'Cálculo de férias – BRUNO TEIXEIRA', tramite: 'Escritório: recibo disponível.', data: d(40) }];
     items['termination-notice'] = [{ id: seq++, status: 'Em andamento', empregado: 'MARCOS VIEIRA', assunto: 'Pedido de demissão – MARCOS VIEIRA', tramite: 'Escritório: aviso emitido, aguardando assinatura.', data: d(4) }];
     items['employee-registration'] = [{ id: seq++, status: 'Concluída', empregado: 'VANESSA PRADO', assunto: 'Admissão – VANESSA PRADO', tramite: 'Escritório: registro concluído.', data: d(41) },
@@ -137,10 +137,12 @@
   window.__ctPlatform = {
     path: function () { return path; },
     navigate: function (p) { go(p); },
+    // mesmo formato da API real (mapa do Onvio de 15/10/2026): genericStatus numérico por família, identifier,
+    // id GUID, funcionário e responsável em *Expanded; pageIndex começa em 1
     fetchList: function (api, opts) {
-      var slug = API[api]; var all = (db.items[slug] || []).map(function (r) { return { id: r.id, status: { description: r.status }, employee: { name: r.empregado }, subject: r.assunto, lastUpdate: r.data, lastProceeding: { description: r.tramite } }; });
-      var per = (opts && opts.itemsPerPage) || 50, pg = (opts && opts.pageIndex) || 0;
-      var list = all.slice(pg * per, pg * per + per);
+      var slug = API[api]; var all = (db.items[slug] || []).map(function (r) { return itemApi(slug, r); });
+      var per = (opts && opts.itemsPerPage) || 50, pg = Math.max(1, (opts && opts.pageIndex) || 1);
+      var list = all.slice((pg - 1) * per, pg * per);
       return Promise.resolve({ ok: !!slug, status: slug ? 200 : 404, json: function () { return Promise.resolve({ items: list, totalItems: all.length }); } });
     },
     // mesma forma da API do portal (/api/br-payroll-sr/v1/clients/<id>/employees): nome, situação e admissão
@@ -149,6 +151,17 @@
         .concat(DESLIGADOS.map(function (n) { return { name: n, status: 'Demitido', hireDate: '2021-03-01' }; })));
     },
     clientId: function () { return 'sim-0001'; },
+    // trâmites: {base}/{id}/topics (o id é o GUID do item)
+    tramites: function (base, guid) {
+      var r = null, slug = null;
+      Object.keys(db.items).forEach(function (k) { (db.items[k] || []).forEach(function (x) { if (guidDe(x.id) === guid) { r = x; slug = k; } }); });
+      if (!r) return Promise.resolve([]);
+      var cod = codigoDe(slug, r.status);
+      return Promise.resolve([
+        { created: isoDe(r.data, 2), status: 1, description: '<p>Solicitação incluída pelo cliente.</p>', createdByContactExpanded: { name: 'Usuário de teste' }, attachmentsExpanded: [] },
+        { created: isoDe(r.data, 0), status: cod, description: '<p>' + esc(String(r.tramite || '').replace(/^(Escritório|Cliente):\s*/, '')) + '</p>', createdByContactExpanded: { name: /^Cliente/.test(r.tramite || '') ? 'Usuário de teste' : 'ANA ANALISTA (escritório)' }, attachmentsExpanded: [] }
+      ]);
+    },
     detalhe: true,
     rotaDocumentos: '/clientcenter/pt/documents',
     // documentos que o escritório publica (inventados): guias e holerites
@@ -169,6 +182,25 @@
       var ok = h('button', { type: 'button', class: 'p-btn-dark' }, 'CONTINUAR'); ok.addEventListener('click', function () { d.remove(); }); d.appendChild(ok); document.body.appendChild(d);
     } };
   var DESLIGADOS = ['OTAVIO RANGEL', 'NATALIA BRITO'];
+  var FAMILIA = { 'employee-registration': 'cadastro', 'partner-registration': 'cadastro', 'intern-registration': 'cadastro', 'payroll-entries': 'rubricas' };
+  var CODIGOS = {
+    padrao: { 'Aberta': 1, 'Em andamento': 2, 'Aguardando o cliente': 4, 'Concluída': 5, 'Cancelada': 6 },
+    cadastro: { 'Aberta': 1, 'Em andamento': 2, 'Aguardando o cliente': 3, 'Concluída': 6, 'Cancelada': 6 },
+    rubricas: { 'Aberta': 1, 'Em andamento': 2, 'Aguardando o cliente': 4, 'Concluída': 8, 'Cancelada': 10 }
+  };
+  function codigoDe(slug, status) { return (CODIGOS[FAMILIA[slug] || 'padrao'] || {})[status] || 2; }
+  function guidDe(id) { var h = ''; var n = Number(id) || 0; for (var i = 0; i < 32; i++) h += ((n * 2654435761 + i * 40503) >>> (i % 24) & 15).toString(16); return h; }
+  function isoDe(br, menosDias) { var m = String(br || '').match(/(\d{2})\/(\d{2})\/(\d{4})/); var d = m ? new Date(+m[3], +m[2] - 1, +m[1], 10, 0) : new Date(); d.setDate(d.getDate() - (menosDias || 0)); return d.toISOString().slice(0, 19); }
+  function itemApi(slug, r) {
+    var cod = codigoDe(slug, r.status), quando = isoDe(r.data, 0);
+    var it = { id: guidDe(r.id), identifier: r.id, genericStatus: cod, created: isoDe(r.data, 2), subject: r.assunto, clientExpanded: { code: 1, name: EMPRESA, nickname: 'EXEMPLO' } };
+    if (FAMILIA[slug] === 'rubricas') it.genericLastUpdated = quando; else it.lastUpdated = quando;
+    if (FAMILIA[slug] === 'cadastro') { it.name = r.empregado; it.clientStatus = cod; }
+    else if (r.empregado) it.clientEmployeeExpanded = { name: r.empregado };
+    if (cod !== 1 && cod !== 5 && cod !== 6 && cod !== 8) it.staffResponsibleExpanded = { name: 'ANA ANALISTA' };
+    if (/calculation|leave|general/.test(slug)) { var due = new Date(quando); due.setDate(due.getDate() + 5); it.dueDate = due.toISOString().slice(0, 19); }
+    return it;
+  }
   function admissao(n) {
     var dd = function (k) { var x = new Date(); x.setDate(x.getDate() - k); return x.toISOString().slice(0, 10); };
     if (n === 'VANESSA PRADO') return dd(40);

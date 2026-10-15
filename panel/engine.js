@@ -927,23 +927,106 @@ export function classificarEstado(status, bruto, regras) {
   return 'andamento';
 }
 const texto1 = (...vs) => { for (const v of vs) { if (v == null || v === '') continue; if (typeof v === 'string' || typeof v === 'number') return String(v); if (typeof v === 'object') { const d = v.description || v.name || v.label || v.value; if (d) return String(d); } } return ''; };
-/** Item cru da lista → { tipo, id, status, estado, aguardando, empregado, assunto, atualizado (Date|null) } */
-export function normalizarSolicitacao(it, tipo, regras) {
-  const status = texto1(it?.status, it?.situation, it?.statusDescription, it?.state);
-  const estado = classificarEstado(status, it, regras);
-  const quando = texto1(it?.lastUpdate, it?.updatedAt, it?.lastProceedingDate, it?.modifiedDate, it?.createdAt, it?.creationDate, it?.date);
+/** Item cru da lista → { tipo, id, numero, status, estado, lado, aguardando, empregado, responsavel, assunto,
+ *  atualizado, criado, expectativa, parado (dias), prescreveEm }.
+ *  No Onvio o item traz genericStatus (número) com sentido por família (regras.config.statusSolicitacao.familias,
+ *  mapeado no Onvio real); situação em texto continua valendo pelas expressões. */
+export function normalizarSolicitacao(it, tipo, regras, hoje = today()) {
+  const cfg = regras?.config?.statusSolicitacao || {};
+  const fam = regras?.tipos?.[tipo]?.familiaStatus;
+  const codigo = [it?.genericStatus, it?.clientStatus, typeof it?.status === 'number' ? it.status : null].find(v => v != null && v !== '' && !isNaN(+v));
+  let status = texto1(it?.status, it?.situation, it?.statusDescription, it?.state);
+  let estado, lado;
+  const ent = codigo != null ? cfg.familias?.[fam]?.[String(+codigo)] : null;
+  if (ent) {
+    status = ent[0]; lado = ent[1];
+    estado = { cli: 'aguardando', esc: 'andamento', fim: 'concluida', prescrita: 'prescrita' }[lado] || 'andamento';
+  } else if (codigo != null && !status) {
+    status = `Situação desconhecida (código ${codigo})`; estado = 'andamento'; lado = 'esc';
+  } else {
+    estado = classificarEstado(status, it, regras);
+    lado = estado === 'aguardando' ? 'cli' : estado === 'andamento' ? 'esc' : 'fim';
+  }
+  const atualizado = parseDate(texto1(it?.lastUpdated, it?.genericLastUpdated, it?.lastUpdate, it?.updatedAt, it?.lastProceedingDate, it?.modifiedDate, it?.created, it?.createdAt, it?.creationDate, it?.date));
+  const parado = atualizado ? Math.max(0, diffDays(atualizado, hoje)) : null;
+  const prescreve = (cfg.prescreve || ['padrao', 'rubricas']).includes(fam);
+  const dias = +regras?.config?.prescricaoDias || 30;
   return {
     tipo,
     id: texto1(it?.id, it?.requestNumber, it?.number, it?.protocol),
-    numero: texto1(it?.requestNumber, it?.number, it?.protocol, it?.id),
-    status: status || (regras?.config?.statusSolicitacao?.rotulos || {})[estado] || '',
-    estado,
+    numero: texto1(it?.identifier, it?.requestNumber, it?.number, it?.protocol, it?.id),
+    status: status || (cfg.rotulos || {})[estado] || '',
+    estado, lado,
     aguardando: estado === 'aguardando',
-    empregado: texto1(it?.employee?.name, it?.employeeName, it?.selectedEmployee?.name, it?.employee),
-    assunto: texto1(it?.subject, it?.title, it?.description),
-    atualizado: parseDate(quando),
+    empregado: texto1(it?.clientEmployeeExpanded?.name, it?.employee?.name, it?.employeeName, it?.selectedEmployee?.name, it?.payrollEntryClientEmployeeExpanded?.name, typeof it?.employee === 'string' ? it.employee : null, it?.name),
+    responsavel: texto1(it?.staffResponsibleExpanded?.name),
+    assunto: texto1(it?.subject, it?.title, typeof it?.description === 'string' && it.description.length < 140 ? it.description : null),
+    atualizado, parado,
+    criado: parseDate(texto1(it?.created, it?.createdAt)),
+    expectativa: parseDate(texto1(it?.dueDate)),
+    competencia: texto1(it?.effectiveDate) ? fmtDate(parseDate(it.effectiveDate))?.slice(3) : '',
+    prescreveEm: estado === 'aguardando' && prescreve && parado != null ? Math.max(0, dias - parado) : null,
     tramite: texto1(it?.lastProceeding?.description, it?.lastProceeding, it?.lastComment)
   };
+}
+
+/** Trâmites crus ({base}/{id}/topics) → [{ n, em, situacao, autor, texto (HTML do portal), anexos }], do mais antigo ao mais novo.
+ *  A situação de cada trâmite usa os códigos da família do tipo (como no Control Onvio). */
+export function tramitesDe(lista, tipo, regras) {
+  const fam = regras?.tipos?.[tipo]?.familiaStatus;
+  const mapa = regras?.config?.statusSolicitacao?.familias?.[fam] || {};
+  const arr = Array.isArray(lista) ? lista : (lista?.items || []);
+  return arr.filter(x => x && x.created).sort((a, b) => String(a.created).localeCompare(String(b.created))).map((x, i) => ({
+    n: i + 1,
+    em: x.created,
+    situacao: x.status != null && mapa[String(+x.status)] ? mapa[String(+x.status)][0] : (typeof x.status === 'string' ? x.status : ''),
+    autor: texto1(x.createdByContactExpanded?.name, x.createdByExpanded?.name),
+    texto: typeof x.description === 'string' ? x.description : '',
+    anexos: (x.attachmentsExpanded || []).map(a => a && (a.name || a.fileName)).filter(Boolean).slice(0, 30)
+  }));
+}
+
+/* "Hoje" do cliente (no formato da tela Hoje do Control Onvio): cada solicitação tem um motivo só,
+   para a rosca, as situações e os cartões baterem. */
+export const MOTIVOS_CLIENTE = [
+  { k: 'prescreve', rot: 'Responda antes de prescrever', cor: 'crit' },
+  { k: 'responder', rot: 'Esperando sua resposta', cor: 'serious' },
+  { k: 'atrasada', rot: 'Passou da expectativa', cor: 'warn' },
+  { k: 'escritorio', rot: 'Com o escritório', cor: 's1' },
+  { k: 'concluida', rot: 'Concluídas (30 dias)', cor: 'ok' }
+];
+export function motivoCliente(i, hoje = today(), regras = {}) {
+  const aviso = +regras?.config?.prescricaoAvisoDias || 10;
+  if (i.estado === 'aguardando') return i.prescreveEm != null && i.prescreveEm <= aviso ? 'prescreve' : 'responder';
+  if (i.estado === 'andamento') return i.expectativa && i.expectativa < hoje ? 'atrasada' : 'escritorio';
+  if (i.estado === 'concluida' && i.atualizado && diffDays(i.atualizado, hoje) <= 30) return 'concluida';
+  return null;   // encerradas há mais tempo e prescritas não entram no Hoje
+}
+const ORDEM_MOTIVO = { prescreve: 0, responder: 1, atrasada: 2, escritorio: 3, concluida: 4 };
+/** O que pede atenção primeiro: prescrição mais perto, depois o que espera você há mais tempo. */
+export function prioridadesCliente(itens, hoje = today(), regras = {}) {
+  return (itens || []).map(item => ({ item, motivo: motivoCliente(item, hoje, regras) })).filter(p => p.motivo)
+    .sort((a, b) => ORDEM_MOTIVO[a.motivo] - ORDEM_MOTIVO[b.motivo]
+      || (a.item.prescreveEm ?? 99) - (b.item.prescreveEm ?? 99)
+      || (b.item.parado || 0) - (a.item.parado || 0));
+}
+export function acaoCliente(i, motivo) {
+  const dias = (n) => `${n} ${n === 1 ? 'dia' : 'dias'}`;
+  switch (motivo) {
+    case 'prescreve': return i.prescreveEm != null ? `Responder no portal · prescreve em ${dias(i.prescreveEm)}` : 'Responder antes de prescrever';
+    case 'responder': return 'Responder no portal · o escritório espera você';
+    case 'atrasada': return 'Passou da expectativa de conclusão · acompanhar';
+    case 'escritorio': return `Com o escritório${i.parado != null ? ` · última movimentação há ${dias(i.parado)}` : ''}`;
+    case 'concluida': return 'Concluída · ver os trâmites';
+    default: return '';
+  }
+}
+/** Anel do cartão: na sua vez, quanto da prescrição já passou; com o escritório, os dias parada contra o prazo interno. */
+export function progressoCliente(i, regras = {}) {
+  const d = Math.max(0, i.parado || 0);
+  const calc = regras?.tipos?.[i.tipo]?.complexidade === 'calculo';
+  const limite = i.estado === 'aguardando' ? (+regras?.config?.prescricaoDias || 30) : (regras?.config?.prazoInternoDiasUteis?.[calc ? 'calculo' : 'simples'] || (calc ? 5 : 3));
+  return { pct: Math.min(100, Math.round(d / Math.max(1, limite) * 100)), dias: d, limite };
 }
 
 /* Lembretes do cliente (guardados só no computador) com repetição.

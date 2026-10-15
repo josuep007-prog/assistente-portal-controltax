@@ -3,6 +3,7 @@
  * preenchido por trás; os dados vêm dele, com a sessão do próprio cliente. Nada sai do computador.
  * O painel (panel.js) continua o orquestrador e passa aqui as funções que já existem (A). */
 import * as E from './engine.js';
+import { anel, anelProgresso, animarNumeros, ligarDicas, cor } from './graficos.js';
 
 export function montarPlataforma(A) {
   const { S, $, esc, icon, request, send, toast, viewEl } = A;
@@ -16,7 +17,7 @@ export function montarPlataforma(A) {
   chrome.storage.local.get('lembretes').then(({ lembretes }) => { S.plat.lembretes = Array.isArray(lembretes) ? lembretes : []; }).catch(() => {});
 
   const MODULOS = [
-    ['inicio', 'Painel', 'home'], ['pendencias', 'Solicitações', 'list'], ['preencher', 'Novo pedido', 'fill'],
+    ['inicio', 'Hoje', 'home'], ['pendencias', 'Solicitações', 'list'], ['preencher', 'Novo pedido', 'fill'],
     ['funcionarios', 'Funcionários', 'users'], ['historico', 'Agenda', 'calendar'], ['documentos', 'Documentos', 'folder'], ['ferramentas', 'Calcular', 'calc']
   ];
   const TITULOS = { ...Object.fromEntries(MODULOS.map(m => [m[0], m[1]])), config: 'Configurações' };
@@ -63,7 +64,7 @@ export function montarPlataforma(A) {
   }
   function marcarModulo(v) {
     document.querySelectorAll('#rail [data-mod]').forEach(b => b.classList.toggle('on', b.dataset.mod === v));
-    $('#plat-titulo').textContent = TITULOS[v] || 'Painel';
+    $('#plat-titulo').textContent = TITULOS[v] || 'Hoje';
   }
   function badge(v, n) { const b = document.querySelector(`[data-badge="${v}"]`); if (!b) return; b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n || ''); }
   function atualizarSync(txt) {
@@ -81,8 +82,8 @@ export function montarPlataforma(A) {
     if (S.plat.sol && !force) return Promise.resolve(S.plat.sol);
     S.plat.carregandoSol = (async () => {
       atualizarSync('Lendo o portal…');
-      const tipos = Object.entries(S.rules.tipos).map(([key, t]) => ({ key, api: t.api || null }));
-      const r = await request({ type: 'solicitacoes', tipos, maxPaginas: S.rules.config?.solicitacoesMaxPaginas || 4 }, 90000);
+      const tipos = Object.entries(S.rules.tipos).map(([key, t]) => ({ key, api: t.api || null, lista: t.apiLista || null, expand: t.apiExpand || '' }));
+      const r = await request({ type: 'solicitacoes', tipos, maxPaginas: S.rules.config?.solicitacoesMaxPaginas || 2 }, 90000);
       const itens = [], erros = [], calibrar = [], chaves = new Set(), codigos = {}; let truncado = false;
       for (const g of r?.data || []) {
         if (g.calibrar) { calibrar.push(g.tipo); continue; }
@@ -183,14 +184,65 @@ export function montarPlataforma(A) {
   const ROT_EV = { legal: 'Prazo legal', pedido: 'Da solicitação', exp: 'Experiência', lembrete: 'Lembrete', feriado: 'Feriado' };
   const linhaEvento = (e) => { const [c, t] = quando(e.d); return `<div class="pn-li" data-ev-iso="${E.iso(e.d)}"><div class="ag-d"><b>${String(e.d.getDate()).padStart(2, '0')}</b><small>${e.d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</small></div><div class="main"><b>${esc(e.titulo)}</b><small>${esc(e.detalhe || ROT_EV[e.tipo])}</small></div><span class="pill pill-${c}">${t}</span></div>`; };
 
-  /* =================== PAINEL =================== */
+  /* =================== HOJE (2.1) =================== */
+  /* No formato da tela Hoje do Control Onvio (repositório do escritório), na visão do cliente: rosca "% em dia",
+     quantas esperam sua resposta, carrossel (um aviso por vez, com a bolinha da leitura do portal) e "Próximos passos".
+     Embaixo: situações (filtros) e cartões agrupados por motivo. A classificação é uma só (E.motivoCliente /
+     E.prioridadesCliente), para a rosca, as situações e os cartões baterem. */
+  const POR_GRUPO = 6;
+  const MOT = Object.fromEntries(E.MOTIVOS_CLIENTE.map(m => [m.k, m]));
+  const ICONE_MOT = { prescreve: 'clock', responder: 'chat', atrasada: 'alert', escritorio: 'briefcase', concluida: 'check' };
+  const TAG_MOT = { prescreve: 'Prescreve', responder: 'Sua vez', atrasada: 'Passou da expectativa', escritorio: 'Com o escritório', concluida: 'Concluída' };
+  const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+  const lerPref = (k, p) => { try { return localStorage.getItem(`ct.${k}`) || p; } catch { return p; } };
+  const gravarPref = (k, v) => { try { localStorage.setItem(`ct.${k}`, v); } catch { /* sem armazenamento: vale só nesta visita */ } };
+  S.plat.hoje = { filtro: null, q: '', vis: lerPref('hojeVis', 'cartoes') };
+  const empDe = (i) => (i.empregado && !E.norm(i.assunto).includes(E.norm(i.empregado)) ? i.empregado : '');   // sem repetir o nome que já está no assunto
+  const saudacao = () => { const h = new Date().getHours(); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
+  const lembretesDeHoje = () => { const h = E.today(); const cal = E.makeCalendar(S.rules.feriados); return S.plat.lembretes.filter(l => E.ocorrencias(l, h, h, cal).length); };
+
   function renderPainel() {
-    const R = S.rules;
+    const R = S.rules, H = S.plat.hoje, sol = S.plat.sol, hoje = E.today();
+    const lido = !!sol && !sol.semAcesso;
+    const animar = lido && !viewEl.querySelector('.hj-hero[data-pronto]');
+    const base = lido ? sol.itens : [];
+    const prio = E.prioridadesCliente(base, hoje, R);
+    const motivoDe = new Map(prio.map(p => [p.item, p.motivo]));
+    const cont = Object.fromEntries(E.MOTIVOS_CLIENTE.map(m => [m.k, prio.filter(p => p.motivo === m.k).length]));
+    const total = prio.length;
+    const suaVez = cont.prescreve + cont.responder;
+    const pctDia = total ? Math.round((total - suaVez) / total * 100) : 100;
+    const fatias = E.MOTIVOS_CLIENTE.map(m => ({ k: m.k, rot: m.rot, n: cont[m.k], cor: m.cor }));
+    const lems = lembretesDeHoje();
+    const prazos = eventosEntre(hoje, E.addDays(hoje, 3)).filter(e => ['legal', 'exp', 'pedido'].includes(e.tipo));
+    const atencao = prio.filter(p => ['prescreve', 'responder', 'atrasada'].includes(p.motivo));
+    const q = () => E.norm(H.q.trim());
+    const naBusca = () => { const t = q(); return t ? prio.filter(p => E.norm(`${p.item.numero} ${p.item.empregado} ${p.item.assunto} ${nomeTipo(p.item.tipo)} ${p.item.responsavel} ${p.item.status}`).includes(t)) : prio; };
+    let mostrados = [];   // solicitações dos cartões na tela (data-card = posição)
+    const quandoLido = sol?.quando ? new Date(sol.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+    const aviso = !sol ? '' : sol.semAcesso
+      ? `<div class="aviso-linha late">${icon('alert')}<span><b>Não consegui ler suas solicitações agora.</b> ${esc(R.mensagens?.plataformaSemAcesso || '')}</span><button type="button" class="btn btn-sm" id="hj-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button></div>`
+      : sol.erros.length ? `<div class="aviso-linha late">${icon('alert')}<span>Não consegui ler: ${esc(sol.erros.map(nomeTipo).join(', '))}. Os números abaixo podem estar incompletos.</span></div>` : '';
+    const enviado = S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3
+      ? `<div class="aviso-linha ok">${icon('check')}<span><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada ao escritório.</b> Ela aparece aqui assim que o portal registrar.</span></div>` : '';
+
     viewEl.innerHTML = `
       <div id="avisos-esc"></div>
-      <div class="kpi-grid" id="kpis">${kpisHtml()}</div>
       <div id="lote"></div>
-      ${S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3 ? `<div class="note ok">${icon('check')}<div><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada ao escritório.</b> Acompanhe em Solicitações.</div></div>` : ''}
+      <div id="sugestao"></div>
+      ${enviado}${aviso}
+      <p class="hj-saud"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</p>
+      <div class="dp-toolbar hj-barra">
+        <input type="search" id="hj-busca" placeholder="Buscar por número, funcionário ou assunto…" value="${esc(H.q)}" aria-label="Buscar nas solicitações" autocomplete="off">
+        <div class="seg" role="group" aria-label="Como mostrar"><button type="button" data-vis="cartoes" aria-pressed="${H.vis === 'cartoes'}">${icon('grid', 'ic-sm')} Cartões</button><button type="button" data-vis="lista" aria-pressed="${H.vis === 'lista'}">${icon('list', 'ic-sm')} Lista</button></div>
+        <span class="dp-count">${lido ? plural(base.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length, 'em aberto', 'em aberto') : ''}</span>
+        <button type="button" class="btn btn-sm" id="hj-lembrete">${icon('plus', 'ic-sm')} Lembrete</button>
+        <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
+      </div>
+      ${heroHtml()}
+      <div class="hj-sits" role="group" aria-label="Filtrar por situação">${sitsHtml()}</div>
+      <div id="hj-cartoes">${cartoesHtml()}</div>
       <div class="pn-grid">
         <section class="pn-card pn-comece">
           <div class="pn-card-head"><h3>Comece um pedido</h3><small>Escreva com suas palavras, arraste um documento ou escolha um atalho.</small></div>
@@ -198,18 +250,128 @@ export function montarPlataforma(A) {
             <div class="free" style="padding:0"><label for="free-txt" class="free-l">${icon('chat', 'ic-sm')} Escreva com suas palavras</label>
               <textarea id="free-txt" rows="2" placeholder="Ex.: o João vai sair de férias dia 10/11 por 20 dias"></textarea>
               <div class="free-a"><small class="muted">Eu entendo o pedido e abro a solicitação certa.</small><button class="btn btn-primary btn-sm" id="free-go">Continuar ${icon('arrow', 'ic-sm')}</button></div></div>
-            <div id="sugestao"></div>
             <div class="drop" id="drop-main" role="button" tabindex="0">${icon('upload', 'ic-lg')}<b>Arraste um arquivo, clique para escolher ou cole um print (Ctrl+V)</b><small>Atestado, pedido de demissão, ficha de admissão, CAT, planilha… Eu descubro qual solicitação abrir.</small></div>
           </div>
         </section>
-        <section class="pn-card"><div class="pn-card-head"><h3>O que espera você</h3><button type="button" class="linkish" data-ir="pendencias">Ver todas</button></div><div class="pn-card-body" id="pn-espera"></div></section>
-        <section class="pn-card"><div class="pn-card-head"><h3>Próximos prazos</h3><button type="button" class="linkish" data-ir="historico">Agenda</button></div><div class="pn-card-body" id="pn-prazos"></div></section>
+        <section class="pn-card" style="grid-column:span 2"><div class="pn-card-head"><h3>Atalhos</h3><small>${esc(R.escritorio?.saudacao || '')}</small></div>
+          <div class="pn-card-body"><div class="intents plat-intents" id="intents"></div><div id="repetir"></div></div></section>
       </div>
-      <section class="pn-card"><div class="pn-card-head"><h3>Atalhos</h3><small>${esc(R.escritorio?.saudacao || '')}</small></div>
-        <div class="pn-card-body"><div class="intents plat-intents" id="intents"></div><div id="repetir"></div></div></section>
       <div id="modelos-ini"></div>
       <div class="search">${icon('search')}<input id="q" type="search" placeholder="Dúvida? Procure: férias, atestado, 13º, rescisão…" aria-label="Procurar uma dúvida"></div>
       <div id="faq"></div>`;
+
+    function heroHtml() {
+      const slides = slidesDoCarrossel();
+      const estadoLeitura = !sol ? 'parado' : sol.semAcesso || sol.erros.length ? 'erro' : '';
+      const dica = !sol ? 'Lendo o portal…' : sol.semAcesso ? 'Não consegui ler o portal agora' : `Portal lido às ${quandoLido}`;
+      const titulo = !sol ? 'Lendo suas solicitações no portal…'
+        : sol.semAcesso ? 'Não consegui ler suas solicitações agora'
+        : suaVez ? `<em data-conta="${suaVez}" data-de="0">${suaVez}</em> ${suaVez === 1 ? 'solicitação espera' : 'solicitações esperam'} sua resposta`
+        : total ? `Tudo em dia do seu lado ${icon('check')}` : 'Nenhuma solicitação em aberto';
+      const abertas = base.filter(i => ['aguardando', 'andamento'].includes(i.estado));
+      const resumo = lido ? [plural(abertas.length, 'em aberto', 'em aberto'), `${abertas.filter(i => i.lado === 'esc').length} com o escritório`, `${abertas.filter(i => i.lado === 'cli').length} com você`]
+        .concat(cont.atrasada ? [`${cont.atrasada} ${cont.atrasada === 1 ? 'passou' : 'passaram'} da expectativa`] : []).join(' · ') : 'Os números vêm do próprio portal, com o seu acesso.';
+      const passos = passosHtml();
+      return `<section class="hj-hero" style="--i:0"${lido ? ' data-pronto' : ''}>
+        <div class="hj-hero-g">
+          <div class="hj-donut">${anel(fatias, { ativo: MOT[H.filtro] ? H.filtro : null, rotulo: 'em dia', anima: animar, centro: { n: lido ? pctDia : 0, de: animar ? 0 : pctDia, suf: '%' }, titulo: 'Solicitações por situação (clique numa parte para filtrar)' })}</div>
+          <div class="hj-hero-tx">
+            <span class="hj-eyebrow">Suas solicitações no portal${quandoLido ? ` · lidas às ${quandoLido}` : ''}</span>
+            <h2 id="hj-titulo">${titulo}</h2>
+            <p>${resumo}</p>
+            <div class="hj-tick ${estadoLeitura}${slides.length < 2 ? ' uno' : ''}" id="hj-tick" role="region" aria-label="Avisos, um por vez" aria-live="off">
+              <span class="hj-bola" title="${esc(dica)}" aria-label="${esc(dica)}"></span>
+              <div class="hj-tick-palco">${slides.length ? slides.map((s, n) => `<button type="button" class="hj-tk${n === 0 ? ' on' : ''}" data-slide="${n}"${n ? ' tabindex="-1" aria-hidden="true"' : ''} style="--c:${s.c}"><span class="hj-tk-tag">${esc(s.tag)}</span><b>${esc(s.txt)}</b><small>${esc(s.sub)}</small></button>`).join('')
+                : `<span class="hj-tk on vazio"><b>${!sol ? 'Lendo o portal…' : 'Nada pedindo sua atenção agora.'}</b><small>${sol ? 'Quando o escritório responder, aparece aqui.' : ''}</small></span>`}</div>
+              <i class="hj-tick-relogio"><i></i></i>
+            </div>
+            <div class="hj-legenda">${fatias.filter(f => f.n).map(f => `<span><i style="background:${cor(f.cor)}"></i>${esc(f.rot)} <b>${f.n}</b></span>`).join('')}</div>
+          </div>
+        </div>
+        <div class="hj-passos"><h3>Próximos passos</h3>${passos.html}</div>
+      </section>`;
+    }
+    function slidesDoCarrossel() {
+      const out = [];
+      for (const p of atencao.slice(0, 12)) {
+        const i = p.item;
+        out.push({ tag: TAG_MOT[p.motivo], txt: `${i.numero ? `nº ${i.numero} · ` : ''}${i.assunto || nomeTipo(i.tipo)}: ${E.acaoCliente(i, p.motivo).toLowerCase()}`, sub: [nomeTipo(i.tipo), empDe(i), i.responsavel && `com ${i.responsavel}`].filter(Boolean).join(' · '), c: cor(MOT[p.motivo].cor), fn: () => abrirDetalhe(i) });
+      }
+      for (const l of lems) out.push({ tag: 'Lembrete de hoje', txt: l.texto, sub: [l.hora, l.obs].filter(Boolean).join(' · ') || 'Agenda', c: 'var(--blue-deep)', fn: () => editarLembrete(l, E.iso(hoje)) });
+      for (const e of prazos) { const [, t] = quando(e.d); out.push({ tag: ROT_EV[e.tipo], txt: e.titulo, sub: [cap(t), e.detalhe].filter(Boolean).join(' · '), c: 'var(--hj-today)', fn: () => abrirDia(E.iso(e.d)) }); }
+      slidesDoCarrossel.ultimo = out;
+      return out;
+    }
+    function passosHtml() {
+      const li = [], acoes = []; let n = 2;
+      const passo = (cls, c, titulo, sub, fn, fim = icon('right', 'ic-sm')) => { acoes.push(fn); li.push(`<li style="--i:${n++}"><button type="button" class="hj-step${cls}" data-passo="${acoes.length - 1}" style="--c:${c}"><i></i><span><b>${esc(titulo)}</b><small>${esc(sub)}</small></span>${fim}</button></li>`); };
+      for (const p of atencao.slice(0, 8)) { const i = p.item; passo('', cor(MOT[p.motivo].cor), E.acaoCliente(i, p.motivo), [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo), empDe(i)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
+      for (const l of lems) passo(' n-lem', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)));
+      for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, () => abrirDia(E.iso(e.d))); }
+      passosHtml.acoes = acoes;
+      return { html: li.length ? `<ol class="hj-passos-l" id="hj-passos">${li.join('')}</ol>` : `<div class="hj-zen">${icon('check')}<span>${sol ? 'Nada para fazer agora. Tudo em dia!' : 'Lendo o portal…'}</span></div>` };
+    }
+    function sitsHtml() {
+      return E.MOTIVOS_CLIENTE.map((m, n) => `<button type="button" class="hj-sit${H.filtro === m.k ? ' on' : ''}${!cont[m.k] ? ' zero' : ''}" style="--i:${n + 1};--c:${cor(m.cor)}" data-sit="${m.k}" aria-pressed="${H.filtro === m.k}"><i class="hj-sit-dot"></i><span class="hj-sit-l">${esc(m.rot)}</span><b data-conta="${cont[m.k]}" data-de="${animar ? 0 : cont[m.k]}">${cont[m.k]}</b></button>`).join('');
+    }
+    // grupos: sem filtro, tudo menos as concluídas; com filtro, só o escolhido
+    function cartoesHtml() {
+      mostrados = [];
+      if (!sol) return `<div class="hj-zen big"><div class="spin"></div><span>Consultando suas solicitações no portal…</span></div>`;
+      if (sol.semAcesso) return '';
+      const lista = naBusca();
+      const gs = E.MOTIVOS_CLIENTE.filter(m => H.filtro ? m.k === H.filtro : m.k !== 'concluida').map(m => ({ m, itens: lista.filter(p => p.motivo === m.k) })).filter(g => g.itens.length);
+      if (!gs.length) return `<div class="hj-zen big">${icon(H.q || H.filtro ? 'search' : 'check')}<span>${H.q || H.filtro ? 'Nada com esse filtro.' : total ? 'Nenhuma solicitação em aberto. As concluídas estão em “Concluídas (30 dias)”, acima.' : esc(R.mensagens?.plataformaVazioSolicitacoes || 'Nenhuma solicitação por aqui.')}</span></div>`;
+      let n = 7;
+      return gs.map(({ m, itens }) => {
+        const vis = itens.slice(0, H.vis === 'lista' ? POR_GRUPO * 2 : POR_GRUPO);
+        const corpo = H.vis === 'lista'
+          ? `<div class="list-card hj-lista">${vis.map(p => linhaHoje(p)).join('')}</div>`
+          : `<div class="hj-grade">${vis.map(p => cartaoHoje(p, n++)).join('')}</div>`;
+        return `<section class="hj-sec" style="--c:${cor(m.cor)}" data-grupo="${m.k}"><h3>${icon(ICONE_MOT[m.k], 'ic-sm')} ${esc(m.rot)} <span>${itens.length}</span>${itens.length > vis.length ? `<button type="button" class="hj-sec-mais" data-mais="${m.k}">Ver todas as ${itens.length} em Solicitações ${icon('right', 'ic-sm')}</button>` : ''}</h3>${corpo}</section>`;
+      }).join('');
+    }
+    function cartaoHoje(p, n) {
+      const i = p.item, mo = p.motivo, c = cor(MOT[mo].cor);
+      const pg = E.progressoCliente(i, R);
+      mostrados.push(i);
+      const anelC = mo === 'concluida' ? anelProgresso(100, icon('check')) : anelProgresso(pg.pct, `<b>${pg.dias}</b><small>${pg.dias === 1 ? 'dia' : 'dias'}</small>`);
+      const lim = mo === 'concluida' ? `concluída em ${fmt(i.atualizado)}` : i.estado === 'aguardando' ? (i.prescreveEm != null ? `parada ${pg.dias} de ${pg.limite} d · prescrição` : `parada há ${plural(pg.dias, 'dia', 'dias')}`) : `parada ${pg.dias} d · o escritório costuma levar ${pg.limite} d úteis`;
+      const terceira = i.estado === 'aguardando' && i.prescreveEm != null ? ['Prescreve em', plural(i.prescreveEm, 'dia', 'dias')] : mo === 'atrasada' && i.expectativa ? ['Expectativa', fmt(i.expectativa)] : ['Responsável', i.responsavel || '—'];
+      return `<button type="button" class="hj-card" style="--i:${n};--c:${c}" data-card="${mostrados.length - 1}" aria-label="${esc(`${i.numero ? `nº ${i.numero} ` : ''}${i.assunto || nomeTipo(i.tipo)}`)}">
+        <header><span class="hj-chip">${icon(ICONE_MOT[mo], 'ic-sm')} ${esc(MOT[mo].rot)}</span><span class="spacer"></span><span class="mono hj-num">${i.numero ? `nº ${esc(i.numero)}` : ''}</span></header>
+        <div class="hj-card-id">${anelC}<div><h4 title="${esc(i.assunto || '')}">${esc(i.assunto || nomeTipo(i.tipo))}</h4><div class="hj-sub">${esc([nomeTipo(i.tipo), i.empregado].filter(Boolean).join(' · '))}</div><div class="hj-lim">${esc(lim)}</div></div></div>
+        <dl class="hj-stats"><div><dt>Situação</dt><dd>${esc(i.status || '—')}</dd></div><div><dt>Vez</dt><dd>${i.lado === 'cli' ? 'Sua' : i.lado === 'esc' ? 'Escritório' : '—'}</dd></div><div><dt>${terceira[0]}</dt><dd>${esc(terceira[1])}</dd></div></dl>
+        <span class="hj-cta">${icon(mo === 'concluida' ? 'check' : 'right', 'ic-sm')}<span>${esc(E.acaoCliente(i, mo))}</span></span>
+      </button>`;
+    }
+    function linhaHoje(p) {
+      const i = p.item, mo = p.motivo;
+      mostrados.push(i);
+      const tag = mo === 'prescreve' && i.prescreveEm != null ? `Prescreve em ${i.prescreveEm} d` : MOT[mo].rot;
+      return `<button type="button" class="prio m-${mo}" data-card="${mostrados.length - 1}"><span class="pr-tag">${esc(tag)}</span><span class="mono pr-num">${esc(i.numero || '—')}</span>
+        <span class="pr-tx"><b>${esc(i.assunto || nomeTipo(i.tipo))}</b><small>${esc([nomeTipo(i.tipo), i.empregado].filter(Boolean).join(' · '))}</small></span>
+        <span class="pr-resp">${esc(i.responsavel || '—')}</span><span class="mono pr-d">${i.parado ?? 0}d</span></button>`;
+    }
+
+    // ---------- interações ----------
+    const ligarCartoes = () => {
+      $('#hj-cartoes').querySelectorAll('[data-card]').forEach(b => b.addEventListener('click', () => abrirDetalhe(mostrados[+b.dataset.card])));
+      $('#hj-cartoes').querySelectorAll('[data-mais]').forEach(b => b.addEventListener('click', () => { S.plat.filtroSol.aba = ['prescreve', 'responder'].includes(b.dataset.mais) ? 'aguardando' : b.dataset.mais === 'concluida' ? 'encerradas' : 'andamento'; A.setView('pendencias'); }));
+    };
+    ligarCartoes();
+    viewEl.querySelectorAll('[data-passo]').forEach(b => b.addEventListener('click', () => passosHtml.acoes[+b.dataset.passo]?.()));
+    viewEl.querySelectorAll('[data-slide]').forEach(b => b.addEventListener('click', () => slidesDoCarrossel.ultimo[+b.dataset.slide]?.fn()));
+    viewEl.querySelectorAll('[data-motivo], [data-sit]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.motivo || b.dataset.sit; H.filtro = H.filtro === k ? null : k; renderPainel(); }));
+    viewEl.querySelectorAll('[data-vis]').forEach(b => b.addEventListener('click', () => { H.vis = b.dataset.vis; gravarPref('hojeVis', H.vis); renderPainel(); }));
+    $('#hj-busca').addEventListener('input', (e) => { H.q = e.target.value; $('#hj-cartoes').innerHTML = cartoesHtml(); ligarCartoes(); });   // só os cartões mudam: a busca não perde o foco
+    $('#hj-lembrete').addEventListener('click', () => editarLembrete(null, E.iso(E.today())));
+    $('#hj-tentar')?.addEventListener('click', () => { S.plat.sol = null; renderPainel(); P.carregarSolicitacoes(true); });
+    ligarDicas(viewEl);
+    if (animar) { viewEl.classList.remove('hj-anim'); void viewEl.offsetWidth; viewEl.classList.add('hj-anim'); setTimeout(() => viewEl.classList.remove('hj-anim'), 1600); animarNumeros(viewEl); }
+    iniciarCarrossel($('#hj-tick'));
+    marcarRolagem($('#hj-passos'));
+
     $('#intents').innerHTML = (R.intencoes || []).map(it => `<button class="intent" type="button" data-tipo="${esc(it.tipo)}"><span class="ico">${icon(A.ICONS[it.icone] || 'file')}</span><b>${esc(it.titulo)}</b><span>${esc(it.subtitulo || '')}</span></button>`).join('');
     $('#intents').querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => A.openTipo(b.dataset.tipo)));
     const go = () => { const t = $('#free-txt').value.trim(); if (t) A.entenderTexto(t); };
@@ -218,8 +380,29 @@ export function montarPlataforma(A) {
     $('#q').addEventListener('input', (e) => A.renderFaq(e.target.value));
     A.bindDrop($('#drop-main'));
     ligarIr(viewEl);
-    desenharEspera(); desenharPrazos();
     A.renderSugestao(); A.renderLote(); A.renderAvisosInicio(); A.renderRepetir(); A.renderModelosInicio();
+  }
+  // Carrossel: um aviso por vez. A barra invisível é o relógio (5 s por volta); passar o mouse ou focar pausa.
+  function iniciarCarrossel(raiz) {
+    if (!raiz) return;
+    const sl = [...raiz.querySelectorAll('.hj-tk')];
+    if (sl.length < 2) return;
+    const ir = () => {
+      const at = sl.findIndex(x => x.classList.contains('on')), prox = (at + 1) % sl.length;
+      sl.forEach((x, n) => { x.classList.toggle('on', n === prox); x.classList.toggle('sai', n === at); x.tabIndex = n === prox ? 0 : -1; x.setAttribute('aria-hidden', String(n !== prox)); });
+    };
+    raiz.querySelector('.hj-tick-relogio i').addEventListener('animationiteration', () => { if (!document.hidden && raiz.isConnected) ir(); });
+  }
+  // Próximos passos: o esmaecido embaixo só aparece quando a lista passa da caixa.
+  function marcarRolagem(lst) {
+    if (!lst) return;
+    const marca = () => {
+      const ult = lst.lastElementChild, conteudo = ult ? ult.offsetTop + ult.offsetHeight : 0, cab = lst.clientHeight;
+      const passa = conteudo - cab > 2;
+      lst.classList.toggle('rola', passa);
+      lst.classList.toggle('fim', !passa || lst.scrollTop + cab >= conteudo - 2);
+    };
+    marca(); lst.addEventListener('scroll', marca, { passive: true }); setTimeout(marca, 1700);
   }
   function ligarIr(root) {
     root.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => {
@@ -228,42 +411,11 @@ export function montarPlataforma(A) {
       A.setView(b.dataset.ir);
     }));
   }
-  function kpisHtml() {
-    const sol = S.plat.sol; const itens = sol?.itens || [];
-    const v = (n) => (sol ? (sol.semAcesso ? '—' : n) : '<span class="spin" style="display:inline-block"></span>');
-    const ag = itens.filter(i => i.estado === 'aguardando').length, and = itens.filter(i => i.estado === 'andamento').length;
-    const prox = eventosEntre(E.today(), E.addDays(E.today(), 7)).filter(e => e.tipo !== 'feriado');
-    const hoje = prox.filter(e => E.diffDays(E.today(), e.d) === 0).length;
-    const exp = empregadosAtivos().map(e => E.situacaoEmpregado(e, E.today(), S.rules)).filter(s => s.experiencia.some(x => x.falta >= 0 && x.falta <= 30)).length;
-    const k = (label, valor, cls, ir, extra = '', sub = '') => `<button type="button" class="kpi-card clickable ${cls}" data-ir="${ir}" ${extra}><span class="kpi-label">${label}</span><span class="kpi-value">${valor}</span>${sub ? `<span class="kpi-sub">${sub}</span>` : ''}</button>`;
-    return k('Aguardando você', v(ag), ag ? 'is-late' : 'is-ok', 'pendencias', 'data-aba="aguardando"', ag ? 'Responda no portal' : 'Nada pendente')
-      + k('Em andamento', v(and), '', 'pendencias', 'data-aba="andamento"', 'Com o escritório')
-      + k('Prazos em 7 dias', prox.length, hoje ? 'is-today' : '', 'historico', '', hoje ? `${hoje} hoje` : 'Agenda do mês')
-      + k('Experiências', exp, exp ? 'is-today' : '', 'funcionarios', '', 'Vencem em 30 dias');
-  }
-  function desenharEspera() {
-    const el = $('#pn-espera'); if (!el) return;
-    const sol = S.plat.sol;
-    if (!sol) { el.innerHTML = `<div class="pn-vazio"><div class="spin"></div>Consultando suas solicitações no portal…</div>`; return; }
-    if (sol.semAcesso) { el.innerHTML = `<div class="pn-vazio">${icon('alert', 'ic-sm')} Não consegui ler suas solicitações agora.</div><button type="button" class="linkish" data-ir="pendencias" style="justify-self:start">Ver detalhes</button>`; ligarIr(el); return; }
-    const ag = sol.itens.filter(i => i.aguardando).slice(0, 6);
-    el.innerHTML = ag.length ? `<div class="note warn" style="margin:0">${icon('alert')}<div>${esc(S.rules.mensagens?.plataformaAguardando || '')}</div></div>${ag.map((i, n) => linhaSol(i, `data-esp="${n}"`)).join('')}`
-      : `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhuma solicitação esperando por você.</div>`;
-    el.querySelectorAll('[data-esp]').forEach(b => b.addEventListener('click', () => abrirDetalhe(ag[+b.dataset.esp])));
-  }
-  const linhaSol = (i, attr) => `<button type="button" class="pn-li" ${attr}><div class="main"><b>${esc(i.assunto || nomeTipo(i.tipo))}</b><small>${esc(nomeTipo(i.tipo))}${i.numero ? ` · nº ${esc(i.numero)}` : ''}${i.atualizado ? ` · ${fmt(i.atualizado)}` : ''}</small></div>${pillSol(i)}</button>`;
-  function desenharPrazos() {
-    const el = $('#pn-prazos'); if (!el) return;
-    const evs = eventosEntre(E.today(), E.addDays(E.today(), 30)).filter(e => e.tipo !== 'feriado').slice(0, 6);
-    el.innerHTML = evs.length ? evs.map(linhaEvento).join('') : `<div class="pn-vazio">${icon('calendar', 'ic-sm')} Sem prazos nos próximos 30 dias.</div>`;
-    el.querySelectorAll('[data-ev-iso]').forEach(b => b.addEventListener('click', () => abrirDia(b.dataset.evIso)));
-  }
-
   /* =================== SOLICITAÇÕES =================== */
   const ABAS_SOL = [['todas', 'Todas'], ['aguardando', 'Aguardando você'], ['andamento', 'Em andamento'], ['encerradas', 'Concluídas']];
-  const naAba = (i, aba) => aba === 'todas' || (aba === 'encerradas' ? ['concluida', 'cancelada'].includes(i.estado) : i.estado === aba);
+  const naAba = (i, aba) => aba === 'todas' || (aba === 'encerradas' ? ['concluida', 'cancelada', 'prescrita'].includes(i.estado) : i.estado === aba);
   function pillSol(i) {
-    const c = { aguardando: 'late', andamento: 'soon', concluida: 'ok', cancelada: 'muted' }[i.estado] || 'soon';
+    const c = { aguardando: 'late', andamento: 'soon', concluida: 'ok', cancelada: 'muted', prescrita: 'muted' }[i.estado] || 'soon';
     return `<span class="pill pill-${c}">${esc(i.status || S.rules.config?.statusSolicitacao?.rotulos?.[i.estado] || i.estado)}</span>`;
   }
   function renderSolicitacoes() {
@@ -289,11 +441,11 @@ export function montarPlataforma(A) {
       ${sol.truncado ? `<p class="muted" style="font-size:11.5px">Mostrando as mais recentes de cada tipo. As mais antigas continuam no portal.</p>` : ''}`;
     const desenhar = () => {
       const q = E.norm(F.q);
-      const lista = sol.itens.filter(i => naAba(i, F.aba) && (!F.tipo || i.tipo === F.tipo) && (!q || E.norm(`${i.numero} ${i.empregado} ${i.assunto} ${nomeTipo(i.tipo)}`).includes(q)));
+      const lista = sol.itens.filter(i => naAba(i, F.aba) && (!F.tipo || i.tipo === F.tipo) && (!q || E.norm(`${i.numero} ${i.empregado} ${i.assunto} ${nomeTipo(i.tipo)} ${i.responsavel}`).includes(q)));
       $('#sol-n').textContent = `${lista.length} de ${sol.itens.length}`;
       $('#sol-list').innerHTML = lista.slice(0, 300).map((i, n) => `<button type="button" class="dp-row sol-cols" data-sol="${n}">
           <span class="mono">${esc(i.numero || '—')}</span><span class="ell">${esc(nomeTipo(i.tipo))}</span><span class="ell">${esc(i.empregado || '—')}</span>
-          <span><span class="ell">${esc(i.assunto || '—')}</span>${i.tramite ? `<span class="sub ell">${esc(i.tramite)}</span>` : ''}</span><span>${pillSol(i)}</span><span class="mono">${fmt(i.atualizado)}</span></button>`).join('')
+          <span><span class="ell">${esc(i.assunto || '—')}</span>${i.tramite ? `<span class="sub ell">${esc(i.tramite)}</span>` : ''}</span><span>${pillSol(i)}${i.prescreveEm != null ? `<span class="sub">prescreve em ${i.prescreveEm} d</span>` : i.responsavel && i.estado === 'andamento' ? `<span class="sub ell">${esc(i.responsavel)}</span>` : ''}</span><span class="mono">${fmt(i.atualizado)}</span></button>`).join('')
         || `<div class="list-vazio">${esc(S.rules.mensagens?.plataformaVazioSolicitacoes || 'Nada por aqui.')}</div>`;
       $('#sol-list').querySelectorAll('[data-sol]').forEach(b => b.addEventListener('click', () => abrirDetalhe(lista[+b.dataset.sol])));
     };
@@ -310,14 +462,37 @@ export function montarPlataforma(A) {
   function abrirDetalhe(i) {
     if (!i) return;
     const t = S.rules.tipos[i.tipo];
-    dialogo({
-      titulo: `${esc(nomeTipo(i.tipo))}${i.numero ? ` <span class="mono" style="font-size:13px;color:var(--ink-3)">nº ${esc(i.numero)}</span>` : ''}`,
-      corpo: `<div>${pillSol(i)}</div>
-        <dl class="kv"><dt>Assunto</dt><dd>${esc(i.assunto || '—')}</dd><dt>Funcionário</dt><dd>${esc(i.empregado || '—')}</dd><dt>Atualizada</dt><dd>${fmt(i.atualizado)}</dd></dl>
-        ${i.tramite ? `<div class="note">${icon('chat')}<div><b>Último trâmite</b><br>${esc(i.tramite)}</div></div>` : ''}
-        ${i.aguardando ? `<div class="note warn">${icon('alert')}<div>O escritório está esperando sua resposta. Abra no portal, leia o trâmite e responda. Quem conclui a solicitação é você.</div></div>` : ''}`,
-      acoes: [{ rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.id }) }, '|', { rotulo: 'Fechar' }]
+    const mo = E.motivoCliente(i, E.today(), S.rules);
+    const kv = [['Assunto', i.assunto], ['Funcionário', i.empregado], ['Responsável no escritório', i.responsavel], ['Aberta em', fmt(i.criado)], ['Atualizada', fmt(i.atualizado)],
+      ['Expectativa de conclusão', i.expectativa ? fmt(i.expectativa) : ''], ['Competência', i.competencia], ['Prescreve em', i.prescreveEm != null ? `${i.prescreveEm} dia(s), se ninguém responder` : '']]
+      .filter(([, v]) => v && v !== '—');
+    const dlg = dialogo({
+      titulo: `${esc(nomeTipo(i.tipo))}${i.numero ? ` <span class="mono" style="font-size:13px;color:var(--ink-3)">nº ${esc(i.numero)}</span>` : ''}`, largo: true,
+      corpo: `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${pillSol(i)}${mo ? `<span class="muted" style="font-size:12.5px">${esc(E.acaoCliente(i, mo))}</span>` : ''}</div>
+        <dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+        ${i.aguardando ? `<div class="note warn">${icon('alert')}<div>O escritório está esperando sua resposta. Leia o último trâmite e responda no portal.${i.prescreveEm != null ? ` Sem resposta em ${S.rules.config?.prescricaoDias || 30} dias, a solicitação prescreve.` : ''}</div></div>` : ''}
+        <h4 class="dlg-sec">Trâmites</h4>
+        <div id="dlg-tram">${i.tramite ? `<div class="note">${icon('chat')}<div><b>Último trâmite</b><br>${esc(i.tramite)}</div></div>` : ''}<div class="pn-vazio"><div class="spin"></div>Lendo os trâmites no portal…</div></div>`,
+      acoes: [{ rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) }, '|', { rotulo: 'Fechar' }]
     });
+    if (!t?.apiTramites || !i.id) { dlg.el.querySelector('#dlg-tram .pn-vazio')?.remove(); return; }
+    // lidos na hora, com o acesso do portal, e nunca guardados
+    request({ type: 'tramites', base: t.apiTramites, solicitacao: i.id }, 20000).then((r) => {
+      const el = dlg.el.querySelector('#dlg-tram'); if (!el || !el.isConnected) return;
+      if (!r || r.erro) { el.innerHTML = `${i.tramite ? `<div class="note">${icon('chat')}<div><b>Último trâmite</b><br>${esc(i.tramite)}</div></div>` : ''}<div class="note">${icon('info')}<div>Não consegui ler os trâmites agora. Use “${i.aguardando ? 'Responder' : 'Ver'} no portal” para ver a conversa completa.</div></div>`; return; }
+      const l = E.tramitesDe(r.itens, i.tipo, S.rules);
+      if (!l.length) { el.innerHTML = `<div class="pn-vazio">${icon('chat', 'ic-sm')} Nenhum trâmite ainda: o escritório ainda não respondeu.</div>`; return; }
+      el.innerHTML = `<div class="tl">${l.slice().reverse().map(x => `<div class="tl-item"><div class="tl-meta"><b>#${String(x.n).padStart(2, '0')}</b>${x.situacao ? `<span class="pill">${esc(x.situacao)}</span>` : ''}<span>${esc(x.autor || '—')}</span><span class="mono">${esc(fmtDataHora(x.em))}</span></div>
+        ${x.texto ? `<div class="tl-tx">${esc(textoPuro(x.texto))}</div>` : ''}${x.anexos.length ? `<div class="tl-anx">${x.anexos.map(a => `<span>${icon('clip', 'ic-sm')}${esc(a)}</span>`).join('')}</div>` : ''}</div>`).join('')}</div>`;
+    });
+  }
+  const fmtDataHora = (s) => { const d = new Date(s); return isNaN(d) ? String(s || '') : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); };
+  /** HTML do trâmite → texto (o portal guarda a conversa em HTML). Nada é executado: o DOMParser não roda scripts. */
+  function textoPuro(html) {
+    if (!html) return '';
+    if (!/[<&]/.test(html)) return html;
+    const doc = new DOMParser().parseFromString(`<div>${String(html).replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n')}</div>`, 'text/html');
+    return (doc.body.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   /* =================== NOVO PEDIDO =================== */

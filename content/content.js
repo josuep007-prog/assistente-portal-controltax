@@ -222,6 +222,7 @@
         case 'pendencias': post({ type: 'pendencias', id: m.id, data: await fetchPendencias(m.tipos) }); break;
         // plataforma: dados do portal lidos com a sessão do próprio cliente (nada sai do computador)
         case 'solicitacoes': post({ type: 'solicitacoes', id: m.id, data: await fetchSolicitacoes(m.tipos || [], m.maxPaginas) }); break;
+        case 'tramites': post({ type: 'tramites', id: m.id, ...(await fetchTramites(m.base, m.solicitacao)) }); break;
         case 'portalInfo': await estadoAcesso(); post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos, acesso: { visto: apiEstado.visto, nomes: apiEstado.nomes }, status: { ...ultimosStatus } }); break;
         case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : { disponivel: false, motivo: 'calibrar' }) }); break;
         case 'baixarDocumento': {
@@ -779,24 +780,33 @@
   }
   // 401/403 aqui quer dizer "leitura sem acesso", não sessão expirada: quem avisa a sessão é a janela do próprio portal (verAtencao)
   const getJson = (url) => apiGet(url);
-  const listaPagina = (api, pageIndex, itemsPerPage) => plat.fetchList
-    ? plat.fetchList(api, { pageIndex, itemsPerPage })
-    : getJson(`/api/br-payroll-sr/v1/${api}?pageIndex=${pageIndex}&itemsPerPage=${itemsPerPage}&assignedtome=false`);
-  /** Todas as solicitações de cada tipo (até maxPaginas páginas de 50), 3 tipos por vez. Itens crus: o painel normaliza. */
-  async function fetchSolicitacoes(tipos, maxPaginas = 4) {
+  /* Listas como o próprio portal pede (mapa do Onvio real, 15/10/2026): pageIndex começa em 1, até 200 por
+     página, mais recentes primeiro e com o funcionário e o responsável junto (expand). */
+  const POR_PAGINA = 200;
+  const chaveSim = (lista) => String(lista || '').replace(/^.*?\/v\d+\//, '');
+  function listaPagina(t, pagina) {
+    if (plat.fetchList) return plat.fetchList(chaveSim(t.lista) || t.api, { pageIndex: pagina, itemsPerPage: POR_PAGINA });
+    const q = new URLSearchParams({ itemsPerPage: POR_PAGINA, pageIndex: pagina, startIndex: (pagina - 1) * POR_PAGINA, orderBy: 'lastUpdated desc' });
+    if (t.expand) q.set('expand', t.expand);
+    if (!/payroll-entries/.test(t.lista)) q.set('assignedtome', 'false');   // em Rubricas o portal omite quando é falso
+    return getJson(`/api/${t.lista}?${q.toString().replace(/\+/g, '%20')}`);
+  }
+  /** As solicitações de cada tipo (até maxPaginas páginas), 3 tipos por vez. Itens crus: o painel normaliza. */
+  async function fetchSolicitacoes(tipos, maxPaginas = 2) {
     const out = []; const fila = [...tipos];
     const umTipo = async (t) => {
-      if (!t.api) return { tipo: t.key, calibrar: true, itens: [] };
+      t = { ...t, lista: t.lista || (t.api ? `br-payroll-sr/v1/${t.api}` : '') };
+      if (!t.lista) return { tipo: t.key, calibrar: true, itens: [] };
       const itens = []; let total = 0;
       try {
-        for (let p = 0; p < Math.max(1, maxPaginas); p++) {
-          const r = await listaPagina(t.api, p, 50);
+        for (let p = 1; p <= Math.max(1, maxPaginas); p++) {
+          const r = await listaPagina(t, p);
           if (!r.ok) return { tipo: t.key, erro: r.status, itens };
           const j = await r.json();
           const arr = Array.isArray(j) ? j : (j.items || j.data || []);
           total = j.totalItems ?? j.total ?? (itens.length + arr.length);
           itens.push(...arr);
-          if (itens.length >= total || arr.length < 50) break;
+          if (itens.length >= total || arr.length < POR_PAGINA) break;
         }
       } catch (e) { return { tipo: t.key, erro: String(e.message || e), itens }; }
       return { tipo: t.key, total, itens, truncado: itens.length < total, chaves: Object.keys(itens[0] || {}) };
@@ -804,6 +814,17 @@
     const trabalhador = async () => { while (fila.length) { const t = fila.shift(); out.push(await umTipo(t)); } };
     await Promise.all([trabalhador(), trabalhador(), trabalhador()]);
     return out;
+  }
+  /** Trâmites (a conversa) de uma solicitação: {base}/{id}/topics, com o id GUID do item (mapa do Onvio real). Só leitura; nada é guardado. */
+  async function fetchTramites(base, id) {
+    if (!base || !id) return { erro: 'sem-id', itens: [] };
+    try {
+      if (plat.tramites) return { itens: await plat.tramites(base, id) };
+      const r = await getJson(`/api/${base}/${encodeURIComponent(id)}/topics?expand=all&itemsPerPage=1000&orderBy=created%20asc&pageIndex=0`);
+      if (!r.ok) return { erro: r.status, itens: [] };
+      const j = await r.json();
+      return { itens: Array.isArray(j) ? j : (j.items || []) };
+    } catch (e) { return { erro: String(e.message || e), itens: [] }; }
   }
   /** Sem a lista de empregados (o portal ainda não abriu nenhuma tela que a carrega): abre por
    *  baixo uma solicitação que tem o campo Empregado, espera o portal pedir a lista e volta.
