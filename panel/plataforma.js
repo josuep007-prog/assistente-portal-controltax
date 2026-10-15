@@ -83,16 +83,17 @@ export function montarPlataforma(A) {
       atualizarSync('Lendo o portal…');
       const tipos = Object.entries(S.rules.tipos).map(([key, t]) => ({ key, api: t.api || null }));
       const r = await request({ type: 'solicitacoes', tipos, maxPaginas: S.rules.config?.solicitacoesMaxPaginas || 4 }, 90000);
-      const itens = [], erros = [], calibrar = [], chaves = new Set(); let truncado = false;
+      const itens = [], erros = [], calibrar = [], chaves = new Set(), codigos = {}; let truncado = false;
       for (const g of r?.data || []) {
         if (g.calibrar) { calibrar.push(g.tipo); continue; }
-        if (g.erro) erros.push(g.tipo);
+        if (g.erro) { erros.push(g.tipo); codigos[g.tipo] = g.erro; }
         if (g.truncado) truncado = true;
         for (const it of g.itens || []) itens.push(E.normalizarSolicitacao(it, g.tipo, S.rules));
         (g.chaves || []).forEach(k => chaves.add(k));
       }
       itens.sort((a, b) => (b.atualizado?.getTime() || 0) - (a.atualizado?.getTime() || 0));
-      S.plat.sol = { itens, erros, calibrar, truncado, ok: !!r, quando: Date.now(), chaves: [...chaves] };
+      const consultados = (r?.data || []).filter(g => !g.calibrar).length;
+      S.plat.sol = { itens, erros, calibrar, truncado, ok: !!r, quando: Date.now(), chaves: [...chaves], codigos, semAcesso: !!consultados && erros.length === consultados };
       const n = itens.filter(i => i.aguardando).length;
       send({ type: 'setBadge', n }); badge('pendencias', n);
       atualizarSync();
@@ -132,7 +133,6 @@ export function montarPlataforma(A) {
     if (!m.texto || m.ativo === false) { el.innerHTML = ''; return; }
     el.innerHTML = `<div class="note warn" role="alert">${icon('alert')}<div style="flex:1"><b>${esc(S.rules?.mensagens?.plataformaAtencao || 'O portal está pedindo sua atenção.')}</b> <span class="muted">“${esc(m.texto)}”</span></div><button class="btn btn-sm" id="aviso-portal">${icon('external', 'ic-sm')} Ver no portal</button></div>`;
     $('#aviso-portal').addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
-    if (m.sessao) send({ type: 'modo', modo: 'painel' });
   };
   P.aoEnviar = (tipo) => { S.plat.enviado = { tipo, quando: Date.now() }; setTimeout(() => P.carregarSolicitacoes(true), 1500); };
 
@@ -230,7 +230,7 @@ export function montarPlataforma(A) {
   }
   function kpisHtml() {
     const sol = S.plat.sol; const itens = sol?.itens || [];
-    const v = (n) => (sol ? n : '<span class="spin" style="display:inline-block"></span>');
+    const v = (n) => (sol ? (sol.semAcesso ? '—' : n) : '<span class="spin" style="display:inline-block"></span>');
     const ag = itens.filter(i => i.estado === 'aguardando').length, and = itens.filter(i => i.estado === 'andamento').length;
     const prox = eventosEntre(E.today(), E.addDays(E.today(), 7)).filter(e => e.tipo !== 'feriado');
     const hoje = prox.filter(e => E.diffDays(E.today(), e.d) === 0).length;
@@ -245,6 +245,7 @@ export function montarPlataforma(A) {
     const el = $('#pn-espera'); if (!el) return;
     const sol = S.plat.sol;
     if (!sol) { el.innerHTML = `<div class="pn-vazio"><div class="spin"></div>Consultando suas solicitações no portal…</div>`; return; }
+    if (sol.semAcesso) { el.innerHTML = `<div class="pn-vazio">${icon('alert', 'ic-sm')} Não consegui ler suas solicitações agora.</div><button type="button" class="linkish" data-ir="pendencias" style="justify-self:start">Ver detalhes</button>`; ligarIr(el); return; }
     const ag = sol.itens.filter(i => i.aguardando).slice(0, 6);
     el.innerHTML = ag.length ? `<div class="note warn" style="margin:0">${icon('alert')}<div>${esc(S.rules.mensagens?.plataformaAguardando || '')}</div></div>${ag.map((i, n) => linhaSol(i, `data-esp="${n}"`)).join('')}`
       : `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhuma solicitação esperando por você.</div>`;
@@ -283,7 +284,8 @@ export function montarPlataforma(A) {
       <div class="list-card"><div class="dp-listhead sol-cols"><span>Nº</span><span>Solicitação</span><span>Funcionário</span><span>Assunto</span><span>Situação</span><span>Atualizada</span></div><div id="sol-list"></div></div>
       ${!sol.ok ? `<div class="note">${icon('info')}<div>Abra o Portal do Cliente para ver suas solicitações.</div></div>` : ''}
       ${sol.calibrar.length ? `<div class="note">${icon('info')}<div><b>${esc(sol.calibrar.map(nomeTipo).join(', '))}:</b> ${esc(S.rules.mensagens?.plataformaCalibrar || '')} <button class="btn btn-ghost btn-sm" id="sol-geral">${icon('external', 'ic-sm')} Abrir no portal</button></div></div>` : ''}
-      ${sol.erros.length ? `<div class="note warn">${icon('alert')}<div>Não consegui ler: ${esc(sol.erros.map(nomeTipo).join(', '))}. Tente atualizar daqui a pouco.</div></div>` : ''}
+      ${sol.semAcesso ? `<div class="note warn">${icon('alert')}<div><b>Não consegui ler suas solicitações agora.</b> ${esc(S.rules.mensagens?.plataformaSemAcesso || '')}<div class="actions" style="margin-top:8px"><button class="btn btn-sm" id="sol-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button><button class="btn btn-sm btn-ghost" id="sol-portal">${icon('external', 'ic-sm')} Ver no portal</button></div></div></div>`
+        : sol.erros.length ? `<div class="note warn">${icon('alert')}<div>Não consegui ler: ${esc(sol.erros.map(nomeTipo).join(', '))}. Tente atualizar daqui a pouco.</div></div>` : ''}
       ${sol.truncado ? `<p class="muted" style="font-size:11.5px">Mostrando as mais recentes de cada tipo. As mais antigas continuam no portal.</p>` : ''}`;
     const desenhar = () => {
       const q = E.norm(F.q);
@@ -300,6 +302,8 @@ export function montarPlataforma(A) {
     $('#sol-q').addEventListener('input', A.debounce((e) => { F.q = e.target.value; desenhar(); }, 200));
     $('#sol-tipo').addEventListener('change', (e) => { F.tipo = e.target.value; desenhar(); });
     $('#sol-ref').addEventListener('click', () => { S.plat.sol = null; renderSolicitacoes(); P.carregarSolicitacoes(true); });
+    $('#sol-tentar')?.addEventListener('click', () => { S.plat.sol = null; renderSolicitacoes(); P.carregarSolicitacoes(true); });
+    $('#sol-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
     $('#sol-geral')?.addEventListener('click', () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[sol.calibrar[0]]?.slug }));
     ligarIr(viewEl);
   }
@@ -360,6 +364,8 @@ export function montarPlataforma(A) {
   function renderFuncionarios() {
     const emp = S.plat.emp; const F = S.plat.filtroEmp;
     if (!emp) { viewEl.innerHTML = loading('Buscando a lista de funcionários no portal…'); P.carregarEmpregados().then(() => S.view === 'funcionarios' && renderFuncionarios()); return; }
+    // veio vazia (o portal ainda não tinha pedido a lista quando a plataforma abriu): tenta de novo
+    if (!emp.lista.length && Date.now() - emp.quando > 3000) { S.plat.emp = null; viewEl.innerHTML = loading('Buscando a lista de funcionários no portal…'); P.carregarEmpregados(true).then(() => S.view === 'funcionarios' && renderFuncionarios()); return; }
     const hoje = E.today();
     const todos = emp.lista.map(e => ({ e, s: E.situacaoEmpregado(e, hoje, S.rules) })).sort((a, b) => a.e.nome.localeCompare(b.e.nome));
     const ativos = todos.filter(x => x.e.ativo !== false);
@@ -390,7 +396,7 @@ export function montarPlataforma(A) {
           <span class="mono">${fmt(x.s.admissao)}</span><span>${esc(x.s.tempoCasa || '—')}</span>
           <span>${p ? `<span class="pill pill-${p.nivel}">${p.falta < 0 ? `há ${-p.falta} dia(s)` : p.falta === 0 ? 'hoje' : `em ${p.falta} dia(s)`}</span> <span class="sub">${esc(p.titulo)} · ${fmt(p.d)}</span>` : '<span class="muted">—</span>'}</span>
           <span class="row-acts">${x.e.ativo !== false ? `<details class="menu-acts"><summary class="btn btn-sm">Pedir ${icon('arrow', 'ic-sm')}</summary><div class="menu-list">${ACOES_EMP.filter(([t]) => S.rules.tipos[t]).map(([t, r, ic]) => `<button type="button" data-emp="${n}" data-tipo="${t}">${icon(ic, 'ic-sm')} ${r}</button>`).join('')}</div></details>` : ''}</span></div>`;
-      }).join('') || `<div class="list-vazio">${emp.lista.length ? 'Ninguém com esse filtro.' : 'Ainda não consegui a lista de funcionários do portal.'}${emp.lista.length ? '' : `<div class="actions" style="justify-content:center;margin-top:10px"><button class="btn btn-sm btn-primary" id="emp-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button></div>`}</div>`;
+      }).join('') || `<div class="list-vazio">${emp.lista.length ? 'Ninguém com esse filtro.' : `Ainda não consegui a lista de funcionários do portal. ${esc(S.rules.mensagens?.plataformaSemAcesso || '')}`}${emp.lista.length ? '' : `<div class="actions" style="justify-content:center;margin-top:10px"><button class="btn btn-sm btn-primary" id="emp-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button></div>`}</div>`;
       $('#emp-list').querySelectorAll('[data-emp]').forEach(b => b.addEventListener('click', () => { b.closest('details').removeAttribute('open'); P.novoPedido(b.dataset.tipo, { empregado: lista[+b.dataset.emp].e.nome }); }));
       $('#emp-tentar')?.addEventListener('click', () => { S.plat.emp = null; renderFuncionarios(); P.carregarEmpregados(true).then(() => S.view === 'funcionarios' && renderFuncionarios()); });
     };

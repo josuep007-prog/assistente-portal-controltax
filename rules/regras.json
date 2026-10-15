@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.15-3",
+  "versao": "2026.10.15-4",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -2668,7 +2668,8 @@
     "plataformaVazioSolicitacoes": "Nenhuma solicitação encontrada com esses filtros.",
     "plataformaAguardando": "Há solicitação esperando sua resposta. Abra, leia o último trâmite e responda — quem conclui a solicitação é você.",
     "plataformaCalibrar": "Esta parte do portal ainda está sendo conferida pelo escritório. Por enquanto, abra direto no portal.",
-    "plataformaAtencao": "O portal está pedindo sua atenção (uma janela ou a sessão expirou)."
+    "plataformaAtencao": "O portal está pedindo sua atenção (uma janela ou a sessão expirou).",
+    "plataformaSemAcesso": "O portal não liberou a leitura desta lista agora. Abra qualquer solicitação no portal (Ver no portal) e volte — ou clique em Tentar de novo. Se continuar, use “Copiar diagnóstico” nas Configurações e mande ao escritório."
   },
   "avisosEscritorio": [
     {
