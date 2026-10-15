@@ -28,8 +28,131 @@ def check(c, m):
     print(('  OK   ' if c else '  FALHA ') + m)
     if not c: falhas.append(m)
 
+
+async def teste_plataforma(b):
+    """2.0: a plataforma em tela cheia por cima do portal, que é preenchido por baixo."""
+    import datetime
+    print('\n[2.0] plataforma em tela cheia')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900}, permissions=['clipboard-read', 'clipboard-write'])
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto('http://127.0.0.1:8765/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    total = lambda: pg.evaluate("window.__ctPlatform.fetchList('employee-leave').then(r => r.json()).then(j => j.totalItems)")
+    def portal_com(**kv):
+        async def f():
+            v = await portal(); return all(v.get(k) == x for k, x in kv.items())
+        return f
+    def total_e(n):
+        async def f(): return await total() == n
+        return f
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    check(await pn.evaluate("document.body.classList.contains('plat')"), 'abre a plataforma em tela cheia')
+    check(await pg.evaluate("document.elementFromPoint(700, 500)?.id") == 'ct-assistente-host', 'o portal fica coberto (os cliques não chegam a ele)')
+    await espera(lambda: pn.evaluate("!!document.querySelector('#kpis .kpi-value') && !document.querySelector('#kpis .spin')"), 15)
+    kp = await pn.locator('#kpis').inner_text()
+    check('AGUARDANDO VOCÊ' in kp.upper() and kp.split('\n')[1].strip() == '2', 'painel: 2 solicitações aguardando você')
+    await pg.mouse.move(1200, 600)
+    await pg.screenshot(path='/tmp/sim-20-painel.png')
+    # Solicitações: todas as páginas, filtros, detalhe
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(800)
+    n = await pn.locator('#sol-list .dp-row').count()
+    check(n == 62, f'solicitações: todas as páginas lidas ({n} de 62)')
+    await pn.click('[data-aba-sol="aguardando"]'); await pg.wait_for_timeout(300)
+    check(await pn.locator('#sol-list .dp-row').count() == 2, 'filtro "Aguardando você"')
+    await pn.fill('#sol-q', 'RONALDO'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#sol-list .dp-row').count() == 1, 'busca na lista de solicitações')
+    await pn.click('#sol-list .dp-row'); await pg.wait_for_timeout(300)
+    check('falta informar a data do pagamento' in await pn.locator('#modal').inner_text(), 'detalhe mostra o último trâmite')
+    await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(1800)
+    check(not await pn.evaluate("document.body.classList.contains('plat')") and '1041' in await pg.evaluate("document.querySelector('#p-main').innerText"), 'Ver no portal: abre a solicitação no portal, com o painel ao lado')
+    await pn.click('#btn-plat'); await pg.wait_for_timeout(800)
+    check(await pn.evaluate("document.body.classList.contains('plat')"), 'volta para a tela cheia')
+    # Funcionários: experiência e atalho com o funcionário escolhido
+    await pn.click('#rail [data-mod="funcionarios"]'); await pg.wait_for_timeout(800)
+    row = pn.locator('#emp-list .dp-row', has_text='VANESSA PRADO')
+    check('Fim da experiência (45 dias)' in await row.inner_text(), 'funcionários: experiência da Vanessa vencendo')
+    await row.locator('summary').click(); await row.locator('[data-tipo="afastamento"]').click()
+    ok = await espera(portal_com(selectedEmployee='VANESSA PRADO'), 20)
+    check(ok, 'atalho "Pedir": abre o afastamento no portal com a funcionária escolhida')
+    check(await pn.locator('#f-empregado').input_value() == 'VANESSA PRADO', 'formulário próprio mostra a funcionária')
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave')"); await pg.wait_for_timeout(1500)
+    # Novo pedido com atestado: formulário próprio, portal por baixo, envio só depois do resumo
+    print('[2.0] atestado: formulário próprio e envio')
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("""async () => { const r = await fetch('exemplos/atestado.pdf'); const f = new File([await r.blob()], 'atestado.pdf', { type: 'application/pdf' }); window.__ctSim.hooks().sendFiles([f]); }""")
+    await pg.wait_for_timeout(1500)
+    if await pn.locator('#sug-go').count(): await pn.click('#sug-go')
+    ok = await espera(portal_com(selectedEmployee='JOAO DA SILVA', leaveDate='05/10/2026'), 40)
+    check(ok, 'atestado lido e o portal preenchido por baixo')
+    await espera(lambda: pg.evaluate("document.querySelectorAll('.p-chip').length > 0"), 15)
+    check(await pn.locator('#f-dataAfastamento').input_value() == '05/10/2026', 'formulário próprio com a data do atestado')
+    await pn.fill('#f-dataAfastamento', '06102026'); await pn.dispatch_event('#f-dataAfastamento', 'input'); await pn.dispatch_event('#f-dataAfastamento', 'change')
+    ok = await espera(portal_com(leaveDate='06/10/2026'), 15)
+    check(ok, 'mudar a data na plataforma muda o portal por baixo')
+    await pg.mouse.move(1200, 600)
+    await pg.screenshot(path='/tmp/sim-20-pedido.png')
+    antes = await total()
+    await pn.click('#btn-send'); await pg.wait_for_timeout(1500)
+    check(await pn.locator('#modal').is_visible(), 'Conferir e enviar mostra o resumo')
+    check(await total() == antes, 'nada é enviado antes da confirmação')
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    ok = await espera(total_e(antes + 1), 15)
+    check(ok, 'enviado ao confirmar (uma solicitação a mais no portal)')
+    await pg.wait_for_timeout(2500)
+    # Agenda: lembrete mensal
+    print('[2.0] agenda, documentos, busca e avisos')
+    await pn.click('#rail [data-mod="historico"]'); await pg.wait_for_timeout(600)
+    hoje = datetime.date.today(); dia = hoje.replace(day=10)
+    await pn.click('#ag-novo'); await pg.wait_for_timeout(300)
+    await pn.fill('#lb-texto', 'Mandar as horas extras'); await pn.fill('#lb-data', dia.isoformat())
+    await pn.select_option('#lb-rep', 'mensal')
+    check('Todo mês, dia 10' in await pn.locator('#lb-resumo').inner_text(), 'resumo da repetição do lembrete')
+    await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(600)
+    cel = lambda: pn.locator(f'.ag-day[data-dia="{dia.isoformat()}"]').inner_text()
+    check('Mandar as horas extras' in await cel(), 'lembrete aparece no calendário')
+    await pn.click('#ag-next'); await pg.wait_for_timeout(400)
+    prox = (dia.replace(day=1) + datetime.timedelta(days=32)).replace(day=10)
+    check('Mandar as horas extras' in await pn.locator(f'.ag-day[data-dia="{prox.isoformat()}"]').inner_text(), 'lembrete mensal se repete no mês seguinte')
+    # Documentos: modelo para assinar
+    await pn.click('#rail [data-mod="documentos"]'); await pg.wait_for_timeout(800)
+    check('Guia do FGTS Digital' in await pn.locator('#doc-body').inner_text(), 'documentos do escritório (simulador)')
+    await pn.click('[data-doc-aba="modelos"]'); await pg.wait_for_timeout(300)
+    await pn.click('[data-mdl="0"]'); await pg.wait_for_timeout(300)
+    await pn.fill('#md-empregado', 'JOAO DA SILVA'); await pn.dispatch_event('#md-empregado', 'input')
+    prev = await pn.locator('#md-prev').inner_text()
+    check('JOAO DA SILVA' in prev and 'EMPRESA EXEMPLO' in prev, 'modelo para assinar preenchido com funcionário e empresa')
+    await pn.click('#modal .dlg-x')
+    # Busca (Ctrl+K)
+    await pn.click('#plat-titulo'); await pg.keyboard.press('Control+k'); await pg.wait_for_timeout(300)
+    check(await pn.locator('#cmdk').is_visible(), 'Ctrl+K abre a busca')
+    await pn.fill('#cmdk-q', 'wagner'); await pg.wait_for_timeout(300)
+    check('WAGNER SOUSA' in await pn.locator('#cmdk-res').inner_text(), 'busca acha o funcionário')
+    await pg.keyboard.press('Escape')
+    # Aviso do portal coberto
+    await pg.evaluate("window.__ctSim.atencao()"); await pg.wait_for_timeout(1800)
+    check('atenção' in await pn.locator('#plat-aviso').inner_text(), 'janela do portal por baixo: a plataforma avisa')
+    await pn.evaluate("document.documentElement.setAttribute('data-theme','dark')"); await pn.click('#rail [data-mod="inicio"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(600)
+    await pg.screenshot(path='/tmp/sim-20-escuro.png')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == '20':   # SIM_SO=20 roda só a parte da plataforma (2.0)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_plataforma(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
     async with async_playwright() as p:
         b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
         ctx = await b.new_context(viewport={'width': 1400, 'height': 900}, permissions=['clipboard-read', 'clipboard-write'])
@@ -303,6 +426,7 @@ async def main():
         check(depois == antes, f'cancelar não registra envio (enviados: {antes} antes, {depois} depois)')
 
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
+        await teste_plataforma(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 

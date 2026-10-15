@@ -22,7 +22,7 @@ def check(cond, msg):
 
 async def abrir(p, tmp, plataforma=False):
     ctx = await p.chromium.launch_persistent_context(tmp, headless=True, channel='chromium', viewport={'width': 1400, 'height': 900},
-        args=[f'--disable-extensions-except={ROOT}', f'--load-extension={ROOT}', '--disable-dev-shm-usage', '--no-sandbox'])
+        args=[f'--disable-extensions-except={ROOT}', f'--load-extension={ROOT}', '--disable-dev-shm-usage', '--no-sandbox', '--window-size=1400,900'])
     async def route(r):
         u = r.request.url
         if u.startswith('https://raw.githubusercontent.com/') and u.split('?')[0].endswith('/regras.json'):
@@ -42,6 +42,9 @@ async def abrir(p, tmp, plataforma=False):
         await sw.evaluate("chrome.storage.local.set({ prefs: { abrirComo: 'painel' } })")
     page = await ctx.new_page()
     await page.goto(URL); await page.wait_for_timeout(2500)
+    # Chromium sem tela guarda a área de clique antiga do iframe da extensão (a parte de baixo não recebia cliques);
+    # redimensionar a janela uma vez refaz essa área. No Chrome de verdade não acontece.
+    await page.set_viewport_size({'width': 1400, 'height': 901}); await page.set_viewport_size({'width': 1400, 'height': 900}); await page.wait_for_timeout(300)
     return ctx, page
 
 def painel(page):
@@ -94,11 +97,34 @@ async def cenario_guarda(p):
     check('15/11/2026' in out and 'sexta' in out, 'calculadora de férias (retorno e alerta de sexta-feira)')
     await ctx.close(); shutil.rmtree(tmp, ignore_errors=True)
 
+async def cenario_plataforma(p):
+    print('\n[plataforma] tela cheia por cima do portal (2.0)')
+    tmp = tempfile.mkdtemp()
+    ctx, page = await abrir(p, tmp, plataforma=True)
+    pn = painel(page)
+    check(await pn.evaluate("document.body.classList.contains('plat')"), 'a plataforma abre sozinha em tela cheia')
+    check(await page.evaluate("document.elementFromPoint(700, 450)?.id") == 'ct-assistente-host', 'o portal fica coberto')
+    await pn.set_input_files('#file-input', os.path.join(FIX, 'atestado.pdf'))
+    for _ in range(60):
+        await page.wait_for_timeout(1000)
+        if 'files:' in await log_mock(page): break
+    await page.wait_for_timeout(1500)
+    v = dict(await page.evaluate("""() => [...document.querySelectorAll('[formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value])"""))
+    check(v.get('selectedEmployee') == 'JOAO DA SILVA' and v.get('leaveDate') == '05/10/2026', 'preenche o portal por baixo')
+    check(await pn.locator('#f-empregado').input_value() == 'JOAO DA SILVA', 'formulário próprio da plataforma mostra o que foi lido')
+    await page.screenshot(path=os.path.join(tempfile.gettempdir(), 'assistente-plataforma.png'))
+    await pn.click('#btn-send'); await page.wait_for_timeout(1500)
+    check(await pn.locator('#modal').is_visible() and 'SUBMITTED' not in await log_mock(page), 'resumo antes de enviar, nada enviado ainda')
+    await pn.click('#m-send'); await page.wait_for_timeout(1500)
+    check('SUBMITTED' in await log_mock(page), 'envia pelo botão do portal só depois de confirmar')
+    await ctx.close(); shutil.rmtree(tmp, ignore_errors=True)
+
 async def main():
     async with async_playwright() as p:
         await cenario_preencher(p, os.path.join(FIX, 'atestado.pdf'), 'pdf')
         await cenario_preencher(p, os.path.join(FIX, 'atestado-foto.png'), 'ocr')
         await cenario_guarda(p)
+        await cenario_plataforma(p)
     print(f'\n{"TUDO CERTO" if not falhas else str(len(falhas)) + " FALHA(S)"}')
     sys.exit(1 if falhas else 0)
 
