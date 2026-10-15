@@ -103,11 +103,11 @@
 
   /* ---------- Dados (só neste navegador) ---------- */
   var SKEY = 'ct-sim-portal';
-  var SEED_V = 3;
+  var SEED_V = 4;
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
     var items = {
-      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3) }],
+      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 30 }],
       'employee-leave': [{ id: 1039, status: 'Em andamento', empregado: 'JOANA FONSECA', assunto: 'Afastamento – JOANA FONSECA – Licença maternidade', tramite: 'Escritório: recebido, em análise.', data: d(6) }],
       'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) }]
     };
@@ -161,6 +161,15 @@
         { created: isoDe(r.data, 2), status: 1, description: '<p>Solicitação incluída pelo cliente.</p>', createdByContactExpanded: { name: 'Usuário de teste' }, attachmentsExpanded: [] },
         { created: isoDe(r.data, 0), status: cod, description: '<p>' + esc(String(r.tramite || '').replace(/^(Escritório|Cliente):\s*/, '')) + '</p>', createdByContactExpanded: { name: /^Cliente/.test(r.tramite || '') ? 'Usuário de teste' : 'ANA ANALISTA (escritório)' }, attachmentsExpanded: [] }
       ]);
+    },
+    // detalhe de uma solicitação ({lista}/{id}?expand=all): datas do aviso de férias e de rescisão
+    detalheItem: function (key, guid) {
+      var slug = API[key] || key, r = (db.items[slug] || []).find(function (x) { return guidDe(x.id) === guid; });
+      if (!r) return Promise.resolve(null);
+      var it = itemApi(slug, r);
+      if (r.inicio) { it.vacationStartDate = isoDe(r.inicio, 0); it.paymentDate = isoDe(r.inicio, 2); it.vacationDays = r.dias || 30; }
+      if (slug === 'termination-notice') it.adviceDate = isoDe(r.data, 0);
+      return Promise.resolve(it);
     },
     detalhe: true,
     rotaDocumentos: '/clientcenter/pt/documents',
