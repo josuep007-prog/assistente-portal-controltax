@@ -62,6 +62,7 @@
         background:#0E151B;color:#E9EEF2;padding:10px 16px;border-radius:4px;font:500 13px 'IBM Plex Sans',system-ui,sans-serif;transition:all .2s ease;
         box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:80vw}
       .toast.on{opacity:1;transform:translateX(-50%)}
+      .frame-wrap.full.open ~ .toast{bottom:84px}   /* plataforma: acima da barra de ações (Conferir e enviar) */
       .toast.acao{pointer-events:auto;display:flex;align-items:center;gap:14px;padding:8px 8px 8px 16px}
       .toast .t-btn{border:0;border-radius:4px;background:#E9EEF2;color:#0E151B;font:600 13px 'IBM Plex Sans',system-ui,sans-serif;padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:6px}
       .toast .t-btn:hover{background:#fff}
@@ -174,7 +175,7 @@
         case 'close': setModo('fechado'); break;
         case 'modo': setModo(m.modo); break;
         case 'getContext': sendContext(); break;
-        case 'navigate': await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
+        case 'navigate': while (navInterna) await sleep(150); await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
         case 'fill': {
           preenchendoAgora = true;
           let r; try { r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {})); } finally { preenchendoAgora = false; }
@@ -188,6 +189,7 @@
         case 'attach': { const n = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n }); sendContext(); break; }
         case 'getOptions': {
           const opts = await comboLock(() => comboOptions(m.locator, m.force));
+          if (modo === 'plataforma') iframe?.focus();
           post({ type: 'options', id: m.id, options: opts, virtual: !!opts.virtual });
           break;
         }
