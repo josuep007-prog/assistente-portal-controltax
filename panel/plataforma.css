@@ -448,3 +448,19 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
   .an-f, .hj-step, .hj-card, .hj-tk { transition: none; }
   .hj-tick-relogio i { animation-duration: 8s; }
 }
+
+/* Hoje: equipe (experiência, férias a vencer, avisos sem cálculo) */
+.hj-equipe { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.hj-equipe .eq-n { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 3px; font: 700 11.5px var(--f-mono); background: var(--surface-3); color: var(--ink); vertical-align: 1px; }
+.eq-body { gap: 6px; }
+.eq-li { cursor: default; }
+.eq-li[data-eq-abrir] { cursor: pointer; }
+.eq-li .main small { white-space: normal; }
+.eq-li .pill, .eq-li .btn { flex: none; }
+#eq-avisos { border-top: 3px solid var(--viz-crit); }
+#eq-exp { border-top: 3px solid var(--viz-warn); }
+#eq-ferias { border-top: 3px solid var(--viz-s1); }
+@media (max-width: 1180px) { .hj-equipe { grid-template-columns: minmax(0, 1fr); } }
+/* empresa do item quando há mais de uma na tela */
+.hj-emp { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px; border-radius: 3px; border: 1px solid var(--rule-strong); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-2); }
+.emp-filtro { max-width: 260px; }
