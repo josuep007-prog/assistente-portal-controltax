@@ -411,4 +411,16 @@ t('solicitações do Onvio: genericStatus por família, vez do cliente e prescri
   for (const [k, t] of Object.entries(rules.tipos)) assert.ok(t.apiLista && t.apiTramites && t.familiaStatus, `${k} sem apiLista/apiTramites/familiaStatus`);
 });
 
+t('trâmites do Onvio: ordem, situação pela família, autor e anexos', () => {
+  const tr = E.tramitesDe({ items: [
+    { created: '2026-10-10T09:00:00', status: 4, description: '<p>Falta a data.</p>', createdByExpanded: { name: 'ANA' }, attachmentsExpanded: [{ name: 'a.pdf' }, null] },
+    { created: '2026-10-01T09:00:00', status: 1, description: 'Incluída', createdByContactExpanded: { name: 'Cliente' } },
+    { status: 2 }
+  ] }, 'avisoFerias', rules);
+  assert.equal(tr.length, 2);
+  assert.equal(tr[0].autor, 'Cliente'); assert.equal(tr[1].n, 2);
+  assert.match(tr[1].situacao, /\S/); assert.deepEqual(tr[1].anexos, ['a.pdf']);
+  assert.deepEqual(E.tramitesDe(null, 'geral', rules), []);
+});
+
 console.log(`\n${n} testes ok`);

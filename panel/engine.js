@@ -970,6 +970,22 @@ export function normalizarSolicitacao(it, tipo, regras, hoje = today()) {
   };
 }
 
+/** Trâmites crus ({base}/{id}/topics) → [{ n, em, situacao, autor, texto (HTML do portal), anexos }], do mais antigo ao mais novo.
+ *  A situação de cada trâmite usa os códigos da família do tipo (como no Control Onvio). */
+export function tramitesDe(lista, tipo, regras) {
+  const fam = regras?.tipos?.[tipo]?.familiaStatus;
+  const mapa = regras?.config?.statusSolicitacao?.familias?.[fam] || {};
+  const arr = Array.isArray(lista) ? lista : (lista?.items || []);
+  return arr.filter(x => x && x.created).sort((a, b) => String(a.created).localeCompare(String(b.created))).map((x, i) => ({
+    n: i + 1,
+    em: x.created,
+    situacao: x.status != null && mapa[String(+x.status)] ? mapa[String(+x.status)][0] : (typeof x.status === 'string' ? x.status : ''),
+    autor: texto1(x.createdByContactExpanded?.name, x.createdByExpanded?.name),
+    texto: typeof x.description === 'string' ? x.description : '',
+    anexos: (x.attachmentsExpanded || []).map(a => a && (a.name || a.fileName)).filter(Boolean).slice(0, 30)
+  }));
+}
+
 /* "Hoje" do cliente (no formato da tela Hoje do Control Onvio): cada solicitação tem um motivo só,
    para a rosca, as situações e os cartões baterem. */
 export const MOTIVOS_CLIENTE = [
