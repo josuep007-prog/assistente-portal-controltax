@@ -185,6 +185,11 @@
     expose: function (h) { hooks = h; document.dispatchEvent(new CustomEvent('ct-sim-ready')); }
   };
   window.__ctSim = { hooks: function () { return hooks; }, reset: function () { db = seed(); persist(); go(BASE); }, go: function (p) { go(p); },
+    // o escritório responde uma solicitação (para testar a leitura automática da plataforma)
+    escritorioResponde: function (id, texto) {
+      Object.keys(db.items).forEach(function (k) { (db.items[k] || []).forEach(function (x) { if (x.id === id) { x.status = 'Aguardando o cliente'; x.data = new Date().toLocaleDateString('pt-BR'); x.tramite = 'Escritório: ' + (texto || 'precisamos de uma informação.'); } }); });
+      persist();
+    },
     // janela do portal por cima de tudo (como um aviso de sessão): a plataforma precisa avisar
     atencao: function () {
       var d = h('div', { role: 'dialog', class: 'p-dialog', 'aria-label': 'Aviso do portal' }, '<p><b>Sua sessão vai expirar em 2 minutos.</b> Deseja continuar conectado?</p>');

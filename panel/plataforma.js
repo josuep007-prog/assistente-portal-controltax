@@ -93,17 +93,39 @@ export function montarPlataforma(A) {
     const el = $('#plat-sync'); if (!el) return;
     if (txt) { el.innerHTML = `<div class="spin"></div>${esc(txt)}`; return; }
     const q = S.plat.sol?.quando;
-    el.innerHTML = q ? `Portal lido ${new Date(q).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}<button type="button" id="plat-ref" title="Ler de novo as solicitações e os funcionários">${icon('refresh', 'ic-sm')}</button>` : '';
+    el.innerHTML = q ? `<span title="Lido de novo a cada ${Math.max(15, +S.rules?.config?.leituraAutomaticaSegundos || 30)} segundos">Portal lido ${new Date(q).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><button type="button" id="plat-ref" title="Ler de novo as solicitações e os funcionários">${icon('refresh', 'ic-sm')}</button>` : '';
     $('#plat-ref')?.addEventListener('click', () => { P.carregarSolicitacoes(true); P.carregarEmpregados(true).then(() => P.render(S.view)); });
   }
   function atualizarCabecalho() { const e = $('#plat-empresa'); if (e) e.textContent = S.ctx.empresa || 'Portal do Cliente'; }
 
   /* =================== Dados do portal =================== */
-  P.carregarSolicitacoes = (force = false) => {
+  /* Leitura automática (config.leituraAutomaticaSegundos, padrão 30): só com a aba à vista e sem preenchimento
+     em andamento. Redesenha só quando algo mudou e ninguém está digitando nem com uma janela aberta. */
+  const assinatura = (sol) => (sol?.itens || []).map(i => `${i.tipo}:${i.id}:${i.status}:${i.atualizado?.getTime() || ''}`).join('|') + `#${sol?.semAcesso ? 1 : 0}`;
+  let desenhada = '';
+  let relogio = null;
+  function seguroRedesenhar() {
+    const a = document.activeElement;
+    return $('#modal').hidden && $('#cmdk').hidden && !(a && viewEl.contains(a) && editavel(a));
+  }
+  function redesenharSePreciso() {
+    if (!['inicio', 'pendencias'].includes(S.view) || !document.body.classList.contains('plat')) return;
+    const ass = assinatura(S.plat.sol);
+    if (ass !== desenhada && seguroRedesenhar()) P.render(S.view);
+  }
+  function iniciarLeituraAutomatica() {
+    if (relogio) return;
+    const seg = Math.max(15, +S.rules?.config?.leituraAutomaticaSegundos || 30);
+    relogio = setInterval(() => {
+      if (document.hidden || S.plat.carregandoSol || S.preenchendo || !S.plat.sol) { redesenharSePreciso(); return; }
+      P.carregarSolicitacoes(true, { silencioso: true });
+    }, seg * 1000);
+  }
+  P.carregarSolicitacoes = (force = false, { silencioso = false } = {}) => {
     if (S.plat.carregandoSol) return S.plat.carregandoSol;
     if (S.plat.sol && !force) return Promise.resolve(S.plat.sol);
     S.plat.carregandoSol = (async () => {
-      atualizarSync('Lendo o portal…');
+      if (!silencioso) atualizarSync('Lendo o portal…');
       const tipos = Object.entries(S.rules.tipos).map(([key, t]) => ({ key, api: t.api || null, lista: t.apiLista || null, expand: t.apiExpand || '' }));
       const r = await request({ type: 'solicitacoes', tipos, maxPaginas: S.rules.config?.solicitacoesMaxPaginas || 2 }, 90000);
       const itens = [], erros = [], calibrar = [], chaves = new Set(), codigos = {}; let truncado = false;
@@ -116,17 +138,26 @@ export function montarPlataforma(A) {
       }
       itens.sort((a, b) => (b.atualizado?.getTime() || 0) - (a.atualizado?.getTime() || 0));
       const consultados = (r?.data || []).filter(g => !g.calibrar).length;
+      // leitura automática que falhou: fica o que já estava na tela
+      if (silencioso && S.plat.sol && (!r || (consultados && erros.length === consultados))) { atualizarSync(); return S.plat.sol; }
+      aplicarDatasGuardadas(itens);
       S.plat.sol = { itens, erros, calibrar, truncado, ok: !!r, quando: Date.now(), chaves: [...chaves], codigos, semAcesso: !!consultados && erros.length === consultados };
       atualizarBadge();
       atualizarSync();
-      if (['inicio', 'pendencias'].includes(S.view) && document.body.classList.contains('plat')) P.render(S.view);
+      if (silencioso) redesenharSePreciso();
+      else if (['inicio', 'pendencias'].includes(S.view) && document.body.classList.contains('plat')) P.render(S.view);
       carregarDatasAvisos();
+      iniciarLeituraAutomatica();
       return S.plat.sol;
     })().finally(() => { S.plat.carregandoSol = null; });
     return S.plat.carregandoSol;
   };
   /* Datas dos avisos de férias e rescisão (início, pagamento, data do aviso) ficam no detalhe da solicitação:
      lidas só para os avisos recentes, na hora, e guardadas só na memória junto do item. */
+  const datasGuardadas = new Map();   // id da solicitação → datas do aviso (só na memória; null = já tentou)
+  function aplicarDatasGuardadas(itens) {
+    for (const i of itens) if (datasGuardadas.has(i.id)) { i.datasLidas = true; const d = datasGuardadas.get(i.id); if (d) i.datas = Object.fromEntries(Object.entries({ ...i.datas, ...d }).map(([k, v]) => [k, v ?? i.datas?.[k] ?? null])); }
+  }
   async function carregarDatasAvisos() {
     const sol = S.plat.sol; if (!sol?.itens?.length) return;
     const hoje = E.today();
@@ -134,13 +165,14 @@ export function montarPlataforma(A) {
       && !(i.datas?.inicioFerias || i.datas?.pagamento || i.datas?.aviso) && i.criado && E.diffDays(i.criado, hoje) <= 120).slice(0, 12);
     if (!alvo.length) return;
     await Promise.all(alvo.map(async (i) => {
-      i.datasLidas = true;
+      i.datasLidas = true; datasGuardadas.set(i.id, null);
       const r = await request({ type: 'datasAviso', lista: S.rules.tipos[i.tipo]?.apiLista, solicitacao: i.id }, 15000);
       if (!r?.datas) return;
       const d = E.datasDoAviso(r.datas);
+      datasGuardadas.set(i.id, d);
       i.datas = Object.fromEntries(Object.entries({ ...i.datas, ...d }).map(([k, v]) => [k, v ?? i.datas?.[k] ?? null]));
     }));
-    if (S.plat.sol === sol && S.view === 'inicio' && document.body.classList.contains('plat')) P.render('inicio');
+    if (S.plat.sol === sol && S.view === 'inicio' && document.body.classList.contains('plat') && seguroRedesenhar()) P.render('inicio');
   }
   P.carregarEmpregados = (force = false) => {
     if (S.plat.carregandoEmp) return S.plat.carregandoEmp;
@@ -181,6 +213,7 @@ export function montarPlataforma(A) {
 
   P.render = (v) => {
     montarCasca(); marcarModulo(v);
+    desenhada = assinatura(S.plat.sol);
     if (v !== 'preencher') S.plat.escolher = false;
     viewEl.className = `view plat-view v-${v}`;
     ({ inicio: renderPainel, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();

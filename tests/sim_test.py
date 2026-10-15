@@ -177,6 +177,13 @@ async def teste_plataforma(b):
     # Aviso do portal coberto
     await pg.evaluate("window.__ctSim.atencao()"); await pg.wait_for_timeout(1800)
     check('atenção' in await pn.locator('#plat-aviso').inner_text(), 'janela do portal por baixo: a plataforma avisa')
+    # Leitura automática (config.leituraAutomaticaSegundos = 30): o escritório responde e o Hoje mostra sozinho
+    await pn.click('#rail [data-mod="inicio"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(600); await pn.evaluate("document.activeElement?.blur()")
+    antes = int(await pn.locator('.hj-sit[data-sit="responder"] b').get_attribute('data-conta'))
+    await pg.evaluate("window.__ctSim.escritorioResponde(1039, 'confirme a data de retorno.')")
+    alvo = str(antes + 1)
+    ok = await espera(lambda: pn.evaluate("(n) => document.querySelector('.hj-sit[data-sit=responder] b')?.dataset.conta === n", alvo), 45)
+    check(ok, 'leitura automática: a resposta do escritório aparece no Hoje sem clicar em nada')
     await pn.evaluate("document.documentElement.setAttribute('data-theme','dark')"); await pn.click('#rail [data-mod="inicio"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(600)
     await pg.screenshot(path='/tmp/sim-20-escuro.png')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))

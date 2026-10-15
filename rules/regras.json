@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.15-5",
+  "versao": "2026.10.15-6",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -195,7 +195,8 @@
       ]
     },
     "prescricaoDias": 30,
-    "prescricaoAvisoDias": 10
+    "prescricaoAvisoDias": 10,
+    "leituraAutomaticaSegundos": 30
   },
   "feriados": [
     "2026-01-01",
