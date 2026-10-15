@@ -960,14 +960,89 @@ export function normalizarSolicitacao(it, tipo, regras, hoje = today()) {
     aguardando: estado === 'aguardando',
     empregado: texto1(it?.clientEmployeeExpanded?.name, it?.employee?.name, it?.employeeName, it?.selectedEmployee?.name, it?.payrollEntryClientEmployeeExpanded?.name, typeof it?.employee === 'string' ? it.employee : null, it?.name),
     responsavel: texto1(it?.staffResponsibleExpanded?.name),
+    empresa: texto1(it?.clientExpanded?.name), empresaApelido: texto1(it?.clientExpanded?.nickname),
     assunto: texto1(it?.subject, it?.title, typeof it?.description === 'string' && it.description.length < 140 ? it.description : null),
     atualizado, parado,
     criado: parseDate(texto1(it?.created, it?.createdAt)),
     expectativa: parseDate(texto1(it?.dueDate)),
     competencia: texto1(it?.effectiveDate) ? fmtDate(parseDate(it.effectiveDate))?.slice(3) : '',
     prescreveEm: estado === 'aguardando' && prescreve && parado != null ? Math.max(0, dias - parado) : null,
+    // datas do aviso (vêm no detalhe da solicitação no Onvio real; se a lista trouxer, já valem)
+    datas: datasDoAviso(it),
     tramite: texto1(it?.lastProceeding?.description, it?.lastProceeding, it?.lastComment)
   };
+}
+
+/* Um login pode ver várias empresas: as listas do Onvio trazem as solicitações de todas (clientExpanded).
+   filtro: '' = a empresa aberta no portal (se nenhum item bater com o nome, mostra tudo), '*' = todas, ou o nome de uma. */
+const mesmaEmpresa = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.includes(y) || y.includes(x)); };
+export function empresasDasSolicitacoes(itens) {
+  const m = new Map(); for (const i of itens || []) if (i.empresa) m.set(i.empresa, (m.get(i.empresa) || 0) + 1);
+  return [...m].map(([nome, n]) => ({ nome, n })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+export function filtrarPorEmpresa(itens, filtro, empresaAtual) {
+  const l = itens || [];
+  if (empresasDasSolicitacoes(l).length <= 1 || filtro === '*') return l;
+  if (filtro) return l.filter(i => i.empresa === filtro);
+  const atual = l.filter(i => !i.empresa || mesmaEmpresa(i.empresa, empresaAtual));
+  return atual.some(i => i.empresa) ? atual : l;
+}
+export const empresaDoFiltro = (itens, filtro, empresaAtual) => filtro === '*' ? '*' : filtro || (empresasDasSolicitacoes(itens).find(e => mesmaEmpresa(e.nome, empresaAtual))?.nome || '*');
+
+/** Datas de um aviso de férias ou rescisão (campos do Onvio real, mapa do Control Onvio). */
+export function datasDoAviso(it) {
+  const d = (v) => parseDate(texto1(v));
+  return { inicioFerias: d(it?.vacationStartDate), pagamento: d(it?.paymentDate), aviso: d(it?.adviceDate), dias: +it?.vacationDays || null };
+}
+/* Avisos que pedem o cálculo: aviso de férias ou de rescisão criado no portal sem a solicitação de
+   cálculo do mesmo funcionário. Férias: pagamento até 2 dias antes do início (CLT 145). Rescisão: até 10 dias
+   do fim do contrato (CLT 477 §6) — com aviso indenizado conta da data do aviso (o mais cedo possível). */
+const PAR_CALCULO = { avisoFerias: 'calculoFerias', avisoRescisao: 'calculoRescisao' };
+export function avisosSemCalculo(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
+  const lista = itens || [];
+  const precisa = regras?.config?.prazoInternoDiasUteis?.calculo || 5;
+  const out = [];
+  for (const a of lista) {
+    const par = PAR_CALCULO[a.tipo];
+    if (!par || ['cancelada', 'prescrita'].includes(a.estado) || !a.empregado) continue;
+    const quem = norm(a.empregado);
+    const base = a.criado || a.atualizado;
+    const temCalculo = lista.some(c => c.tipo === par && norm(c.empregado) === quem && !['cancelada', 'prescrita'].includes(c.estado)
+      && (!base || !c.criado || diffDays(base, c.criado) >= -30));
+    if (temCalculo) continue;
+    const dt = a.datas || {};
+    let pagamento = null, estimado = false, inicio = null;
+    if (a.tipo === 'avisoFerias') {
+      inicio = dt.inicioFerias;
+      pagamento = dt.pagamento || (inicio ? addDays(inicio, -2) : null);
+    } else {
+      const av = dt.aviso || null;
+      if (av) { pagamento = addDays(av, 10); estimado = true; }
+    }
+    if (pagamento) {
+      const falta = diffDays(hoje, pagamento);
+      if (falta < -10 || falta > 45) continue;
+      out.push({ item: a, tipo: a.tipo === 'avisoFerias' ? 'ferias' : 'rescisao', calculo: par, pagamento, inicio, estimado, falta,
+        enviarAte: cal.addBusinessDays(pagamento, -precisa) });
+    } else if (base && diffDays(base, hoje) <= 45) {
+      out.push({ item: a, tipo: a.tipo === 'avisoFerias' ? 'ferias' : 'rescisao', calculo: par, pagamento: null, inicio, estimado: true, falta: null, enviarAte: null });
+    }
+  }
+  return out.sort((x, y) => (x.falta ?? 99) - (y.falta ?? 99));
+}
+/** Equipe no Hoje: experiência vencendo (30 dias) e férias a vencer (prazo de concessão em até 60 dias, estimativa). */
+export function equipeVencendo(empregados, itens, hoje = today(), regras = {}) {
+  const exp = [], ferias = [];
+  const recente = (tipo, nome, dias) => (itens || []).some(i => i.tipo === tipo && norm(i.empregado) === norm(nome) && i.criado && diffDays(i.criado, hoje) <= dias && !['cancelada', 'prescrita'].includes(i.estado));
+  for (const e of empregados || []) {
+    if (e.ativo === false) continue;
+    const s = situacaoEmpregado(e, hoje, regras);
+    const x = s.experiencia.find(k => k.falta >= 0 && k.falta <= 30);
+    if (x && !recente('avisoRescisao', e.nome, 60)) exp.push({ nome: e.nome, n: x.n, fim: x.fim, falta: x.falta });
+    if (s.ferias && s.ferias.falta <= 60 && !recente('avisoFerias', e.nome, 120) && !recente('calculoFerias', e.nome, 120))
+      ferias.push({ nome: e.nome, limite: s.ferias.limite, falta: s.ferias.falta, aquisitivo: s.ferias.aquisitivo });
+  }
+  return { experiencia: exp.sort((a, b) => a.falta - b.falta), ferias: ferias.sort((a, b) => a.falta - b.falta) };
 }
 
 /** Trâmites crus ({base}/{id}/topics) → [{ n, em, situacao, autor, texto (HTML do portal), anexos }], do mais antigo ao mais novo.

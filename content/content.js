@@ -223,6 +223,7 @@
         // plataforma: dados do portal lidos com a sessão do próprio cliente (nada sai do computador)
         case 'solicitacoes': post({ type: 'solicitacoes', id: m.id, data: await fetchSolicitacoes(m.tipos || [], m.maxPaginas) }); break;
         case 'tramites': post({ type: 'tramites', id: m.id, ...(await fetchTramites(m.base, m.solicitacao)) }); break;
+        case 'datasAviso': post({ type: 'datasAviso', id: m.id, ...(await fetchDatasAviso(m.lista, m.solicitacao)) }); break;
         case 'portalInfo': await estadoAcesso(); post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos, acesso: { visto: apiEstado.visto, nomes: apiEstado.nomes }, status: { ...ultimosStatus } }); break;
         case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : { disponivel: false, motivo: 'calibrar' }) }); break;
         case 'baixarDocumento': {
@@ -825,6 +826,17 @@
       const j = await r.json();
       return { itens: Array.isArray(j) ? j : (j.items || []) };
     } catch (e) { return { erro: String(e.message || e), itens: [] }; }
+  }
+  /** Datas de um aviso (detalhe da solicitação: {lista}/{id}?expand=all). Só os campos de data voltam ao painel; nada é guardado. */
+  const CAMPOS_AVISO = ['vacationStartDate', 'paymentDate', 'adviceDate', 'vacationDays'];
+  async function fetchDatasAviso(lista, id) {
+    if (!lista || !id) return { erro: 'sem-id' };
+    try {
+      let j;
+      if (plat.detalheItem) j = await plat.detalheItem(chaveSim(lista), id);
+      else { const r = await getJson(`/api/${lista}/${encodeURIComponent(id)}?expand=all`); if (!r.ok) return { erro: r.status }; j = await r.json(); }
+      return { datas: Object.fromEntries(CAMPOS_AVISO.filter(k => j?.[k] != null).map(k => [k, j[k]])) };
+    } catch (e) { return { erro: String(e.message || e) }; }
   }
   /** Sem a lista de empregados (o portal ainda não abriu nenhuma tela que a carrega): abre por
    *  baixo uma solicitação que tem o campo Empregado, espera o portal pedir a lista e volta.
