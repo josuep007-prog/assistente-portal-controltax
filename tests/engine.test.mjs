@@ -299,6 +299,10 @@ t('empate de nome: pergunta em vez de decidir pela ordem da lista', () => {
   assert.equal(r2.option, null);
   // nome completo e único continua sendo escolhido
   assert.equal(E.findEmployeeInText(txt, ['JOSE CARLOS DA SILVA', 'ANA PAULA REIS']).option, 'JOSE CARLOS DA SILVA');
+  // um nome melhor depois do empate desfaz o empate
+  const r3 = E.findEmployeeInText('JOSE CARLOS pediu. Assinado: MARIA SOUZA APARECIDA LIMA',
+    ['JOSE CARLOS SILVA', 'JOSE CARLOS COSTA', 'MARIA APARECIDA LIMA']);
+  assert.equal(r3.option, 'MARIA APARECIDA LIMA', `saiu ${JSON.stringify(r3)}`);
 });
 
 t('classificação: empate não é decidido pela ordem do regras.json', () => {

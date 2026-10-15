@@ -117,7 +117,7 @@ export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = 
     const hit = toks.filter(t => T.includes(' ' + t + ' ')).length;
     const s = toks.length ? hit / toks.length : 0;
     if (toks.length >= 2 && s >= 0.66) {
-      if (!best || s > best.bruto) best = { option: e, score: s * 0.95, bruto: s };
+      if (!best || s > best.bruto) { best = { option: e, score: s * 0.95, bruto: s }; empates.clear(); }
       else if (s === best.bruto && best.option !== e) empates.add(e);
     }
   }
