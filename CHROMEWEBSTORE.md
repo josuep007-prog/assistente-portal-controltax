@@ -1,21 +1,22 @@
 # Chrome Web Store — Assistente do Portal do Cliente — ControlTax
 
-> Última atualização: 2026-10-09 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
+> Última atualização: 2026-10-15 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
 
 ## Ficha
 
 **Nome:** Assistente do Portal do Cliente — ControlTax
 
-**Descrição curta (≤132):** Preenche as solicitações do Portal do Cliente a partir dos seus documentos e confere campos, anexos e prazos antes do envio.
+**Descrição curta (≤132):** Plataforma por cima do Portal do Cliente: acompanha solicitações, funcionários e prazos e preenche os pedidos pelos seus documentos.
 
 **Descrição detalhada:**
-Ajuda os clientes da ControlTax a abrir solicitações no Portal do Cliente de forma rápida, completa e no lugar certo.
+Uma plataforma em tela cheia por cima do Portal do Cliente da ControlTax. O portal continua sendo o caminho oficial: ele fica aberto por baixo e é preenchido pela plataforma.
+Painel com o que espera por você, todas as solicitações num só lugar (com busca e filtros), funcionários com contratos de experiência e férias a vencer, agenda do mês com os prazos legais e lembretes, documentos do escritório e modelos para assinar.
 
 Arraste um atestado, pedido de demissão, documentos de admissão ou planilha: o assistente identifica qual solicitação abrir, preenche os campos, anexa o arquivo e escreve um assunto e uma descrição padronizados.
 Antes do envio, confere campos obrigatórios, anexos e prazos trabalhistas (férias, rescisão, afastamento, admissão) e explica o que falta.
 Inclui calculadoras de férias, aviso prévio, rescisão, afastamento e contrato de experiência, além de um resumo das solicitações que aguardam resposta.
 
-Como usar: abra o Portal do Cliente, clique em "Assistente" no canto da tela (ou Alt+Shift+A), escolha o que precisa fazer ou arraste um documento.
+Como usar: abra o Portal do Cliente; a plataforma aparece em tela cheia (Alt+Shift+A mostra ou esconde). Escolha o que precisa fazer ou arraste um documento. "Ver no portal" mostra a tela original a qualquer momento.
 
 Privacidade: os arquivos são lidos no próprio computador. Nada é enviado a servidores da extensão; os dados vão apenas para o portal quando o próprio usuário envia a solicitação.
 
@@ -28,7 +29,8 @@ Privacidade: os arquivos são lidos no próprio computador. Nada é enviado a se
 | Item | Tamanho | Status |
 |---|---|---|
 | Ícone | 128×128 | ✅ icons/icon-128.png |
-| Captura 1 — painel preenchendo um afastamento | 1280×800 | ⬜ |
+| Captura 1 — plataforma: Painel | 1280×800 | ⬜ |
+| Captura 1b — painel preenchendo um afastamento | 1280×800 | ⬜ |
 | Captura 2 — conferência antes de enviar | 1280×800 | ⬜ |
 | Captura 3 — Início com "O que você precisa fazer?" | 1280×800 | ⬜ |
 
@@ -38,7 +40,7 @@ Privacidade: os arquivos são lidos no próprio computador. Nada é enviado a se
 |---|---|---|
 | storage | permissions | Guarda as preferências do usuário, o histórico local de solicitações preenchidas e a cópia das regras de preenchimento. |
 | alarms | permissions | Atualiza periodicamente o arquivo de regras (campos, prazos e textos) publicado pelo escritório. |
-| https://onvio.com.br/* | host | O assistente aparece e preenche formulários somente no Portal do Cliente e lê a lista de solicitações do próprio usuário para mostrar pendências. |
+| https://onvio.com.br/* | host | A plataforma aparece e preenche formulários somente no Portal do Cliente, e lê com a sessão do próprio usuário as listas que o portal já mostra (solicitações, funcionários e documentos). |
 | https://raw.githubusercontent.com/*, https://gist.githubusercontent.com/*, https://*.github.io/* | host | Baixar o arquivo de regras (JSON, sem código) mantido pelo escritório. |
 | http://localhost:35729/* | host | Somente para o desenvolvedor: recarregar a extensão ao salvar arquivos. Sem efeito para clientes. Pode ser removida da versão publicada. |
 
@@ -56,6 +58,9 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.0.0 | 2026-10-15 | Plataforma em tela cheia por cima do Portal do Cliente, no estilo do Control Hub. O portal continua aberto por baixo e é preenchido pela plataforma; "Ver no portal" mostra a tela original com o painel ao lado. Painel com o que espera por você, prazos da semana e contratos de experiência. Solicitações: todas num só lugar, com abas (aguardando você, em andamento, concluídas), busca, último trâmite e atalho para responder no portal. Novo pedido com formulário próprio (o que você escreve vai para o portal; o resumo antes do envio lê o próprio portal e avisa se ele não aceitou algum valor). Funcionários: tempo de casa, experiência e férias a conceder (estimativa), com atalhos para férias, afastamento e desligamento. Agenda do mês com prazos legais (salário, FGTS, INSS, 13º), prazos das solicitações, experiências e lembretes que se repetem. Documentos: do escritório, anexos das solicitações, modelos para assinar e listas de documentos. Busca com Ctrl+K. Aviso quando o portal pede atenção (janela ou sessão). Nas Configurações dá para voltar a abrir só o botão. Sem permissões novas. |
+| 1.3.3 | 2026-10-15 | Leitura de documentos. ASO e CAT: a opção que está impressa no formulário não é mais lida como se estivesse marcada — um ASO "Apto" aparecia como INAPTO e uma CAT de acidente típico virava Trajeto. Quando o nome lido serve para dois funcionários, o Assistente pergunta em vez de escolher pela ordem da lista. Documentos com a mesma pontuação deixam de ser desempatados pela ordem do arquivo de regras: o aviso de férias assinado ia para a solicitação errada. Datas: a data do aviso num pedido de demissão não é mais a da admissão, e o início das férias não é mais o do período aquisitivo. Novos documentos reconhecidos: título de eleitor (o anexo do cadastro nunca ficava marcado), termo de rescisão (TRCT) e holerite, os dois últimos com uma explicação de qual solicitação usar. |
+| 1.3.2 | 2026-10-15 | Correções de segurança do envio e de prazos. O arquivo que ainda não foi para o portal deixa de contar como anexado na conferência (antes a solicitação podia chegar ao escritório sem o documento). "Conferir e enviar" sempre mostra o resumo antes de acionar o portal, e a conferência passa a valer por padrão. Se o portal recusar o envio, a solicitação não é mais registrada como enviada, o rascunho é mantido e o lote espera. O botão "Desfazer o preenchimento" deixa de aparecer num formulário que o Assistente não preencheu. Trocar de empresa sem recarregar guarda o rascunho da anterior e começa limpo. Datas que não existem (30/02, "dia 31" num mês de 30 dias) deixam de virar outra data em silêncio. Fim do aviso prévio pela Súmula 380 do TST (saía um dia antes), aviso proporcional só quando a empresa demite e o aviso dos 15 dias + INSS só em doença e acidente. O interruptor do CID mostra o estado real, e a descrição não vai mais para o histórico. A Agenda só mostra prazos de pedidos enviados; o que ficou pela metade aparece em "Começou e não enviou". |
 | 1.3.1 | 2026-10-13 | O painel não repete mais os campos do portal: "No portal" só resume o que está em cada campo (preenchido pelo Assistente, por você ou vazio) e o preenchimento e as correções são feitos no próprio portal. No painel ficam só o que o portal não tem (dias, CID, médico, observações) e a prévia do assunto e da descrição, que se atualizam sozinhos quando você muda um campo no portal. O que você escreveu no portal nunca é sobrescrito. O atalho de funcionários recentes saiu junto com os campos. Novo botão "Desfazer o preenchimento" na barra do painel e no aviso que aparece na página depois de preencher: volta o formulário (campos e anexos) a como estava. |
 | 1.3.0 | 2026-10-13 | Leitor de atestados refeito com exemplos reais (sem guardar nenhum): dias por extenso e com erros de OCR ("( OL ) um", "012"), datas por extenso, com ano de 2 dígitos e "a partir desta data", sem confundir nascimento, decretos ou notas "1 a 15 dias"; nome do paciente pelos rótulos (sem pegar médico nem mãe); CID corrigido; fotos deitadas são giradas sozinhas; avisos de atestado de acompanhante, de escola e de declaração de comparecimento; mostra o trecho do documento de onde veio cada dado. Facilidades: colar print (Ctrl+V), funcionários recentes, aviso de pedido repetido, rascunho para continuar depois, repetir a última solicitação, alerta de contratos de experiência (45/90 dias), avisos do escritório, dúvidas frequentes na busca, ajustes por empresa nas regras, mensagem pronta de documentos de admissão, tamanho do texto, "Copiar diagnóstico" sem dados pessoais e modo seguro quando a tela do portal muda. |
 | 1.2.5 | 2026-10-13 | O "Download ZIP" do GitHub agora traz a extensão completa (pastas lib/ e fonts/). Se a pasta lib/ faltar, o painel abre normalmente e avisa, em vez de ficar em branco. |

@@ -207,4 +207,185 @@ t('CID: variações', () => {
   assert.equal(E.lerCid('sem diagnóstico'), null);
 });
 
+/* ---- 1.3.2: correções de envio, datas e prazos ---- */
+
+t('data que não existe não vira outra data', () => {
+  assert.equal(E.parseDate('2026-02-30'), null);
+  assert.equal(E.parseDate('31 de fevereiro de 2026'), null);
+  assert.equal(E.parseDate('30/02/2026'), null);
+  assert.equal(E.fmtDate(E.parseDate('29/02/2028')), '29/02/2028');   // ano bissexto continua valendo
+  // "dia 31" num mês de 30 dias não pode virar o dia 1 do mês seguinte
+  assert.deepEqual(E.findDates('ferias dia 31', new Date(2026, 10, 10)), []);
+  assert.equal(E.fmtDate(E.findDates('ferias dia 20', new Date(2026, 10, 10))[0]), '20/11/2026');
+  assert.deepEqual(E.findDates('31 de setembro de 2026', hoje), []);
+});
+
+t('dia pedido já passou: vai para o mês seguinte, inclusive na virada do ano', () => {
+  assert.equal(E.fmtDate(E.findDates('dia 5', new Date(2026, 11, 20))[0]), '05/01/2027');
+});
+
+t('fim do aviso prévio inclui o último dia (Súmula 380 do TST)', () => {
+  assert.equal(E.fmtDate(E.fimDoAviso(new Date(2026, 8, 15), 30)), '15/10/2026');
+  assert.equal(E.fmtDate(E.fimDoAviso(new Date(2026, 8, 15), 45)), '30/10/2026');
+});
+
+t('aviso proporcional só quando a empresa demite', () => {
+  const base = { anosEmpresa: '5', motivo: 'Dispensa SEM justa causa' };
+  assert.equal(E.derived('avisoRescisao', { ...base, avisoDadoPor: 'EMPREGADOR' }, rules).diasAviso, '45');
+  assert.equal(E.derived('avisoRescisao', { ...base, motivo: 'Pedido de demissão SEM justa causa', avisoDadoPor: 'EMPREGADO' }, rules).diasAviso, '30');
+  // "EMPREGADOR" contém "EMPREGADO": a comparação não pode ser por trecho
+  assert.equal(E.derived('avisoRescisao', { ...base, avisoDadoPor: 'EMPREGADOR' }, rules).diasAviso, '45');
+});
+
+t('justa causa não gera aviso prévio', () => {
+  const r = E.derived('avisoRescisao', { anosEmpresa: '5', motivo: 'Dispensa COM justa causa', avisoDadoPor: 'EMPREGADOR', dataAviso: '15/09/2026' }, rules);
+  assert.equal(r.diasAviso, undefined);
+  assert.equal(r.fimAviso, undefined);
+});
+
+t('INSS a partir do 16º dia só em doença e acidente', () => {
+  const com = E.derived('afastamento', { dataAfastamento: '05/10/2026', dias: '20', tipoAfastamento: 'Doença período superior a 15 dias' }, rules);
+  assert.equal(com.inicioInss, '20/10/2026');
+  const sem = E.derived('afastamento', { dataAfastamento: '05/10/2026', dias: '120', tipoAfastamento: 'Licença maternidade' }, rules);
+  assert.equal(sem.inicioInss, undefined);
+  // sem tipo escolhido, mantém o aviso geral
+  assert.equal(E.derived('afastamento', { dataAfastamento: '05/10/2026', dias: '20' }, rules).inicioInss, '20/10/2026');
+});
+
+t('anexo que está só no Assistente não conta como anexado', () => {
+  const vals = { empregado: 'JOAO DA SILVA', dataAfastamento: '05/10/2026', dias: '3' };
+  const soNoPainel = E.runChecks('afastamento', vals, [{ nome: 'atestado.pdf', documento: 'atestado', pendente: true }], rules, hoje);
+  assert.ok(!soNoPainel.some(i => i.nivel === 'ok' && /anexado/.test(i.mensagem)), 'não pode dar "anexado"');
+  assert.ok(soNoPainel.some(i => i.nivel === 'erro' && /atestado\.pdf/.test(i.mensagem)), 'avisa que falta anexar no portal');
+  const noPortal = E.runChecks('afastamento', vals, [{ nome: 'atestado.pdf', documento: 'atestado' }], rules, hoje);
+  assert.ok(noPortal.some(i => i.nivel === 'ok' && /anexado/.test(i.mensagem)));
+});
+
+t('recados do escritório têm datas em AAAA-MM-DD', () => {
+  for (const a of rules.avisosEscritorio || []) {
+    assert.ok(a.id && a.titulo && a.texto, `recado sem id/título/texto: ${JSON.stringify(a)}`);
+    for (const k of ['desde', 'ate']) if (a[k]) assert.match(a[k], /^\d{4}-\d{2}-\d{2}$/, `${a.id}.${k} fora do formato`);
+  }
+});
+
+/* ---- 1.3.3: leitura de documentos ---- */
+
+t('ASO: opção impressa não conta como marcada', () => {
+  const aso = 'ATESTADO DE SAÚDE OCUPACIONAL\nTipo de exame: ( ) Admissional (X) Demissional ( ) Periódico\nParecer: (X) Apto ( ) Inapto\nData: 05/10/2026';
+  const r = E.readASO(aso);
+  assert.equal(r.resultado, 'APTO', 'ASO apto não pode sair como INAPTO');
+  assert.equal(r.tipo, 'demissional', 'o tipo é o marcado, não o primeiro da lista');
+  // sem nenhuma marca visível, não chuta
+  assert.equal(E.readASO('Parecer: ( ) Apto ( ) Inapto').resultado, null);
+  // texto corrido continua funcionando
+  assert.equal(E.readASO('O trabalhador foi considerado inapto para a função.').resultado, 'INAPTO');
+});
+
+t('opcaoMarcada entende (X), [x], ☒ e a marca depois da opção', () => {
+  assert.equal(E.opcaoMarcada('( ) Típico (X) Trajeto', ['Típico', 'Trajeto']), 'Trajeto');
+  assert.equal(E.opcaoMarcada('[x] Típico [ ] Trajeto', ['Típico', 'Trajeto']), 'Típico');
+  assert.equal(E.opcaoMarcada('Típico ☒  Trajeto ☐', ['Típico', 'Trajeto']), 'Típico');
+  assert.equal(E.opcaoMarcada('(X) Típico (X) Trajeto', ['Típico', 'Trajeto']), null, 'duas marcadas: não escolhe');
+});
+
+t('empate de nome: pergunta em vez de decidir pela ordem da lista', () => {
+  const txt = 'Eu, JOSE CARLOS, venho pedir demissão.';
+  const lista = ['JOSE CARLOS DA SILVA', 'JOSE CARLOS DA COSTA'];
+  const r = E.findEmployeeInText(txt, lista);
+  assert.equal(r.option, null);
+  assert.deepEqual(r.candidatos.slice().sort(), lista.slice().sort());
+  // invertendo a lista, o resultado é o mesmo (antes vencia o último)
+  const r2 = E.findEmployeeInText(txt, lista.slice().reverse());
+  assert.equal(r2.option, null);
+  // nome completo e único continua sendo escolhido
+  assert.equal(E.findEmployeeInText(txt, ['JOSE CARLOS DA SILVA', 'ANA PAULA REIS']).option, 'JOSE CARLOS DA SILVA');
+  // um nome melhor depois do empate desfaz o empate
+  const r3 = E.findEmployeeInText('JOSE CARLOS pediu. Assinado: MARIA SOUZA APARECIDA LIMA',
+    ['JOSE CARLOS SILVA', 'JOSE CARLOS COSTA', 'MARIA APARECIDA LIMA']);
+  assert.equal(r3.option, 'MARIA APARECIDA LIMA', `saiu ${JSON.stringify(r3)}`);
+});
+
+t('classificação: empate não é decidido pela ordem do regras.json', () => {
+  const aviso = 'AVISO DE FÉRIAS\nParticipamos-lhe que suas férias serão concedidas.\nPeríodo aquisitivo: 01/03/2025 a 29/02/2026\nPeríodo de gozo: 03/11/2026 a 22/11/2026\nCiente: ______';
+  const docs = E.classifyDocument(aviso, rules);
+  assert.equal(docs[0].id, 'avisoFeriasAssinado', `saiu ${docs[0].id}`);
+});
+
+t('pedido de demissão: a data do aviso não é a da admissão', () => {
+  const txt = 'PEDIDO DE DEMISSÃO\nEu, MARIA APARECIDA LIMA, admitida em 10/01/2024, solicito meu desligamento a partir de 20/10/2026.\nSerra-ES, 05 de outubro de 2026.';
+  const r = E.analyzeText(txt, rules, { employees: ['MARIA APARECIDA LIMA'] });
+  assert.equal(r.campos.dataAviso?.valor, '20/10/2026', `saiu ${r.campos.dataAviso?.valor}`);
+});
+
+t('férias: início do gozo não é o do período aquisitivo', () => {
+  const txt = 'AVISO DE FÉRIAS\nPeríodo aquisitivo de 01/03/2025 a 29/02/2026\nPeríodo de gozo: 03/11/2026\n20 dias de gozo';
+  const r = E.analyzeText(txt, rules, { tipoAtual: 'avisoFerias' });
+  assert.equal(r.campos.inicioGozo?.valor, '03/11/2026', `saiu ${r.campos.inicioGozo?.valor}`);
+});
+
+t('documentos novos: título de eleitor, TRCT e holerite', () => {
+  const ids = new Set((rules.documentos || []).map(d => d.id));
+  for (const id of ['titulo', 'trct', 'holerite']) assert.ok(ids.has(id), `falta o documento ${id}`);
+  assert.equal(E.classifyDocument('JUSTIÇA ELEITORAL\nTÍTULO DE ELEITOR\nZona 015  Seção 0123', rules)[0].id, 'titulo');
+  // todo anexo exigido precisa de um documento que o reconheça
+  for (const [k, t] of Object.entries(rules.tipos)) {
+    for (const a of t.anexos || []) if (a.documento) assert.ok(ids.has(a.documento), `${k}: anexo aponta para documento inexistente "${a.documento}"`);
+  }
+});
+
+t('comprovante do CPF não vira título de eleitor no cadastro', () => {
+  const txt = 'COMPROVANTE DE SITUAÇÃO CADASTRAL NO CPF\nNome: MARIA APARECIDA LIMA\nCPF: 529.982.247-25\nData da Inscrição: 03/02/2010';
+  const r = E.analyzeText(txt, rules, { tipoAtual: 'cadastroEmpregado' });
+  assert.equal(r.campos.titulo, undefined, `saiu ${JSON.stringify(r.campos.titulo)}`);
+});
+
+/* ---------- Plataforma (2.0) ---------- */
+t('solicitações: situação e "aguardando você" pelas regras', () => {
+  const a = E.normalizarSolicitacao({ id: 7, status: { description: 'Aguardando o cliente' }, employee: { name: 'JOAO' }, subject: 'Férias', lastUpdate: '2026-10-08T10:00:00' }, 'avisoFerias', rules);
+  assert.equal(a.estado, 'aguardando'); assert.ok(a.aguardando); assert.equal(a.empregado, 'JOAO'); assert.equal(E.iso(a.atualizado), '2026-10-08');
+  assert.equal(E.normalizarSolicitacao({ status: 'Concluída' }, 'geral', rules).estado, 'concluida');
+  assert.equal(E.normalizarSolicitacao({ status: 'Cancelada pelo escritório' }, 'geral', rules).estado, 'cancelada');
+  assert.equal(E.normalizarSolicitacao({ status: { name: 'Em andamento' } }, 'geral', rules).estado, 'andamento');
+  // formato desconhecido: não quebra
+  const v = E.normalizarSolicitacao({}, 'geral', rules); assert.equal(v.estado, 'andamento'); assert.equal(v.atualizado, null);
+});
+
+t('lembretes: mensal no dia 31 cai no último dia dos meses curtos; "excluir só este dia"', () => {
+  const l = { data: '2026-01-31', rep: 'mensal' };
+  const oc = E.ocorrencias(l, new Date(2026, 1, 1), new Date(2026, 3, 30)).map(E.iso);
+  assert.deepEqual(oc, ['2026-02-28', '2026-03-31', '2026-04-30']);
+  const sem = E.ocorrencias({ ...l, pular: ['2026-03-31'] }, new Date(2026, 1, 1), new Date(2026, 3, 30)).map(E.iso);
+  assert.deepEqual(sem, ['2026-02-28', '2026-04-30']);
+  assert.equal(E.ocorrencias({ data: '2026-10-05', rep: 'semanal', intervalo: 2, ate: '2026-11-01' }, new Date(2026, 9, 1), new Date(2026, 11, 31)).length, 2);
+  const cal = E.makeCalendar(rules.feriados);
+  // dia útil: pula fim de semana e o feriado de 12/10
+  assert.deepEqual(E.ocorrencias({ data: '2026-10-09', rep: 'util' }, new Date(2026, 9, 9), new Date(2026, 9, 13), cal).map(E.iso), ['2026-10-09', '2026-10-13']);
+  assert.equal(E.ocorrencias({ data: '2026-10-09' }, new Date(2026, 9, 1), new Date(2026, 9, 31)).length, 1);
+  assert.match(E.resumoRepeticao({ data: '2026-10-10', rep: 'mensal', ate: '2026-12-31' }), /Todo mês, dia 10, até 31\/12\/2026/);
+});
+
+t('agenda fixa: 5º dia útil, FGTS antecipado e 13º só em novembro/dezembro', () => {
+  const ids = (ano, mes) => Object.fromEntries(E.prazosFixos(rules, ano, mes).map(p => [p.id, E.iso(p.d)]));
+  const nov = ids(2026, 10);
+  assert.equal(nov.salario, '2026-11-09');   // 02/11 é feriado: 3, 4, 5, 6 e 9
+  assert.equal(nov.fgts, '2026-11-19');      // 20/11 é feriado → dia útil anterior
+  assert.equal(nov.decimo1, '2026-11-30');
+  assert.equal(nov.decimo2, undefined);
+  assert.equal(ids(2026, 11).decimo2, '2026-12-18');   // 20/12 é domingo
+  assert.equal(ids(2026, 9).decimo1, undefined);
+});
+
+t('funcionário: experiência, tempo de casa e férias (estimativa)', () => {
+  const novo = E.situacaoEmpregado({ nome: 'VANESSA', admissao: '2026-09-01', ativo: true }, hoje, rules);
+  assert.equal(E.iso(novo.experiencia[0].fim), '2026-10-15');
+  assert.equal(novo.proxima.titulo, 'Fim da experiência (45 dias)');
+  assert.equal(novo.ferias, null);
+  const antigo = E.situacaoEmpregado({ nome: 'ANA', admissao: '2024-12-01', ativo: true }, hoje, rules);
+  assert.equal(antigo.tempoCasa, '1 ano e 10 meses');
+  assert.equal(antigo.ferias.aquisitivo, '01/12/2024 a 30/11/2025');
+  assert.equal(E.iso(antigo.ferias.limite), '2026-11-30');
+  assert.match(antigo.proxima.titulo, /Conceder férias/);
+  assert.equal(E.situacaoEmpregado({ nome: 'X', admissao: '2020-01-01', ativo: false }, hoje, rules).proxima, null);
+});
+
 console.log(`\n${n} testes ok`);

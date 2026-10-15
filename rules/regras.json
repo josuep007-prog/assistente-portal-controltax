@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.13-3",
+  "versao": "2026.10.15-3",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -32,7 +32,39 @@
     "experienciaDias": [
       45,
       90
-    ]
+    ],
+    "motivosSemAviso": [
+      "COM justa causa",
+      "experiência",
+      "tempo determinado",
+      "Culpa recíproca"
+    ],
+    "solicitacoesMaxPaginas": 4,
+    "statusSolicitacao": {
+      "_comentario": "Expressões (sem diferenciar maiúsculas) aplicadas à situação de cada solicitação lida das listas do portal. A calibrar com os itens reais do Onvio.",
+      "aguardando": [
+        "aguardando[^\"]{0,20}(cliente|voc[eê])",
+        "waiting[_ ]?(for[_ ]?)?(client|customer)",
+        "awaiting"
+      ],
+      "concluida": [
+        "conclu",
+        "finaliz",
+        "complet",
+        "encerrad",
+        "done",
+        "finished"
+      ],
+      "cancelada": [
+        "cancel"
+      ],
+      "rotulos": {
+        "aguardando": "Aguardando você",
+        "andamento": "Em andamento",
+        "concluida": "Concluída",
+        "cancelada": "Cancelada"
+      }
+    }
   },
   "feriados": [
     "2026-01-01",
@@ -614,6 +646,13 @@
         "{documentoPrincipal} – {empregado} – {dataAfastamento}",
         "{documentoPrincipal} – {empregado}",
         "{documentoPrincipal} – {dataAfastamento} ({diasTexto})"
+      ],
+      "tiposComInss": [
+        "Doença",
+        "Acid. Trabalho",
+        "mesma doença",
+        "mesmo acid",
+        "Doença profissional"
       ]
     },
     "avisoFerias": {
@@ -1217,7 +1256,8 @@
             "nome do empregado",
             "nome do funcionário",
             "nome"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "nomeSocial": {
           "fc": "socialName",
@@ -1225,7 +1265,8 @@
           "rotulo": "Nome social",
           "sinonimos": [
             "nome social"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "cpf": {
           "fc": "nationalIdentity",
@@ -1235,7 +1276,8 @@
           "sinonimos": [
             "CPF",
             "C.P.F."
-          ]
+          ],
+          "grupo": "Geral"
         },
         "cargo": {
           "fc": "jobPositionExpanded",
@@ -1243,7 +1285,8 @@
           "rotulo": "Cargo",
           "sinonimos": [
             "cargo"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "funcao": {
           "fc": "occupationExpanded",
@@ -1251,7 +1294,8 @@
           "rotulo": "Função",
           "sinonimos": [
             "função"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "departamento": {
           "fc": "departmentExpanded",
@@ -1260,17 +1304,20 @@
           "sinonimos": [
             "departamento",
             "setor"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "centroCusto": {
           "fc": "costCenterExpanded",
           "tipo": "combo",
-          "rotulo": "Centro de custo"
+          "rotulo": "Centro de custo",
+          "grupo": "Geral"
         },
         "sindicato": {
           "fc": "laborUnionClientExpanded",
           "tipo": "combo",
-          "rotulo": "Sindicato"
+          "rotulo": "Sindicato",
+          "grupo": "Geral"
         },
         "primeiroEmprego": {
           "tipo": "radio",
@@ -1278,7 +1325,8 @@
           "seletores": {
             "Não": "#radioBasic-firstJob0",
             "Sim": "#radioBasic-firstJob1"
-          }
+          },
+          "grupo": "Geral"
         },
         "dataAdmissao": {
           "fc": "admissionDate",
@@ -1289,7 +1337,8 @@
             "data de admissão",
             "admissão",
             "início"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "salario": {
           "fc": "wage",
@@ -1300,7 +1349,8 @@
             "salário",
             "salário base",
             "remuneração"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "contratoExperiencia": {
           "fc": "daysExperience",
@@ -1309,7 +1359,8 @@
           "sinonimos": [
             "contrato de experiência",
             "experiência"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "prorrogacao": {
           "fc": "extensionDays",
@@ -1317,7 +1368,8 @@
           "rotulo": "Dias de prorrogação",
           "sinonimos": [
             "prorrogação"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "jornada": {
           "fc": "workDayExpanded",
@@ -1326,7 +1378,8 @@
           "sinonimos": [
             "jornada",
             "horário de trabalho"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "cargaHoraria": {
           "fc": "monthlyHours",
@@ -1334,7 +1387,8 @@
           "rotulo": "Carga horária mensal",
           "sinonimos": [
             "carga horária"
-          ]
+          ],
+          "grupo": "Geral"
         },
         "ctpsNumero": {
           "fc": "workNumber",
@@ -1344,7 +1398,8 @@
             "CTPS",
             "carteira de trabalho",
             "nº CTPS"
-          ]
+          ],
+          "grupo": "Profissional"
         },
         "ctpsSerie": {
           "fc": "workSerial",
@@ -1352,12 +1407,14 @@
           "rotulo": "CTPS — série",
           "sinonimos": [
             "série"
-          ]
+          ],
+          "grupo": "Profissional"
         },
         "ctpsUf": {
           "fc": "workState",
           "tipo": "combo",
-          "rotulo": "CTPS — UF"
+          "rotulo": "CTPS — UF",
+          "grupo": "Profissional"
         },
         "pis": {
           "fc": "pisNumber",
@@ -1369,7 +1426,8 @@
             "NIS",
             "NIT",
             "PIS/PASEP"
-          ]
+          ],
+          "grupo": "Profissional"
         },
         "formaPagamento": {
           "tipo": "radio",
@@ -1379,7 +1437,8 @@
             "Cheque": "#radioBasic-paymentMethod1",
             "Crédito em conta": "#radioBasic-paymentMethod2",
             "PIX": "#radioBasic-paymentMethod3"
-          }
+          },
+          "grupo": "Profissional"
         },
         "tipoConta": {
           "fc": "paymentAccountType",
@@ -1387,7 +1446,8 @@
           "rotulo": "Tipo de conta",
           "sinonimos": [
             "tipo de conta"
-          ]
+          ],
+          "grupo": "Profissional"
         },
         "banco": {
           "fc": "paymentBankExpanded",
@@ -1395,7 +1455,8 @@
           "rotulo": "Banco",
           "sinonimos": [
             "banco"
-          ]
+          ],
+          "grupo": "Profissional"
         },
         "agencia": {
           "fc": "paymentBankAgencyDescription",
@@ -1403,7 +1464,8 @@
           "rotulo": "Agência",
           "sinonimos": [
             "agência"
-          ]
+          ],
+          "grupo": "Profissional"
         },
         "conta": {
           "fc": "paymentAccount",
@@ -1412,12 +1474,14 @@
           "sinonimos": [
             "conta corrente",
             "conta"
-          ]
+          ],
+          "grupo": "Profissional"
         },
         "digitoConta": {
           "fc": "paymentDigit",
           "tipo": "texto",
-          "rotulo": "Dígito da conta"
+          "rotulo": "Dígito da conta",
+          "grupo": "Profissional"
         },
         "cep": {
           "fc": "zipCode",
@@ -1426,7 +1490,8 @@
           "obrigatorio": true,
           "sinonimos": [
             "CEP"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "endereco": {
           "fc": "streetAddress",
@@ -1436,7 +1501,8 @@
             "endereço",
             "logradouro",
             "rua"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "numero": {
           "fc": "addressNumber",
@@ -1445,7 +1511,8 @@
           "sinonimos": [
             "número",
             "nº"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "complemento": {
           "fc": "additionalAddress",
@@ -1453,7 +1520,8 @@
           "rotulo": "Complemento",
           "sinonimos": [
             "complemento"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "bairro": {
           "fc": "neighborhood",
@@ -1461,7 +1529,8 @@
           "rotulo": "Bairro",
           "sinonimos": [
             "bairro"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "uf": {
           "fc": "addressState",
@@ -1470,7 +1539,8 @@
           "sinonimos": [
             "UF",
             "estado"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "municipio": {
           "fc": "addressCity",
@@ -1479,7 +1549,8 @@
           "sinonimos": [
             "município",
             "cidade"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "email": {
           "fc": "primaryEmailAddress",
@@ -1488,7 +1559,8 @@
           "sinonimos": [
             "e-mail",
             "email"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "telefone": {
           "fc": "primaryPhoneNumber",
@@ -1498,7 +1570,8 @@
             "telefone",
             "celular",
             "fone"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "nascimento": {
           "fc": "birthdate",
@@ -1509,21 +1582,24 @@
             "data de nascimento",
             "nascimento",
             "nasc."
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "nacionalidade": {
           "fc": "countryOrigin",
           "tipo": "combo",
           "rotulo": "País de nacionalidade",
           "obrigatorio": true,
-          "padrao": "Brasil"
+          "padrao": "Brasil",
+          "grupo": "Pessoal"
         },
         "paisNascimento": {
           "fc": "birthCountry",
           "tipo": "combo",
           "rotulo": "País de nascimento",
           "obrigatorio": true,
-          "padrao": "Brasil"
+          "padrao": "Brasil",
+          "grupo": "Pessoal"
         },
         "ufNascimento": {
           "fc": "birthState",
@@ -1532,7 +1608,8 @@
           "obrigatorio": true,
           "sinonimos": [
             "naturalidade UF"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "municipioNascimento": {
           "fc": "birthCity",
@@ -1543,7 +1620,8 @@
             "naturalidade",
             "município de nascimento",
             "local de nascimento"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "sexo": {
           "tipo": "radio",
@@ -1555,7 +1633,8 @@
           },
           "sinonimos": [
             "sexo"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "racaCor": {
           "fc": "race",
@@ -1566,7 +1645,8 @@
             "raça/cor",
             "raça",
             "cor"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "grauInstrucao": {
           "fc": "schoolingLevel",
@@ -1575,7 +1655,8 @@
           "sinonimos": [
             "grau de instrução",
             "escolaridade"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "estadoCivil": {
           "fc": "maritalStatus",
@@ -1583,7 +1664,8 @@
           "rotulo": "Estado civil",
           "sinonimos": [
             "estado civil"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "conjuge": {
           "fc": "spouseName",
@@ -1592,7 +1674,8 @@
           "sinonimos": [
             "cônjuge",
             "nome do cônjuge"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "pai": {
           "fc": "fatherName",
@@ -1602,7 +1685,8 @@
             "nome do pai",
             "pai",
             "filiação"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "mae": {
           "fc": "motherName",
@@ -1612,7 +1696,8 @@
           "sinonimos": [
             "nome da mãe",
             "mãe"
-          ]
+          ],
+          "grupo": "Pessoal"
         },
         "possuiDependentes": {
           "tipo": "radio",
@@ -1620,7 +1705,8 @@
           "seletores": {
             "Não": "#radioBasic-hasDependents0",
             "Sim": "#radioBasic-hasDependents1"
-          }
+          },
+          "grupo": "Pessoal"
         },
         "deficiencia": {
           "tipo": "radio",
@@ -1628,7 +1714,8 @@
           "seletores": {
             "Não": "#radioBasic-isDisabledPerson0",
             "Sim": "#radioBasic-isDisabledPerson1"
-          }
+          },
+          "grupo": "Pessoal"
         },
         "rg": {
           "fc": "identityCard",
@@ -1639,7 +1726,8 @@
             "identidade",
             "registro geral",
             "carteira de identidade"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "orgaoRg": {
           "fc": "issuingAgency",
@@ -1649,12 +1737,14 @@
             "órgão expedidor",
             "órgão emissor",
             "expedidor"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "ufRg": {
           "fc": "identityState",
           "tipo": "combo",
-          "rotulo": "UF do RG"
+          "rotulo": "UF do RG",
+          "grupo": "Documentos"
         },
         "dataRg": {
           "fc": "identityCardIssuingDate",
@@ -1664,7 +1754,8 @@
             "data de expedição",
             "data de emissão",
             "expedição"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "titulo": {
           "fc": "electoralCard",
@@ -1672,9 +1763,9 @@
           "rotulo": "Título de eleitor",
           "sinonimos": [
             "título de eleitor",
-            "título eleitoral",
-            "inscrição"
-          ]
+            "título eleitoral"
+          ],
+          "grupo": "Documentos"
         },
         "zona": {
           "fc": "electoralWard",
@@ -1682,7 +1773,8 @@
           "rotulo": "Zona eleitoral",
           "sinonimos": [
             "zona"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "secao": {
           "fc": "pollingStation",
@@ -1690,7 +1782,8 @@
           "rotulo": "Seção eleitoral",
           "sinonimos": [
             "seção"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "reservista": {
           "fc": "militaryDischargeCertificate",
@@ -1700,7 +1793,8 @@
             "reservista",
             "certificado de reservista",
             "RA"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "cnh": {
           "fc": "driverLicenseNumber",
@@ -1711,7 +1805,8 @@
             "nº registro",
             "carteira de motorista",
             "registro"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "cnhCategoria": {
           "fc": "driverLicenseCategory",
@@ -1720,7 +1815,8 @@
           "sinonimos": [
             "cat. hab.",
             "categoria"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "cnhValidade": {
           "fc": "driverLicenseDueDate",
@@ -1728,7 +1824,8 @@
           "rotulo": "CNH — validade",
           "sinonimos": [
             "validade"
-          ]
+          ],
+          "grupo": "Documentos"
         },
         "observacoes": {
           "fc": "comments",
@@ -2149,6 +2246,10 @@
           "nivel": "info",
           "mensagem": "Parece uma declaração de comparecimento (horas), sem dias de afastamento. Se for isso, ela serve para justificar as horas: informe o horário na descrição."
         }
+      ],
+      "negativas": [
+        "atestado de saúde ocupacional",
+        "pcmso"
       ]
     },
     {
@@ -2176,8 +2277,8 @@
           "data\\s*(?:de\\s*)?emiss[ãa]o\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})"
         ],
         "dataAfastamento": [
-          "data\\s*do\\s*acidente\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})",
-          "(\\d{2}/\\d{2}/\\d{4})"
+          "data\\s*(?:e\\s*hora\\s*)?do\\s*acidente\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "data\\s*do\\s*afastamento\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})"
         ]
       },
       "tipoCatPalavras": {
@@ -2234,8 +2335,9 @@
       ],
       "extrair": {
         "dataAviso": [
-          "(\\d{2}/\\d{2}/\\d{4})",
-          "(\\d{1,2} de [a-zç]+ de \\d{4})"
+          "(?:a\\s*partir\\s*(?:de|do\\s*dia)|solicito\\s*(?:o\\s*)?(?:meu\\s*)?desligamento\\s*(?:a\\s*partir\\s*de|em|no\\s*dia)?|desligamento\\s*(?:a\\s*partir\\s*de|em|no\\s*dia)|data\\s*do\\s*(?:aviso|pedido))\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "(?:a\\s*partir\\s*(?:de|do\\s*dia)|data\\s*do\\s*(?:aviso|pedido))\\s*:?\\s*(\\d{1,2} de [a-zç]+ de \\d{4})",
+          ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
       "valores": {
@@ -2263,13 +2365,20 @@
       ],
       "extrair": {
         "dataAviso": [
-          "(\\d{2}/\\d{2}/\\d{4})"
+          "(?:data\\s*do\\s*aviso|a\\s*partir\\s*(?:de|do\\s*dia)|comunicamos.{0,40}?(?:em|no\\s*dia))\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
       "valores": {
         "motivo": "Demitido SEM justa causa",
         "avisoDadoPor": "EMPREGADOR"
-      }
+      },
+      "negativas": [
+        "termo de rescisão",
+        "verbas rescisórias",
+        "trct",
+        "homologação"
+      ]
     },
     {
       "id": "aso",
@@ -2288,7 +2397,20 @@
       "minPalavras": 2,
       "forte": [
         "atestado de saúde ocupacional"
-      ]
+      ],
+      "opcoes": {
+        "resultado": [
+          "Apto",
+          "Inapto"
+        ],
+        "tipo": [
+          "Admissional",
+          "Demissional",
+          "Periódico",
+          "Retorno ao trabalho",
+          "Mudança de função"
+        ]
+      }
     },
     {
       "id": "identidade",
@@ -2416,7 +2538,7 @@
       "minPalavras": 2,
       "extrair": {
         "inicioGozo": [
-          "(?:início|inicio|de)\\s*:?\\s*(\\d{2}/\\d{2}/\\d{4})"
+          "(?:per[íi]odo\\s*de\\s*gozo|in[íi]cio\\s*(?:do\\s*gozo|das\\s*f[ée]rias)?|gozar[áa]?\\s*(?:as\\s*f[ée]rias)?\\s*(?:a\\s*partir\\s*de|de))\\s*:?\\s*(?:de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})"
         ],
         "diasGozo": [
           "(\\d{1,2})\\s*dias\\s*(?:de\\s*)?(?:gozo|férias)"
@@ -2424,7 +2546,12 @@
         "diasAbono": [
           "(\\d{1,2})\\s*dias\\s*(?:de\\s*)?abono"
         ]
-      }
+      },
+      "negativas": [
+        "participamos",
+        "ciente",
+        "recibo de férias"
+      ]
     },
     {
       "id": "avisoFeriasAssinado",
@@ -2453,6 +2580,79 @@
         "banco"
       ],
       "minPalavras": 2
+    },
+    {
+      "id": "titulo",
+      "nome": "Título de eleitor",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "título de eleitor",
+        "justiça eleitoral",
+        "zona",
+        "seção",
+        "eleitor",
+        "tribunal superior eleitoral"
+      ],
+      "forte": [
+        "justiça eleitoral"
+      ],
+      "minPalavras": 2
+    },
+    {
+      "id": "trct",
+      "nome": "Termo de rescisão (TRCT)",
+      "tipoSolicitacao": "calculoRescisao",
+      "palavras": [
+        "termo de rescisão",
+        "trct",
+        "verbas rescisórias",
+        "saldo de salário",
+        "aviso prévio indenizado",
+        "homologação"
+      ],
+      "forte": [
+        "termo de rescisão do contrato de trabalho"
+      ],
+      "minPalavras": 2,
+      "avisos": [
+        {
+          "palavras": [
+            "termo de rescisão"
+          ],
+          "nivel": "info",
+          "mensagem": "Este é o termo de rescisão, que o escritório emite. Para pedir o cálculo, use o Cálculo de Rescisão; para comunicar o desligamento, o Aviso Prévio de Rescisão."
+        }
+      ]
+    },
+    {
+      "id": "holerite",
+      "nome": "Recibo de pagamento (holerite)",
+      "tipoSolicitacao": null,
+      "palavras": [
+        "recibo de pagamento",
+        "demonstrativo de pagamento",
+        "holerite",
+        "contracheque",
+        "proventos",
+        "descontos",
+        "valor líquido",
+        "base cálc"
+      ],
+      "forte": [
+        "recibo de pagamento de salário"
+      ],
+      "minPalavras": 3,
+      "avisos": [
+        {
+          "palavras": [
+            "recibo de pagamento",
+            "holerite",
+            "contracheque"
+          ],
+          "nivel": "info",
+          "mensagem": "O holerite é feito pelo escritório. Se algum valor estiver errado, abra uma Solicitação Geral explicando o que mudou."
+        }
+      ]
     }
   ],
   "mensagens": {
@@ -2462,9 +2662,38 @@
     "semEmpregado": "Não encontrei esse nome na lista de funcionários da empresa. Selecione manualmente no campo Empregado.",
     "privacidade": "Os arquivos são lidos aqui no seu computador. Nada é enviado para fora do portal.",
     "admissaoInicio": "Olá! Para fazermos a sua admissão, envie por favor:",
-    "admissaoFim": "Pode mandar foto bem legível ou PDF. Qualquer dúvida, é só chamar. Obrigado!"
+    "admissaoFim": "Pode mandar foto bem legível ou PDF. Qualquer dúvida, é só chamar. Obrigado!",
+    "anexoSoNoAssistente": "O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.",
+    "envioNaoConcluido": "O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo.",
+    "plataformaVazioSolicitacoes": "Nenhuma solicitação encontrada com esses filtros.",
+    "plataformaAguardando": "Há solicitação esperando sua resposta. Abra, leia o último trâmite e responda — quem conclui a solicitação é você.",
+    "plataformaCalibrar": "Esta parte do portal ainda está sendo conferida pelo escritório. Por enquanto, abra direto no portal.",
+    "plataformaAtencao": "O portal está pedindo sua atenção (uma janela ou a sessão expirou)."
   },
-  "avisosEscritorio": [],
+  "avisosEscritorio": [
+    {
+      "id": "13o-1a-parcela-2026",
+      "titulo": "13º salário — 1ª parcela",
+      "texto": "A 1ª parcela do 13º deve ser paga até 30/11. Peça o cálculo ao escritório com alguns dias de antecedência. Quem pediu o adiantamento junto com as férias já recebeu.",
+      "desde": "2026-11-01",
+      "ate": "2026-11-30"
+    },
+    {
+      "id": "13o-2a-parcela-2026",
+      "titulo": "13º salário — 2ª parcela",
+      "texto": "A 2ª parcela do 13º vence em 20/12, que neste ano cai num domingo: pague até sexta-feira, 18/12.",
+      "desde": "2026-12-01",
+      "ate": "2026-12-18",
+      "nivel": "importante"
+    },
+    {
+      "id": "ferias-coletivas-2026",
+      "titulo": "Férias coletivas de fim de ano",
+      "texto": "Vai dar férias coletivas? Avise o escritório com pelo menos 15 dias de antecedência: é preciso comunicar o sindicato e afixar o aviso no local de trabalho (CLT, art. 139).",
+      "desde": "2026-11-01",
+      "ate": "2026-12-20"
+    }
+  ],
   "empresas": {},
   "faq": [
     {
@@ -2542,6 +2771,192 @@
         "antigo"
       ],
       "resposta": "Assim que receber. Atestados antigos podem cair numa folha já fechada e gerar ajustes no mês seguinte."
+    }
+  ],
+  "agendaFixa": {
+    "_comentario": "Prazos que valem todo mês (ou todo ano, com 'mes'). quando: {dia, mes?, ajuste: 'antecipa'|'prorroga'} ou {diaUtil: N}. Aparecem na Agenda da plataforma.",
+    "itens": [
+      {
+        "id": "salario",
+        "titulo": "Pagamento dos salários",
+        "quando": {
+          "diaUtil": 5
+        },
+        "detalhe": "Até o 5º dia útil do mês (CLT, art. 459). Sábado conta como dia útil para a lei; aqui a conta usa dias úteis bancários, que é o mais seguro."
+      },
+      {
+        "id": "fgts",
+        "titulo": "Guia do FGTS Digital — vencimento",
+        "quando": {
+          "dia": 20,
+          "ajuste": "antecipa"
+        },
+        "detalhe": "A guia é emitida pelo escritório; o pagamento é seu. Se cair em fim de semana ou feriado, pague no dia útil anterior."
+      },
+      {
+        "id": "dctfweb",
+        "titulo": "INSS (DCTFWeb) — vencimento",
+        "quando": {
+          "dia": 20,
+          "ajuste": "antecipa"
+        },
+        "detalhe": "Guia do INSS da folha. Se cair em fim de semana ou feriado, pague no dia útil anterior."
+      },
+      {
+        "id": "decimo1",
+        "titulo": "13º salário — 1ª parcela (limite)",
+        "quando": {
+          "dia": 30,
+          "mes": 11,
+          "ajuste": "antecipa"
+        },
+        "detalhe": "Metade do salário, sem descontos (Lei 4.749/1965)."
+      },
+      {
+        "id": "decimo2",
+        "titulo": "13º salário — 2ª parcela (limite)",
+        "quando": {
+          "dia": 20,
+          "mes": 12,
+          "ajuste": "antecipa"
+        },
+        "detalhe": "Com os descontos de INSS e IRRF."
+      }
+    ]
+  },
+  "modelosDocumento": [
+    {
+      "id": "prorrogacaoExperiencia",
+      "titulo": "Termo de prorrogação do contrato de experiência",
+      "descricao": "Para assinar antes de terminar o 1º período da experiência. O total (1º período + prorrogação) não pode passar de 90 dias.",
+      "revisarComEscritorio": true,
+      "campos": [
+        {
+          "k": "empregado",
+          "rotulo": "Funcionário",
+          "tipo": "empregado"
+        },
+        {
+          "k": "dataAdmissao",
+          "rotulo": "Data de admissão",
+          "tipo": "data"
+        },
+        {
+          "k": "diasProrrogacao",
+          "rotulo": "Dias de prorrogação",
+          "tipo": "numero"
+        },
+        {
+          "k": "fimProrrogacao",
+          "rotulo": "Último dia da prorrogação",
+          "tipo": "data"
+        },
+        {
+          "k": "cidade",
+          "rotulo": "Cidade",
+          "tipo": "texto"
+        }
+      ],
+      "texto": [
+        "TERMO DE PRORROGAÇÃO DO CONTRATO DE EXPERIÊNCIA",
+        "",
+        "Empregador: {empresa|________________}",
+        "Empregado(a): {empregado|________________}",
+        "Data de admissão: {dataAdmissao|___/___/______}",
+        "",
+        "As partes acima prorrogam, de comum acordo, o contrato de experiência por mais {diasProrrogacao|____} dias, com término em {fimProrrogacao|___/___/______}, mantidas as demais condições do contrato (CLT, art. 445, parágrafo único, e art. 451).",
+        "",
+        "{cidade|________________}, {hoje}.",
+        "",
+        "",
+        "______________________________          ______________________________",
+        "Empregador                                          Empregado(a)"
+      ]
+    },
+    {
+      "id": "pedidoDemissao",
+      "titulo": "Pedido de demissão",
+      "descricao": "Carta do funcionário que pede para sair. Depois de assinada, arraste-a no Assistente: ele abre o Aviso Prévio de Rescisão.",
+      "revisarComEscritorio": true,
+      "campos": [
+        {
+          "k": "empregado",
+          "rotulo": "Funcionário",
+          "tipo": "empregado"
+        },
+        {
+          "k": "cargo",
+          "rotulo": "Cargo",
+          "tipo": "texto"
+        },
+        {
+          "k": "aviso",
+          "rotulo": "Aviso prévio",
+          "tipo": "opcoes",
+          "opcoes": [
+            "Cumprirei o aviso prévio de 30 dias.",
+            "Solicito a dispensa do cumprimento do aviso prévio, ciente de que ele poderá ser descontado."
+          ]
+        },
+        {
+          "k": "cidade",
+          "rotulo": "Cidade",
+          "tipo": "texto"
+        }
+      ],
+      "texto": [
+        "PEDIDO DE DEMISSÃO",
+        "",
+        "À {empresa|________________}",
+        "",
+        "Eu, {empregado|________________}, ocupante do cargo de {cargo|________________}, comunico que, por motivos particulares, peço demissão do meu emprego a partir desta data.",
+        "{aviso|________________}",
+        "",
+        "{cidade|________________}, {hoje}.",
+        "",
+        "",
+        "______________________________",
+        "{empregado|Assinatura do(a) empregado(a)}",
+        "",
+        "Recebido em ___/___/______ por ______________________________"
+      ]
+    },
+    {
+      "id": "abonoFerias",
+      "titulo": "Requerimento de abono pecuniário de férias",
+      "descricao": "Para o funcionário vender 1/3 das férias. Precisa ser pedido até 15 dias antes do fim do período aquisitivo (CLT, art. 143).",
+      "revisarComEscritorio": true,
+      "campos": [
+        {
+          "k": "empregado",
+          "rotulo": "Funcionário",
+          "tipo": "empregado"
+        },
+        {
+          "k": "periodoAquisitivo",
+          "rotulo": "Período aquisitivo",
+          "tipo": "texto",
+          "dica": "Ex.: 01/03/2025 a 28/02/2026"
+        },
+        {
+          "k": "cidade",
+          "rotulo": "Cidade",
+          "tipo": "texto"
+        }
+      ],
+      "texto": [
+        "REQUERIMENTO DE ABONO PECUNIÁRIO DE FÉRIAS",
+        "",
+        "À {empresa|________________}",
+        "",
+        "Eu, {empregado|________________}, requeiro a conversão de 1/3 (um terço) das minhas férias referentes ao período aquisitivo de {periodoAquisitivo|________________} em abono pecuniário, nos termos do art. 143 da CLT.",
+        "",
+        "{cidade|________________}, {hoje}.",
+        "",
+        "",
+        "______________________________",
+        "{empregado|Assinatura do(a) empregado(a)}"
+      ]
     }
   ]
 }

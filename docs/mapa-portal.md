@@ -47,3 +47,17 @@ Parâmetros das listas: `?pageIndex=0&itemsPerPage=30&filter=…&expand=…&assi
 - UF aparece por extenso ("São Paulo") — por isso `aliasesOpcoes` nas regras.
 - Lançamento de Rubricas: tipo (ADIANTAMENTO/MENSAL/PLR = `#radioBasic-0..2`), competência `basisDate` (MM/AAAA), grade "Rubricas" com "Adicionar todos os funcionários" — empresa de teste sem eventos ("Este cliente não possui nenhum evento cadastrado"), **grade não mapeada**.
 - Rótulos de i18n de todas as telas: `/clientcenter/pt/assets/service-request/i18n/pt-BR.json` (só acessível pelo navegador logado).
+
+## A calibrar para a plataforma (2.0)
+
+O que a plataforma usa e ainda não foi visto no Onvio real. No simulador tudo isso existe (`simulador/portal.js`, `window.__ctPlatform`).
+
+| O quê | Como a 2.0 faz hoje | Conferir |
+|---|---|---|
+| Itens das listas (`/api/br-payroll-sr/v1/<api>?pageIndex=N&itemsPerPage=50`) | Lê todas as páginas (até `config.solicitacoesMaxPaginas`), procura situação/empregado/assunto/datas em vários nomes de campo (`normalizarSolicitacao`). O diagnóstico mostra só os nomes dos campos. | Nomes reais dos campos, valores de situação ("Aguardando o cliente"?), `totalItems`. Ajustar `config.statusSolicitacao`. |
+| Detalhe de uma solicitação | "Ver no portal" abre a lista do tipo (ou `/<slug>/<id>` se `config.rotaDetalheSolicitacao` estiver ligado). | Rota do detalhe e dos trâmites; se existe API de trâmites. |
+| Solicitação Geral | Sem API conhecida: a plataforma oferece "Abrir no portal". | Endpoint da lista. |
+| Empresa (`clientId`) | Tirado de uma chamada `/api/br-payroll-sr/v1/clients/<id>/...` que o portal fez depois da troca de empresa. | Se o id aparece em outras chamadas; como trocar de empresa. |
+| Lista de empregados | Sem chamada registrada, abre por baixo `employee-leave/add`, espera o portal pedir `/clients/<id>/employees` e volta (só sem formulário aberto). | Se a navegação por baixo é aceita; formato de `hireDate` e `status`. |
+| Documentos do escritório | "Abrir Documentos no portal" clica no link/botão "DOCUMENTOS" do topo. | Rota e API da área de documentos; download. |
+| Janelas do portal | `[role=dialog]`, `[role=alertdialog]`, `.modal.show` visíveis viram aviso na plataforma; 401 nas listas leva ao portal. | Seletores das janelas reais (sessão, avisos). |

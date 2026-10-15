@@ -103,16 +103,32 @@
 
   /* ---------- Dados (só neste navegador) ---------- */
   var SKEY = 'ct-sim-portal';
+  var SEED_V = 2;
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
-    return { seq: 1043, items: {
+    var items = {
       'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3) }],
       'employee-leave': [{ id: 1039, status: 'Em andamento', empregado: 'JOANA FONSECA', assunto: 'Afastamento – JOANA FONSECA – Licença maternidade', tramite: 'Escritório: recebido, em análise.', data: d(6) }],
       'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) }]
-    } };
+    };
+    // histórico maior (inventado): o afastamento passa de 50 itens para testar a paginação
+    var ST = ['Concluída', 'Concluída', 'Concluída', 'Em andamento', 'Aberta', 'Cancelada'];
+    var seq = 900;
+    for (var i = 0; i < 54; i++) {
+      var nome = EMP5[(i * 7) % EMP5.length];
+      items['employee-leave'].push({ id: seq++, status: ST[i % ST.length], empregado: nome, assunto: 'Atestado médico – ' + nome + ' – ' + d(12 + i * 5) + ' (' + (1 + i % 5) + ' dias)', tramite: 'Escritório: lançado na folha.', data: d(12 + i * 5) });
+    }
+    items['vacation-calculation'] = [{ id: seq++, status: 'Aguardando o cliente', empregado: 'CAMILA ROCHA', assunto: 'Cálculo de férias – CAMILA ROCHA', tramite: 'Escritório: confirme se haverá abono pecuniário.', data: d(1) },
+      { id: seq++, status: 'Concluída', empregado: 'BRUNO TEIXEIRA', assunto: 'Cálculo de férias – BRUNO TEIXEIRA', tramite: 'Escritório: recibo disponível.', data: d(40) }];
+    items['termination-notice'] = [{ id: seq++, status: 'Em andamento', empregado: 'MARCOS VIEIRA', assunto: 'Pedido de demissão – MARCOS VIEIRA', tramite: 'Escritório: aviso emitido, aguardando assinatura.', data: d(4) }];
+    items['employee-registration'] = [{ id: seq++, status: 'Concluída', empregado: 'VANESSA PRADO', assunto: 'Admissão – VANESSA PRADO', tramite: 'Escritório: registro concluído.', data: d(41) },
+      { id: seq++, status: 'Concluída', empregado: 'WAGNER SOUSA', assunto: 'Admissão – WAGNER SOUSA', tramite: 'Escritório: registro concluído.', data: d(86) }];
+    items['payroll-entries'] = [{ id: seq++, status: 'Concluída', empregado: '', assunto: 'Variáveis da folha – competência anterior', tramite: 'Escritório: lançado.', data: d(20) }];
+    return { v: SEED_V, seq: 1043, items: items };
   }
   var db;
-  try { db = JSON.parse(localStorage.getItem(SKEY)) || seed(); } catch (e) { db = seed(); }
+  try { db = JSON.parse(localStorage.getItem(SKEY)); } catch (e) { db = null; }
+  if (!db || db.v !== SEED_V) db = seed();
   function persist() { try { localStorage.setItem(SKEY, JSON.stringify(db)); } catch (e) { /* sem armazenamento */ } }
 
   /* ---------- Plataforma para o Assistente ---------- */
@@ -121,19 +137,69 @@
   window.__ctPlatform = {
     path: function () { return path; },
     navigate: function (p) { go(p); },
-    fetchList: function (api) {
-      var slug = API[api]; var list = (db.items[slug] || []).map(function (r) { return { id: r.id, status: { description: r.status }, employee: { name: r.empregado }, subject: r.assunto, lastUpdate: r.data }; });
-      return Promise.resolve({ ok: !!slug, status: slug ? 200 : 404, json: function () { return Promise.resolve({ items: list, totalItems: list.length }); } });
+    fetchList: function (api, opts) {
+      var slug = API[api]; var all = (db.items[slug] || []).map(function (r) { return { id: r.id, status: { description: r.status }, employee: { name: r.empregado }, subject: r.assunto, lastUpdate: r.data, lastProceeding: { description: r.tramite } }; });
+      var per = (opts && opts.itemsPerPage) || 50, pg = (opts && opts.pageIndex) || 0;
+      var list = all.slice(pg * per, pg * per + per);
+      return Promise.resolve({ ok: !!slug, status: slug ? 200 : 404, json: function () { return Promise.resolve({ items: list, totalItems: all.length }); } });
     },
     // mesma forma da API do portal (/api/br-payroll-sr/v1/clients/<id>/employees): nome, situação e admissão
     employees: function () {
-      var d = function (n) { var x = new Date(); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
-      var recentes = { 'VANESSA PRADO': d(40), 'WAGNER SOUSA': d(85) };
-      return Promise.resolve(EMP5.map(function (n) { return { name: n, status: 'Ativo', hireDate: recentes[n] || '2023-01-10' }; }));
+      return Promise.resolve(EMP5.map(function (n) { return { name: n, status: 'Ativo', hireDate: admissao(n) }; })
+        .concat(DESLIGADOS.map(function (n) { return { name: n, status: 'Demitido', hireDate: '2021-03-01' }; })));
     },
+    clientId: function () { return 'sim-0001'; },
+    detalhe: true,
+    rotaDocumentos: '/clientcenter/pt/documents',
+    // documentos que o escritório publica (inventados): guias e holerites
+    documentos: function () { return Promise.resolve(DOCS.map(function (x) { return { id: x.id, nome: x.nome, categoria: x.cat, competencia: x.comp, data: x.data }; })); },
+    baixarDocumento: function (id) {
+      var x = DOCS.find(function (k) { return k.id === id; }); if (!x) return Promise.resolve(null);
+      return Promise.resolve(new File([pdfSimples(['DOCUMENTO DE EXEMPLO DO SIMULADOR', x.nome, 'Competência ' + x.comp, EMPRESA, 'Nada aqui é real.'])], x.arquivo, { type: 'application/pdf' }));
+    },
+    // a plataforma começa abaixo da barra do simulador (para os documentos de exemplo continuarem à mão)
+    reservaTopo: function () { var b = document.querySelector('.sim-bar'); return b ? b.offsetHeight : 0; },
+    modoInicial: function () { return /[?&]modo=painel/.test(location.search) ? 'painel' : 'plataforma'; },
     expose: function (h) { hooks = h; document.dispatchEvent(new CustomEvent('ct-sim-ready')); }
   };
-  window.__ctSim = { hooks: function () { return hooks; }, reset: function () { db = seed(); persist(); go(BASE); }, go: function (p) { go(p); } };
+  window.__ctSim = { hooks: function () { return hooks; }, reset: function () { db = seed(); persist(); go(BASE); }, go: function (p) { go(p); },
+    // janela do portal por cima de tudo (como um aviso de sessão): a plataforma precisa avisar
+    atencao: function () {
+      var d = h('div', { role: 'dialog', class: 'p-dialog', 'aria-label': 'Aviso do portal' }, '<p><b>Sua sessão vai expirar em 2 minutos.</b> Deseja continuar conectado?</p>');
+      var ok = h('button', { type: 'button', class: 'p-btn-dark' }, 'CONTINUAR'); ok.addEventListener('click', function () { d.remove(); }); d.appendChild(ok); document.body.appendChild(d);
+    } };
+  var DESLIGADOS = ['OTAVIO RANGEL', 'NATALIA BRITO'];
+  function admissao(n) {
+    var dd = function (k) { var x = new Date(); x.setDate(x.getDate() - k); return x.toISOString().slice(0, 10); };
+    if (n === 'VANESSA PRADO') return dd(40);
+    if (n === 'WAGNER SOUSA') return dd(85);
+    var i = EMP5.indexOf(n);
+    // espalha as admissões entre 2019 e 2025 (algumas com férias vencendo)
+    return (2019 + i % 7) + '-' + String(1 + (i * 5) % 12).padStart(2, '0') + '-' + String(1 + (i * 3) % 27).padStart(2, '0');
+  }
+  var DOCS = (function () {
+    var hoje = new Date(); var comp = function (k) { var x = new Date(hoje.getFullYear(), hoje.getMonth() - k, 1); return String(x.getMonth() + 1).padStart(2, '0') + '/' + x.getFullYear(); };
+    var dia = function (k) { var x = new Date(hoje); x.setDate(x.getDate() - k); return x.toLocaleDateString('pt-BR'); };
+    return [
+      { id: 'd1', nome: 'Guia do FGTS Digital', cat: 'Guias', comp: comp(1), data: dia(5), arquivo: 'guia-fgts.pdf' },
+      { id: 'd2', nome: 'DARF — INSS (DCTFWeb)', cat: 'Guias', comp: comp(1), data: dia(5), arquivo: 'darf-inss.pdf' },
+      { id: 'd3', nome: 'Holerites', cat: 'Folha', comp: comp(1), data: dia(8), arquivo: 'holerites.pdf' },
+      { id: 'd4', nome: 'Resumo da folha', cat: 'Folha', comp: comp(1), data: dia(8), arquivo: 'resumo-folha.pdf' },
+      { id: 'd5', nome: 'Recibo de férias – BRUNO TEIXEIRA', cat: 'Férias', comp: comp(2), data: dia(38), arquivo: 'recibo-ferias.pdf' },
+      { id: 'd6', nome: 'Guia do FGTS Digital', cat: 'Guias', comp: comp(2), data: dia(35), arquivo: 'guia-fgts-anterior.pdf' }
+    ];
+  })();
+  /** PDF mínimo de uma página com algumas linhas de texto (só para o download funcionar no simulador). */
+  function pdfSimples(linhas) {
+    var txt = linhas.map(function (l, i) { return 'BT /F1 14 Tf 60 ' + (760 - i * 24) + ' Td (' + String(l).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[()\\]/g, '') + ') Tj ET'; }).join('\n');
+    var objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+      '<< /Length ' + txt.length + ' >>\nstream\n' + txt + '\nendstream', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+    var out = '%PDF-1.4\n', offs = [];
+    objs.forEach(function (o, i) { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + o + '\nendobj\n'; });
+    var x = out.length;
+    out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' + offs.map(function (o) { return String(o).padStart(10, '0') + ' 00000 n \n'; }).join('') + 'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + x + '\n%%EOF';
+    return out;
+  }
 
   /* ---------- Utilidades ---------- */
   var uid = 0;
@@ -396,15 +462,28 @@
     main.appendChild(h('h2', { class: 'p-h' }, 'Solicitações de ' + esc(T.nome.replace(/^Solicitação /, ''))));
     main.appendChild(form);
   }
+  function renderDetail(slug, id) {
+    var T = TYPES[slug]; var r = (db.items[slug] || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!r) { renderList(slug); return; }
+    main.innerHTML = '<h2 class="p-h">Solicitação nº ' + esc(r.id) + ' — ' + esc(T.nome) + '</h2><div class="p-detail"><dl><dt>Situação</dt><dd>' + esc(r.status) + '</dd><dt>Empregado</dt><dd>' + esc(r.empregado || '—') + '</dd><dt>Assunto</dt><dd>' + esc(r.assunto) + '</dd><dt>Data</dt><dd>' + esc(r.data) + '</dd></dl>' +
+      '<h3 class="p-sub">Trâmites</h3><p>' + esc(r.tramite || '') + '</p><button type="button" class="p-btn-dark" data-back>VOLTAR</button></div>';
+    main.querySelector('[data-back]').addEventListener('click', function () { go(SR + slug); });
+  }
+  function renderDocs() {
+    main.innerHTML = '<h2 class="p-h">Documentos</h2><div class="p-scroll"><table class="p-table"><thead><tr><th>Documento</th><th>Competência</th><th>Publicado</th></tr></thead><tbody>' +
+      DOCS.map(function (x) { return '<tr><td>' + esc(x.nome) + '</td><td>' + esc(x.comp) + '</td><td>' + esc(x.data) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  }
   function render() {
     sideMenu();
-    var m = path.match(/service-request\/([a-z-]+)(\/add)?/);
-    if (!m || !TYPES[m[1]]) renderMenu();
-    else if (m[2]) renderForm(m[1]);
+    var m = path.match(/service-request\/([a-z-]+)(?:\/(add|\d+))?/);
+    if (/\/documents/.test(path)) renderDocs();
+    else if (!m || !TYPES[m[1]]) renderMenu();
+    else if (m[2] === 'add') renderForm(m[1]);
+    else if (m[2]) renderDetail(m[1], m[2]);
     else renderList(m[1]);
-    document.querySelectorAll('[data-top]').forEach(function (b) { b.classList.toggle('on', b.dataset.top === 'portal'); });
+    document.querySelectorAll('[data-top]').forEach(function (b) { b.classList.toggle('on', b.dataset.top === (/\/documents/.test(path) ? 'docs' : 'portal')); });
   }
   document.getElementById('p-empresa').textContent = EMPRESA;
-  document.querySelectorAll('[data-top]').forEach(function (b) { b.addEventListener('click', function () { if (b.dataset.top === 'portal') go(BASE); else toast('Esta área não faz parte da simulação.'); }); });
+  document.querySelectorAll('[data-top]').forEach(function (b) { b.addEventListener('click', function () { if (b.dataset.top === 'portal') go(BASE); else if (b.dataset.top === 'docs') go('/clientcenter/pt/documents'); else toast('Esta área não faz parte da simulação.'); }); });
   render();
 })();

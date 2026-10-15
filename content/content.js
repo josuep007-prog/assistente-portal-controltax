@@ -17,7 +17,10 @@
 
   let rules = null;
   let port = null;
-  let panelOpen = false;
+  // Modo da tela: 'fechado' (só o botão), 'painel' (encaixado ao lado do portal) ou
+  // 'plataforma' (tela cheia por cima do portal, que continua carregado e é preenchido por baixo).
+  let modo = 'fechado';
+  let modoAberto = 'plataforma';   // o que o botão "Assistente" abre
   let lastHref = '';
   let bypassGuard = false;
   const optionsCache = new Map();
@@ -46,6 +49,8 @@
       .frame-wrap{position:fixed;top:0;right:0;height:100vh;width:min(420px,100vw);transform:translateX(105%);transition:transform .22s cubic-bezier(.2,.7,.2,1);
         box-shadow:-2px 0 6px rgba(16,24,32,.08),-18px 0 40px rgba(16,24,32,.16)}
       .frame-wrap.open{transform:none}
+      .frame-wrap.full{top:var(--topo,0px);left:0;right:0;bottom:0;height:auto;width:auto;transform:none;box-shadow:none;transition:opacity .18s ease}
+      .frame-wrap.full:not(.open){opacity:0;pointer-events:none;transform:none}
       iframe{border:0;width:100%;height:100%;display:block;background:#EDF0F3;color-scheme:normal}
       .drop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(14,21,27,.55);backdrop-filter:blur(2px)}
       .drop.on{display:flex}
@@ -57,6 +62,7 @@
         background:#0E151B;color:#E9EEF2;padding:10px 16px;border-radius:4px;font:500 13px 'IBM Plex Sans',system-ui,sans-serif;transition:all .2s ease;
         box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:80vw}
       .toast.on{opacity:1;transform:translateX(-50%)}
+      .frame-wrap.full.open ~ .toast{bottom:84px}   /* plataforma: acima da barra de ações (Conferir e enviar) */
       .toast.acao{pointer-events:auto;display:flex;align-items:center;gap:14px;padding:8px 8px 8px 16px}
       .toast .t-btn{border:0;border-radius:4px;background:#E9EEF2;color:#0E151B;font:600 13px 'IBM Plex Sans',system-ui,sans-serif;padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:6px}
       .toast .t-btn:hover{background:#fff}
@@ -98,16 +104,27 @@
     iframe.addEventListener('load', connectPort);
     wrap.appendChild(iframe);
   }
-  function setPanel(open) {
+  function setModo(m) {
+    if (!['fechado', 'painel', 'plataforma'].includes(m)) return;
     ensureFrame();
-    panelOpen = open;
+    modo = m;
+    if (m !== 'fechado') modoAberto = m;
+    const open = m !== 'fechado';
     wrap.classList.toggle('open', open);
+    wrap.classList.toggle('full', m === 'plataforma');
+    wrap.style.setProperty('--topo', `${+(plat.reservaTopo?.() || 0)}px`);
     // telas largas: o painel ocupa uma coluna e a página encolhe (nada fica escondido atrás dele)
-    document.documentElement.classList.toggle('ct-docked', open && innerWidth >= 1000);
+    document.documentElement.classList.toggle('ct-docked', m === 'painel' && innerWidth >= 1000);
+    // plataforma: a página do portal não rola por trás (ela continua renderizada para o preenchimento)
+    document.documentElement.classList.toggle('ct-plataforma', m === 'plataforma');
     wrap.setAttribute('aria-hidden', String(!open));
     launcher.classList.toggle('hidden', open);
+    post({ type: 'modo', modo: m });
     if (open) sendContext();
+    if (m === 'plataforma') iframe?.focus();
   }
+  /** Abrir/fechar sem escolher o modo: abre o último usado (plataforma, se nada foi escolhido). */
+  const setPanel = (open) => { if (open) { if (modo === 'fechado') setModo(modoAberto); } else setModo('fechado'); };
   launcher.addEventListener('click', () => setPanel(true));
 
   (document.body || document.documentElement).appendChild(host);
@@ -120,6 +137,7 @@
     .ct-miss-tag{display:flex;align-items:center;gap:6px;width:fit-content;max-width:100%;margin:4px 0 2px;padding:3px 8px;border-left:3px solid #E8A317;border-radius:3px;background:#FFF6E0;color:#6B4500;font:500 12px/1.35 system-ui,sans-serif}
     .ct-miss-tag::before{content:"!";display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#E8A317;color:#fff;font-weight:700;font-size:10px}
     html.ct-docked{margin-right:420px!important;transition:margin-right .22s ease}
+    html.ct-plataforma, html.ct-plataforma body{overflow:hidden!important}
     @media (prefers-reduced-motion: reduce){html.ct-docked{transition:none}}`;
   document.documentElement.appendChild(pageStyle);
 
@@ -154,11 +172,14 @@
   async function onPanelMessage(m) {
     try {
       switch (m.type) {
-        case 'close': setPanel(false); break;
+        case 'close': setModo('fechado'); break;
+        case 'modo': setModo(m.modo); break;
         case 'getContext': sendContext(); break;
-        case 'navigate': await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
+        case 'navigate': while (navInterna) await sleep(150); await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
         case 'fill': {
-          const r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {}));
+          preenchendoAgora = true;
+          let r; try { r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {})); } finally { preenchendoAgora = false; }
+          if (modo === 'plataforma') iframe?.focus();   // o preenchimento foca campos do portal: devolve o teclado à plataforma
           post({ type: 'fillResult', id: m.id, ...r });
           sendContext(); avisarDesfazer();
           if (m.opts?.avisoDesfazer !== false && r.mudou) toast('Preenchido pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });
@@ -168,21 +189,48 @@
         case 'attach': { const n = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n }); sendContext(); break; }
         case 'getOptions': {
           const opts = await comboLock(() => comboOptions(m.locator, m.force));
+          if (modo === 'plataforma') iframe?.focus();
           post({ type: 'options', id: m.id, options: opts, virtual: !!opts.virtual });
           break;
         }
-        case 'employees': { const names = await employeeNames(); post({ type: 'employees', id: m.id, names, detalhes: employeesInfo.get(companyName()) || [] }); break; }
+        case 'employees': {
+          let names = await employeeNames();
+          if (!names.length && m.aquecer && await aquecerEmpregados()) names = await employeeNames();
+          post({ type: 'employees', id: m.id, names, detalhes: employeesInfo.get(companyName()) || [] });
+          break;
+        }
         case 'highlight': flash(findField(m.locator)); break;
         case 'markMissing': markMissing(m.campos || []); break;
-        case 'requestSubmit': { const b = submitButton(); if (b) b.click(); else toast('Abra o formulário da solicitação para enviar.'); break; }
+        // "Conferir e enviar": nunca clica no portal — manda o resumo ao painel, aconteça o que
+        // acontecer com as regras. Só o confirmSubmit (clique do cliente) aciona o botão do portal.
+        case 'requestSubmit': {
+          const b = submitButton();
+          if (!b) { toast('Abra o formulário da solicitação para enviar.'); break; }
+          const r = routeInfo();
+          setPanel(true);
+          post({ type: 'submitAttempt', pedido: true, tipo: tipoBySlug(r.slug), form: snapshot(tipoBySlug(r.slug)) });
+          break;
+        }
         case 'confirmSubmit': {
           bypassGuard = true;
           const btn = submitButton();
           if (btn) btn.click();
           setTimeout(() => { bypassGuard = false; }, 1500);
+          vigiarEnvio();
           break;
         }
         case 'pendencias': post({ type: 'pendencias', id: m.id, data: await fetchPendencias(m.tipos) }); break;
+        // plataforma: dados do portal lidos com a sessão do próprio cliente (nada sai do computador)
+        case 'solicitacoes': post({ type: 'solicitacoes', id: m.id, data: await fetchSolicitacoes(m.tipos || [], m.maxPaginas) }); break;
+        case 'portalInfo': post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos }); break;
+        case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : { disponivel: false, motivo: 'calibrar' }) }); break;
+        case 'baixarDocumento': {
+          const f = plat.baixarDocumento ? await plat.baixarDocumento(m.docId) : null;
+          const packed = f ? (await packFiles([f]))[0] : null;
+          post({ type: 'arquivo', id: m.id, arquivo: packed }, packed ? [packed.buf] : []);
+          break;
+        }
+        case 'abrirNoPortal': await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id }); break;
         case 'setBadge': setBadge(m.n); break;
         case 'toast': toast(m.text); break;
         default: break;
@@ -277,7 +325,8 @@
     const r = routeInfo();
     const tipo = r.slug ? tipoBySlug(r.slug) : null;
     const empresa = companyName(); notaEmpresa(empresa);
-    post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, form: r.mode === 'form' ? snapshot(tipo) : null });
+    if (navInterna) return;   // navegação feita pelo Assistente para buscar dados: a tela de quem usa não mudou
+    post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, modo, form: r.mode === 'form' ? snapshot(tipo) : null });
   }
   /* Texto do botão conforme a tela: no formulário, convida a preencher */
   function atualizarLauncher() {
@@ -372,7 +421,16 @@
   const employeesInfo = new Map();   // empresa → [{ nome, admissao, ativo }] (sem CPF nem outros dados)
   let empresaVista = '', empresaDesde = 0;
   const resumoEmpregado = (e) => ({ nome: String(e?.name || '').trim(), admissao: String(e?.hireDate || e?.admissionDate || '').slice(0, 10), ativo: !/demit|deslig|termin|inativ|dismiss|fired/i.test(String(e?.status ?? '')) });
-  function notaEmpresa(e) { if (e && e !== empresaVista) { empresaVista = e; empresaDesde = performance.now(); } }
+  /** Trocar de empresa sem recarregar: o que foi lido da empresa anterior não vale mais. */
+  function notaEmpresa(e) {
+    if (!e || e === empresaVista) return;
+    const antes = empresaVista;
+    empresaVista = e; empresaDesde = performance.now();
+    if (!antes) return;                 // primeira leitura: nada a limpar
+    optionsCache.clear();               // listas (empregados, motivos…) são de outra empresa
+    desfazerPilha.length = 0;           // o desfazer não pode atravessar empresas
+    avisarDesfazer();
+  }
   async function employeeNames() {
     const empresa = companyName(); notaEmpresa(empresa);
     if (plat.employees) {   // simulador
@@ -381,8 +439,11 @@
       return [...new Set(arr.map(e => String(e?.name || '').trim()).filter(Boolean))];
     }
     // só vale uma chamada feita depois que esta empresa foi selecionada
-    const url = performance.getEntriesByType('resource')
+    let url = performance.getEntriesByType('resource')
       .filter(e => e.startTime >= empresaDesde - 2000 && /\/api\/br-payroll-sr\/v1\/clients\/[^/]+\/employees/.test(e.name)).map(e => e.name).pop();
+    // a calibrar: com o id da empresa visto em outra chamada do portal, pede a mesma lista que ele pede
+    const cid = !url && clientId();
+    if (cid) url = `/api/br-payroll-sr/v1/clients/${encodeURIComponent(cid)}/employees?expand=clientEmployeeRelationshipExpanded`;
     if (!url) return employeesCache.get(empresa) || [];
     const key = url.replace(/[?#].*$/, '');
     if (employeesCache.has(key)) return employeesCache.get(key);
@@ -665,6 +726,88 @@
     }
     return out;
   }
+  /* ============ Adaptador do portal (plataforma) ============ */
+  let navInterna = false;        // navegação feita pelo Assistente (não é o cliente mudando de tela)
+  let preenchendoAgora = false;
+  /** Id da empresa no portal, tirado de uma chamada que o próprio portal fez depois da troca de empresa (só na memória). */
+  function clientId() {
+    if (plat.clientId) return plat.clientId();
+    const e = performance.getEntriesByType('resource').filter(x => x.startTime >= empresaDesde - 2000).map(x => x.name.match(/\/api\/br-payroll-sr\/v1\/clients\/([^/?#]+)/)).filter(Boolean).pop();
+    return e ? decodeURIComponent(e[1]) : '';
+  }
+  async function getJson(url) {
+    const r = await fetch(url, { credentials: 'include', headers: { accept: 'application/json' } });
+    if (r.status === 401) atencao('A sessão do portal expirou. Entre de novo no portal.', true);
+    return r;
+  }
+  const listaPagina = (api, pageIndex, itemsPerPage) => plat.fetchList
+    ? plat.fetchList(api, { pageIndex, itemsPerPage })
+    : getJson(`/api/br-payroll-sr/v1/${api}?pageIndex=${pageIndex}&itemsPerPage=${itemsPerPage}&assignedtome=false`);
+  /** Todas as solicitações de cada tipo (até maxPaginas páginas de 50), 3 tipos por vez. Itens crus: o painel normaliza. */
+  async function fetchSolicitacoes(tipos, maxPaginas = 4) {
+    const out = []; const fila = [...tipos];
+    const umTipo = async (t) => {
+      if (!t.api) return { tipo: t.key, calibrar: true, itens: [] };
+      const itens = []; let total = 0;
+      try {
+        for (let p = 0; p < Math.max(1, maxPaginas); p++) {
+          const r = await listaPagina(t.api, p, 50);
+          if (!r.ok) return { tipo: t.key, erro: r.status, itens };
+          const j = await r.json();
+          const arr = Array.isArray(j) ? j : (j.items || j.data || []);
+          total = j.totalItems ?? j.total ?? (itens.length + arr.length);
+          itens.push(...arr);
+          if (itens.length >= total || arr.length < 50) break;
+        }
+      } catch (e) { return { tipo: t.key, erro: String(e.message || e), itens }; }
+      return { tipo: t.key, total, itens, truncado: itens.length < total, chaves: Object.keys(itens[0] || {}) };
+    };
+    const trabalhador = async () => { while (fila.length) { const t = fila.shift(); out.push(await umTipo(t)); } };
+    await Promise.all([trabalhador(), trabalhador(), trabalhador()]);
+    return out;
+  }
+  /** Sem a lista de empregados (o portal ainda não abriu nenhuma tela que a carrega): abre por
+   *  baixo uma solicitação que tem o campo Empregado, espera o portal pedir a lista e volta.
+   *  Nunca com um formulário aberto (perderia o que está nele). */
+  async function aquecerEmpregados() {
+    if (routeInfo().mode === 'form' || navInterna) return false;
+    const volta = currentPath();
+    navInterna = true;
+    try {
+      await navigate(rules?.config?.solicitacaoComEmpregados || 'employee-leave', true);
+      for (let i = 0; i < 15; i++) { if (performance.getEntriesByType('resource').some(e => e.startTime >= empresaDesde - 2000 && /\/clients\/[^/]+\/employees/.test(e.name))) break; await sleep(300); }
+    } finally {
+      if (plat.navigate) plat.navigate(volta); else history.back();
+      await sleep(700);
+      lastHref = currentPath(); ultimoForm = '';
+      navInterna = false;
+      sendContext();
+    }
+    return true;
+  }
+  /** "Ver no portal": leva o portal à tela certa e mostra o portal com o painel encaixado. */
+  async function abrirNoPortal(m) {
+    if (m.area === 'documentos') {
+      if (plat.navigate && plat.rotaDocumentos) plat.navigate(plat.rotaDocumentos);
+      else [...document.querySelectorAll('a, button')].find(e => /^\s*documentos\s*$/i.test(e.innerText || '') && !e.closest('form'))?.click();   // a calibrar
+    } else if (m.slug) {
+      const detalhe = m.id && (plat.detalhe || rules?.config?.rotaDetalheSolicitacao);
+      await navigate(detalhe ? `${m.slug}/${m.id}` : m.slug, false);
+    }
+    setModo('painel');
+  }
+  /* O portal abriu uma janela (ou a sessão expirou) enquanto está coberto pela plataforma */
+  let atencaoVista = '';
+  function atencao(texto, sessao = false) { post({ type: 'portalAtencao', texto, sessao }); }
+  function verAtencao() {
+    if (modo !== 'plataforma' || preenchendoAgora || navInterna) return;
+    const d = [...document.querySelectorAll('[role=dialog], [role=alertdialog], .modal.show')].find(e => visible(e) && (e.innerText || '').trim());
+    const txt = d ? d.innerText.trim().replace(/\s+/g, ' ').slice(0, 160) : '';
+    if (txt === atencaoVista) return;
+    atencaoVista = txt;
+    post({ type: 'portalAtencao', texto: txt, ativo: !!d });
+  }
+
   function setBadge(n) {
     badge.hidden = !n; badge.textContent = n > 99 ? '99+' : String(n || '');
     chrome.runtime.sendMessage({ type: 'badge', n }).catch(() => {});
@@ -676,8 +819,20 @@
     // as telas usam classes diferentes (form__buttons--add, btn-primary…): o texto é o que é estável
     return [...mainEl().querySelectorAll('button')].find(b => /^(ADICIONAR|SALVAR E ENVIAR(\s+PARA\s+(O\s+)?ESCRIT[ÓO]RIO)?)$/i.test(b.innerText.trim()) && !b.closest('bento-toolbar'));
   }
+  /** Depois de confirmar: se o portal recusou, a tela continua no mesmo formulário. */
+  let envioVigiado = null;
+  function vigiarEnvio() {
+    const onde = currentPath();
+    clearTimeout(envioVigiado);
+    envioVigiado = setTimeout(() => {
+      if (currentPath() === onde && submitButton()) post({ type: 'envioNaoConcluido' });
+    }, 4500);
+  }
+
+  // A conferência é a trava principal do projeto: só sai do caminho se a regra disser
+  // explicitamente que não quer (sem regra carregada, ela continua valendo).
   document.addEventListener('click', (ev) => {
-    if (bypassGuard || !rules?.config?.confirmarAntesDeEnviar) return;
+    if (bypassGuard || rules?.config?.confirmarAntesDeEnviar === false) return;
     const btn = ev.target.closest?.('button');
     if (!btn || btn !== submitButton()) return;
     if (!port) return;
@@ -689,7 +844,7 @@
 
   // Enter dentro do formulário também envia: passa pela mesma conferência
   document.addEventListener('submit', (ev) => {
-    if (bypassGuard || !rules?.config?.confirmarAntesDeEnviar || !port) return;
+    if (bypassGuard || rules?.config?.confirmarAntesDeEnviar === false || !port) return;
     const form = ev.target; const btn = submitButton();
     if (!btn || !mainEl().contains(form) || !form.contains(btn)) return;
     if (ev.submitter && ev.submitter !== btn) return;
@@ -736,21 +891,28 @@
 
   /* ============ Mudanças de rota ============ */
   let routeTimer = null;
+  let ultimoForm = '';   // último /add visto (prev se perde quando há rota intermediária)
   const routeChanged = () => {
     const href = currentPath();
     if (href === lastHref) return;
+    if (navInterna) { lastHref = href; return; }
     const prev = lastHref; lastHref = href;
+    // saiu do formulário: o desfazer daquela tela não vale mais (cancelar, enviar, lote)
+    if (prev.includes('/add') && !href.includes('/add')) {
+      for (let i = desfazerPilha.length - 1; i >= 0; i--) if (desfazerPilha[i].path === prev) desfazerPilha.splice(i, 1);
+    }
+    if (prev.includes('/add')) ultimoForm = prev;
     clearTimeout(routeTimer);
     routeTimer = setTimeout(() => {
       const r = routeInfo();
       // formulário fechou e voltou à lista → provável envio concluído
-      if (prev.includes('/add') && r.mode === 'list') post({ type: 'formClosed', from: prev, to: href });
+      if (ultimoForm && !href.includes('/add') && r.mode === 'list') { post({ type: 'formClosed', from: ultimoForm, to: href }); ultimoForm = ''; }
       sendContext(); atualizarLauncher(); avisarDesfazer();
     }, 600);
   };
   setInterval(routeChanged, 500);
   let formTimer = null;
-  new MutationObserver(() => { clearTimeout(formTimer); formTimer = setTimeout(sendContext, 700); })
+  new MutationObserver(() => { clearTimeout(formTimer); formTimer = setTimeout(() => { sendContext(); verAtencao(); }, 700); })
     .observe(document.documentElement, { childList: true, subtree: true });
 
   /* ============ Regras e mensagens do service worker ============ */
@@ -758,15 +920,22 @@
     try { const r = await chrome.runtime.sendMessage({ type: 'getRules' }); rules = r?.rules || rules; } catch { /* extensão recarregada */ }
   }
   chrome.runtime.onMessage.addListener((m) => {
-    if (m.type === 'togglePanel') setPanel(!panelOpen);
+    if (m.type === 'togglePanel') setPanel(modo === 'fechado');
     if (m.type === 'rulesUpdated') { rules = m.rules; post({ type: 'rulesUpdated' }); sendContext(); }
   });
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && dropEl.classList.contains('on')) { dropEl.classList.remove('on'); dragDepth = 0; } });
-  window.addEventListener('resize', () => document.documentElement.classList.toggle('ct-docked', panelOpen && innerWidth >= 1000));
+  window.addEventListener('resize', () => document.documentElement.classList.toggle('ct-docked', modo === 'painel' && innerWidth >= 1000));
 
-  loadRules().then(() => {
+  /** Modo ao abrir o portal: plataforma (padrão) ou só o botão, se o cliente preferir o painel encaixado. */
+  async function modoInicial() {
+    if (plat.modoInicial) return plat.modoInicial();
+    try { const { prefs } = await chrome.storage.local.get('prefs'); return prefs?.abrirComo === 'painel' ? 'painel' : 'plataforma'; } catch { return 'plataforma'; }
+  }
+  Promise.all([loadRules(), modoInicial()]).then(([, inicial]) => {
     lastHref = currentPath(); ensureFrame(); atualizarLauncher();
-    // ganchos para o simulador (soltar exemplos, abrir o painel)
-    plat.expose?.({ openPanel: () => setPanel(true), sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); } });
+    modoAberto = inicial;
+    if (inicial === 'plataforma') setModo('plataforma');
+    // ganchos para o simulador (soltar exemplos, abrir o painel, trocar o modo)
+    plat.expose?.({ openPanel: () => setPanel(true), modo: (m) => setModo(m), sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); } });
   });
 })();

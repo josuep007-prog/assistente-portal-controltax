@@ -8,6 +8,12 @@ export const norm = (s) => String(s ?? '')
 export const onlyDigits = (s) => String(s ?? '').replace(/\D+/g, '');
 
 /* ---------------- Datas ---------------- */
+/** Data só existe se o mês e o dia continuarem os pedidos: o JS rola 30/02 para 02/03 em silêncio. */
+export function dataValida(ano, mesIndice, dia) {
+  if (!(ano >= 1900 && ano <= 2100) || mesIndice < 0 || mesIndice > 11 || dia < 1 || dia > 31) return null;
+  const d = new Date(ano, mesIndice, dia);
+  return d.getMonth() === mesIndice && d.getDate() === dia ? d : null;
+}
 export function parseDate(v) {
   if (!v) return null;
   if (v instanceof Date) return isNaN(v) ? null : new Date(v.getFullYear(), v.getMonth(), v.getDate());
@@ -15,16 +21,15 @@ export function parseDate(v) {
   let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
   if (m) {
     let y = +m[3]; if (y < 100) y += 2000;
-    const d = new Date(y, +m[2] - 1, +m[1]);
-    return d.getMonth() === +m[2] - 1 ? d : null;
+    return dataValida(y, +m[2] - 1, +m[1]);
   }
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  if (m) return dataValida(+m[1], +m[2] - 1, +m[3]);
   m = norm(s).match(/^(\d{1,2}) DE ([A-Z]+) DE (\d{4})$/);
   if (m) {
     const meses = ['JANEIRO', 'FEVEREIRO', 'MARCO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
     const i = meses.indexOf(m[2]);
-    if (i >= 0) return new Date(+m[3], i, +m[1]);
+    if (i >= 0) return dataValida(+m[3], i, +m[1]);
   }
   return null;
 }
@@ -104,15 +109,20 @@ export function bestMatch(value, options, min = 0.72) {
 /** Procura no texto qual funcionário da lista aparece (nome completo ou quase). */
 export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = {}) {
   const T = ' ' + norm(text) + ' ';
-  let best = null;
+  let best = null; const empates = new Set();
   for (const e of employees || []) {
     const E = norm(e); if (!E) continue;
     if (T.includes(' ' + E + ' ')) return { option: e, score: 1 };
     const toks = E.split(' ').filter(t => t.length > 2);
     const hit = toks.filter(t => T.includes(' ' + t + ' ')).length;
     const s = toks.length ? hit / toks.length : 0;
-    if (toks.length >= 2 && s >= 0.66 && (!best || s > best.score)) best = { option: e, score: s * 0.95 };
+    if (toks.length >= 2 && s >= 0.66) {
+      if (!best || s > best.bruto) { best = { option: e, score: s * 0.95, bruto: s }; empates.clear(); }
+      else if (s === best.bruto && best.option !== e) empates.add(e);
+    }
   }
+  // empate (mesmo nome parcial para duas pessoas): quem decide é o cliente, não a ordem da lista
+  if (best && empates.size) return { option: null, score: 0, candidatos: [best.option, ...empates] };
   if (best) return best;
   if (!soPrimeiroNome) return null;
   // só o primeiro nome ("o Jorge pediu demissão"): vale se for único na lista
@@ -135,11 +145,13 @@ export function classifyDocument(text, rules) {
     for (const p of d.palavras || []) { const P = norm(p); if (P && (' ' + T + ' ').includes(' ' + P + ' ')) { hits++; found.push(p); } }
     let strong = 0; for (const f of d.forte || []) if (T.includes(norm(f))) strong++;
     if (hits >= (d.minPalavras || 1) || strong) {
-      const score = Math.min(1, (hits / Math.max(3, (d.palavras || []).length * 0.6)) + strong * 0.5);
-      out.push({ id: d.id, nome: d.nome, tipoSolicitacao: d.tipoSolicitacao, score, found });
+      const bruto = (hits / Math.max(3, (d.palavras || []).length * 0.6)) + strong * 0.5;
+      // palavras que derrubam a nota (ex.: "TRCT" num aviso de rescisão)
+      const contra = (d.negativas || []).filter(x => T.includes(norm(x))).length;
+      out.push({ id: d.id, nome: d.nome, tipoSolicitacao: d.tipoSolicitacao, score: Math.min(1, Math.max(0, bruto - contra * 0.5)), bruto: bruto - contra * 0.5, found });
     }
   }
-  return out.sort((a, b) => b.score - a.score);
+  return out.sort((a, b) => b.bruto - a.bruto);
 }
 
 /** Extração genérica "Rótulo: valor" usando os sinônimos dos campos.
@@ -223,8 +235,15 @@ export function analyzeText(text, rules, ctx = {}) {
   } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
   if (docRule?.tipoCatPalavras) {
+    // a CAT imprime todas as opções ("( ) Típico ( ) Trajeto"): só vale a marcada
     const T = norm(text);
-    for (const [val, words] of Object.entries(docRule.tipoCatPalavras)) if (words.some(w => T.includes(norm(w)))) { put('tipoCat', val, 0.6, docRule.nome); break; }
+    const candidatos = Object.entries(docRule.tipoCatPalavras).filter(([, words]) => words.some(w => T.includes(norm(w))));
+    if (candidatos.length === 1) put('tipoCat', candidatos[0][0], 0.6, docRule.nome);
+    else if (candidatos.length > 1) {
+      const marcada = opcaoMarcada(text, candidatos.flatMap(([, words]) => words));
+      const dono = marcada && candidatos.find(([, words]) => words.some(w => norm(w) === norm(marcada)));
+      if (dono) put('tipoCat', dono[0], 0.6, docRule.nome);
+    }
   }
   // comprovante de endereço (ou qualquer documento com endereço) para cadastros
   if (tipo?.campos?.cep && (doc?.id === 'comprovanteEndereco' || !campos.endereco)) {
@@ -251,7 +270,8 @@ export function analyzeText(text, rules, ctx = {}) {
     else {
       const m = findEmployeeInText(leitor ? semOutrasPessoas(text) : text, ctx.employees, { soPrimeiroNome: !leitor && !doc });
       const outroNome = leitor?.paciente && leitor.paciente.nome.split(' ').length >= 2;
-      if (m && outroNome) {
+      if (m?.candidatos) candidatos = m.candidatos;       // empate: o cliente escolhe
+      else if (m && outroNome) {
         put('empregado', m.option, Math.min(m.score, 0.45), `sobrenome igual ao de “${leitor.paciente.nome}”`);
         avisosExtra.push({ nivel: 'atencao', id: 'outroNome', mensagem: `O atestado está em nome de ${leitor.paciente.nome}, que não é exatamente ${m.option}. Confira se é do funcionário (pode ser de um dependente).` });
       } else if (m) put('empregado', m.option, m.score, 'nome encontrado no documento');
@@ -288,6 +308,27 @@ export function activeConditionals(tipo, values) {
   return (tipo.condicionais || []).filter(c => matchCond(c.se, values));
 }
 
+/* ---------------- Regras de prazo compartilhadas ---------------- */
+/** Súmula 380 do TST (art. 132 do Código Civil): não conta o dia do aviso, conta o último. */
+export const fimDoAviso = (dataAviso, dias = 30) => addDays(dataAviso, dias);
+const SEM_AVISO = ['COM JUSTA CAUSA', 'EXPERIENCIA', 'TEMPO DETERMINADO', 'CULPA RECIPROCA'];
+/** Dispensa por justa causa e fim de contrato não geram aviso prévio. */
+export function temAviso(values, rules) {
+  const m = norm(values.motivo || '');
+  if (!m) return true;   // sem motivo escolhido, não dá para afirmar que não há aviso
+  return !(rules?.config?.motivosSemAviso || SEM_AVISO).some(x => m.includes(norm(x)));
+}
+/** O proporcional vale a favor do empregado; quem pede demissão cumpre 30 dias (NT 184/2012 do MTE). */
+export const avisoPeloEmpregador = (values) => norm(values.avisoDadoPor || '') !== 'EMPREGADO';
+/** Os 15 primeiros dias pela empresa e o INSS a partir do 16º valem para doença e acidente
+    (Lei 8.213/91, art. 60 §3º), não para maternidade, licença sem vencimento ou serviço militar. */
+const COM_INSS = ['Doença', 'Acid. Trabalho', 'mesma doença', 'mesmo acid', 'Doença profissional'];
+export function vaiAoInss(tipoAfastamento, rules) {
+  const t = norm(tipoAfastamento || '');
+  if (!t) return true;   // sem tipo escolhido, mantém o aviso geral
+  return (rules?.tipos?.afastamento?.tiposComInss || COM_INSS).some(x => t.includes(norm(x)));
+}
+
 /* ---------------- Valores derivados ---------------- */
 export function derived(tipoKey, values, rules) {
   const cal = makeCalendar(rules.feriados);
@@ -301,11 +342,19 @@ export function derived(tipoKey, values, rules) {
   }
   const afa = parseDate(values.dataAfastamento), diasAfa = +values.dias || 0;
   if (diasAfa) out.diasTexto = diasAfa === 1 ? '1 dia' : `${diasAfa} dias`;
-  if (afa && diasAfa) { out.dataRetorno = fmtDate(addDays(afa, diasAfa)); if (diasAfa > 15) out.inicioInss = fmtDate(addDays(afa, 15)); }
+  if (afa && diasAfa) { out.dataRetorno = fmtDate(addDays(afa, diasAfa)); if (diasAfa > 15 && vaiAoInss(values.tipoAfastamento, rules)) out.inicioInss = fmtDate(addDays(afa, 15)); }
   const dem = parseDate(values.dataDemissao);
   if (dem) out.pagamentoAte = fmtDate(addDays(dem, 10));
   const anos = +values.anosEmpresa;
-  if (!isNaN(anos) && values.anosEmpresa !== '' && values.anosEmpresa != null) out.diasAviso = String(Math.min(90, 30 + 3 * Math.max(0, Math.floor(anos))));
+  // proporcional (Lei 12.506/2011) é direito do empregado: só quando a empresa demite
+  if (!isNaN(anos) && values.anosEmpresa !== '' && values.anosEmpresa != null && temAviso(values, rules)) {
+    out.diasAviso = avisoPeloEmpregador(values) ? String(Math.min(90, 30 + 3 * Math.max(0, Math.floor(anos)))) : '30';
+  }
+  if (dem || parseDate(values.dataAviso)) {
+    const base = parseDate(values.dataAviso) || dem;
+    const d = +out.diasAviso || 30;
+    if (base && temAviso(values, rules)) out.fimAviso = fmtDate(fimDoAviso(base, d));
+  }
   const tipo = resolveTipo(rules, tipoKey);
   if (tipo?.complexidade) out.diasUteis = String(rules.config?.prazoInternoDiasUteis?.[tipo.complexidade] ?? '');
   void cal;
@@ -389,9 +438,13 @@ export function runChecks(tipoKey, values, anexos, rules, hoje = today(), portal
   conds.forEach(c => (c.anexos || []).forEach(id => { const a = reqAnexos.find(x => x.id === id); if (a) a.obrigatorio = true; }));
   for (const a of reqAnexos) {
     if (a.excetoQuando && matchCond(a.excetoQuando, values)) continue;
-    const has = (anexos || []).some(f => f.documento === a.documento);
-    const temAlgum = (anexos || []).length > 0;
+    // só conta como anexado o que está mesmo no portal: o que está só na lista do
+    // Assistente ainda não foi para a solicitação (pendente)
+    const has = (anexos || []).some(f => f.documento === a.documento && !f.pendente);
+    const soNoAssistente = !has && (anexos || []).find(f => f.documento === a.documento && f.pendente);
+    const temAlgum = (anexos || []).some(f => !f.pendente);
     if (has) add('ok', 'Anexos', `${a.rotulo} anexado`);
+    else if (soNoAssistente) add('erro', 'Anexos', (rules?.mensagens?.anexoSoNoAssistente || 'O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.').replace('{arquivo}', soNoAssistente.nome));
     else if (a.obrigatorio) add(temAlgum ? 'atencao' : 'erro', 'Anexos', temAlgum ? `Confira se o anexo inclui: ${a.rotulo}` : `Anexe: ${a.rotulo}`);
     else add('info', 'Anexos', `Se tiver, anexe: ${a.rotulo}`);
   }
@@ -519,7 +572,8 @@ export function findDates(text, hoje = today()) {
   }
   for (const m of t.matchAll(/\b(\d{1,2})\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de\s+(\d{4}))?/g)) {
     const mi = MESES.indexOf(m[2]); let y = m[3] ? +m[3] : hoje.getFullYear();
-    let d = new Date(y, mi, +m[1]); if (!m[3] && d < addDays(hoje, -60)) d = new Date(y + 1, mi, +m[1]);
+    let d = dataValida(y, mi, +m[1]);
+    if (d && !m[3] && d < addDays(hoje, -60)) d = dataValida(y + 1, mi, +m[1]);
     push(m.index, d);
   }
   for (const m of t.matchAll(/\b(hoje|amanha|ontem|depois de amanha)\b/g)) push(m.index, addDays(hoje, { hoje: 0, amanha: 1, ontem: -1, 'depois de amanha': 2 }[m[1]]));
@@ -527,7 +581,13 @@ export function findDates(text, hoje = today()) {
     const alvo = DIAS_SEMANA.indexOf(m[1]); let d = addDays(hoje, 1); while (d.getDay() !== alvo) d = addDays(d, 1); push(m.index, d);
   }
   for (const m of t.matchAll(/\bdia (\d{1,2})\b(?!\s*(?:[\/.-]|de\s+[a-z]))/g)) {
-    let d = new Date(hoje.getFullYear(), hoje.getMonth(), +m[1]); if (d < hoje) d = new Date(hoje.getFullYear(), hoje.getMonth() + 1, +m[1]); push(m.index, d);
+    // "dia 31" num mês de 30 dias não vira 01 do mês seguinte: sem data, o cliente confirma
+    let d = dataValida(hoje.getFullYear(), hoje.getMonth(), +m[1]);
+    if (d && d < hoje) {
+      const prox = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);   // dezembro → janeiro do ano seguinte
+      d = dataValida(prox.getFullYear(), prox.getMonth(), +m[1]);
+    }
+    push(m.index, d);
   }
   const seen = new Set();
   return out.sort((a, b) => a.idx - b.idx).filter(x => { const k = iso(x.d); if (seen.has(k)) return false; seen.add(k); return true; }).map(x => x.d);
@@ -545,7 +605,8 @@ export function parseFreeText(text, rules, ctx = {}) {
   const datas = findDates(text, hoje);
   const diasM = t.match(/(\d{1,3})\s*dias?\b(?!\s*(?:de\s+)?abono)/); const dias = diasM ? +diasM[1] : null;
   const abonoM = t.match(/(?:vender|abono(?:\s+de)?)\s*(\d{1,2})\s*dias?|(\d{1,2})\s*dias?\s*(?:de\s+)?abono/);
-  if (ctx.employees?.length) { const m = findEmployeeInText(text, ctx.employees); if (m) put('empregado', m.option, m.score); }
+  let candidatosNome = null;
+  if (ctx.employees?.length) { const m = findEmployeeInText(text, ctx.employees); if (m?.option) put('empregado', m.option, m.score); else if (m?.candidatos) candidatosNome = m.candidatos; }
   const d0 = datas[0] ? fmtDate(datas[0]) : null;
   switch (tipo) {
     case 'afastamento': {
@@ -592,7 +653,7 @@ export function parseFreeText(text, rules, ctx = {}) {
     default: break;
   }
   // o texto do cliente serve só para entender o pedido: não vai literalmente para a descrição
-  return { tipoSugerido: tipo, campos, datas: datas.map(fmtDate) };
+  return { tipoSugerido: tipo, campos, datas: datas.map(fmtDate), ...(candidatosNome ? { candidatos: candidatosNome } : {}) };
 }
 
 /* ================= Leituras específicas ================= */
@@ -793,12 +854,45 @@ export function extractAddress(text) {
   return out;
 }
 /** ASO: resultado, tipo de exame e data. */
+/** Qual opção está marcada num formulário impresso ("( ) Apto (X) Inapto", "[x]", "☒").
+ *  ASO e CAT trazem todas as opções escritas: procurar a palavra solta elegia a errada.
+ *  Devolve null quando nenhuma ou mais de uma está marcada — aí o cliente confere. */
+export function opcaoMarcada(text, opcoes) {
+  const t = plain(text);
+  const esc = (x) => plain(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const lista = (opcoes || []).filter(Boolean);
+  if (!lista.length) return null;
+  // onde cada opção aparece no texto
+  const ondes = [];
+  for (const o of lista) {
+    const re = new RegExp(`\\b${esc(o)}\\b`, 'gi');
+    for (let m; (m = re.exec(t));) ondes.push({ o, ini: m.index, fim: m.index + m[0].length });
+  }
+  if (!ondes.length) return null;
+  // cada marca pertence à opção colada nela: a que começa logo depois, senão a que termina logo antes
+  const marcas = /[(\[]\s*(?:x|☒|■|▣|✓|✔)\s*[)\]]|(?:^|\s)(?:☒|■|▣|✓|✔)(?=\s|$)/gi;
+  const marcadas = new Set();
+  for (let m; (m = marcas.exec(t));) {
+    const ini = m.index, fim = m.index + m[0].length;
+    const depois = ondes.filter(x => x.ini >= fim && x.ini - fim <= 2).sort((a, b) => a.ini - b.ini)[0];
+    const antes = ondes.filter(x => x.fim <= ini && ini - x.fim <= 2).sort((a, b) => b.fim - a.fim)[0];
+    // "(X) Opção" vem antes da opção; um símbolo solto ("Opção ☒") vem depois dela
+    const dono = /[(\[]/.test(m[0]) ? (depois || antes) : (antes || depois);
+    if (dono) marcadas.add(dono.o);
+  }
+  if (marcadas.size === 1) return [...marcadas][0];
+  if (marcadas.size > 1) return null;
+  // sem marca nenhuma: só vale quando o documento traz uma única opção (texto corrido)
+  const presentes = [...new Set(ondes.map(x => x.o))];
+  return presentes.length === 1 ? presentes[0] : null;
+}
+const ASO_TIPOS = ['admissional', 'demissional', 'periodico', 'retorno ao trabalho', 'mudanca de funcao'];
 export function readASO(text) {
   const t = plain(text);
-  const resultado = /\binapto\b/.test(t) ? 'INAPTO' : (/\bapto\b/.test(t) ? 'APTO' : null);
-  const tipo = ['admissional', 'demissional', 'periodico', 'retorno ao trabalho', 'mudanca de funcao'].find(x => t.includes(x)) || null;
+  const resultado = opcaoMarcada(t, ['inapto', 'apto']);
+  const tipo = opcaoMarcada(t, ASO_TIPOS);
   const datas = findDates(text); const data = datas.length ? fmtDate(datas[datas.length - 1]) : null;
-  return { resultado, tipo, data };
+  return { resultado: resultado ? resultado.toUpperCase() : null, tipo, data };
 }
 /** Uma linha que resume o que foi entendido do documento (aparece embaixo do arquivo). */
 export function summarizeDocument(analise, text) {
@@ -810,4 +904,125 @@ export function summarizeDocument(analise, text) {
   if (id === 'comprovanteEndereco') { const a = extractAddress(text); return [a.endereco && `${a.endereco}, ${a.numero || ''}`, a.cep].filter(Boolean).join(' · '); }
   if (id === 'fichaAdmissao') return [v('nome'), v('cpf')].filter(Boolean).join(' · ');
   return '';
+}
+
+/* =================== Plataforma (2.0) =================== */
+/* Solicitações lidas das listas do portal. O formato dos itens do Onvio ainda não foi visto
+   (a calibrar): procura a situação, o funcionário e as datas em vários nomes de campo, e as
+   expressões que dizem "aguardando você" ficam nas regras (config.statusSolicitacao). */
+const PADRAO_STATUS = {
+  aguardando: ['aguardando[^"]{0,20}(cliente|voc[eê])', 'waiting[_ ]?(for[_ ]?)?(client|customer)', 'awaiting'],
+  concluida: ['conclu', 'finaliz', 'complet', 'encerrad'],
+  cancelada: ['cancel']
+};
+const reLista = (lista) => (lista || []).map(s => { try { return new RegExp(s, 'i'); } catch { return null; } }).filter(Boolean);
+/** 'aguardando' | 'andamento' | 'concluida' | 'cancelada' */
+export function classificarEstado(status, bruto, regras) {
+  const cfg = { ...PADRAO_STATUS, ...(regras?.config?.statusSolicitacao || {}) };
+  const s = String(status || '');
+  const tudo = `${s} ${typeof bruto === 'string' ? bruto : JSON.stringify(bruto || '')}`;
+  if (reLista(cfg.aguardando).some(r => r.test(tudo))) return 'aguardando';
+  if (reLista(cfg.cancelada).some(r => r.test(s))) return 'cancelada';
+  if (reLista(cfg.concluida).some(r => r.test(s))) return 'concluida';
+  return 'andamento';
+}
+const texto1 = (...vs) => { for (const v of vs) { if (v == null || v === '') continue; if (typeof v === 'string' || typeof v === 'number') return String(v); if (typeof v === 'object') { const d = v.description || v.name || v.label || v.value; if (d) return String(d); } } return ''; };
+/** Item cru da lista → { tipo, id, status, estado, aguardando, empregado, assunto, atualizado (Date|null) } */
+export function normalizarSolicitacao(it, tipo, regras) {
+  const status = texto1(it?.status, it?.situation, it?.statusDescription, it?.state);
+  const estado = classificarEstado(status, it, regras);
+  const quando = texto1(it?.lastUpdate, it?.updatedAt, it?.lastProceedingDate, it?.modifiedDate, it?.createdAt, it?.creationDate, it?.date);
+  return {
+    tipo,
+    id: texto1(it?.id, it?.requestNumber, it?.number, it?.protocol),
+    numero: texto1(it?.requestNumber, it?.number, it?.protocol, it?.id),
+    status: status || (regras?.config?.statusSolicitacao?.rotulos || {})[estado] || '',
+    estado,
+    aguardando: estado === 'aguardando',
+    empregado: texto1(it?.employee?.name, it?.employeeName, it?.selectedEmployee?.name, it?.employee),
+    assunto: texto1(it?.subject, it?.title, it?.description),
+    atualizado: parseDate(quando),
+    tramite: texto1(it?.lastProceeding?.description, it?.lastProceeding, it?.lastComment)
+  };
+}
+
+/* Lembretes do cliente (guardados só no computador) com repetição.
+   l = { data:'AAAA-MM-DD', rep:'nao'|'diaria'|'util'|'semanal'|'mensal'|'anual', intervalo?, ate?, pular?:[iso] } */
+export function ocorrencias(l, de, ate, cal = makeCalendar()) {
+  const ini = parseDate(l?.data); if (!ini || !de || !ate) return [];
+  const fim = l.ate ? parseDate(l.ate) : null;
+  const pular = new Set(l.pular || []);
+  const passo = Math.max(1, parseInt(l.intervalo, 10) || 1);
+  const out = [];
+  const ok = (d) => d >= de && d <= ate && (!fim || d <= fim) && !pular.has(iso(d));
+  const rep = l.rep || 'nao';
+  if (rep === 'nao') return ok(ini) ? [ini] : [];
+  // mensal/anual no dia 31 (ou 29/02): nos meses sem esse dia, vale o último dia do mês
+  const noMes = (y, m, dia) => new Date(y, m, Math.min(dia, new Date(y, m + 1, 0).getDate()));
+  for (let i = 0, d = ini; d <= ate && i < 5000; i++) {
+    if (fim && d > fim) break;
+    if (ok(d) && (rep !== 'util' || cal.isBusiness(d))) out.push(d);
+    if (rep === 'diaria' || rep === 'util') d = addDays(d, rep === 'util' ? 1 : passo);
+    else if (rep === 'semanal') d = addDays(d, 7 * passo);
+    else if (rep === 'mensal') d = noMes(ini.getFullYear(), ini.getMonth() + passo * (i + 1), ini.getDate());
+    else if (rep === 'anual') d = noMes(ini.getFullYear() + passo * (i + 1), ini.getMonth(), ini.getDate());
+    else break;
+  }
+  return out;
+}
+/** Texto curto da repetição ("Todo mês, dia 10, até 31/12/2026"). */
+export function resumoRepeticao(l) {
+  const d = parseDate(l?.data); if (!d) return '';
+  const n = Math.max(1, parseInt(l.intervalo, 10) || 1);
+  const cada = (um, varios) => n === 1 ? um : `A cada ${n} ${varios}`;
+  const base = { nao: `Só em ${fmtDate(d)}`, diaria: cada('Todo dia', 'dias'), util: 'Todo dia útil (seg. a sex.)', semanal: `${cada('Toda semana', 'semanas')}, ${weekday(d)}`, mensal: `${cada('Todo mês', 'meses')}, dia ${d.getDate()}`, anual: `${cada('Todo ano', 'anos')}, em ${fmtDate(d).slice(0, 5)}` }[l.rep || 'nao'] || '';
+  return base + (l.rep && l.rep !== 'nao' && l.ate ? `, até ${fmtDate(parseDate(l.ate))}` : '');
+}
+
+/* Prazos que valem todo mês (regras.agendaFixa): { dia, mes?, ajuste:'antecipa'|'prorroga' } ou { diaUtil: N } */
+export function prazosFixos(regras, ano, mes, cal = makeCalendar(regras?.feriados)) {
+  const out = [];
+  for (const it of regras?.agendaFixa?.itens || []) {
+    const q = it.quando || {};
+    if (q.mes && q.mes - 1 !== mes) continue;
+    let d = null;
+    if (q.diaUtil) {
+      d = new Date(ano, mes, 1); let n = cal.isBusiness(d) ? 1 : 0;
+      while (n < q.diaUtil) { d = addDays(d, 1); if (cal.isBusiness(d)) n++; }
+    } else if (q.dia) {
+      d = new Date(ano, mes, Math.min(q.dia, new Date(ano, mes + 1, 0).getDate()));
+      if (q.ajuste && !cal.isBusiness(d)) d = cal.addBusinessDays(d, q.ajuste === 'antecipa' ? -1 : 1);
+    }
+    if (d) out.push({ id: it.id, d, titulo: it.titulo, detalhe: it.detalhe || '' });
+  }
+  const lim = parseInt(regras?.config?.diaLimiteRubricas, 10);
+  if (lim) { let d = new Date(ano, mes, Math.min(lim, new Date(ano, mes + 1, 0).getDate())); if (!cal.isBusiness(d)) d = cal.addBusinessDays(d, -1); out.push({ id: 'rubricas', d, titulo: 'Enviar as variáveis da folha (rubricas)', detalhe: 'Prazo combinado com o escritório.' }); }
+  return out.sort((a, b) => a.d - b.d);
+}
+
+/* Situação de um funcionário a partir do que o portal informa (nome, admissão, ativo).
+   Férias são estimativa: o portal não informa férias já gozadas. */
+export function situacaoEmpregado(e, hoje = today(), regras = {}) {
+  const adm = parseDate(e?.admissao);
+  const out = { nome: e?.nome || '', ativo: e?.ativo !== false, admissao: adm, tempoCasa: '', experiencia: [], ferias: null, proxima: null };
+  if (!adm) return out;
+  let meses = (hoje.getFullYear() - adm.getFullYear()) * 12 + hoje.getMonth() - adm.getMonth();
+  if (hoje.getDate() < adm.getDate()) meses--;
+  meses = Math.max(0, meses);
+  const anos = Math.floor(meses / 12), m = meses % 12;
+  out.tempoCasa = anos ? `${anos} ano${anos > 1 ? 's' : ''}${m ? ` e ${m} ${m > 1 ? 'meses' : 'mês'}` : ''}` : meses ? `${meses} ${meses > 1 ? 'meses' : 'mês'}` : `${diffDays(adm, hoje)} dia(s)`;
+  if (!out.ativo) return out;
+  const marcos = (regras?.config?.experienciaDias || [45, 90]).map(Number).filter(Boolean);
+  for (const n of marcos) { const fim = addDays(adm, n - 1); out.experiencia.push({ n, fim, falta: diffDays(hoje, fim) }); }
+  // período aquisitivo atual e prazo para conceder as férias do período vencido (CLT 134 e 137)
+  if (anos >= 1) {
+    const ini = new Date(adm.getFullYear() + anos - 1, adm.getMonth(), adm.getDate());
+    const fimAq = addDays(new Date(adm.getFullYear() + anos, adm.getMonth(), adm.getDate()), -1);
+    const limite = addDays(new Date(adm.getFullYear() + anos + 1, adm.getMonth(), adm.getDate()), -1);
+    out.ferias = { aquisitivo: `${fmtDate(ini)} a ${fmtDate(fimAq)}`, limite, falta: diffDays(hoje, limite) };
+  }
+  const exp = out.experiencia.find(x => x.falta >= -2);
+  if (exp && exp.falta <= 30) out.proxima = { d: exp.fim, titulo: `Fim da experiência (${exp.n} dias)`, nivel: exp.falta <= 5 ? 'late' : 'soon', falta: exp.falta };
+  else if (out.ferias && out.ferias.falta <= 90) out.proxima = { d: out.ferias.limite, titulo: 'Conceder férias até (estimativa)', nivel: out.ferias.falta <= 30 ? 'late' : 'soon', falta: out.ferias.falta };
+  return out;
 }

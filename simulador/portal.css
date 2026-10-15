@@ -160,3 +160,11 @@ main#p-main { flex: 1; min-width: 0; padding: 20px 24px 120px; }
   .sim-brand span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+/* Plataforma (2.0): a barra do simulador fica por cima (a plataforma começa logo abaixo dela) */
+html.ct-plataforma .sim-bar { z-index: 2147483600; }
+.p-dialog { position: fixed; left: 50%; top: 30%; transform: translateX(-50%); z-index: 1000; background: #fff; color: #222; border-radius: 6px; padding: 18px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.35); max-width: 420px; font: 14px/1.45 system-ui, sans-serif; }
+.p-dialog p { margin: 0 0 12px; }
+.p-detail { background: #fff; border: 1px solid #dde3e8; border-radius: 4px; padding: 16px 18px; }
+.p-detail dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin: 0 0 12px; }
+.p-detail dt { color: #5f6d77; }
+.p-detail dd { margin: 0; }

@@ -1,5 +1,6 @@
 import * as E from './engine.js';
 import { readFile, aiExtract, aiAvailable, libsPresentes } from './extract.js';
+import { montarPlataforma } from './plataforma.js';
 
 /* =================== Estado =================== */
 const params = new URLSearchParams(location.search);
@@ -8,6 +9,7 @@ const S = {
   rules: null, meta: {}, prefs: {}, settingsInfo: null,
   ctx: { route: {}, tipo: null, empresa: '', form: null },
   view: 'inicio', port: null,
+  modo: null,            // 'plataforma' (tela cheia por cima do portal) ou 'painel' (encaixado ao lado)
   work: {},              // por tipo: { valores, arquivos, editados, empregados, opcoes }
   sugestao: null,        // documento lido fora de formulário
   pend: null, pendLoading: false,
@@ -18,6 +20,11 @@ const S = {
   equipe: new Map()      // empresa → [{ nome, admissao, ativo }] (datas de admissão para os alertas de experiência)
 };
 const DEFAULT_PREFS = { preencherAoLer: true, incluirCid: false, ocrAutomatico: true, usarIa: true, introVista: false, tamanhoTexto: 'normal', avisosLidos: [] };
+/** O CID entra na descrição se o cliente ligar o interruptor ou se o escritório pedir pelas
+ *  regras. O interruptor precisa mostrar esse valor efetivo: antes dizia "desligado" enquanto
+ *  o dado de saúde ia para o portal. A escolha explícita do cliente vence sempre. */
+const cidPeloEscritorio = () => !!S.rules?.config?.incluirCidNaDescricao;
+const cidAtivo = () => (S.prefs.cidEscolhido ? S.prefs.incluirCid : (S.prefs.incluirCid || cidPeloEscritorio()));
 let reqId = 0; const waiters = new Map();
 
 /* =================== Utilidades de UI =================== */
@@ -55,11 +62,14 @@ function onPage(m) {
     case 'context': onContext(m); break;
     case 'files': handleFiles((m.files || []).map(p => p instanceof File ? p : new File([p.buf], p.name, { type: p.type || 'application/octet-stream', lastModified: p.lastModified })), m.origem); break;
     case 'submitAttempt': onSubmitAttempt(m); break;
-    case 'formClosed': onFormClosed(); break;
+    case 'formClosed': onFormClosed(m); break;
+    case 'envioNaoConcluido': onEnvioNaoConcluido(); break;
     case 'undoState': S.desfazerN = m.n || 0; atualizarBotaoDesfazer(); break;
     case 'undoStart': S.preenchendo = true; break;
     case 'undone': aoDesfazer(m); break;
     case 'rulesUpdated': loadRules().then(render); break;
+    case 'modo': aplicarModo(m.modo); break;
+    case 'portalAtencao': P?.atencao(m); break;
     default: break;
   }
 }
@@ -95,11 +105,15 @@ chrome.runtime.onMessage.addListener((m) => { if (m.type === 'rulesUpdated') { l
 let lastKey = '';
 function onContext(m) {
   avisoVersao(m.versao);
+  aplicarModo(m.modo);
   const prevTipo = S.ctx.tipo, prevMode = S.ctx.route?.mode;
   const empresaAntes = S.ctx.empresa;
   S.ctx = { route: m.route || {}, tipo: m.tipo, empresa: m.empresa || '', form: m.form };
   $('#empresa').textContent = S.ctx.empresa || 'Portal do Cliente';
   if (S.ctx.empresa !== empresaAntes && S.rulesBase) { S.rules = regrasDaEmpresa(S.rulesBase, S.ctx.empresa); if (S.view === 'inicio') renderAvisosInicio(); }
+  // trocou de empresa sem recarregar: o que estava em andamento é da empresa anterior
+  if (empresaAntes && S.ctx.empresa && S.ctx.empresa !== empresaAntes) trocouDeEmpresa(empresaAntes);
+  P?.aoContexto(!!(S.ctx.empresa && S.ctx.empresa !== empresaAntes));
   const key = `${m.route?.path}|${m.tipo}`;
   if (m.route?.mode === 'form' && m.tipo) {
     const W0 = w(m.tipo);
@@ -120,6 +134,33 @@ function onContext(m) {
   else if (S.view === 'inicio') renderContextBanner();
 }
 
+/* =================== Modo da tela: plataforma (tela cheia) ou painel encaixado =================== */
+const VIEWS_PAINEL = ['inicio', 'preencher', 'pendencias', 'ferramentas', 'historico', 'config'];
+function aplicarModo(modo) {
+  if (!['plataforma', 'painel'].includes(modo) || modo === S.modo) return;   // 'fechado' mantém o último desenho
+  S.modo = modo;
+  const plat = modo === 'plataforma';
+  document.body.classList.toggle('plat', plat);
+  $('#plat').hidden = !plat;
+  const app = $('.app');
+  if (plat) $('#plat-body').appendChild(viewEl);
+  else { app.insertBefore(viewEl, $('.foot')); viewEl.className = 'view'; }
+  if (!plat && !VIEWS_PAINEL.includes(S.view)) S.view = 'inicio';
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === S.view)));
+  if (plat) P?.entrou();
+  render();
+}
+
+/** Guarda o que estava em andamento com o nome da empresa anterior e começa limpo: listas de
+ *  empregados, valores lidos e lote não valem para outra empresa. */
+function trocouDeEmpresa(empresaAntes) {
+  const pares = Object.entries(S.work).filter(([, W]) => W).map(([tipo, W]) => ({ tipo, empresa: empresaAntes, dados: rascunhoDe(W) })).filter(x => x.dados);
+  if (pares.length) gravarRascunhos(pares);
+  S.work = {}; cargasEmpregados.clear(); S.sugestao = null; S.ultimoEnvio = null;
+  if (S.lote && !S.lote.concluido) { S.lote.pausado = true; renderLote(); }
+  lastKey = '';
+}
+
 /* A página continua com o script antigo quando a extensão é atualizada sem recarregar o portal:
    o painel novo conversa com "mãos" velhas e várias coisas falham. Avisa para recarregar. */
 function avisoVersao(versaoPagina) {
@@ -137,7 +178,8 @@ function avisoVersao(versaoPagina) {
 }
 
 function w(tipo) {
-  if (!S.work[tipo]) S.work[tipo] = { valores: {}, arquivos: [], editados: new Set(), empregados: [], opcoes: {}, resultados: null };
+  // fonteVerdade[k] = 'plataforma': o cliente escreveu no formulário da plataforma; vale mais que o portal até ser enviado
+  if (!S.work[tipo]) S.work[tipo] = { valores: {}, arquivos: [], editados: new Set(), empregados: [], opcoes: {}, resultados: null, fonteVerdade: {} };
   return S.work[tipo];
 }
 const tipoDef = (k) => E.resolveTipo(S.rules, k);
@@ -195,6 +237,7 @@ async function empregadosPara(tipo) {
 
 /* =================== Navegação entre abas =================== */
 function setView(v) {
+  if (S.modo !== 'plataforma' && !VIEWS_PAINEL.includes(v)) v = 'inicio';
   S.view = v;
   document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
   render();
@@ -203,13 +246,15 @@ function setView(v) {
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 $('#btn-close').addEventListener('click', () => send({ type: 'close' }));
 $('#btn-config').addEventListener('click', () => setView('config'));
-$('#btn-theme').addEventListener('click', () => {
+function alternarTema() {
   const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   const next = cur === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   try { localStorage.setItem('ct-tema', next); } catch { /* sem armazenamento */ }
   syncThemeIcon();
-});
+}
+$('#btn-theme').addEventListener('click', alternarTema);
+$('#btn-plat').addEventListener('click', () => send({ type: 'modo', modo: 'plataforma' }));
 function syncThemeIcon() {
   const dark = (document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
   $('#btn-theme').innerHTML = icon(dark ? 'sun' : 'moon');
@@ -217,6 +262,7 @@ function syncThemeIcon() {
 
 function render() {
   if (!S.rules) { viewEl.innerHTML = `<div class="empty"><div class="spin" style="margin:auto"></div><p>Carregando…</p></div>`; return; }
+  if (S.modo === 'plataforma' && P) return P.render(S.view);
   ({ inicio: renderInicio, preencher: renderPreencher, pendencias: renderPendencias, ferramentas: renderFerramentas, historico: renderHistorico, config: renderConfig }[S.view] || renderInicio)();
 }
 
@@ -617,6 +663,7 @@ function renderSugestao() {
     </div>`;
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
   $('#sug-go')?.addEventListener('click', async () => {
+    comecarDoZeroSeAbandonado(tipo);
     const W = w(tipo); const todos = [it, ...(s.extras || [])]; W.arquivos.push(...todos);
     S.sugestao = null;
     await openTipo(tipo, { manter: true });
@@ -670,6 +717,7 @@ function renderSugestaoTexto(el, s) {
 
 async function abrirDoTexto(el, s, destino) {
   S.sugestao = null; el.innerHTML = '';
+  comecarDoZeroSeAbandonado(destino);
   await openTipo(destino, { manter: true });
   for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === destino); k++) await esperar(200);
   await loadEmpregados(destino);
@@ -690,6 +738,7 @@ function docDeOutroTipo(item, tipo) {
 
 /* Junta o que foi lido com o que já está no assistente e preenche */
 function applyAnalysis(tipo, item, opts = {}) {
+  if (item.removido) return;   // o cliente tirou o arquivo da lista enquanto a leitura corria
   const W = w(tipo); const t = tipoDef(tipo);
   item.outroTipo = docDeOutroTipo(item, tipo);
   const campos = item.outroTipo ? {} : (item.analise?.campos || {});
@@ -742,7 +791,11 @@ function valoresAssistente(tipo) {
 }
 /** Para conferir: o que está no portal vale mais (o cliente pode ter mudado lá). */
 function valoresParaChecar(tipo) {
-  return { ...valoresAssistente(tipo), ...portalValores(tipo) };
+  const v = { ...valoresAssistente(tipo), ...portalValores(tipo) };
+  // plataforma: o que o cliente escreveu aqui vale até o portal receber
+  const W = w(tipo);
+  for (const [k, f] of Object.entries(W.fonteVerdade || {})) if (f === 'plataforma' && W.valores[k]?.valor) v[k] = W.valores[k].valor;
+  return v;
 }
 function anexosAtuais(tipo) {
   const W = w(tipo);
@@ -769,7 +822,7 @@ function documentoPrincipal(tipo) {
 function gerarTextos(tipo, force = false) {
   const W = w(tipo); const t = tipoDef(tipo);
   const vals = { ...valoresParaChecar(tipo), ...E.derived(tipo, valoresParaChecar(tipo), S.rules) };
-  if (!S.prefs.incluirCid && !S.rules.config?.incluirCidNaDescricao) delete vals.cid;
+  if (!cidAtivo()) delete vals.cid;
   vals.anexosNomes = anexosAtuais(tipo).map(a => a.nome).join(', ');
   vals.observacoes = W.valores.observacoes?.valor || '';
   vals.documentoPrincipal = documentoPrincipal(tipo);
@@ -794,9 +847,11 @@ function renderPreencher() {
     return;
   }
   const t = tipoDef(tipo);
-  viewEl.innerHTML = `
-    <div id="lote"></div>
-    <div class="card">
+  const plat = S.modo === 'plataforma';
+  const cab = `<div class="card${plat ? ' pd-head' : ''}">
+      ${plat ? `<div class="pd-t"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small> <span class="chip sector">${esc(t.setor)}</span></div><ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
+        <button type="button" class="btn btn-ghost btn-sm" id="ver-portal" title="Mostra o formulário original do portal">${icon('external', 'ic-sm')} Ver no portal</button>
+        <div class="progress"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>` : `
       <div class="card-h">
         <div style="flex:1;min-width:0"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small></div>
         <span class="chip sector">${esc(t.setor)}</span>
@@ -804,27 +859,18 @@ function renderPreencher() {
       <div class="card-b">
         <ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
         <div class="progress" style="margin-top:10px"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>
-      </div>
-    </div>
-    <div id="modo-seguro"></div>
-    <div id="rascunho"></div>
-    <div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Ou cole um print (Ctrl+V). Eu leio, preencho e anexo.</small></div></div>
-    <div class="free mini">
+      </div>`}
+    </div>`;
+  const drop = `<div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Ou cole um print (Ctrl+V). Eu leio, preencho e anexo.</small></div></div>`;
+  const livre = `<div class="free mini">
       <label for="free-form" class="sr">Escreva o pedido com suas palavras</label>
       <input id="free-form" class="input" placeholder="Ou escreva: ex. ${esc(exemploTexto(tipo))}" autocomplete="off">
       <button class="btn btn-sm" id="free-form-go">Preencher</button>
     </div>
-    <div id="free-sug"></div>
-    <div class="files" id="files"></div>
-    <div id="outro-tipo"></div>
-    <div id="doc-checklist"></div>
-    <h2 class="sec">No portal</h2>
-    <div id="fields"></div>
-    <div id="fill-res"></div>
-    <h2 class="sec">Conferência</h2>
-    <div class="checks" id="checks"></div>
-    ${(t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
-    <div class="dock" id="dock">
+    <div id="free-sug"></div>`;
+  const arquivos = `<div class="files" id="files"></div><div id="outro-tipo"></div><div id="doc-checklist"></div>`;
+  const dicas = (t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : '';
+  const dock = `<div class="dock" id="dock">
       <button class="btn btn-primary" id="btn-fill">${icon('fill', 'ic-sm')} Preencher no portal</button>
       <button class="btn btn-undo" id="btn-undo" hidden>${icon('undo', 'ic-sm')} Desfazer o preenchimento</button>
       <button class="btn" id="btn-send" title="Mostra o resumo e envia pelo botão do portal">${icon('check', 'ic-sm')} Conferir e enviar</button>
@@ -835,12 +881,37 @@ function renderPreencher() {
           <button type="button" id="btn-regen">${icon('refresh', 'ic-sm')} Gerar assunto e descrição de novo</button>
           <button type="button" id="btn-clear">${icon('trash', 'ic-sm')} Limpar o que o assistente guardou</button>
         </div></details>
-    </div>
+    </div>`;
+  // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
+  viewEl.innerHTML = plat ? `
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div>
+    <div class="pd-grid">
+      <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
+        <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div></section></div>
+      <aside class="pd-side">${drop}${livre}${arquivos}
+        <section class="pn-card"><div class="pn-card-head"><h3>Conferência</h3></div><div class="pn-card-body"><div class="checks" id="checks"></div></div></section>
+        ${dicas}</aside>
+    </div>${dock}` : `
+    <div id="lote"></div>
+    ${cab}
+    <div id="modo-seguro"></div>
+    <div id="rascunho"></div>
+    ${drop}
+    ${livre}
+    ${arquivos}
+    <h2 class="sec">No portal</h2>
+    <div id="fields"></div>
+    <div id="fill-res"></div>
+    <h2 class="sec">Conferência</h2>
+    <div class="checks" id="checks"></div>
+    ${dicas}
+    ${dock}
   `;
+  $('#ver-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
   bindDrop($('#drop-form'));
   $('#btn-fill').addEventListener('click', () => fillPortal(tipo));
   $('#btn-undo').addEventListener('click', desfazerPreenchimento);
-  $('#btn-send').addEventListener('click', () => { S.pedirResumo = true; send({ type: 'requestSubmit' }); });
+  $('#btn-send').addEventListener('click', async () => { await enviarPendenteAgora(tipo); S.pedirResumo = true; send({ type: 'requestSubmit' }); });
   $('#btn-copy').addEventListener('click', () => copiarResumo(tipo));
   $('#btn-model').addEventListener('click', () => salvarModeloUI(tipo));
   $('#btn-regen').addEventListener('click', () => { const W = w(tipo); W.editados.delete('assunto'); W.editados.delete('descricao'); gerarTextos(tipo, true); renderFieldsOnly(); updateChecks(); });
@@ -918,8 +989,9 @@ function fieldInput(k, c, cur, W) {
     return `<div class="seg" role="group" aria-label="${esc(c.rotulo)}">${opts.map(o => `<button type="button" data-k="${k}" data-v="${esc(o)}" aria-pressed="${E.norm(o) === E.norm(v)}">${esc(o)}</button>`).join('')}</div>`;
   }
   if (c.tipo === 'textarea') return `<textarea id="${id}" data-k="${k}" class="${cls}" rows="${k === 'descricao' ? 8 : 3}">${esc(v)}</textarea>`;
-  const list = W.opcoes[k]?.length ? `list="dl-${k}"` : '';
-  const dl = W.opcoes[k]?.length ? `<datalist id="dl-${k}">${W.opcoes[k].map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
+  const temLista = W.opcoes[k]?.length || c.tipo === 'combo';
+  const list = temLista ? `list="dl-${k}"` : '';
+  const dl = temLista ? `<datalist id="dl-${k}">${(W.opcoes[k] || []).map(o => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
   const ph = { data: 'DD/MM/AAAA', competencia: 'MM/AAAA', cpf: '000.000.000-00', cep: '00000-000', moeda: '0,00' }[c.tipo] || (c.tipo === 'combo' ? 'Digite ou escolha' : '');
   const im = ['data', 'competencia', 'numero', 'cpf', 'cep', 'pis', 'moeda', 'telefone'].includes(c.tipo) ? 'inputmode="numeric"' : '';
   return `<input id="${id}" data-k="${k}" data-t="${c.tipo}" class="${cls}" value="${esc(v)}" placeholder="${ph}" ${im} ${list} autocomplete="off">${dl}`;
@@ -931,10 +1003,13 @@ let lastFieldsKey = '';
 function renderFieldsOnlySeMudou() {
   const tipo = S.ctx.tipo; if (!tipo) return;
   const k = JSON.stringify([S.ctx.form?.campos, Object.entries(w(tipo).valores).map(([a, b]) => [a, b?.valor]), w(tipo).ultimoPreenchido]);
-  if (k !== lastFieldsKey && !document.activeElement?.closest?.('#fields')) renderFieldsOnly();
+  if (k === lastFieldsKey) return;
+  if (!document.activeElement?.closest?.('#fields')) renderFieldsOnly();
+  else if (S.modo === 'plataforma') atualizarEstadosPlat(tipo);
 }
 function renderFieldsOnly() {
   const el = $('#fields'); if (!el) return;
+  if (S.modo === 'plataforma') return renderFormularioProprio(el, S.ctx.tipo);
   const tipo = S.ctx.tipo; const t = tipoDef(tipo); const W = w(tipo);
   lastFieldsKey = JSON.stringify([S.ctx.form?.campos, Object.entries(W.valores).map(([a, b]) => [a, b?.valor]), W.ultimoPreenchido]);
   const pf = S.ctx.form?.campos || {};
@@ -974,7 +1049,7 @@ function renderFieldsOnly() {
       return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}</div>`;
     }).join('')}
     ${t.descricao?.length ? `<div class="field"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(W.valores.observacoes?.valor || '')}</textarea></div>` : ''}
-    ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${S.prefs.incluirCid ? 'checked' : ''}><span>Incluir CID na descrição<small>Dado de saúde (LGPD). Deixe desligado se não for necessário.</small></span></label>` : ''}
+    ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID na descrição<small>${cidAtivo() && !S.prefs.incluirCid ? 'Ligado pelo escritório para esta empresa — você pode desligar.' : 'Dado de saúde (LGPD). Deixe desligado se não for necessário.'}</small></span></label>` : ''}
     </div>` : ''}
     ${t.campos.assunto || t.campos.descricao ? `<details class="more texto-prev"${texto('descricao') ? '' : ' open'}><summary>Assunto e descrição ${editadoNoPortal ? '<small class="chip info">editados por você no portal</small>' : '<small class="chip ok">gerados</small>'}</summary>
       ${texto('assunto') ? `<p class="tp-a">${esc(texto('assunto'))}</p>` : ''}
@@ -998,7 +1073,115 @@ function renderFieldsOnly() {
     gerarTextos(tipo); renderFieldsOnly(); updateChecks();
     if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo);
   }));
-  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
+  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; S.prefs.cidEscolhido = true; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
+}
+/* =================== Formulário próprio (plataforma) =================== */
+/* Com a plataforma em tela cheia, o formulário é daqui: cada campo do portal aparece aqui, e o que o
+   cliente escreve vai para o portal por baixo (ao sair do campo, em lote). Assim que o portal confirma,
+   o estado do campo mostra se ficou igual lá. O resumo antes de enviar continua lendo o próprio portal. */
+const envioPendente = new Map();
+function agendarEnvioPortal(tipo) {
+  clearTimeout(envioPendente.get(tipo));
+  envioPendente.set(tipo, setTimeout(() => { envioPendente.delete(tipo); if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true }); }, 900));
+}
+async function enviarPendenteAgora(tipo) {
+  if (!envioPendente.has(tipo)) return;
+  clearTimeout(envioPendente.get(tipo)); envioPendente.delete(tipo);
+  await fillPortal(tipo, { daPlataforma: true });
+}
+/** Estado de um campo do formulário próprio: o que está no portal comparado com o que o cliente escreveu aqui. */
+function estadoCampoPlat(tipo, k, obrigatorio) {
+  const W = w(tipo); const p = S.ctx.form?.campos?.[k] || {}; const cur = W.valores[k];
+  const valor = W.fonteVerdade?.[k] === 'plataforma' ? (cur?.valor ?? '') : (p.valor || cur?.valor || '');
+  if (p.disabled) return ['muted', 'bloqueado'];
+  if (valor && E.norm(valor) !== E.norm(p.valor || '')) return ['warn', 'ainda não está no portal'];
+  if (p.valor) return W.ultimoPreenchido?.[k] === p.valor && cur?.fonte && cur.fonte !== 'você' ? ['ok', 'lido pelo Assistente'] : ['info', 'no portal'];
+  return obrigatorio ? ['err', 'obrigatório'] : ['', ''];
+}
+/** Enquanto o cliente digita no formulário, não redesenha os campos (perderia o cursor): só os estados. */
+function atualizarEstadosPlat(tipo) {
+  const t = tipoDef(tipo); if (!t) return;
+  document.querySelectorAll('#fields .field.pf[data-campo]').forEach(f => {
+    const k = f.dataset.campo; const lbl = f.querySelector('label'); if (!lbl) return;
+    const [cls, txt] = estadoCampoPlat(tipo, k, !!(t.campos[k]?.obrigatorio && !S.ctx.form?.campos?.[k]?.disabled));
+    let chip = lbl.querySelector('.pf-st');
+    if (!txt) { chip?.remove(); return; }
+    if (!chip) { chip = document.createElement('span'); lbl.insertBefore(chip, lbl.querySelector('.src')); }
+    chip.className = `chip ${cls} pf-st`; chip.textContent = txt;
+  });
+}
+function renderFormularioProprio(el, tipo) {
+  const t = tipoDef(tipo); const W = w(tipo);
+  lastFieldsKey = JSON.stringify([S.ctx.form?.campos, Object.entries(W.valores).map(([a, b]) => [a, b?.valor]), W.ultimoPreenchido]);
+  const pf = S.ctx.form?.campos || {};
+  const cond = E.activeConditionals(t, valoresParaChecar(tipo));
+  const reqCond = new Set(cond.flatMap(c => c.obrigatorios || []));
+  const obrig = (k, c) => (c.obrigatorio || reqCond.has(k)) && !pf[k]?.disabled;
+  const doPortal = Object.entries(t.campos).filter(([k, c]) => !c.somenteAssistente && !TEXTOS.includes(k) && pf[k]?.existe !== false);
+  const grupos = new Map();
+  for (const par of doPortal) { const g = par[1].grupo || ''; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(par); }
+  const fv = W.fonteVerdade || (W.fonteVerdade = {});
+  const campo = ([k, c]) => {
+    const p = pf[k] || {}; const cur = W.valores[k];
+    const daqui = fv[k] === 'plataforma';
+    const valor = daqui ? (cur?.valor ?? '') : (p.valor || cur?.valor || '');
+    const estado = estadoCampoPlat(tipo, k, obrig(k, c));
+    const fonte = cur?.fonte && !['você', 'gerado'].includes(cur.fonte) && !daqui ? cur.fonte : '';
+    const baixa = cur?.conf != null && cur.conf < 0.6 && !W.editados.has(k) && !daqui;
+    return `<div class="field pf${c.tipo === 'textarea' ? ' wide' : ''}${baixa ? ' low' : ''}" data-campo="${k}">
+      <label for="f-${k}">${esc(c.rotulo)}${obrig(k, c) ? '<span class="req">*</span>' : ''}${estado[1] ? ` <span class="chip ${estado[0]} pf-st">${estado[1]}</span>` : ''}${fonte ? `<span class="src" title="${esc('De: ' + fonte)}">${esc(fonte)}</span>` : ''}</label>
+      ${fieldInput(k, c, { ...(cur || {}), valor }, W)}
+      ${p.disabled ? '<small class="hint">O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).</small>' : ''}
+      ${baixa ? '<small class="hint">Leitura com dúvida: confira.</small>' : ''}
+      ${k === 'empregado' && W.candidatos?.length && !p.valor ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
+      ${k === 'empregado' && W.pacienteLido && !valor && !W.candidatos?.length ? `<small class="hint">No documento: “${esc(W.pacienteLido)}” — não achei esse nome na lista. Escolha o funcionário.</small>` : ''}
+    </div>`;
+  };
+  const extras = Object.entries(t.campos).filter(([, c]) => c.somenteAssistente);
+  const textos = TEXTOS.filter(k => t.campos[k] && pf[k]?.existe !== false);
+  el.innerHTML = `
+    ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" ${i === 0 || lista.some(([k, c]) => obrig(k, c) && !(pf[k]?.valor || W.valores[k]?.valor)) ? 'open' : ''}><summary>${esc(g)}</summary><div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
+      || '<p class="muted">Abrindo o formulário no portal…</p>'}
+    ${extras.length || t.descricao?.length ? `<div class="pf-sec">Só para a descrição</div><div class="pf-grid">${extras.map(([k, c]) => {
+      const cur = W.valores[k];
+      return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}</div>`;
+    }).join('')}
+      ${t.descricao?.length ? `<div class="field wide"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(W.valores.observacoes?.valor || '')}</textarea></div>` : ''}</div>
+      ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID na descrição<small>${cidAtivo() && !S.prefs.incluirCid ? 'Ligado pelo escritório para esta empresa — você pode desligar.' : 'Dado de saúde (LGPD). Deixe desligado se não for necessário.'}</small></span></label>` : ''}` : ''}
+    ${textos.length ? `<div class="pf-sec">Assunto e descrição ${textos.some(k => W.editados.has(k)) ? '<small class="chip info">editados por você</small>' : '<small class="chip ok">gerados</small>'}</div>
+      <div class="pf-grid">${textos.map(k => campo([k, t.campos[k]])).join('')}</div>` : ''}
+    ${calcBox(tipo)}`;
+  // campos bloqueados pelo portal
+  for (const [k] of doPortal) if (pf[k]?.disabled) el.querySelectorAll(`[data-k="${k}"]`).forEach(i => { i.disabled = true; });
+  const aoDigitar = debounce(() => { gerarTextos(tipo); syncGenerated(); updateChecks(); refreshCalc(); }, 400);
+  const marcar = (k, valor) => {
+    W.valores[k] = { valor, conf: 1, fonte: 'você' }; W.editados.add(k);
+    if (!t.campos[k]?.somenteAssistente) fv[k] = 'plataforma';
+  };
+  el.querySelectorAll('input[data-k], textarea[data-k]').forEach(inp => {
+    const k = inp.dataset.k; const c = t.campos[k];
+    inp.addEventListener('input', () => { maskInput(inp); marcar(k, inp.value); inp.classList.remove('found', 'low'); aoDigitar(); });
+    inp.addEventListener('change', () => { if (c?.somenteAssistente) atualizarTextoNoPortal(tipo); else agendarEnvioPortal(tipo); });
+    // listas do portal (motivos, cargos…): busca as opções quando o campo ganha o foco
+    if (c?.tipo === 'combo' && c.fc) inp.addEventListener('focus', async () => {
+      if (W.opcoes[k]?.length) return;
+      const r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000);
+      if (r?.options?.length) { W.opcoes[k] = r.options; const dl = $(`#dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
+      if (document.activeElement !== inp) inp.focus();
+    }, { once: true });
+  });
+  el.querySelectorAll('.seg [data-k]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k; marcar(k, b.dataset.v);
+    b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    gerarTextos(tipo); updateChecks(); agendarEnvioPortal(tipo);
+  }));
+  $('#f-obs')?.addEventListener('input', (e) => { W.valores.observacoes = { valor: e.target.value, conf: 1, fonte: 'você' }; aoDigitar(); });
+  $('#f-obs')?.addEventListener('change', () => atualizarTextoNoPortal(tipo));
+  el.querySelectorAll('[data-cand]').forEach(b => b.addEventListener('click', () => {
+    marcar('empregado', b.dataset.cand); W.candidatos = null;
+    gerarTextos(tipo); renderFieldsOnly(); updateChecks(); fillPortal(tipo, { daPlataforma: true });
+  }));
+  $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; S.prefs.cidEscolhido = true; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
 }
 function syncGenerated() {
   const W = w(S.ctx.tipo);
@@ -1103,7 +1286,7 @@ function updateChecks() {
   renderStepper(list); renderDocChecklist();
 }
 
-async function fillPortal(tipo, { silencioso = false } = {}) {
+async function fillPortal(tipo, { silencioso = false, daPlataforma = false } = {}) {
   const W = w(tipo); const t = tipoDef(tipo);
   if (!silencioso) W.pausarAuto = false;
   else if (W.pausarAuto) return;                       // o cliente desfez: só preenche de novo se ele pedir
@@ -1114,7 +1297,7 @@ async function fillPortal(tipo, { silencioso = false } = {}) {
   for (const [k, v] of Object.entries(W.valores)) {
     if (!t.campos[k] || t.campos[k].somenteAssistente || !v?.valor) continue;
     // o que o cliente escreveu direto no portal fica como está
-    if (noPortal[k] && noPortal[k] !== (W.ultimoPreenchido?.[k] ?? null) && noPortal[k] !== v.valor) continue;
+    if (noPortal[k] && noPortal[k] !== (W.ultimoPreenchido?.[k] ?? null) && noPortal[k] !== v.valor && W.fonteVerdade?.[k] !== 'plataforma') continue;
     values[k] = v.valor;
   }
   // padrões das regras (ex.: país Brasil) só se vazio no portal
@@ -1126,17 +1309,24 @@ async function fillPortal(tipo, { silencioso = false } = {}) {
   const packed = await packFiles(files);
   S.preenchendo = true;
   let r;
-  try { r = await request({ type: 'fill', tipo, values, files: packed, opts: { naoSobrescrever: false } }, 60000, packed.map(p => p.buf)); }
+  // o preenchimento foca campos do portal: guarda onde o cliente estava digitando na plataforma
+  const foco = document.activeElement?.id;
+  try { r = await request({ type: 'fill', tipo, values, files: packed, opts: { naoSobrescrever: false, avisoDesfazer: !daPlataforma } }, 60000, packed.map(p => p.buf)); }
   finally { S.preenchendo = false; }
+  if (S.modo === 'plataforma' && foco && document.activeElement?.id !== foco) document.getElementById(foco)?.focus();
   if (btn) { btn.disabled = false; btn.innerHTML = `${icon('fill', 'ic-sm')} Preencher no portal`; }
   if (r?.depois) W.ultimoPreenchido = { ...(W.ultimoPreenchido || {}), ...Object.fromEntries(Object.entries(r.depois).filter(([, v]) => v)) };
   W.portalVisto = { ...portalValores(tipo), ...(r?.depois || {}) };
   if (r?.anexados) W.arquivos.forEach(a => { if (files.includes(a.file)) a.anexado = true; });
   W.resultados = r;
-  await salvarHistorico(tipo, 'preenchido');
-  if (S.view === 'preencher') { renderFilesOnly(); renderFieldsOnly(); renderFillResult(); updateChecks(); }
-  if (!silencioso || r?.resultados?.some(x => !x.ok)) { /* resultado já exibido no painel */ }
-  if (r?.resultados) toast(`${r.resultados.filter(x => x.ok).length} campo(s) preenchido(s)${r.anexados ? ` · ${r.anexados} anexo(s)` : ''}. Confira antes de enviar.`);
+  // sem resposta (o preenchimento não terminou): não grava como "preenchido", para a Agenda
+  // não criar prazos de um pedido que não existe
+  if (r) await salvarHistorico(tipo, 'preenchido');
+  if (S.view === 'preencher') { renderFilesOnly(); if (S.modo === 'plataforma') renderFieldsOnlySeMudou(); else renderFieldsOnly(); renderFillResult(); updateChecks(); }
+  if (!r) toast('O preenchimento não terminou. Confira o portal — o botão “Desfazer” volta tudo.');
+  else if (daPlataforma) { /* ajuste de um campo: o estado aparece no próprio formulário, sem aviso */ }
+  // quando a página já mostrou o aviso com "↶ Desfazer", não sobrescreve (apagaria o botão)
+  else if (r.resultados && !r.mudou) toast(`${r.resultados.filter(x => x.ok).length} campo(s) preenchido(s)${r.anexados ? ` · ${r.anexados} anexo(s)` : ''}. Confira antes de enviar.`);
 }
 function renderFillResult() {
   const el = $('#fill-res'); if (!el) return;
@@ -1161,6 +1351,7 @@ function sincronizarDoPortal(tipo) {
   for (const [k, ult] of Object.entries(W.ultimoPreenchido || {})) {
     if (!(k in atual) || atual[k] === ult) continue;
     delete W.ultimoPreenchido[k];
+    if (W.fonteVerdade) delete W.fonteVerdade[k];
     if (atual[k]) W.valores[k] = { valor: atual[k], conf: 1, fonte: 'você, no portal' }; else delete W.valores[k];
     W.editados.add(k);
   }
@@ -1214,7 +1405,7 @@ function onSubmitAttempt(m) {
   const pediu = S.pedirResumo; S.pedirResumo = false;
   if (!tipo) { send({ type: 'confirmSubmit' }); return; }
   const vals = valoresParaChecar(tipo);
-  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
+  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals), ...naoAceitosPeloPortal(tipo, m.form)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
   if (!list.length && !pediu) { S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
   const t = tipoDef(tipo);
@@ -1237,6 +1428,12 @@ function onSubmitAttempt(m) {
   $('#m-fix').addEventListener('click', () => { close(); setView('preencher'); });
   $('#m-send')?.addEventListener('click', () => { close(); S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); });
   ($('#m-send') && !list.length ? $('#m-send') : $('#m-fix')).focus();
+}
+/** Plataforma: o cliente escreveu um valor aqui que o portal não ficou com ele (ex.: opção que não existe na lista). */
+function naoAceitosPeloPortal(tipo, form) {
+  const W = w(tipo); const t = tipoDef(tipo); const f = form?.campos || {};
+  return Object.entries(W.fonteVerdade || {}).filter(([k, o]) => o === 'plataforma' && f[k]?.existe && !f[k].disabled && W.valores[k]?.valor && E.norm(f[k].valor) !== E.norm(W.valores[k].valor))
+    .map(([k]) => ({ nivel: 'atencao', grupo: 'Portal', campo: k, mensagem: `${t.campos[k]?.rotulo || k}: o portal está com “${f[k].valor || 'vazio'}”, e não com “${W.valores[k].valor}”. Confira esse campo.` }));
 }
 function textoResumo(tipo) {
   const v = valoresParaChecar(tipo); const t = tipoDef(tipo);
@@ -1291,14 +1488,28 @@ async function renderModelosInicio() {
   }));
 }
 
-async function onFormClosed() {
+/* O portal não aceitou o envio: a tela continua no formulário. Sem isso, um CANCELAR
+   logo depois virava "enviado" no histórico, com prazos na Agenda e o rascunho apagado. */
+function onEnvioNaoConcluido() {
+  if (!S.ultimoEnvio) return;
+  S.ultimoEnvio = null;
+  if (S.lote) { S.lote.pausado = true; renderLote(); }
+  toast(S.rules.mensagens?.envioNaoConcluido || 'O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo.');
+}
+
+async function onFormClosed(m = {}) {
   let enviadoTipo = null;
+  // saiu do formulário sem enviar: o que ficou guardado não se mistura com o próximo documento ou pedido
+  const slugSaiu = String(m.from || '').match(/service-request\/([a-z-]+)/)?.[1];
+  const tipoSaiu = slugSaiu && E.tipoBySlug(S.rules, slugSaiu);
+  if (tipoSaiu && S.work[tipoSaiu] && S.ultimoEnvio?.tipo !== tipoSaiu) S.work[tipoSaiu].abandonado = true;
   if (S.ultimoEnvio && Date.now() - S.ultimoEnvio.quando < 60000) {
     const tipo = S.ultimoEnvio.tipo; enviadoTipo = tipo;
     await salvarHistorico(tipo, 'enviado');
     await apagarRascunho(tipo);
     S.work[tipo] = null; S.ultimoEnvio = null;
     if (!S.lote) toast('Solicitação enviada. Os próximos prazos estão na Agenda.');
+    P?.aoEnviar(tipo);
     if (S.view === 'preencher') render();
   }
   loteAoFecharFormulario(enviadoTipo);
@@ -1321,16 +1532,27 @@ function duplicado(tipo, vals) {
 /* ---------- Rascunho: o que foi preenchido fica guardado neste computador por 7 dias ---------- */
 const RASCUNHO_DIAS = 7;
 const chaveRascunho = (tipo) => `${S.ctx.empresa}|${tipo}`;
+/** O que vale guardar de um formulário (sem CID e sem os textos gerados). */
+function rascunhoDe(W) {
+  const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
+  if (!Object.keys(valores).length) return null;
+  return { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
+}
+/** Grava já (sem esperar o debounce), numa só leitura e escrita — usado ao trocar de empresa. */
+async function gravarRascunhos(pares) {
+  if (standalone || !pares.length) return;
+  const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
+  for (const { tipo, empresa, dados } of pares) {
+    if (!tipo || !empresa) continue;
+    if (dados) rascunhos[`${empresa}|${tipo}`] = dados; else delete rascunhos[`${empresa}|${tipo}`];
+  }
+  for (const [k, r] of Object.entries(rascunhos)) if (Date.now() - r.quando > RASCUNHO_DIAS * 864e5) delete rascunhos[k];
+  await chrome.storage.local.set({ rascunhos });
+}
 const salvarRascunho = debounce(async (tipo, empresa) => {
   if (!empresa || !tipo || standalone) return;
   const W = S.work[tipo]; if (!W) return;
-  const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
-  const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
-  const chave = `${empresa}|${tipo}`;
-  if (!Object.keys(valores).length) delete rascunhos[chave];
-  else rascunhos[chave] = { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
-  for (const [k, r] of Object.entries(rascunhos)) if (Date.now() - r.quando > RASCUNHO_DIAS * 864e5) delete rascunhos[k];
-  await chrome.storage.local.set({ rascunhos });
+  await gravarRascunhos([{ tipo, empresa, dados: rascunhoDe(W) }]);
 }, 900);
 async function apagarRascunho(tipo, empresa = S.ctx.empresa) {
   const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
@@ -1340,7 +1562,7 @@ async function apagarRascunho(tipo, empresa = S.ctx.empresa) {
  *  (arrastou um documento ou escreveu), os dados antigos não se misturam com os novos. */
 function comecarDoZeroSeAbandonado(tipo) {
   const W = S.work[tipo];
-  if (!W || !W.entrouComDados || W.rascunhoVisto) return;
+  if (!W || !((W.entrouComDados && !W.rascunhoVisto) || W.abandonado)) return;
   const empregados = W.empregados, opcoes = W.opcoes;
   S.work[tipo] = null;
   const N = w(tipo); N.rascunhoVisto = true; N.empregados = empregados; N.opcoes = opcoes;
@@ -1357,7 +1579,7 @@ async function ofertaRascunho(tipo) {
     const quem = W.valores.empregado?.valor || W.valores.nome?.valor || '';
     el.innerHTML = `<div class="note">${icon('info')}<div><b>Você já tinha começado esta solicitação${quem ? ` (${esc(nomeCurto(quem))})` : ''}.</b> Quer continuar de onde parou?
       <div class="actions" style="margin-top:6px"><button class="btn btn-primary btn-sm" id="rasc-sim">Continuar</button><button class="btn btn-ghost btn-sm" id="rasc-nao">Começar do zero</button></div></div></div>`;
-    $('#rasc-sim').addEventListener('click', () => { W.rascunhoVisto = true; W.entrouComDados = false; W.arquivos.forEach(a => { a.anexado = false; }); el.innerHTML = ''; fillPortal(tipo); });
+    $('#rasc-sim').addEventListener('click', () => { W.rascunhoVisto = true; W.entrouComDados = false; W.abandonado = false; W.arquivos.forEach(a => { a.anexado = false; }); el.innerHTML = ''; fillPortal(tipo); });
     $('#rasc-nao').addEventListener('click', () => { S.work[tipo] = null; w(tipo).rascunhoVisto = true; apagarRascunho(tipo); render(); });
     return;
   }
@@ -1495,6 +1717,7 @@ async function textoDiagnostico() {
     `Navegador: ${(navigator.userAgent.match(/Chrome\/[\d.]+/) || ['?'])[0]} · tela ${screen.width}x${screen.height} · texto ${S.prefs.tamanhoTexto}`,
     `Página: ${S.ctx.route?.mode || '?'} · ${S.ctx.route?.slug || '-'} · solicitação ${tipo || '-'}`,
     `Leitura de arquivos: ${await libsPresentes() ? 'bibliotecas ok' : 'pasta lib faltando'}`,
+    `Tela: ${S.modo || '?'}${S.plat?.sol ? ` · solicitações lidas: ${S.plat.sol.itens.length}${S.plat.sol.erros.length ? ` (falharam: ${S.plat.sol.erros.join(',')})` : ''} · situações: ${[...new Set(S.plat.sol.itens.map(i => i.estado))].join(',') || '-'} · campos dos itens: ${S.plat.sol.chaves.join(',') || '-'}` : ''}${S.plat?.emp ? ` · funcionários: ${S.plat.emp.lista.length}` : ''}`,
     tipo ? `Campos do portal (S=existe, B=bloqueado, P=preenchido): ${Object.entries(f).map(([k, v]) => `${k}:${v.existe ? 'S' : 'N'}${v.disabled ? 'B' : ''}${v.valor ? 'P' : ''}`).join(' ')}` : '',
     tipo ? `Listas carregadas: ${Object.entries(W.opcoes).map(([k, o]) => `${k}=${o.length}`).join(' ') || 'nenhuma'} · empregados=${W.empregados.length} · tela diferente: ${telaDiferente(tipo) ? 'sim' : 'não'}` : '',
     tipo && W.resultados?.resultados ? `Último preenchimento: ${W.resultados.resultados.filter(x => x.ok).length} ok; falhas: ${W.resultados.resultados.filter(x => !x.ok).map(x => `${x.campo} (${semValores(x.motivo)})`).join('; ') || 'nenhuma'}` : '',
@@ -1515,9 +1738,12 @@ async function salvarHistorico(tipo, status) {
   if (!Object.keys(valores).length) return;
   const { historico = [] } = await chrome.storage.local.get('historico');
   const chave = `${S.ctx.empresa}|${tipo}|${valores.empregado || valores.nome || ''}`;
-  const prev = historico.findIndex(h => h.chave === chave && h.status === 'preenchido' && Date.now() - h.quando < 6 * 3600e3);
+  const prev = status === 'enviado'
+    ? historico.findIndex(h => h.chave === chave && h.status === 'preenchido')
+    : historico.findIndex(h => h.chave === chave && h.status === 'preenchido' && Date.now() - h.quando < 6 * 3600e3);
   const item = { chave, quando: Date.now(), empresa: S.ctx.empresa, tipo, status, resumo: valores.assunto || S.rules.tipos[tipo]?.nome, valores, anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
-  delete item.valores.cid;
+  // a descrição pode trazer o CID; nada disso é usado para reaproveitar o pedido
+  delete item.valores.cid; delete item.valores.descricao; delete item.valores.observacoes;
   if (prev >= 0) historico.splice(prev, 1);
   historico.unshift(item);
   S.historico = historico.slice(0, 200);
@@ -1537,8 +1763,10 @@ function prazosDoHistorico(historico) {
         add(pag, 'Pagamento das férias (limite)', h, quem); add(i, 'Início das férias', h, quem);
         if (+v.diasGozo) add(E.addDays(i, +v.diasGozo), 'Retorno das férias', h, quem); break; }
       case 'calculoFerias': { const i = dd(v.inicioGozo); if (!i) break; add(E.addDays(i, -2), 'Pagamento das férias (limite)', h, quem); if (+v.diasGozo) add(E.addDays(i, +v.diasGozo), 'Retorno das férias', h, quem); break; }
-      case 'afastamento': { const i = dd(v.dataAfastamento); if (!i || !+v.dias) break; add(E.addDays(i, +v.dias), 'Retorno do afastamento', h, quem); if (+v.dias > 15) add(E.addDays(i, 15), 'Encaminhamento ao INSS (16º dia)', h, quem); break; }
-      case 'avisoRescisao': { const i = dd(v.dataAviso); if (!i) break; add(E.addDays(i, 29), 'Fim do aviso trabalhado (30 dias)', h, quem); break; }
+      case 'afastamento': { const i = dd(v.dataAfastamento); if (!i || !+v.dias) break; add(E.addDays(i, +v.dias), 'Retorno do afastamento', h, quem); if (+v.dias > 15 && E.vaiAoInss(v.tipoAfastamento, S.rules)) add(E.addDays(i, 15), 'Encaminhamento ao INSS (16º dia)', h, quem); break; }
+      case 'avisoRescisao': { const i = dd(v.dataAviso); if (!i || !E.temAviso(v, S.rules)) break;
+        const dias = +v.diasAviso || 30;
+        add(E.fimDoAviso(i, dias), `Fim do aviso, se trabalhado (${dias} dias)`, h, quem); break; }
       case 'calculoRescisao': { const i = dd(v.dataDemissao); if (!i) break; add(E.addDays(i, 10), 'Pagamento das verbas rescisórias (limite)', h, quem); break; }
       case 'cadastroEmpregado': { const i = dd(v.dataAdmissao); const e1 = +v.contratoExperiencia; if (!i || !e1) break;
         add(E.addDays(i, e1 - 1), 'Fim do 1º período de experiência', h, quem);
@@ -1550,7 +1778,8 @@ function prazosDoHistorico(historico) {
 }
 async function renderHistorico() {
   const { historico = [] } = await chrome.storage.local.get('historico');
-  const prazos = prazosDoHistorico(historico.filter(h => h.status === 'enviado' || h.status === 'preenchido'));
+  const prazos = prazosDoHistorico(historico.filter(h => h.status === 'enviado'));
+  const inacabados = historico.filter(h => h.status === 'preenchido' && Date.now() - h.quando < RASCUNHO_DIAS * 864e5);
   const hoje = E.today();
   const quando = (d) => { const n = E.diffDays(hoje, d); return n < 0 ? ['err', `há ${-n} dia(s)`] : n === 0 ? ['warn', 'hoje'] : n <= 7 ? ['warn', `em ${n} dia(s)`] : ['info', `em ${n} dias`]; };
   viewEl.innerHTML = `
@@ -1560,6 +1789,12 @@ async function renderHistorico() {
       <div class="ag-i"><div class="ag-d"><b>${String(p.d.getDate()).padStart(2, '0')}</b><small>${p.d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</small></div>
         <div class="main"><b>${esc(p.titulo)}</b><small>${esc(p.detalhe || '')}${p.detalhe ? ' · ' : ''}${esc(S.rules.tipos[p.h.tipo]?.nome || '')}</small></div>
         <span class="chip ${c}">${txt}</span></div>`; }).join('')}</div>` : `<div class="empty" style="padding:16px">${icon('calc', 'ic-lg')}<p>Sem prazos por enquanto. Eles aparecem quando você preenche férias, afastamentos, rescisões ou admissões.</p></div>`}
+    ${inacabados.length ? `<h2 class="sec">Começou e não enviou</h2>
+    <p class="muted" style="margin:0 0 8px;font-size:12px">Preenchidas no portal, mas o envio não foi confirmado. Clique para continuar.</p>
+    <div class="list">${inacabados.map(h => `
+      <button class="li" type="button" data-cont="${esc(String(historico.indexOf(h)))}" style="text-align:left;cursor:pointer">
+        <div class="main"><b>${esc(h.resumo)}</b><small>${esc(S.rules.tipos[h.tipo]?.nome || h.tipo)} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div>
+        <span class="chip warn">continuar</span></button>`).join('')}</div>` : ''}
     <h2 class="sec">Histórico</h2>
     ${historico.length ? `<p class="muted" style="margin:0 0 8px;font-size:12px">Clique para reaproveitar os dados em uma nova solicitação.</p><div class="list">${historico.map((h, i) => `
       <button class="li" type="button" data-i="${i}" style="text-align:left;cursor:pointer">
@@ -1567,6 +1802,12 @@ async function renderHistorico() {
         <span class="chip ${h.status === 'enviado' ? 'ok' : 'info'}">${h.status}</span>
       </button>`).join('')}</div>
     <div class="actions" style="margin-top:12px"><button class="btn btn-ghost" id="h-clear">${icon('trash', 'ic-sm')} Limpar histórico</button></div>` : '<p class="muted">As solicitações que você preencher com o Assistente aparecem aqui.</p>'}`;
+  viewEl.querySelectorAll('[data-cont]').forEach(b => b.addEventListener('click', async () => {
+    const h = historico[+b.dataset.cont]; const W = w(h.tipo);
+    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    gerarTextos(h.tipo, true);
+    await openTipo(h.tipo, { manter: true });
+  }));
   viewEl.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', async () => {
     const h = historico[+b.dataset.i];
     const W = w(h.tipo);
@@ -1665,7 +1906,7 @@ function renderFerramentas() {
         let anos = b.getFullYear() - a.getFullYear(); const m = new Date(a); m.setFullYear(b.getFullYear()); if (m > b) anos--;
         anos = Math.max(0, anos);
         const dias = Math.min(90, 30 + 3 * anos);
-        show([['Anos completos', String(anos)], ['Dias de aviso prévio', `${dias} dias (Lei 12.506/2011)`], ['Fim do aviso (se trabalhado 30 dias)', E.fmtDate(E.addDays(b, 29))], ['Projeção total do aviso', E.fmtDate(E.addDays(b, dias - 1))]], dias > 30 ? ['O aviso trabalhado é de 30 dias; os dias adicionais são indenizados.'] : []);
+        show([['Anos completos', String(anos)], ['Dias de aviso prévio', `${dias} dias (Lei 12.506/2011)`], ['Fim do aviso (se trabalhado 30 dias)', E.fmtDate(E.fimDoAviso(b, 30))], ['Projeção total do aviso', E.fmtDate(E.fimDoAviso(b, dias))]], dias > 30 ? ['O aviso trabalhado é de 30 dias; os dias adicionais são indenizados.', 'A contagem exclui o dia do aviso e inclui o último (Súmula 380 do TST).'] : ['A contagem exclui o dia do aviso e inclui o último (Súmula 380 do TST).']);
         break;
       }
       case 'rescisao': {
@@ -1713,8 +1954,11 @@ async function renderConfig() {
     <div class="card pad">
       <label class="toggle"><input type="checkbox" data-p="preencherAoLer" ${S.prefs.preencherAoLer ? 'checked' : ''}><span>Preencher o portal assim que ler um documento<small>Você sempre revisa antes de enviar.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="ocrAutomatico" ${S.prefs.ocrAutomatico ? 'checked' : ''}><span>Ler fotos e PDFs escaneados (OCR)<small>Pode levar alguns segundos por página.</small></span></label>
-      <label class="toggle"><input type="checkbox" data-p="incluirCid" ${S.prefs.incluirCid ? 'checked' : ''}><span>Incluir CID nas descrições<small>Dado de saúde — mantenha desligado se não for exigido.</small></span></label>
+      <label class="toggle"><input type="checkbox" data-p="incluirCid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID nas descrições<small>Dado de saúde — mantenha desligado se não for exigido.</small></span></label>
       <label class="toggle"><input type="checkbox" data-p="usarIa" ${S.prefs.usarIa ? 'checked' : ''}><span>Usar a IA do próprio Chrome quando disponível<small>${await aiAvailable() ? 'Disponível neste computador. Roda localmente.' : 'Não disponível neste Chrome — sem efeito.'}</small></span></label>
+      <div class="field" style="margin-top:10px"><label>Ao abrir o portal</label>
+        <div class="seg" role="group" aria-label="Ao abrir o portal">${[['plataforma', 'Abrir a plataforma (tela cheia)'], ['painel', 'Só o botão Assistente']].map(([v, l]) => `<button type="button" data-abrir="${v}" aria-pressed="${(S.prefs.abrirComo || 'plataforma') === v}">${l}</button>`).join('')}</div>
+        <small class="muted">A plataforma cobre o portal e preenche por trás. Você pode ver o portal a qualquer momento.</small></div>
       <div class="field" style="margin-top:10px"><label>Tamanho do texto do painel</label>
         <div class="seg" role="group" aria-label="Tamanho do texto">${[['normal', 'Normal'], ['grande', 'Grande'], ['maior', 'Maior']].map(([v, l]) => `<button type="button" data-tam="${v}" aria-pressed="${S.prefs.tamanhoTexto === v}">${l}</button>`).join('')}</div></div>
     </div>
@@ -1745,8 +1989,9 @@ async function renderConfig() {
     </div>
     <div class="actions" style="margin-top:14px"><button class="btn" id="intro-again">${icon('info', 'ic-sm')} Ver a introdução de novo</button></div>
     <div class="note" style="margin-top:14px">${icon('lock')}<div>${esc(S.rules.mensagens?.privacidade || '')}</div></div>`;
-  viewEl.querySelectorAll('[data-p]').forEach(i => i.addEventListener('change', () => { S.prefs[i.dataset.p] = i.checked; savePrefs(); }));
+  viewEl.querySelectorAll('[data-p]').forEach(i => i.addEventListener('change', () => { S.prefs[i.dataset.p] = i.checked; if (i.dataset.p === 'incluirCid') S.prefs.cidEscolhido = true; savePrefs(); }));
   viewEl.querySelectorAll('[data-tam]').forEach(b => b.addEventListener('click', () => { S.prefs.tamanhoTexto = b.dataset.tam; savePrefs(); aplicarTamanhoTexto(); renderConfig(); }));
+  viewEl.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => { S.prefs.abrirComo = b.dataset.abrir; savePrefs(); renderConfig(); }));
   $('#diag').addEventListener('click', copiarDiagnostico);
   $('#save-url').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'setSettings', settings: { rulesUrl: $('#rules-url').value.trim() } }); await loadRules(); renderConfig(); });
   $('#refresh-rules').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'refreshRules' }); await loadRules(); renderConfig(); });
@@ -1755,6 +2000,14 @@ async function renderConfig() {
   $('#intro-again').addEventListener('click', () => { S.prefs.introVista = false; savePrefs(); setView('inicio'); });
   if (info.simulador) viewEl.querySelectorAll('.dev-only').forEach(e => e.remove());
 }
+
+/* =================== Plataforma (2.0) =================== */
+const P = montarPlataforma({
+  S, $, esc, icon, request, send, toast, viewEl, debounce, ICONS,
+  setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
+  renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
+  prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado
+});
 
 /* =================== Início =================== */
 (async () => {
@@ -1770,5 +2023,8 @@ async function renderConfig() {
   }
   const hash = location.hash.slice(1);
   if (hash && ['config', 'ferramentas', 'historico'].includes(hash)) setView(hash); else render();
-  if (!standalone) setTimeout(async () => { const tipos = Object.entries(S.rules.tipos).filter(([, t]) => t.api).map(([key, t]) => ({ key, api: t.api })); const r = await request({ type: 'pendencias', tipos }, 30000); if (r?.data) { S.pend = r.data; const n = r.data.reduce((a, p) => a + (p.itens || []).filter(i => i.aguardando).length, 0); send({ type: 'setBadge', n }); const d = $('#dot-pend'); d.hidden = !n; d.textContent = n; } }, 2500);
+  if (S.modo === 'plataforma') P.entrou();
+  if (!standalone) setTimeout(async () => {
+    if (S.modo === 'plataforma') return;   /* a plataforma lê as solicitações por conta própria */
+    const tipos = Object.entries(S.rules.tipos).filter(([, t]) => t.api).map(([key, t]) => ({ key, api: t.api })); const r = await request({ type: 'pendencias', tipos }, 30000); if (r?.data) { S.pend = r.data; const n = r.data.reduce((a, p) => a + (p.itens || []).filter(i => i.aguardando).length, 0); send({ type: 'setBadge', n }); const d = $('#dot-pend'); d.hidden = !n; d.textContent = n; } }, 2500);
 })();
