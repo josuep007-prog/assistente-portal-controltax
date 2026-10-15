@@ -20,7 +20,7 @@ def check(cond, msg):
     print(('  OK   ' if cond else '  FALHA ') + msg)
     if not cond: falhas.append(msg)
 
-async def abrir(p, tmp):
+async def abrir(p, tmp, plataforma=False):
     ctx = await p.chromium.launch_persistent_context(tmp, headless=True, channel='chromium', viewport={'width': 1400, 'height': 900},
         args=[f'--disable-extensions-except={ROOT}', f'--load-extension={ROOT}', '--disable-dev-shm-usage', '--no-sandbox'])
     async def route(r):
@@ -36,12 +36,16 @@ async def abrir(p, tmp):
         else:
             await r.continue_()
     await ctx.route('**/*', route)
+    if not plataforma:
+        # testes da 1.x: o portal à vista e o painel encaixado (a 2.0 abre a plataforma em tela cheia)
+        sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event('serviceworker')
+        await sw.evaluate("chrome.storage.local.set({ prefs: { abrirComo: 'painel' } })")
     page = await ctx.new_page()
     await page.goto(URL); await page.wait_for_timeout(2500)
     return ctx, page
 
 def painel(page):
-    return next(f for f in page.frames if f.url.startswith('chrome-extension://'))
+    return next(f for f in page.frames if f.url.startswith('chrome-extension://') and 'panel/panel.html' in f.url)
 
 async def log_mock(page):
     return await page.evaluate("document.getElementById('log').textContent")

@@ -11,7 +11,7 @@ SKEL = '<!doctype html><html><head><meta charset=utf8><meta name=viewport conten
 class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
-        if self.path in ('/', '/index.html'):
+        if self.path.split('?')[0] in ('/', '/index.html'):
             body = SKEL.format(open(os.path.join(ROOT, 'index.html'), encoding='utf-8').read()).encode()
             self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8'); self.end_headers(); self.wfile.write(body); return
         return super().do_GET()
@@ -37,7 +37,7 @@ async def main():
         logs = []
         pg.on('console', lambda m: logs.append(f'[{m.type}] {m.text}'))
         pg.on('pageerror', lambda e: logs.append('PAGEERR ' + str(e)))
-        await pg.goto('http://127.0.0.1:8765/')
+        await pg.goto('http://127.0.0.1:8765/?modo=painel')   # testes da 1.x: portal à vista, painel encaixado
         await pg.wait_for_timeout(2000)
         await pg.screenshot(path='/tmp/sim-0.png')
         pn = None
