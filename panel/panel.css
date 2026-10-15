@@ -346,3 +346,34 @@ details.more > summary::-webkit-details-marker { display: none; }
 .dock > .btn-undo { order: -1; flex: 1 0 100%; border-color: var(--blue-deep); color: var(--blue-deep); font-weight: 600; background: var(--info-bg); }
 #f-obs { min-height: 56px; }
 .dock > .btn-undo[hidden] { display: none; }
+
+/* =================== Calcular: simulação de férias e rescisão (2.3) =================== */
+.sim-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 18px; align-items: start; }
+.sim-form { display: grid; gap: 10px; align-content: start; }
+.sim-form .toggle.sim-check { margin: 0; }
+.sim-res { position: sticky; top: 0; display: grid; gap: 10px; min-width: 0; }
+.sim-vazio { display: grid; justify-items: center; gap: 6px; padding: 34px 16px; text-align: center; color: var(--ink-3); border: 1px dashed var(--rule-strong); border-radius: var(--r); background: var(--surface-2); }
+.sim-vazio b { color: var(--ink-2); font-weight: 600; }
+.sim-head { padding: 14px 16px; border-radius: var(--r); background: var(--masthead); color: #E9EEF2; display: grid; gap: 6px; }
+.sim-head small { color: #8FA0AD; font-size: 11.5px; }
+.sim-liq { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sim-liq span { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #B9C5CF; }
+.sim-liq b { font: 700 26px var(--f-head); color: #fff; font-variant-numeric: tabular-nums; }
+.sim-tot { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #B9C5CF; }
+.sim-tot b { font-family: var(--f-mono); color: #fff; font-weight: 500; }
+.sim-tab { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sim-tab th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--rule); }
+.sim-tab th:last-child, .sim-tab td.v { text-align: right; }
+.sim-tab td { padding: 6px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.sim-tab td.ref { color: var(--ink-3); font-size: 11.5px; white-space: nowrap; }
+.sim-tab td.v { font-family: var(--f-mono); white-space: nowrap; }
+.sim-tab td.v.neg { color: var(--brand-red); }
+.sim-tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 3px; font-size: 10px; font-weight: 600; color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); vertical-align: 1px; }
+.sim-box { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--rule); overflow: hidden; }
+.sim-box > div { background: var(--surface-2); padding: 8px 10px; display: grid; gap: 2px; }
+.sim-box span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); font-weight: 600; }
+.sim-box b { font-size: 12.5px; font-weight: 600; }
+.sim-aviso { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--ink-2); }
+.sim-aviso .ic { flex: none; margin-top: 2px; color: var(--blue-deep); }
+.sim-acoes { justify-content: flex-end; }
+@media (max-width: 760px) { .sim-grid { grid-template-columns: minmax(0, 1fr); } .sim-res { position: static; } .sim-box { grid-template-columns: minmax(0, 1fr); } }

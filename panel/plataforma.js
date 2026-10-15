@@ -4,6 +4,7 @@
  * O painel (panel.js) continua o orquestrador e passa aqui as funções que já existem (A). */
 import * as E from './engine.js';
 import { anel, anelProgresso, animarNumeros, ligarDicas, cor } from './graficos.js';
+import { prepararSimulacao } from './calcular.js';
 
 export function montarPlataforma(A) {
   const { S, $, esc, icon, request, send, toast, viewEl } = A;
@@ -625,15 +626,17 @@ export function montarPlataforma(A) {
     A.renderSugestao(); A.renderLote(); A.renderRepetir(); A.renderModelosInicio();
   }
   /** Abre um pedido já com o funcionário escolhido (atalho da lista de Funcionários e da busca). */
-  P.novoPedido = async (tipo, { empregado } = {}) => {
+  P.novoPedido = async (tipo, { empregado, valores = {} } = {}) => {
     A.comecarDoZeroSeAbandonado(tipo);
     const W = A.w(tipo);
-    if (empregado) { W.valores.empregado = { valor: empregado, conf: 1, fonte: 'você' }; W.editados.add('empregado'); W.fonteVerdade.empregado = 'plataforma'; }
+    // valores vindos de outra tela (funcionário escolhido, simulação do Calcular): valem como digitados pelo cliente
+    const dados = { ...(empregado ? { empregado } : {}), ...Object.fromEntries(Object.entries(valores).filter(([k, v]) => v != null && v !== '' && S.rules.tipos[tipo]?.campos?.[k])) };
+    for (const [k, v] of Object.entries(dados)) { W.valores[k] = { valor: String(v), conf: 1, fonte: 'você' }; W.editados.add(k); W.fonteVerdade[k] = 'plataforma'; }
     W.rascunhoVisto = true;
     A.gerarTextos(tipo);
     await A.openTipo(tipo, { manter: true });
     for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
-    if (empregado && S.ctx.tipo === tipo) { await A.loadEmpregados(tipo); await A.fillPortal(tipo, { daPlataforma: true }); }
+    if (Object.keys(dados).length && S.ctx.tipo === tipo) { await A.loadEmpregados(tipo); await A.fillPortal(tipo, { daPlataforma: true }); }
   };
 
   /* =================== FUNCIONÁRIOS =================== */
@@ -672,9 +675,14 @@ export function montarPlataforma(A) {
         return `<div class="dp-row emp-cols hov"><span><b class="ell">${esc(x.e.nome)}</b>${x.e.ativo === false ? '<span class="pill pill-muted">desligado</span>' : x.s.ferias ? `<span class="sub">Período aquisitivo ${esc(x.s.ferias.aquisitivo)}</span>` : ''}</span>
           <span class="mono">${fmt(x.s.admissao)}</span><span>${esc(x.s.tempoCasa || '—')}</span>
           <span>${p ? `<span class="pill pill-${p.nivel}">${p.falta < 0 ? `há ${-p.falta} dia(s)` : p.falta === 0 ? 'hoje' : `em ${p.falta} dia(s)`}</span> <span class="sub">${esc(p.titulo)} · ${fmt(p.d)}</span>` : '<span class="muted">—</span>'}</span>
-          <span class="row-acts">${x.e.ativo !== false ? `<details class="menu-acts"><summary class="btn btn-sm">Pedir ${icon('arrow', 'ic-sm')}</summary><div class="menu-list">${ACOES_EMP.filter(([t]) => S.rules.tipos[t]).map(([t, r, ic]) => `<button type="button" data-emp="${n}" data-tipo="${t}">${icon(ic, 'ic-sm')} ${r}</button>`).join('')}</div></details>` : ''}</span></div>`;
+          <span class="row-acts">${x.e.ativo !== false ? `<details class="menu-acts"><summary class="btn btn-sm">Pedir ${icon('arrow', 'ic-sm')}</summary><div class="menu-list">${ACOES_EMP.filter(([t]) => S.rules.tipos[t]).map(([t, r, ic]) => `<button type="button" data-emp="${n}" data-tipo="${t}">${icon(ic, 'ic-sm')} ${r}</button>`).join('')}<button type="button" data-sim-emp="${n}" data-sim="rescisao">${icon('calc', 'ic-sm')} Simular rescisão</button><button type="button" data-sim-emp="${n}" data-sim="ferias">${icon('calc', 'ic-sm')} Simular férias</button></div></details>` : ''}</span></div>`;
       }).join('') || `<div class="list-vazio">${emp.lista.length ? 'Ninguém com esse filtro.' : `Ainda não consegui a lista de funcionários do portal. ${esc(S.rules.mensagens?.plataformaSemAcesso || '')}`}${emp.lista.length ? '' : `<div class="actions" style="justify-content:center;margin-top:10px"><button class="btn btn-sm btn-primary" id="emp-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button></div>`}</div>`;
       $('#emp-list').querySelectorAll('[data-emp]').forEach(b => b.addEventListener('click', () => { b.closest('details').removeAttribute('open'); P.novoPedido(b.dataset.tipo, { empregado: lista[+b.dataset.emp].e.nome }); }));
+      $('#emp-list').querySelectorAll('[data-sim-emp]').forEach(b => b.addEventListener('click', () => {
+        const x = lista[+b.dataset.simEmp]; b.closest('details').removeAttribute('open');
+        prepararSimulacao(b.dataset.sim, { quem: x.e.nome, admissao: x.s.admissao ? E.fmtDate(x.s.admissao) : '' });
+        S.ferramenta = b.dataset.sim === 'rescisao' ? 'simRescisao' : 'simFerias'; A.setView('ferramentas');
+      }));
       $('#emp-tentar')?.addEventListener('click', () => { S.plat.emp = null; renderFuncionarios(); P.carregarEmpregados(true).then(() => S.view === 'funcionarios' && renderFuncionarios()); });
     };
     desenhar();

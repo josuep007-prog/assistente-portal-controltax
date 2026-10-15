@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.15-6",
+  "versao": "2026.10.15-7",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -196,7 +196,23 @@
     },
     "prescricaoDias": 30,
     "prescricaoAvisoDias": 10,
-    "leituraAutomaticaSegundos": 30
+    "leituraAutomaticaSegundos": 30,
+    "tabelas": {
+      "vigencia": "2026",
+      "revisarComEscritorio": true,
+      "observacao": "Tabelas usadas nas simulações do Calcular. Confira com o escritório a cada reajuste (INSS em janeiro; IRRF quando a lei muda).",
+      "salarioMinimo": 1621.00,
+      "inss": {
+        "faixas": [[1621.00, 0.075], [2902.84, 0.09], [4354.27, 0.12], [8475.55, 0.14]]
+      },
+      "irrf": {
+        "faixas": [[2428.80, 0, 0], [2826.65, 0.075, 182.16], [3751.05, 0.15, 394.16], [4664.68, 0.225, 675.49], [null, 0.275, 908.73]],
+        "dependente": 189.59,
+        "simplificado": 607.20,
+        "redutor": { "isentoAte": 5000.00, "ate": 7350.00, "a": 978.62, "b": 0.133145 },
+        "redutorNo13": true
+      }
+    }
   },
   "feriados": [
     "2026-01-01",

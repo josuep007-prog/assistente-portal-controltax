@@ -17,7 +17,7 @@ body.plat .app { display: none; }
   background: #111A21; color: #E9EEF2; display: flex; flex-direction: column; padding: 12px 8px 14px; gap: 2px;
   transition: width .16s ease, box-shadow .16s ease; }
 .rail::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 1px; background: linear-gradient(180deg, rgba(194,0,12,.55), rgba(107,170,201,.25) 45%, transparent 90%); pointer-events: none; }
-.rail:hover, .rail:focus-within { width: 236px; box-shadow: 12px 0 40px rgba(0,0,0,.35); }
+.rail:hover, .rail:has(:focus-visible) { width: 236px; box-shadow: 12px 0 40px rgba(0,0,0,.35); }
 .rail-brand { display: flex; align-items: center; gap: 10px; padding: 2px 4px 12px; white-space: nowrap; }
 .rail-logo { width: 38px; height: 38px; border-radius: 6px; background: #fff; display: grid; place-items: center; flex: none; }
 .rail-logo img { width: 22px; height: 26px; }
@@ -25,7 +25,7 @@ body.plat .app { display: none; }
 .rail-brand-tx b span { color: #E8474B; }
 .rail-brand-tx small { color: #8FA0AD; font-size: 11px; }
 .rail-brand-tx, .rail-t { opacity: 0; transition: opacity .12s ease; }
-.rail:hover .rail-brand-tx, .rail:hover .rail-t, .rail:focus-within .rail-brand-tx, .rail:focus-within .rail-t { opacity: 1; }
+.rail:hover .rail-brand-tx, .rail:hover .rail-t, .rail:has(:focus-visible) .rail-brand-tx, .rail:has(:focus-visible) .rail-t { opacity: 1; }
 .rail-list { display: grid; gap: 3px; }
 .rail-bottom { margin-top: auto; }
 .rail-sep { height: 1px; margin: 10px 6px; background: linear-gradient(90deg, rgba(255,255,255,.12), transparent); }

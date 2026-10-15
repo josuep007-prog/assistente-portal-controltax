@@ -17,6 +17,13 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.3 — Calcular
+
+- **Simular rescisão** (aba principal do Calcular): todas as modalidades — sem justa causa, pedido de demissão (aviso cumprido, dispensado ou descontado), justa causa, acordo (art. 484-A), término de contrato a prazo, fim antecipado pela empresa (art. 479) ou pelo empregado (art. 480), com cláusula do art. 481, rescisão indireta, culpa recíproca e falecimento. Mostra cada verba (saldo de salário, aviso prévio proporcional com projeção, 13º e férias proporcionais, férias vencidas e em dobro, indenizações), INSS e IRRF, líquido, multa e saque do FGTS, seguro-desemprego e o prazo de pagamento.
+- **Simular férias:** abono pecuniário, faltas (CLT 130), férias em dobro, adiantamento do 13º, INSS e IRRF, prazos de aviso e pagamento.
+- **Tabelas de INSS e IRRF nas regras** (`config.tabelas`, vigência 2026, com o redutor da Lei 15.270/2025): o escritório corrige sem nova versão.
+- "Pedir o cálculo ao escritório" abre o Cálculo de Rescisão/Férias no portal já com as datas; "Copiar resumo"; atalhos "Simular" em Funcionários.
+
 ## Novidades da 2.2
 
 - **Equipe no Hoje:** avisos de férias e rescisão perto do pagamento **sem a solicitação de cálculo** (as datas vêm do detalhe do aviso no portal: início das férias, pagamento, data do aviso), experiência vencendo e férias a vencer — cada linha com o atalho para o pedido certo, já com o funcionário.

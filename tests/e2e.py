@@ -97,6 +97,8 @@ async def cenario_guarda(p):
     check('Aviso Prévio de Rescisão' in await pn.locator('#outro-tipo').inner_text(), 'sugere a aba certa para pedido de demissão')
     check('files:' not in await log_mock(page), 'não anexa documento de outro tipo')
     await pn.click('.tab[data-view="ferramentas"]'); await page.wait_for_timeout(300)
+    check(await pn.locator('#sim-modalidade').count() == 1, 'Calcular abre na simulação de rescisão')
+    await pn.click('[data-t="ferias"]'); await page.wait_for_timeout(300)
     await pn.fill('#a', '16102026'); await pn.dispatch_event('#a', 'input'); await pn.fill('#b', '30'); await pn.dispatch_event('#b', 'input')
     await page.wait_for_timeout(300)
     out = await pn.locator('#out').inner_text()
