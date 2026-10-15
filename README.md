@@ -17,10 +17,19 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.1 — Hoje
+
+Referências do **Control Onvio** (a extensão da visão do escritório, `josuep007-prog/Assistente-interno-portal-do-cliente-`) trazidas para a visão do cliente:
+- **Hoje** (no lugar do Painel), no formato da tela Hoje do Control Onvio: rosca de "% em dia" (do seu lado), "N solicitações esperam sua resposta", carrossel com um aviso por vez (a bolinha mostra que o portal foi lido), **próximos passos** (responder, lembretes de hoje, prazos dos próximos 3 dias), situações que filtram e cartões por motivo com o anel de dias parada — ou em lista.
+- **Motivos do cliente** (`E.MOTIVOS_CLIENTE`): responda antes de prescrever (faltam `config.prescricaoAvisoDias` dias dos 30), esperando sua resposta, passou da expectativa de conclusão, com o escritório e concluídas nos últimos 30 dias.
+- **Situações reais do Onvio:** o `genericStatus` tem sentido por família (padrão, cadastro, rubricas) — `config.statusSolicitacao.familias` nas regras, com quem está com a vez (você ou o escritório).
+- **Listas como o portal pede** (página 1 em diante, 200 por vez, com funcionário e responsável) e a **Solicitação Geral** (`service-requesting/v1/tickets/generic`).
+- **Trâmites no detalhe:** a conversa da solicitação (autor, data, situação, texto e anexos), lida na hora com o acesso do portal e nunca guardada.
+
 ## Novidades da 2.0 — a plataforma
 
 **O Assistente virou uma plataforma em tela cheia por cima do Portal do Cliente**, no estilo do módulo de Departamento Pessoal do Control Hub (trilho lateral, abas com selos, indicadores, listas). O portal continua aberto por baixo e é a plataforma que preenche; **Ver no portal** mostra a tela original com o painel ao lado, e o botão de tela cheia volta.
-- **Painel:** o que espera por você, solicitações em andamento, prazos da semana, contratos de experiência, atalhos e "escreva com suas palavras".
+- **Painel** (na 2.1 virou **Hoje**): o que espera por você, solicitações em andamento, prazos da semana, contratos de experiência, atalhos e "escreva com suas palavras".
 - **Solicitações:** todas as listas do portal num só lugar (com todas as páginas), abas Aguardando você / Em andamento / Concluídas, busca, último trâmite e "Responder no portal".
 - **Novo pedido:** formulário próprio, gerado das regras. O que você escreve vai para o portal; antes de enviar, o resumo lê o próprio portal e avisa se ele não aceitou algum valor. O envio continua sendo só pelo botão do portal, depois da sua confirmação.
 - **Funcionários:** lista do portal com admissão, tempo de casa, experiência e férias a conceder (estimativa), e atalhos para pedir férias, afastamento ou desligamento já com o funcionário escolhido.
