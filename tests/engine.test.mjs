@@ -1,5 +1,6 @@
 // Testes do motor de regras (sem navegador).  Rodar:  node tests/engine.test.mjs
 import * as E from '../panel/engine.js';
+import * as C from '../panel/calculos.js';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
@@ -460,6 +461,70 @@ t('várias empresas no mesmo login: filtra pela empresa aberta no portal', () =>
   assert.equal(E.empresaDoFiltro(l, '', 'empresa exemplo simples nacional ltda'), 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA');
   assert.deepEqual(E.empresasDasSolicitacoes(l).map(e => e.n), [1, 2]);
   assert.equal(E.filtrarPorEmpresa([l[0]], '', 'OUTRA').length, 1);   // uma empresa só: sem filtro
+});
+
+const T = rules.config.tabelas;
+const perto = (a, b, msg) => assert.ok(Math.abs(a - b) <= 0.02, `${msg}: ${a} ≠ ${b}`);
+const linha = (r, re) => r.proventos.concat(r.descontos).find(x => re.test(x.rubrica))?.valor;
+
+t('Calcular: INSS progressivo, IRRF com desconto simplificado e redutor 2026', () => {
+  perto(C.inss(1500, T), 112.5, 'INSS 1.500');
+  perto(C.inss(10000, T), 988.10, 'INSS acima do teto');
+  perto(C.irrf(10000, C.inss(10000, T), 0, T).imposto, 1569.55, 'IRRF 10.000');
+  assert.equal(C.irrf(5000, C.inss(5000, T), 0, T).imposto, 0);          // isento até 5.000 (Lei 15.270)
+  perto(C.irrf(6000, C.inss(6000, T), 0, T).imposto, 385.10, 'IRRF 6.000 com redução');
+  assert.equal(C.numeroBR('R$ 3.000,50'), 3000.5); assert.equal(C.numeroBR('3.000'), 3000); assert.equal(C.numeroBR('2500.75'), 2500.75);
+  assert.equal(C.diasDeDireito(10), 24); assert.equal(C.diasDeDireito(40), 0);
+});
+
+t('Calcular: rescisão sem justa causa com aviso indenizado (projeção, avos, descontos)', () => {
+  const r = C.simularRescisao({ modalidade: 'semJustaCausa', aviso: 'indenizado', salario: '3.000,00', admissao: '10/03/2024', desligamento: '15/10/2026' }, T);
+  assert.equal(r.diasAviso, 36);
+  assert.equal(E.fmtDate(r.projecao), '20/11/2026');
+  perto(linha(r, /^Saldo de salário/), 1500, 'saldo');
+  perto(linha(r, /^Aviso prévio indenizado/), 3600, 'aviso');
+  perto(linha(r, /^13º salário proporcional/), 2750, '13º 11/12');
+  perto(linha(r, /^Férias proporcionais/), 2000, 'férias 8/12');
+  perto(linha(r, /^INSS sobre o 13º/), 223.19, 'INSS 13º');
+  perto(r.liquido, 10180.98, 'líquido');
+  assert.equal(r.fgts.multaPct, 0.4); assert.ok(r.seguroDesemprego); assert.equal(E.fmtDate(r.datas.pagarAte), '25/10/2026');
+});
+
+t('Calcular: pedido de demissão sem cumprir o aviso, justa causa, acordo e contrato a prazo', () => {
+  const p = C.simularRescisao({ modalidade: 'pedidoDemissao', aviso: 'naoCumprido', salario: 2000, admissao: '01/02/2026', desligamento: '31/07/2026' }, T);
+  perto(linha(p, /^Saldo de salário/), 2000, 'mês cheio = 30 dias');
+  perto(linha(p, /^Aviso prévio não cumprido/), 2000, 'desconto do aviso');
+  perto(linha(p, /^13º salário proporcional/), 1000, '13º 6/12');
+  perto(p.liquido, 2102.64, 'líquido do pedido');
+  assert.equal(p.fgts.multa, 0); assert.equal(p.fgts.saque, 0); assert.ok(!p.seguroDesemprego);
+  const j = C.simularRescisao({ modalidade: 'justaCausa', salario: 2000, admissao: '01/02/2024', desligamento: '10/07/2026', feriasVencidas: 1 }, T);
+  assert.ok(!linha(j, /^13º/) && !linha(j, /^Férias proporcionais/));
+  perto(linha(j, /^Férias vencidas/), 2000, 'vencidas na justa causa');
+  const a = C.simularRescisao({ modalidade: 'acordo', aviso: 'indenizado', salario: 3000, admissao: '10/03/2024', desligamento: '15/10/2026' }, T);
+  perto(linha(a, /^Aviso prévio indenizado/), 1800, 'metade do aviso no acordo');
+  assert.equal(a.fgts.multaPct, 0.2); assert.equal(a.fgts.saque, 0.8);
+  const c = C.simularRescisao({ modalidade: 'antecipadaEmpregador', salario: 3000, admissao: '01/09/2026', desligamento: '30/09/2026', fimContrato: '15/10/2026' }, T);
+  perto(linha(c, /art\. 479/), 750, 'art. 479');
+  const e = C.simularRescisao({ modalidade: 'antecipadaEmpregado', salario: 3000, admissao: '01/09/2026', desligamento: '30/09/2026', fimContrato: '15/10/2026' }, T);
+  perto(e.descontos.find(x => /art\. 480/.test(x.rubrica)).valor, 750, 'art. 480');
+  const x = C.simularRescisao({ modalidade: 'antecipadaEmpregador', clausulaAssecuratoria: true, aviso: 'indenizado', salario: 3000, admissao: '01/09/2026', desligamento: '30/09/2026', fimContrato: '15/10/2026' }, T);
+  assert.ok(!linha(x, /art\. 479/) && linha(x, /^Aviso prévio indenizado/));   // cláusula do art. 481: vale como sem justa causa
+  const cr = C.simularRescisao({ modalidade: 'culpaReciproca', salario: 3000, admissao: '10/03/2024', desligamento: '15/10/2026' }, T);
+  perto(linha(cr, /^13º/), 1375, '13º pela metade na culpa recíproca');
+  for (const k of Object.keys(C.MODALIDADES)) assert.ok(!C.simularRescisao({ modalidade: k, salario: 2500, admissao: '01/01/2025', desligamento: '15/10/2026', fimContrato: '30/10/2026' }, T).erro, k);
+  assert.ok(C.simularRescisao({ modalidade: 'semJustaCausa', salario: 0, admissao: '01/01/2025', desligamento: '15/10/2026' }, T).erro);
+});
+
+t('Calcular: férias com abono, adiantamento do 13º e faltas', () => {
+  const f = C.simularFerias({ salario: 3000, diasGozo: 20, diasAbono: 10, adiantar13: true, inicio: '03/11/2026' }, T);
+  perto(linha(f, /^Férias$/), 2000, 'férias 20 dias'); perto(linha(f, /^1\/3 constitucional/), 666.67, '1/3');
+  perto(linha(f, /^Abono pecuniário/), 1000, 'abono'); perto(linha(f, /^1ª parcela do 13º/), 1500, '13º');
+  perto(linha(f, /^INSS sobre as férias/), 215.69, 'INSS das férias');
+  assert.equal(E.fmtDate(f.datas.pagarAte), '01/11/2026'); assert.equal(E.fmtDate(f.datas.retorno), '23/11/2026');
+  const g = C.simularFerias({ salario: 3000, diasGozo: 20, diasAbono: 10, faltas: 10 }, T);
+  assert.ok(g.avisos.some(a => /24 dias/.test(a)));
+  perto(linha(C.simularFerias({ salario: 3000, diasGozo: 30, emDobro: true }, T), /^Férias em dobro/), 6000, 'em dobro');
+  assert.match(C.textoSimulacao(f, 'JOAO'), /Líquido estimado/);
 });
 
 console.log(`\n${n} testes ok`);
