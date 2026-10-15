@@ -10,6 +10,7 @@ Extensão Chrome (Manifest V3) que age por cima do Onvio Portal do Cliente na vi
 3. **Testar sempre:** `node tests/engine.test.mjs` e `python tests/e2e.py` (réplica local do portal; nada vai ao Onvio). Ao criar um tipo de verificação ou fluxo novo, acrescente um teste.
 4. **Recarga automática:** com `python dev/dev_server.py` rodando, salvar um arquivo já recarrega a extensão no Chrome do Josué (regras sem recarregar). Não peça para ele recarregar na mão.
 5. **Ao terminar:** subir `version` no `manifest.json` se mudou código, atualizar `CHROMEWEBSTORE.md` (histórico) e o README se mudou o uso; commit com mensagem em português.
+6. **Mesclar na `main` ao final de toda alteração** (pedido do Josué): depois dos testes passarem, subir a branch, abrir/atualizar o PR e mesclá-lo na `main` — o "Download ZIP" do GitHub (branch `main`) precisa vir sempre com a versão nova. Mesclar só com os testes verdes.
 
 ## Segurança no portal real (inegociável)
 
