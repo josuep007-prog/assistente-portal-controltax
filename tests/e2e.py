@@ -20,7 +20,7 @@ def check(cond, msg):
     print(('  OK   ' if cond else '  FALHA ') + msg)
     if not cond: falhas.append(msg)
 
-async def abrir(p, tmp, plataforma=False):
+async def abrir(p, tmp, plataforma=False, url=URL):
     ctx = await p.chromium.launch_persistent_context(tmp, headless=True, channel='chromium', viewport={'width': 1400, 'height': 900},
         args=[f'--disable-extensions-except={ROOT}', f'--load-extension={ROOT}', '--disable-dev-shm-usage', '--no-sandbox', '--window-size=1400,900'])
     async def route(r):
@@ -29,8 +29,14 @@ async def abrir(p, tmp, plataforma=False):
             # testa sempre as regras desta pasta (não as publicadas)
             await r.fulfill(status=200, content_type='application/json', body=open(os.path.join(ROOT, 'rules', 'regras.json'), encoding='utf-8').read())
         elif '/api/br-payroll-sr/' in u:
-            itens = [{'id': 77, 'status': {'description': 'Aguardando o cliente'}, 'employee': {'name': 'JOAO DA SILVA'}}] if 'vacation' in u else []
-            await r.fulfill(status=200, content_type='application/json', body=json.dumps({'items': itens, 'totalItems': len(itens)}))
+            # como o Onvio real: sem o cabeçalho de acesso que o portal usa, 401 (o cookie não basta)
+            if r.request.headers.get('authorization') != 'Bearer teste-123':
+                await r.fulfill(status=401, content_type='application/json', body='{"message":"Unauthorized"}')
+            elif '/clients/' in u and '/employees' in u:
+                await r.fulfill(status=200, content_type='application/json', body=json.dumps([{'name': 'JOAO DA SILVA', 'status': 'Ativo', 'hireDate': '2025-01-10'}, {'name': 'MARIA SOUZA', 'status': 'Ativo', 'hireDate': '2026-09-01'}]))
+            else:
+                itens = [{'id': 77, 'status': {'description': 'Aguardando o cliente'}, 'employee': {'name': 'JOAO DA SILVA'}, 'subject': 'Férias – JOAO DA SILVA'}] if 'vacation' in u else []
+                await r.fulfill(status=200, content_type='application/json', body=json.dumps({'items': itens, 'totalItems': len(itens)}))
         elif u.startswith('https://onvio.com.br/'):
             await r.fulfill(status=200, content_type='text/html', body=MOCK)
         else:
@@ -41,7 +47,7 @@ async def abrir(p, tmp, plataforma=False):
         sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event('serviceworker')
         await sw.evaluate("chrome.storage.local.set({ prefs: { abrirComo: 'painel' } })")
     page = await ctx.new_page()
-    await page.goto(URL); await page.wait_for_timeout(2500)
+    await page.goto(url); await page.wait_for_timeout(2500)
     # Chromium sem tela guarda a área de clique antiga do iframe da extensão (a parte de baixo não recebia cliques);
     # redimensionar a janela uma vez refaz essa área. No Chrome de verdade não acontece.
     await page.set_viewport_size({'width': 1400, 'height': 901}); await page.set_viewport_size({'width': 1400, 'height': 900}); await page.wait_for_timeout(300)
@@ -104,6 +110,13 @@ async def cenario_plataforma(p):
     pn = painel(page)
     check(await pn.evaluate("document.body.classList.contains('plat')"), 'a plataforma abre sozinha em tela cheia')
     check(await page.evaluate("document.elementFromPoint(700, 450)?.id") == 'ct-assistente-host', 'o portal fica coberto')
+    await pn.click('#rail [data-mod="pendencias"]'); await page.wait_for_timeout(5000)
+    lista = await pn.locator('#sol-list').inner_text()
+    check('JOAO DA SILVA' in lista and await pn.locator('#sol-list .dp-row').count() == 2, 'solicitações lidas com o mesmo acesso do portal (o cookie sozinho recebe 401)')
+    check(await pn.locator('#plat-aviso').inner_text() == '', 'sem aviso falso de sessão expirada')
+    await pn.click('#rail [data-mod="funcionarios"]'); await page.wait_for_timeout(1500)
+    check('MARIA SOUZA' in await pn.locator('#emp-list').inner_text(), 'funcionários lidos pela API do portal')
+    await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(500)
     await pn.set_input_files('#file-input', os.path.join(FIX, 'atestado.pdf'))
     for _ in range(60):
         await page.wait_for_timeout(1000)
@@ -119,12 +132,25 @@ async def cenario_plataforma(p):
     check('SUBMITTED' in await log_mock(page), 'envia pelo botão do portal só depois de confirmar')
     await ctx.close(); shutil.rmtree(tmp, ignore_errors=True)
 
+async def cenario_sem_acesso(p):
+    print('\n[sem acesso] a API recusa a leitura (401): avisa sem trocar de tela')
+    tmp = tempfile.mkdtemp()
+    ctx, page = await abrir(p, tmp, plataforma=True, url=URL + '?semacesso')
+    pn = painel(page)
+    await pn.click('#rail [data-mod="pendencias"]'); await page.wait_for_timeout(9000)
+    txt = await pn.locator('#view').inner_text()
+    check('Não consegui ler suas solicitações agora' in txt, 'mostra que não conseguiu ler, com o que fazer')
+    check(await pn.evaluate("document.body.classList.contains('plat')"), 'continua em tela cheia (não pula para o portal)')
+    check('expirou' not in (await pn.locator('#plat-aviso').inner_text()), 'não diz que a sessão expirou')
+    await ctx.close(); shutil.rmtree(tmp, ignore_errors=True)
+
 async def main():
     async with async_playwright() as p:
         await cenario_preencher(p, os.path.join(FIX, 'atestado.pdf'), 'pdf')
         await cenario_preencher(p, os.path.join(FIX, 'atestado-foto.png'), 'ocr')
         await cenario_guarda(p)
         await cenario_plataforma(p)
+        await cenario_sem_acesso(p)
     print(f'\n{"TUDO CERTO" if not falhas else str(len(falhas)) + " FALHA(S)"}')
     sys.exit(1 if falhas else 0)
 
