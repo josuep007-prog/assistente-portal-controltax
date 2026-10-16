@@ -375,5 +375,10 @@ details.more > summary::-webkit-details-marker { display: none; }
 .sim-box b { font-size: 12.5px; font-weight: 600; }
 .sim-aviso { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--ink-2); }
 .sim-aviso .ic { flex: none; margin-top: 2px; color: var(--blue-deep); }
-.sim-acoes { justify-content: flex-end; }
+.sim-saida { display: grid; gap: 10px; min-width: 0; }
+.sim-acoes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--rule); }
+.sim-acoes .btn { flex: none; white-space: nowrap; }
+.sim-acoes .sim-limpar { margin-right: auto; color: var(--ink-2); }
+.sim-acoes .sim-limpar:not(:disabled):hover { color: var(--brand-red); border-color: color-mix(in srgb, var(--brand-red) 40%, transparent); }
+.sim-acoes .btn:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 760px) { .sim-grid { grid-template-columns: minmax(0, 1fr); } .sim-res { position: static; } .sim-box { grid-template-columns: minmax(0, 1fr); } }
