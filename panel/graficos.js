@@ -3,7 +3,7 @@
  * dica ao passar o mouse. Cores: --viz-* em plataforma.css (paleta validada, claro e escuro). */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (n) => Number(n || 0).toLocaleString('pt-BR');
-const COR = { s1: 'var(--viz-s1)', s2: 'var(--viz-s2)', ok: 'var(--viz-ok)', warn: 'var(--viz-warn)', serious: 'var(--viz-serious)', crit: 'var(--viz-crit)' };
+const COR = { s1: 'var(--viz-s1)', s2: 'var(--viz-s2)', s3: 'var(--viz-s3)', ok: 'var(--viz-ok)', warn: 'var(--viz-warn)', serious: 'var(--viz-serious)', crit: 'var(--viz-crit)' };
 export const cor = (k) => COR[k] || k;
 const calmo = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
