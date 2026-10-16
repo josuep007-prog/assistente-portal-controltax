@@ -17,6 +17,16 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.5
+
+- **Solicitações** no formato do escritório: cartões por tipo (`.tipo-c`, com "esperam você"), situações (`.hj-sit`) e cartões agrupados pela situação; Cartões, Lista ou Tabela (`ct.solVis`). O Hoje fica com o resumo (rosca, carrossel, próximos passos, Equipe, Atenção) e a rosca leva às Solicitações filtradas.
+- **Várias empresas no mesmo login:** seletor com caixas de marcar (uma, várias ou todas; "só esta"; "Só a aberta no portal"), com quantas solicitações cada empresa tem em aberto e quantas esperam você. A escolha fica só na memória.
+- **Funcionários:** lista com rolagem e a busca fixa; ficha do funcionário (dados do portal em português, tempo de casa, período aquisitivo, experiência, solicitações em aberto e Histórico das encerradas, atalhos Pedir/Simular). Nada é guardado.
+- **Documentos:** "Nas solicitações" (arquivos dos trâmites, do escritório e os seus, por mês, com busca e filtro; lidos na hora, 40 solicitações por vez) e "Publicados pelo escritório" com categoria e competência.
+- **Calcular:** "Limpar simulação"; Copiar e Pedir só com resultado.
+- **Pedido:** botão "Outro tipo" volta à escolha; a barra de ações fica no rodapé do cartão "Dados do pedido".
+- **Português sempre:** enumerações do Onvio em PascalCase ("ApprenticeContractTermination") e situações em inglês são traduzidas (`panel/dados.js`, `valorPt`).
+
 ## Novidades da 2.4 — do Control Onvio para o cliente
 
 Tudo lido na hora com o acesso do próprio portal e nunca guardado (só o veredito de cada conversa, na memória).

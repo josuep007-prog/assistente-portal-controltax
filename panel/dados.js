@@ -135,6 +135,44 @@ Object.assign(VALORES, {
   FIXED_TERM: 'Prazo determinado', CLT: 'CLT', CHECKING: 'Corrente', SAVINGS: 'Poupança', SALARY: 'Salário', CPF: 'CPF', CNPJ: 'CNPJ', RANDOM: 'Aleatória',
   DAY: 'Dia', NIGHT: 'Noite', PARTIAL: 'Parcial', FULL: 'Integral', OPEN: 'Aberto', CLOSED: 'Fechado', DONE: 'Concluído', CANCELED: 'Cancelado', CANCELLED: 'Cancelado'
 });
+// Motivos de desligamento e outros valores que o Onvio manda em PascalCase ("ApprenticeContractTermination"):
+// a chave é o nome passado para MAIÚSCULAS_COM_SUBLINHADO. O que não estiver aqui é traduzido palavra por palavra.
+Object.assign(VALORES, {
+  APPRENTICE_CONTRACT_TERMINATION: 'Término do contrato de aprendizagem', APPRENTICESHIP_CONTRACT_TERMINATION: 'Término do contrato de aprendizagem',
+  APPRENTICE_CONTRACT_EARLY_TERMINATION: 'Rescisão antecipada do contrato de aprendizagem',
+  EMPLOYER_INITIATIVE_WITHOUT_JUST_CAUSE: 'Demissão sem justa causa', EMPLOYER_INITIATIVE_WITH_JUST_CAUSE: 'Demissão com justa causa',
+  DISMISSAL_WITHOUT_JUST_CAUSE: 'Demissão sem justa causa', DISMISSAL_WITH_JUST_CAUSE: 'Demissão com justa causa', JUST_CAUSE: 'Justa causa',
+  WITHOUT_JUST_CAUSE_DISMISSAL: 'Demissão sem justa causa', WITH_JUST_CAUSE_DISMISSAL: 'Demissão com justa causa',
+  EMPLOYEE_INITIATIVE: 'Pedido de demissão', EMPLOYEE_RESIGNATION: 'Pedido de demissão', RESIGNATION_WITHOUT_JUST_CAUSE: 'Pedido de demissão',
+  EMPLOYEE_REQUEST: 'Pedido de demissão', VOLUNTARY_RESIGNATION: 'Pedido de demissão',
+  INDIRECT_TERMINATION: 'Rescisão indireta', INDIRECT_DISMISSAL: 'Rescisão indireta', INDIRECT_RESCISSION: 'Rescisão indireta',
+  RECIPROCAL_FAULT: 'Culpa recíproca', MUTUAL_FAULT: 'Culpa recíproca', RECIPROCAL_GUILT: 'Culpa recíproca',
+  FIXED_TERM_CONTRACT_TERMINATION: 'Término do contrato por prazo determinado', FIXED_TERM_CONTRACT_END: 'Término do contrato por prazo determinado',
+  END_OF_FIXED_TERM_CONTRACT: 'Término do contrato por prazo determinado', CONTRACT_TERMINATION: 'Término do contrato',
+  EXPERIENCE_CONTRACT_TERMINATION: 'Término do contrato de experiência', EXPERIENCE_CONTRACT_END: 'Término do contrato de experiência',
+  END_OF_EXPERIENCE_CONTRACT: 'Término do contrato de experiência',
+  EARLY_TERMINATION_BY_EMPLOYER: 'Rescisão antecipada pelo empregador', EARLY_TERMINATION_BY_EMPLOYEE: 'Rescisão antecipada pelo empregado',
+  EXPERIENCE_CONTRACT_EARLY_TERMINATION_BY_EMPLOYER: 'Rescisão antecipada do contrato de experiência pelo empregador',
+  EXPERIENCE_CONTRACT_EARLY_TERMINATION_BY_EMPLOYEE: 'Rescisão antecipada do contrato de experiência pelo empregado',
+  FIXED_TERM_CONTRACT_EARLY_TERMINATION_BY_EMPLOYER: 'Rescisão antecipada do contrato a termo pelo empregador',
+  FIXED_TERM_CONTRACT_EARLY_TERMINATION_BY_EMPLOYEE: 'Rescisão antecipada do contrato a termo pelo empregado',
+  MUTUAL_CONSENT: 'Acordo entre as partes', TERMINATION_BY_AGREEMENT: 'Acordo entre as partes', EMPLOYEE_DEATH: 'Falecimento do empregado',
+  COMPANY_CLOSURE: 'Encerramento da empresa', ESTABLISHMENT_CLOSURE: 'Encerramento do estabelecimento', FORCE_MAJEURE: 'Força maior',
+  RETIREMENT_BY_DISABILITY: 'Aposentadoria por invalidez', DISABILITY_RETIREMENT: 'Aposentadoria por invalidez', COMPULSORY_RETIREMENT: 'Aposentadoria compulsória',
+  TRANSFER_TO_ANOTHER_COMPANY: 'Transferência para outra empresa', INTERNSHIP_END: 'Fim do estágio', INTERNSHIP_TERMINATION: 'Fim do estágio',
+  BY_EMPLOYER: 'Pelo empregador', BY_EMPLOYEE: 'Pelo empregado', WORKED_NOTICE: 'Aviso trabalhado', INDEMNIFIED_NOTICE: 'Aviso indenizado',
+  NOTICE_WAIVED: 'Dispensa do aviso', WAIVED: 'Dispensado', ABSENCE: 'Ausência', EXEMPTION: 'Dispensa', IN_PROGRESS: 'Em andamento',
+  WAITING_CLIENT: 'Aguardando o cliente', WAITING_FIRM: 'Aguardando o escritório', COMPLETED: 'Concluída', FINISHED: 'Concluída', DISMISSED: 'Demitido',
+  TERMINATED: 'Desligado', ON_LEAVE: 'Afastado', AWAY: 'Afastado', ON_VACATION: 'Em férias', TRUE: 'Sim', FALSE: 'Não'
+});
+Object.assign(PALAVRAS, {
+  initiative: 'iniciativa', early: 'antecipada', anticipated: 'antecipada', fault: 'culpa', guilt: 'culpa', reciprocal: 'recíproca', mutual: 'mútuo',
+  indirect: 'indireta', closure: 'encerramento', force: 'força', majeure: 'maior', death: 'falecimento', resignation: 'pedido de demissão',
+  apprenticeship: 'aprendizagem', term: 'prazo', agreement: 'acordo', consent: 'acordo', transfer: 'transferência', retirement: 'aposentadoria',
+  rescission: 'rescisão', dismissed: 'demitido', terminated: 'desligado', establishment: 'estabelecimento', voluntary: 'voluntário', request: 'pedido',
+  waived: 'dispensado', exemption: 'dispensa', compulsory: 'compulsória', another: 'outra', to: 'para', for: 'para', in: 'em', on: 'em', from: 'de',
+  progress: 'andamento', waiting: 'aguardando', completed: 'concluída', finished: 'concluída', canceled: 'cancelada', cancelled: 'cancelada', open: 'aberta'
+});
 // Em inglês o principal vem por último ("expected return date"); em português, primeiro ("data de retorno prevista").
 const ADJ = new Set(['previsto', 'pago', 'não pago', 'ativo', 'inativo', 'pendente', 'prévio', 'trabalhado', 'indenizado', 'mensal', 'semanal', 'diário', 'pessoal', 'profissional', 'médico', 'criado', 'atualizado', 'alterado', 'enviado', 'lido', 'total']);
 const ANTES = new Set(['primeiro', 'último']);
@@ -162,7 +200,11 @@ const humano = k => {
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
 const enumPt = v => { if (VALORES[v]) return VALORES[v]; const t = traduzirPalavras(v.toLowerCase().split('_'), true); return t ? t.charAt(0).toUpperCase() + t.slice(1) : v; };
+// "ApprenticeContractTermination", "highSchoolComplete", "not_informed" → ENUM_EM_MAIUSCULAS
+const comoEnum = v => v.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/([A-Z])([A-Z][a-z])/g, '$1_$2').toUpperCase();
 const rotulo = k => ROTULOS[k] || humano(k);
+/** Um valor solto que o Onvio pode mandar em inglês (situação, motivo): em português quando é conhecido. */
+export const valorPt = (v) => valorDe('', v);
 function valorDe(k, v) {
   if (v == null || v === '') return '';
   if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
@@ -171,8 +213,12 @@ function valorDe(k, v) {
     if (/^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?Z?$/.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v)) { const d = diaDe(v); return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear(); }
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) { const d = parseDate(v); if (d) return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
     if (/^[A-Z][A-Z_]{1,}$/.test(v)) return enumPt(v);
+    // enumeração em PascalCase ("ApprenticeContractTermination"): o Onvio manda assim os motivos de desligamento
+    if (/^[A-Z][a-z]+(?:[A-Z][a-z0-9]*)+$/.test(v)) { const u = comoEnum(v), t = enumPt(u); return t === u ? v : t; }
     // enumeração em camelCase ("highSchoolComplete") ou minúsculas com _ ("not_informed"): só se for valor conhecido
-    if (/^[a-z]+([A-Z][a-z]+)+$|^[a-z]+(_[a-z]+)+$/.test(v)) { const u = v.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase(); if (VALORES[u]) return VALORES[u]; }
+    if (/^[a-z]+([A-Z][a-z]+)+$|^[a-z]+(_[a-z]+)+$/.test(v)) { const u = comoEnum(v); if (VALORES[u]) return VALORES[u]; }
+    // uma palavra só, em inglês, que é valor conhecido ("Active", "Indemnified")
+    if (/^[A-Z]?[a-z]{2,}$/.test(v) && /[a-z]/.test(v) && VALORES[v.toUpperCase()] && !/^(Clt|Cpf|Cnpj)$/.test(v)) return VALORES[v.toUpperCase()];
     return v;
   }
   if (Array.isArray(v)) return v.map(x => (x && typeof x === 'object' ? x.name || x.description || x.value || '' : valorDe(k, x))).filter(Boolean).join(', ');

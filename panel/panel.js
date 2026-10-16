@@ -850,7 +850,7 @@ function renderPreencher() {
   const t = tipoDef(tipo);
   const plat = S.modo === 'plataforma';
   const cab = `<div class="card${plat ? ' pd-head' : ''}">
-      ${plat ? `<div class="pd-t"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small> <span class="chip sector">${esc(t.setor)}</span></div><ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
+      ${plat ? `<button type="button" class="btn btn-sm pd-voltar" id="pd-voltar" title="Voltar para a escolha do tipo de solicitação (o pedido aberto continua no portal)">${icon('left', 'ic-sm')} Outro tipo</button><div class="pd-t"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small> <span class="chip sector">${esc(t.setor)}</span></div><ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
         <button type="button" class="btn btn-ghost btn-sm" id="ver-portal" title="Mostra o formulário original do portal">${icon('external', 'ic-sm')} Ver no portal</button>
         <div class="progress"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>` : `
       <div class="card-h">
@@ -888,11 +888,11 @@ function renderPreencher() {
     <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
-        <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div></section></div>
+        <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
       <aside class="pd-side">${drop}${livre}${arquivos}
         <section class="pn-card"><div class="pn-card-head"><h3>Conferência</h3></div><div class="pn-card-body"><div class="checks" id="checks"></div></div></section>
         ${dicas}</aside>
-    </div>${dock}` : `
+    </div>` : `
     <div id="lote"></div>
     ${cab}
     <div id="modo-seguro"></div>
@@ -909,6 +909,7 @@ function renderPreencher() {
     ${dock}
   `;
   $('#ver-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
+  $('#pd-voltar')?.addEventListener('click', () => P.voltarEscolha());
   bindDrop($('#drop-form'));
   $('#btn-fill').addEventListener('click', () => fillPortal(tipo));
   $('#btn-undo').addEventListener('click', desfazerPreenchimento);

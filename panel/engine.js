@@ -983,11 +983,21 @@ export function empresasDasSolicitacoes(itens) {
 export function filtrarPorEmpresa(itens, filtro, empresaAtual) {
   const l = itens || [];
   if (empresasDasSolicitacoes(l).length <= 1 || filtro === '*') return l;
+  // várias empresas escolhidas (2.5): lista de nomes; item sem empresa sempre entra
+  if (Array.isArray(filtro)) { const q = new Set(filtro); return filtro.length ? l.filter(i => !i.empresa || q.has(i.empresa)) : l; }
   if (filtro) return l.filter(i => i.empresa === filtro);
   const atual = l.filter(i => !i.empresa || mesmaEmpresa(i.empresa, empresaAtual));
   return atual.some(i => i.empresa) ? atual : l;
 }
-export const empresaDoFiltro = (itens, filtro, empresaAtual) => filtro === '*' ? '*' : filtro || (empresasDasSolicitacoes(itens).find(e => mesmaEmpresa(e.nome, empresaAtual))?.nome || '*');
+/** Nomes das empresas que o filtro mostra (para marcar as caixas do seletor). */
+export function empresasSelecionadas(itens, filtro, empresaAtual) {
+  const todas = empresasDasSolicitacoes(itens).map(e => e.nome);
+  if (filtro === '*') return todas;
+  if (Array.isArray(filtro)) return filtro.length ? todas.filter(n => filtro.includes(n)) : todas;
+  const d = empresaDoFiltro(itens, filtro, empresaAtual);
+  return d === '*' ? todas : [d];
+}
+export const empresaDoFiltro = (itens, filtro, empresaAtual) => Array.isArray(filtro) ? (filtro.length === 1 ? filtro[0] : '*') : filtro === '*' ? '*' : filtro || (empresasDasSolicitacoes(itens).find(e => mesmaEmpresa(e.nome, empresaAtual))?.nome || '*');
 
 /** Datas de um aviso de férias ou rescisão (campos do Onvio real, mapa do Control Onvio). */
 export function datasDoAviso(it) {

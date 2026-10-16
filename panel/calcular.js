@@ -4,7 +4,8 @@
 import * as E from './engine.js';
 import * as C from './calculos.js';
 
-const ESTADO = { rescisao: { modalidade: 'semJustaCausa', aviso: 'indenizado', feriasVencidas: '0', feriasEmDobro: '0', dependentes: '0' }, ferias: { diasGozo: '30', diasAbono: '0', dependentes: '0', faltas: '0' } };
+const INICIAL = { rescisao: { modalidade: 'semJustaCausa', aviso: 'indenizado', feriasVencidas: '0', feriasEmDobro: '0', dependentes: '0' }, ferias: { diasGozo: '30', diasAbono: '0', dependentes: '0', faltas: '0' } };
+const ESTADO = { rescisao: { ...INICIAL.rescisao }, ferias: { ...INICIAL.ferias } };
 
 /** Abre a simulação já com o funcionário (atalho da lista de Funcionários). */
 export function prepararSimulacao(qual, { quem = '', admissao = '' } = {}) {
@@ -46,14 +47,19 @@ export function renderSimulacao(el, qual, ctx) {
   el.innerHTML = `<div class="sim-grid">
     <section class="sim-form">${qual === 'rescisao' ? formRescisao() : formFerias()}
       <datalist id="sim-emps">${emps.map(e => `<option value="${esc(e.nome)}">`).join('')}</datalist></section>
-    <section class="sim-res" id="sim-res" aria-live="polite"></section></div>
+    <section class="sim-res"><div class="sim-saida" id="sim-res" aria-live="polite"></div>
+      <div class="sim-acoes">
+        <button type="button" class="btn btn-sm btn-ghost sim-limpar" id="sim-limpar" title="Apaga o que foi digitado nesta simulação">${icon('trash', 'ic-sm')} Limpar simulação</button>
+        <button type="button" class="btn btn-sm" id="sim-copiar" title="Copia o resultado para colar num e-mail ou mensagem">${icon('copy', 'ic-sm')} Copiar resumo</button>
+        <button type="button" class="btn btn-sm btn-primary" id="sim-pedir" title="Abre a solicitação de cálculo no portal, já com as datas">${icon('fill', 'ic-sm')} Pedir o cálculo ao escritório</button>
+      </div></section></div>
     <p class="muted" style="font-size:11.5px;margin:8px 0 0">Simulação de apoio pela CLT, com as tabelas de INSS e IRRF ${esc(T?.vigencia || '')} das regras${T?.revisarComEscritorio ? ' (a conferir com o escritório)' : ''}. O cálculo oficial é feito pelo escritório. Nada desta tela é guardado nem enviado.</p>`;
 
   const desenhar = () => {
     const out = el.querySelector('#sim-res');
-    if (!T) { out.innerHTML = `<div class="note warn">${icon('alert')}<div>As tabelas de INSS e IRRF não estão nas regras. Atualize as regras para simular.</div></div>`; return; }
+    if (!T) { out.innerHTML = `<div class="note warn">${icon('alert')}<div>As tabelas de INSS e IRRF não estão nas regras. Atualize as regras para simular.</div></div>`; atual = null; botoes(); return; }
     const r = qual === 'rescisao' ? C.simularRescisao(V, T) : C.simularFerias(V, T);
-    if (r.erro) { out.innerHTML = `<div class="sim-vazio">${icon('calc', 'ic-lg')}<b>${esc(r.erro)}</b><small>O resultado aparece aqui enquanto você preenche.</small></div>`; return; }
+    if (r.erro) { out.innerHTML = `<div class="sim-vazio">${icon('calc', 'ic-lg')}<b>${esc(r.erro)}</b><small>O resultado aparece aqui enquanto você preenche.</small></div>`; atual = null; botoes(); return; }
     const lin = (x, sinal) => `<tr><td>${esc(x.rubrica)}${x.isento ? ' <span class="sim-tag" title="Sem INSS e sem IR">isento</span>' : ''}</td><td class="ref">${esc(x.ref || '')}</td><td class="v ${sinal}">${sinal === 'neg' ? '− ' : ''}${C.brl(x.valor)}</td></tr>`;
     const f = r.fgts;
     out.innerHTML = `
@@ -70,12 +76,26 @@ export function renderSimulacao(el, qual, ctx) {
         <div><span>Saque do FGTS</span><b>${f.saque === 1 ? 'Sim, total' : f.saque ? `Sim, até ${Math.round(f.saque * 100)}%` : 'Não'}</b></div>
         <div><span>Seguro-desemprego</span><b>${r.seguroDesemprego ? 'Pode ter direito' : 'Não'}</b></div></div>`
       : r.datas ? `<div class="sim-box"><div><span>Dar o aviso até</span><b>${E.fmtDate(r.datas.avisoAte)}</b></div><div><span>Pagar até</span><b>${E.fmtDate(r.datas.pagarAte)}</b></div><div><span>Último dia</span><b>${E.fmtDate(r.datas.ultimoDia)}</b></div><div><span>Retorno</span><b>${E.fmtDate(r.datas.retorno)} (${E.weekday(r.datas.retorno)})</b></div></div>` : ''}
-      ${r.avisos.map(a => `<div class="sim-aviso">${icon('info', 'ic-sm')}<span>${esc(a)}</span></div>`).join('')}
-      <div class="actions sim-acoes"><button type="button" class="btn btn-sm" id="sim-copiar">${icon('copy', 'ic-sm')} Copiar resumo</button>
-        <button type="button" class="btn btn-sm btn-primary" id="sim-pedir">${icon('fill', 'ic-sm')} Pedir o cálculo ao escritório</button></div>`;
-    out.querySelector('#sim-copiar').addEventListener('click', async () => { try { await navigator.clipboard.writeText(C.textoSimulacao(r, V.quem)); ctx.toast('Resumo copiado.'); } catch { ctx.toast('Não consegui copiar.'); } });
-    out.querySelector('#sim-pedir').addEventListener('click', () => pedir(r));
+      ${r.avisos.map(a => `<div class="sim-aviso">${icon('info', 'ic-sm')}<span>${esc(a)}</span></div>`).join('')}`;
+    atual = r; botoes();
   };
+  // a barra fica sempre à vista: copiar e pedir só com um resultado; limpar quando há algo digitado
+  let atual = null;
+  const digitado = () => Object.entries(V).some(([k, v]) => v !== '' && v != null && v !== false && String(v) !== String(INICIAL[qual][k] ?? ''));
+  const botoes = () => {
+    el.querySelector('#sim-copiar').disabled = !atual;
+    el.querySelector('#sim-pedir').disabled = !atual;
+    el.querySelector('#sim-limpar').disabled = !digitado();
+  };
+  el.querySelector('#sim-copiar').addEventListener('click', async () => { if (!atual) return; try { await navigator.clipboard.writeText(C.textoSimulacao(atual, V.quem)); ctx.toast('Resumo copiado.'); } catch { ctx.toast('Não consegui copiar.'); } });
+  el.querySelector('#sim-pedir').addEventListener('click', () => atual && pedir(atual));
+  el.querySelector('#sim-limpar').addEventListener('click', () => {
+    for (const k of Object.keys(V)) delete V[k];
+    Object.assign(V, INICIAL[qual]);
+    renderSimulacao(el, qual, ctx);
+    el.querySelector('.sim-form [data-k]')?.focus();
+    ctx.toast('Simulação limpa.');
+  });
   const pedir = (r) => {
     const quem = V.quem && emps.some(e => e.nome === V.quem) ? V.quem : '';
     if (qual === 'ferias') {
