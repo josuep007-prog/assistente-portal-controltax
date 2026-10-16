@@ -224,6 +224,7 @@
         case 'solicitacoes': post({ type: 'solicitacoes', id: m.id, data: await fetchSolicitacoes(m.tipos || [], m.maxPaginas) }); break;
         case 'tramites': post({ type: 'tramites', id: m.id, ...(await fetchTramites(m.base, m.solicitacao)) }); break;
         case 'datasAviso': post({ type: 'datasAviso', id: m.id, ...(await fetchDatasAviso(m.lista, m.solicitacao)) }); break;
+        case 'detalheCompleto': post({ type: 'detalheCompleto', id: m.id, ...(await fetchDetalhe(m.lista, m.solicitacao)) }); break;
         case 'portalInfo': await estadoAcesso(); post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos, acesso: { visto: apiEstado.visto, nomes: apiEstado.nomes }, status: { ...ultimosStatus } }); break;
         case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : { disponivel: false, motivo: 'calibrar' }) }); break;
         case 'baixarDocumento': {
@@ -828,15 +829,21 @@
     } catch (e) { return { erro: String(e.message || e), itens: [] }; }
   }
   /** Datas de um aviso (detalhe da solicitação: {lista}/{id}?expand=all). Só os campos de data voltam ao painel; nada é guardado. */
-  const CAMPOS_AVISO = ['vacationStartDate', 'paymentDate', 'adviceDate', 'vacationDays'];
-  async function fetchDatasAviso(lista, id) {
+  const CAMPOS_AVISO = ['vacationStartDate', 'paymentDate', 'adviceDate', 'noticeDate', 'vacationDays', 'resignationDate', 'priorNoticeAdviceDate', 'admissionDate', 'startDate', 'leaveDate', 'effectiveDate'];
+  /** A solicitação completa ({lista}/{id}?expand=all): lida na hora para a aba Dados do detalhe; nada é guardado. */
+  async function fetchDetalhe(lista, id) {
     if (!lista || !id) return { erro: 'sem-id' };
     try {
-      let j;
-      if (plat.detalheItem) j = await plat.detalheItem(chaveSim(lista), id);
-      else { const r = await getJson(`/api/${lista}/${encodeURIComponent(id)}?expand=all`); if (!r.ok) return { erro: r.status }; j = await r.json(); }
-      return { datas: Object.fromEntries(CAMPOS_AVISO.filter(k => j?.[k] != null).map(k => [k, j[k]])) };
+      if (plat.detalheItem) return { dados: await plat.detalheItem(chaveSim(lista), id) };
+      const r = await getJson(`/api/${lista}/${encodeURIComponent(id)}?expand=all`);
+      if (!r.ok) return { erro: r.status };
+      return { dados: await r.json() };
     } catch (e) { return { erro: String(e.message || e) }; }
+  }
+  async function fetchDatasAviso(lista, id) {
+    const r = await fetchDetalhe(lista, id);
+    if (!r.dados) return { erro: r.erro || 'vazio' };
+    return { datas: Object.fromEntries(CAMPOS_AVISO.filter(k => r.dados[k] != null).map(k => [k, r.dados[k]])) };
   }
   /** Sem a lista de empregados (o portal ainda não abriu nenhuma tela que a carrega): abre por
    *  baixo uma solicitação que tem o campo Empregado, espera o portal pedir a lista e volta.

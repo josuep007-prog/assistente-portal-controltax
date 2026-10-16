@@ -17,6 +17,15 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.4 — do Control Onvio para o cliente
+
+Tudo lido na hora com o acesso do próprio portal e nunca guardado (só o veredito de cada conversa, na memória).
+- **Detalhe com abas:** Conversa (bolhas, você à direita e o escritório à esquerda, "N dias depois", o último em destaque e "Ver tudo"), Dados (a solicitação completa em português, como na aba Dados do escritório; sem CID, médico ou CRM na tela) e O que observar (frases de `config.observacoes` com as datas do pedido, mais alertas de prazo; "Copiar observações").
+- **O escritório pede algo?** Lido nos trâmites com as palavras do escritório (`config.pedidoAoCliente`, `cortesiaCliente`): o cartão mostra "O escritório pediu: …"; se a resposta não pede nada, a solicitação vai para "Respondidas, nada pendente".
+- **Atenção nas suas solicitações:** anexo citado sem arquivo (`config.anexoCitado`), pedido repetido e pedido na Geral que tem aba própria (`config.abaErrada`).
+- **Prazos legais** no Hoje: pagamento dos cálculos de férias e rescisão em aberto e o eSocial das admissões (empregado: até o dia anterior ao início; estagiário: até 15 dias depois).
+- **Visual:** fundo do Control Hub, trilho com etiqueta ao passar o mouse, ícone e cor por família.
+
 ## Novidades da 2.3 — Calcular
 
 - **Simular rescisão** (aba principal do Calcular): todas as modalidades — sem justa causa, pedido de demissão (aviso cumprido, dispensado ou descontado), justa causa, acordo (art. 484-A), término de contrato a prazo, fim antecipado pela empresa (art. 479) ou pelo empregado (art. 480), com cláusula do art. 481, rescisão indireta, culpa recíproca e falecimento. Mostra cada verba (saldo de salário, aviso prévio proporcional com projeção, 13º e férias proporcionais, férias vencidas e em dobro, indenizações), INSS e IRRF, líquido, multa e saque do FGTS, seguro-desemprego e o prazo de pagamento.

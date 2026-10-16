@@ -5,6 +5,7 @@
 import * as E from './engine.js';
 import { anel, anelProgresso, animarNumeros, ligarDicas, cor } from './graficos.js';
 import { prepararSimulacao } from './calcular.js';
+import * as D from './dados.js';
 
 export function montarPlataforma(A) {
   const { S, $, esc, icon, request, send, toast, viewEl } = A;
@@ -12,7 +13,7 @@ export function montarPlataforma(A) {
   const hoje0 = E.today();
   S.plat = {
     sol: null, carregandoSol: null, emp: null, carregandoEmp: null, docs: null, lembretes: [],
-    escolher: false, empresaFiltro: '', filtroSol: { aba: 'todas', q: '', tipo: '' }, filtroEmp: { q: '', sit: 'ativos' },
+    escolher: false, empresaFiltro: '', filtroSol: { aba: null, q: '', tipo: '' }, filtroEmp: { q: '', sit: 'ativos' },
     agenda: { ano: hoje0.getFullYear(), mes: hoje0.getMonth(), filtro: '' }, docAba: 'escritorio', enviado: null
   };
   chrome.storage.local.get('lembretes').then(({ lembretes }) => { S.plat.lembretes = Array.isArray(lembretes) ? lembretes : []; }).catch(() => {});
@@ -23,6 +24,9 @@ export function montarPlataforma(A) {
   ];
   const TITULOS = { ...Object.fromEntries(MODULOS.map(m => [m[0], m[1]])), config: 'Configurações' };
   const nomeTipo = (k) => S.rules?.tipos?.[k]?.nome || k;
+  // ícone e cor por família (como no Control Onvio): o ícone vem do atalho do tipo nas regras
+  const familiaTipo = (k) => /^cadastro/.test(k) ? 'cadastro' : /Ferias$/.test(k) ? 'ferias' : /Rescisao$/.test(k) ? 'rescisao' : k === 'afastamento' ? 'afastamento' : k === 'rubricas' ? 'rubricas' : 'geral';
+  const icTipo = (k) => `<span class="tp-ic fam-${familiaTipo(k)}" aria-hidden="true">${icon(A.ICONS[(S.rules?.intencoes || []).find(x => x.tipo === k)?.icone] || 'file', 'ic-sm')}</span>`;
   const esperar = (ms) => new Promise(r => setTimeout(r, ms));
   const fmt = (d) => (d ? E.fmtDate(d) : '—');
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -102,15 +106,19 @@ export function montarPlataforma(A) {
   /* =================== Dados do portal =================== */
   /* Leitura automática (config.leituraAutomaticaSegundos, padrão 30): só com a aba à vista e sem preenchimento
      em andamento. Redesenha só quando algo mudou e ninguém está digitando nem com uma janela aberta. */
-  const assinatura = (sol) => (sol?.itens || []).map(i => `${i.tipo}:${i.id}:${i.status}:${i.atualizado?.getTime() || ''}`).join('|') + `#${sol?.semAcesso ? 1 : 0}`;
+  const assinatura = (sol) => (sol?.itens || []).map(i => `${i.tipo}:${i.id}:${i.status}:${i.atualizado?.getTime() || ''}:${i.veredito ? `${i.veredito.pede ? 'p' : 'n'}${i.veredito.anexoSemArquivo ? 'a' : ''}` : ''}:${i.datas?.inicioFerias || i.datas?.admissao || i.datas?.desligamento ? 'd' : ''}`).join('|') + `#${sol?.semAcesso ? 1 : 0}`;
   let desenhada = '';
   let relogio = null;
   function seguroRedesenhar() {
     const a = document.activeElement;
     return $('#modal').hidden && $('#cmdk').hidden && !(a && viewEl.contains(a) && editavel(a));
   }
+  // clique ou tecla há pouco: espera, para a tela não mudar debaixo da mão de quem está usando
+  let ultimaInteracao = 0;
+  ['pointerdown', 'keydown'].forEach(ev => viewEl.addEventListener(ev, () => { ultimaInteracao = Date.now(); }, true));
   function redesenharSePreciso() {
     if (!['inicio', 'pendencias'].includes(S.view) || !document.body.classList.contains('plat')) return;
+    if (Date.now() - ultimaInteracao < 1500) { setTimeout(redesenharSePreciso, 1600); return; }
     const ass = assinatura(S.plat.sol);
     if (ass !== desenhada && seguroRedesenhar()) P.render(S.view);
   }
@@ -141,13 +149,13 @@ export function montarPlataforma(A) {
       const consultados = (r?.data || []).filter(g => !g.calibrar).length;
       // leitura automática que falhou: fica o que já estava na tela
       if (silencioso && S.plat.sol && (!r || (consultados && erros.length === consultados))) { atualizarSync(); return S.plat.sol; }
-      aplicarDatasGuardadas(itens);
+      aplicarDatasGuardadas(itens); aplicarVereditos(itens);
       S.plat.sol = { itens, erros, calibrar, truncado, ok: !!r, quando: Date.now(), chaves: [...chaves], codigos, semAcesso: !!consultados && erros.length === consultados };
       atualizarBadge();
       atualizarSync();
       if (silencioso) redesenharSePreciso();
       else if (['inicio', 'pendencias'].includes(S.view) && document.body.classList.contains('plat')) P.render(S.view);
-      carregarDatasAvisos();
+      carregarDatasAvisos(); carregarVereditos();
       iniciarLeituraAutomatica();
       return S.plat.sol;
     })().finally(() => { S.plat.carregandoSol = null; });
@@ -162,18 +170,43 @@ export function montarPlataforma(A) {
   async function carregarDatasAvisos() {
     const sol = S.plat.sol; if (!sol?.itens?.length) return;
     const hoje = E.today();
-    const alvo = sol.itens.filter(i => ['avisoFerias', 'avisoRescisao'].includes(i.tipo) && !i.datasLidas && !['cancelada', 'prescrita'].includes(i.estado)
-      && !(i.datas?.inicioFerias || i.datas?.pagamento || i.datas?.aviso) && i.criado && E.diffDays(i.criado, hoje) <= 120).slice(0, 12);
+    const COM_DATA = ['avisoFerias', 'avisoRescisao', 'calculoFerias', 'calculoRescisao', 'cadastroEmpregado', 'cadastroEstagiario'];
+    const alvo = sol.itens.filter(i => COM_DATA.includes(i.tipo) && !i.datasLidas && !['cancelada', 'prescrita', 'concluida'].includes(i.estado)
+      && !(i.datas?.inicioFerias || i.datas?.pagamento || i.datas?.aviso || i.datas?.desligamento || i.datas?.admissao) && i.criado && E.diffDays(i.criado, hoje) <= 120).slice(0, 16);
     if (!alvo.length) return;
     await Promise.all(alvo.map(async (i) => {
       i.datasLidas = true; datasGuardadas.set(i.id, null);
-      const r = await request({ type: 'datasAviso', lista: S.rules.tipos[i.tipo]?.apiLista, solicitacao: i.id }, 15000);
+      const r = await request({ type: 'datasAviso', lista: S.rules.tipos[i.tipo]?.apiDetalhe || S.rules.tipos[i.tipo]?.apiLista, solicitacao: i.id }, 15000);
       if (!r?.datas) return;
       const d = E.datasDoAviso(r.datas);
       datasGuardadas.set(i.id, d);
       i.datas = Object.fromEntries(Object.entries({ ...i.datas, ...d }).map(([k, v]) => [k, v ?? i.datas?.[k] ?? null]));
     }));
-    if (S.plat.sol === sol && S.view === 'inicio' && document.body.classList.contains('plat') && seguroRedesenhar()) P.render('inicio');
+    if (S.plat.sol === sol) redesenharSePreciso();
+  }
+  /* Conversas (2.4): para as que estão com você e as que mexeram nos últimos 30 dias, lê os trâmites e guarda só o
+     veredito na memória (o escritório pede algo? você citou anexo sem arquivo?), por solicitação e data da movimentação. */
+  const vereditos = new Map();   // id → { em, v }
+  function aplicarVereditos(itens) { for (const i of itens) { const c = vereditos.get(i.id); if (c && c.em === (i.atualizado?.getTime() || 0)) i.veredito = c.v; } }
+  let lendoVereditos = false;
+  async function carregarVereditos() {
+    const sol = S.plat.sol; if (!sol?.itens?.length || lendoVereditos) return;
+    const hoje = E.today();
+    const alvo = sol.itens.filter(i => i.id && S.rules.tipos[i.tipo]?.apiTramites && !i.veredito
+      && (i.estado === 'aguardando' || (i.estado === 'andamento' && i.atualizado && E.diffDays(i.atualizado, hoje) <= 30)))
+      .sort((a, b) => (a.estado === 'aguardando' ? 0 : 1) - (b.estado === 'aguardando' ? 0 : 1)).slice(0, 40);
+    if (!alvo.length) return;
+    lendoVereditos = true;
+    try {
+      let n = 0;
+      const trabalhador = async () => { while (n < alvo.length) { const i = alvo[n++];
+        const r = await request({ type: 'tramites', base: S.rules.tipos[i.tipo].apiTramites, solicitacao: i.id }, 15000);
+        if (!r || r.erro) continue;
+        const v = E.vereditoConversa(E.tramitesDe(r.itens, i.tipo, S.rules), S.rules) || { ultimoLado: null, pede: false };
+        vereditos.set(i.id, { em: i.atualizado?.getTime() || 0, v }); i.veredito = v; } };
+      await Promise.all([trabalhador(), trabalhador(), trabalhador()]);
+    } finally { lendoVereditos = false; }
+    if (S.plat.sol === sol) { atualizarBadge(); redesenharSePreciso(); }
   }
   P.carregarEmpregados = (force = false) => {
     if (S.plat.carregandoEmp) return S.plat.carregandoEmp;
@@ -215,8 +248,9 @@ export function montarPlataforma(A) {
   P.render = (v) => {
     montarCasca(); marcarModulo(v);
     desenhada = assinatura(S.plat.sol);
+    const trocou = P.ultimaVista !== v; P.ultimaVista = v;   // entrada suave só ao trocar de tela
     if (v !== 'preencher') S.plat.escolher = false;
-    viewEl.className = `view plat-view v-${v}`;
+    viewEl.className = `view plat-view v-${v}${trocou ? ' entra' : ''}`;
     ({ inicio: renderPainel, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();
   };
 
@@ -268,8 +302,9 @@ export function montarPlataforma(A) {
      E.prioridadesCliente), para a rosca, as situações e os cartões baterem. */
   const POR_GRUPO = 6;
   const MOT = Object.fromEntries(E.MOTIVOS_CLIENTE.map(m => [m.k, m]));
-  const ICONE_MOT = { prescreve: 'clock', responder: 'chat', atrasada: 'alert', escritorio: 'briefcase', concluida: 'check' };
-  const TAG_MOT = { prescreve: 'Prescreve', responder: 'Sua vez', atrasada: 'Passou da expectativa', escritorio: 'Com o escritório', concluida: 'Concluída' };
+  const ICONE_MOT = { prescreve: 'clock', responder: 'chat', atrasada: 'alert', respondida: 'check', escritorio: 'briefcase', concluida: 'check' };
+  const ROT_CASO = { anexo: 'Anexo não chegou', duplicada: 'Parece repetida', abaErrada: 'Aba certa' };
+  const TAG_MOT = { prescreve: 'Prescreve', responder: 'Sua vez', atrasada: 'Passou da expectativa', respondida: 'Respondida', escritorio: 'Com o escritório', concluida: 'Concluída' };
   const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
   const lerPref = (k, p) => { try { return localStorage.getItem(`ct.${k}`) || p; } catch { return p; } };
   const gravarPref = (k, v) => { try { localStorage.setItem(`ct.${k}`, v); } catch { /* sem armazenamento: vale só nesta visita */ } };
@@ -295,6 +330,8 @@ export function montarPlataforma(A) {
     const prazos = eventosEntre(hoje, E.addDays(hoje, 3)).filter(e => ['legal', 'exp', 'pedido'].includes(e.tipo));
     const atencao = prio.filter(p => ['prescreve', 'responder', 'atrasada'].includes(p.motivo));
     const avisos = lido ? E.avisosSemCalculo(base, hoje, R) : [];
+    const casos = lido ? E.casosCliente(base, R) : [];
+    const legais = lido ? E.prazosLegaisCliente(base, hoje, R) : [];
     const equipe = E.equipeVencendo(empregadosAtivos(), base, hoje, R);
     const acoesEq = [];
     const q = () => E.norm(H.q.trim());
@@ -324,6 +361,7 @@ export function montarPlataforma(A) {
       </div>
       ${heroHtml()}
       ${equipeHtml()}
+      ${casosHtml()}
       <div class="hj-sits" role="group" aria-label="Filtrar por situação">${sitsHtml()}</div>
       <div id="hj-cartoes">${cartoesHtml()}</div>`;
 
@@ -374,6 +412,8 @@ export function montarPlataforma(A) {
       const passo = (cls, c, titulo, sub, fn, fim = icon('right', 'ic-sm')) => { acoes.push(fn); li.push(`<li style="--i:${n++}"><button type="button" class="hj-step${cls}" data-passo="${acoes.length - 1}" style="--c:${c}"><i></i><span><b>${esc(titulo)}</b><small>${esc(sub)}</small></span>${fim}</button></li>`); };
       for (const p of atencao.slice(0, 8)) { const i = p.item; passo('', cor(MOT[p.motivo].cor), E.acaoCliente(i, p.motivo), [comEmpresa && rotEmpresa(i), i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo), empDe(i)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
       for (const x of avisos.filter(x => x.falta != null && x.falta <= 10)) passo('', 'var(--viz-crit)', `Pedir o cálculo ${x.tipo === 'ferias' ? 'de férias' : 'da rescisão'} · pagamento até ${fmt(x.pagamento)}`, [A.nomeCurto(x.item.empregado), x.enviarAte ? `envie até ${fmt(x.enviarAte)}` : ''].filter(Boolean).join(' · '), () => P.novoPedido(x.calculo, { empregado: x.item.empregado }));
+      for (const p of prio.filter(p => p.motivo === 'respondida').slice(0, 4)) { const i = p.item; passo('', cor(MOT.respondida.cor), E.acaoCliente(i, 'respondida'), [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
+      for (const x of legais.filter(x => x.falta <= 5)) passo('', 'var(--viz-crit)', `${x.titulo} até ${fmt(x.alvo)}`, [x.item.empregado, x.ref].filter(Boolean).join(' · '), () => abrirDetalhe(x.item, { aba: 'observar' }));
       for (const l of lems) passo(' n-lem', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)));
       for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, () => abrirDia(E.iso(e.d))); }
       passosHtml.acoes = acoes;
@@ -396,11 +436,27 @@ export function montarPlataforma(A) {
           : (x.pagamento ? `Rescisão · pedir o cálculo até ${fmt(x.enviarAte).slice(0, 5)} · pagar até ${fmt(x.pagamento).slice(0, 5)} (aviso indenizado)` : 'Aviso de rescisão sem o cálculo · confira as datas no aviso'),
         pillQ(x.enviarAte || x.pagamento), S.rules.tipos[x.calculo] ? { rotulo: 'Pedir o cálculo', fn: () => P.novoPedido(x.calculo, { empregado: x.item.empregado }) } : null, () => abrirDetalhe(x.item)));
       const card = (id, titulo, sub, linhas, txtVazio) => `<section class="pn-card" id="${id}"><div class="pn-card-head"><h3>${titulo} <span class="eq-n">${linhas.length}</span></h3><small>${esc(sub)}</small></div><div class="pn-card-body eq-body">${linhas.slice(0, 8).join('') || vazio(txtVazio)}${linhas.length > 8 ? `<button type="button" class="linkish" data-ir="funcionarios" style="justify-self:start">Ver todos (${linhas.length})</button>` : ''}</div></section>`;
+      const leg = legais.map(x => linha(x.item.empregado || x.item.assunto || nomeTipo(x.item.tipo), `${x.titulo} até ${fmt(x.alvo)} · ${x.ref}${x.retroativa ? ' · pedido depois do início' : ''}`, pillQ(x.alvo), null, () => abrirDetalhe(x.item, { aba: 'observar' })));
       return `<div class="hj-equipe">
+        ${card('eq-legais', 'Prazos legais', 'Pagamento dos cálculos em aberto e eSocial das admissões.', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…')}
         ${card('eq-avisos', 'Aviso sem cálculo', 'Férias e rescisões perto do pagamento com só o aviso no portal.', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
         ${card('eq-exp', 'Experiência vencendo', 'Próximos 30 dias, pela data de admissão.', exp, 'Nenhuma experiência vencendo.')}
         ${card('eq-ferias', 'Férias a vencer', 'Prazo para conceder em até 60 dias (estimativa: o portal não informa as férias já tiradas).', fer, 'Nenhuma férias a vencer.')}
       </div>`;
+    }
+    // Atenção nas suas solicitações (casos do Control Onvio na visão do cliente)
+    function casosHtml() {
+      if (!casos.length) return '';
+      return `<section class="pn-card hj-casos"><div class="pn-card-head"><h3>Atenção nas suas solicitações <span class="eq-n">${casos.length}</span></h3><small>O que pode atrasar o atendimento, lido nas conversas e nos pedidos.</small></div>
+        <div class="pn-card-body eq-body">${casos.map(c => {
+          const i = c.item;
+          const acao = c.tipo === 'abaErrada' ? { rotulo: `Pedir em ${S.rules.tipos[c.aba]?.nome || 'outra aba'}`, fn: () => P.novoPedido(c.aba) }
+            : c.tipo === 'duplicada' ? { rotulo: `Ver a nº ${c.outra.numero}`, fn: () => abrirDetalhe(c.outra) }
+            : { rotulo: 'Anexar no portal', fn: () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, id: i.numero || i.id }) };
+          acoesEq.push({ acao: acao.fn, abrir: () => abrirDetalhe(i) });
+          const n = acoesEq.length - 1;
+          return `<div class="pn-li eq-li caso-${c.tipo}" data-eq-abrir="${n}"><span class="pill pill-${c.tipo === 'anexo' ? 'late' : 'today'}">${ROT_CASO[c.tipo]}</span><div class="main"><b>${esc([i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '))}</b><small>${esc(c.porque)}</small></div><button type="button" class="btn btn-sm" data-eq="${n}">${esc(acao.rotulo)}</button></div>`;
+        }).join('')}</div></section>`;
     }
     function sitsHtml() {
       return E.MOTIVOS_CLIENTE.map((m, n) => `<button type="button" class="hj-sit${H.filtro === m.k ? ' on' : ''}${!cont[m.k] ? ' zero' : ''}" style="--i:${n + 1};--c:${cor(m.cor)}" data-sit="${m.k}" aria-pressed="${H.filtro === m.k}"><i class="hj-sit-dot"></i><span class="hj-sit-l">${esc(m.rot)}</span><b data-conta="${cont[m.k]}" data-de="${animar ? 0 : cont[m.k]}">${cont[m.k]}</b></button>`).join('');
@@ -431,7 +487,8 @@ export function montarPlataforma(A) {
       const terceira = i.estado === 'aguardando' && i.prescreveEm != null ? ['Prescreve em', plural(i.prescreveEm, 'dia', 'dias')] : mo === 'atrasada' && i.expectativa ? ['Expectativa', fmt(i.expectativa)] : ['Responsável', i.responsavel || '—'];
       return `<button type="button" class="hj-card" style="--i:${n};--c:${c}" data-card="${mostrados.length - 1}" aria-label="${esc(`${i.numero ? `nº ${i.numero} ` : ''}${i.assunto || nomeTipo(i.tipo)}`)}">
         <header><span class="hj-chip">${icon(ICONE_MOT[mo], 'ic-sm')} ${esc(MOT[mo].rot)}</span><span class="spacer"></span>${comEmpresa ? `<span class="hj-emp" title="${esc(i.empresa)}">${esc(rotEmpresa(i))}</span>` : ''}<span class="mono hj-num">${i.numero ? `nº ${esc(i.numero)}` : ''}</span></header>
-        <div class="hj-card-id">${anelC}<div><h4 title="${esc(i.assunto || '')}">${esc(i.assunto || nomeTipo(i.tipo))}</h4><div class="hj-sub">${esc([nomeTipo(i.tipo), i.empregado].filter(Boolean).join(' · '))}</div><div class="hj-lim">${esc(lim)}</div></div></div>
+        <div class="hj-card-id">${anelC}<div><h4 title="${esc(i.assunto || '')}">${esc(i.assunto || nomeTipo(i.tipo))}</h4><div class="hj-sub">${icTipo(i.tipo)}${esc([nomeTipo(i.tipo), i.empregado].filter(Boolean).join(' · '))}</div><div class="hj-lim">${esc(lim)}</div></div></div>
+        ${i.veredito?.pede && i.veredito.frase && i.estado === 'aguardando' ? `<div class="hj-pedido" title="${esc(i.veredito.frase)}">${icon('chat', 'ic-sm')}<span>O escritório pediu: “${esc(i.veredito.frase)}”</span></div>` : ''}
         <dl class="hj-stats"><div><dt>Situação</dt><dd>${esc(i.status || '—')}</dd></div><div><dt>Vez</dt><dd>${i.lado === 'cli' ? 'Sua' : i.lado === 'esc' ? 'Escritório' : '—'}</dd></div><div><dt>${terceira[0]}</dt><dd>${esc(terceira[1])}</dd></div></dl>
         <span class="hj-cta">${icon(mo === 'concluida' ? 'check' : 'right', 'ic-sm')}<span>${esc(E.acaoCliente(i, mo))}</span></span>
       </button>`;
@@ -512,6 +569,7 @@ export function montarPlataforma(A) {
     if (!sol) { viewEl.innerHTML = loading('Consultando suas solicitações no portal…'); P.carregarSolicitacoes(); return; }
     const vis = itensVisiveis(), comEmpresa = variasEmpresas(vis);
     const conta = (aba) => vis.filter(i => naAba(i, aba)).length;
+    if (F.aba == null) F.aba = conta('aguardando') ? 'aguardando' : 'todas';   // como o "A responder" do Control Onvio
     const tipos = [...new Set(vis.map(i => i.tipo))];
     viewEl.innerHTML = `
       <div class="dp-tabs" role="tablist">${ABAS_SOL.map(([k, t]) => `<button type="button" role="tab" class="dp-tab${F.aba === k ? ' active' : ''}" data-aba-sol="${k}">${t} <span class="dp-tab-badge${k === 'aguardando' && conta(k) ? ' late' : ''}">${conta(k)}</span></button>`).join('')}</div>
@@ -535,7 +593,7 @@ export function montarPlataforma(A) {
       const lista = vis.filter(i => naAba(i, F.aba) && (!F.tipo || i.tipo === F.tipo) && (!q || E.norm(`${i.numero} ${i.empregado} ${i.assunto} ${nomeTipo(i.tipo)} ${i.responsavel} ${i.empresa}`).includes(q)));
       $('#sol-n').textContent = `${lista.length} de ${vis.length}`;
       $('#sol-list').innerHTML = lista.slice(0, 300).map((i, n) => `<button type="button" class="dp-row sol-cols" data-sol="${n}">
-          <span class="mono">${esc(i.numero || '—')}</span><span><span class="ell">${esc(nomeTipo(i.tipo))}</span>${comEmpresa ? `<span class="sub ell">${esc(rotEmpresa(i))}</span>` : ''}</span><span class="ell">${esc(i.empregado || '—')}</span>
+          <span class="mono">${esc(i.numero || '—')}</span><span><span class="ell">${icTipo(i.tipo)}${esc(nomeTipo(i.tipo))}</span>${comEmpresa ? `<span class="sub ell">${esc(rotEmpresa(i))}</span>` : ''}</span><span class="ell">${esc(i.empregado || '—')}</span>
           <span><span class="ell">${esc(i.assunto || '—')}</span>${i.tramite ? `<span class="sub ell">${esc(i.tramite)}</span>` : ''}</span><span>${pillSol(i)}${i.prescreveEm != null ? `<span class="sub">prescreve em ${i.prescreveEm} d</span>` : i.responsavel && i.estado === 'andamento' ? `<span class="sub ell">${esc(i.responsavel)}</span>` : ''}</span><span class="mono">${fmt(i.atualizado)}</span></button>`).join('')
         || `<div class="list-vazio">${esc(S.rules.mensagens?.plataformaVazioSolicitacoes || 'Nada por aqui.')}</div>`;
       $('#sol-list').querySelectorAll('[data-sol]').forEach(b => b.addEventListener('click', () => abrirDetalhe(lista[+b.dataset.sol])));
@@ -551,32 +609,94 @@ export function montarPlataforma(A) {
     $('#sol-geral')?.addEventListener('click', () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[sol.calibrar[0]]?.slug }));
     ligarIr(viewEl);
   }
-  function abrirDetalhe(i) {
+  /* Detalhe (2.4, como o do Control Onvio): Conversa (trâmites em bolhas: você à direita, o escritório à esquerda,
+     o tempo entre um e outro e o fim à vista), Dados (a solicitação completa, em português) e O que observar
+     (prazos e cuidados do que você pediu). Tudo lido na hora com o acesso do portal e nunca guardado. */
+  const iniciais = (n) => String(n || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+  function abrirDetalhe(i, { aba = 'conversa' } = {}) {
     if (!i) return;
     const t = S.rules.tipos[i.tipo];
     const mo = E.motivoCliente(i, E.today(), S.rules);
-    const kv = [['Empresa', i.empresa], ['Assunto', i.assunto], ['Funcionário', i.empregado], ['Responsável no escritório', i.responsavel], ['Aberta em', fmt(i.criado)], ['Atualizada', fmt(i.atualizado)],
-      ['Expectativa de conclusão', i.expectativa ? fmt(i.expectativa) : ''], ['Competência', i.competencia], ['Prescreve em', i.prescreveEm != null ? `${i.prescreveEm} dia(s), se ninguém responder` : '']]
-      .filter(([, v]) => v && v !== '—');
+    const st = { aba, trs: null, trsErro: false, dados: null, dadosErro: false, datas: { ...(i.datas || {}) } };
+    const topo = [['Responsável no escritório', i.responsavel], ['Aberta em', fmt(i.criado)], ['Atualizada', fmt(i.atualizado)], ['Expectativa', i.expectativa ? fmt(i.expectativa) : ''],
+      ['Prescreve em', i.prescreveEm != null ? `${i.prescreveEm} dia(s)` : ''], ['Empresa', variasEmpresas(S.plat.sol?.itens) ? i.empresa : '']].filter(([, v]) => v && v !== '—');
     const dlg = dialogo({
       titulo: `${esc(nomeTipo(i.tipo))}${i.numero ? ` <span class="mono" style="font-size:13px;color:var(--ink-3)">nº ${esc(i.numero)}</span>` : ''}`, largo: true,
-      corpo: `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${pillSol(i)}${mo ? `<span class="muted" style="font-size:12.5px">${esc(E.acaoCliente(i, mo))}</span>` : ''}</div>
-        <dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-        ${i.aguardando ? `<div class="note warn">${icon('alert')}<div>O escritório está esperando sua resposta. Leia o último trâmite e responda no portal.${i.prescreveEm != null ? ` Sem resposta em ${S.rules.config?.prescricaoDias || 30} dias, a solicitação prescreve.` : ''}</div></div>` : ''}
-        <h4 class="dlg-sec">Trâmites</h4>
-        <div id="dlg-tram">${i.tramite ? `<div class="note">${icon('chat')}<div><b>Último trâmite</b><br>${esc(i.tramite)}</div></div>` : ''}<div class="pn-vazio"><div class="spin"></div>Lendo os trâmites no portal…</div></div>`,
-      acoes: [{ rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) }, '|', { rotulo: 'Fechar' }]
+      corpo: `<div class="dt-top"><div class="dt-assunto"><b>${esc(i.assunto || nomeTipo(i.tipo))}</b>${i.empregado && !E.norm(i.assunto).includes(E.norm(i.empregado)) ? `<small>${esc(i.empregado)}</small>` : ''}</div>${pillSol(i)}</div>
+        ${mo ? `<p class="dt-porque">${esc(E.porqueMotivo(i, mo, S.rules))}</p>` : ''}
+        <div class="dt-meta">${topo.map(([k, v]) => `<span><small>${esc(k)}</small><b>${esc(v)}</b></span>`).join('')}</div>
+        <div class="dt-dq" id="dt-dq"></div>
+        <div class="dp-tabs dt-tabs" role="tablist">${[['conversa', 'Conversa'], ['dados', 'Dados'], ['observar', 'O que observar']].map(([k, r]) => `<button type="button" role="tab" class="dp-tab" data-dt="${k}">${r}</button>`).join('')}</div>
+        <div class="dt-body" id="dt-body"></div>`,
+      acoes: [{ rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) },
+        { rotulo: `${icon('copy', 'ic-sm')} Copiar observações`, cls: 'btn-ghost dt-copiar', fn: async () => { const o = E.observacoesCliente(i, st.datas, S.rules); try { await navigator.clipboard.writeText(o.map(x => `• ${x.texto}`).join('\n')); toast('Observações copiadas.'); } catch { toast('Não consegui copiar.'); } return false; } },
+        '|', { rotulo: 'Fechar' }]
     });
-    if (!t?.apiTramites || !i.id) { dlg.el.querySelector('#dlg-tram .pn-vazio')?.remove(); return; }
-    // lidos na hora, com o acesso do portal, e nunca guardados
-    request({ type: 'tramites', base: t.apiTramites, solicitacao: i.id }, 20000).then((r) => {
-      const el = dlg.el.querySelector('#dlg-tram'); if (!el || !el.isConnected) return;
-      if (!r || r.erro) { el.innerHTML = `${i.tramite ? `<div class="note">${icon('chat')}<div><b>Último trâmite</b><br>${esc(i.tramite)}</div></div>` : ''}<div class="note">${icon('info')}<div>Não consegui ler os trâmites agora. Use “${i.aguardando ? 'Responder' : 'Ver'} no portal” para ver a conversa completa.</div></div>`; return; }
-      const l = E.tramitesDe(r.itens, i.tipo, S.rules);
-      if (!l.length) { el.innerHTML = `<div class="pn-vazio">${icon('chat', 'ic-sm')} Nenhum trâmite ainda: o escritório ainda não respondeu.</div>`; return; }
-      el.innerHTML = `<div class="tl">${l.slice().reverse().map(x => `<div class="tl-item"><div class="tl-meta"><b>#${String(x.n).padStart(2, '0')}</b>${x.situacao ? `<span class="pill">${esc(x.situacao)}</span>` : ''}<span>${esc(x.autor || '—')}</span><span class="mono">${esc(fmtDataHora(x.em))}</span></div>
-        ${x.texto ? `<div class="tl-tx">${esc(textoPuro(x.texto))}</div>` : ''}${x.anexos.length ? `<div class="tl-anx">${x.anexos.map(a => `<span>${icon('clip', 'ic-sm')}${esc(a)}</span>`).join('')}</div>` : ''}</div>`).join('')}</div>`;
-    });
+    const el = dlg.el, body = el.querySelector('#dt-body');
+    const carregando = (txt) => `<div class="pn-vazio"><div class="spin"></div>${esc(txt)}</div>`;
+    const conversa = () => {
+      if (st.trsErro) return `${i.tramite ? `<div class="note">${icon('chat')}<div><b>Último trâmite</b><br>${esc(i.tramite)}</div></div>` : ''}<div class="note">${icon('info')}<div>Não consegui ler os trâmites agora. Use “${i.aguardando ? 'Responder' : 'Ver'} no portal” para ver a conversa completa.</div></div>`;
+      if (!st.trs) return carregando('Lendo a conversa no portal…');
+      if (!st.trs.length) return `<div class="pn-vazio">${icon('chat', 'ic-sm')} Nenhum trâmite ainda: o escritório ainda não respondeu.</div>`;
+      const v = i.veredito;
+      const faixa = !v ? '' : v.anexoSemArquivo ? `<div class="aviso-linha late">${icon('alert')}<span>Você falou em anexo (“${esc(v.trecho)}”), mas nenhum arquivo chegou. Anexe de novo no portal.</span></div>`
+        : v.ultimoLado === 'esc' && v.pede ? `<div class="aviso-linha late">${icon('chat')}<span><b>O escritório está pedindo:</b> “${esc(v.frase)}”</span></div>`
+        : v.ultimoLado === 'esc' && i.aguardando ? `<div class="aviso-linha ok">${icon('check')}<span>O escritório respondeu e não pediu nada. Confira a resposta e conclua no portal.</span></div>` : '';
+      const ult = st.trs[st.trs.length - 1];
+      let ant = null;
+      return faixa + `<div class="tr-lista">${st.trs.map(x => {
+        let gap = '';
+        if (ant) { const d = Math.abs(E.diffDays(E.parseDate(ant.em) || new Date(ant.em), E.parseDate(x.em) || new Date(x.em))); if (d >= 1) gap = `<div class="tr-gap"><span>${d} ${d === 1 ? 'dia' : 'dias'} depois</span></div>`; }
+        ant = x;
+        const voce = x.lado === 'cli', quem = x.autor || (voce ? 'Você' : 'Escritório');
+        return `${gap}<div class="tr-item ${voce ? 'cli' : 'esc'}${x === ult ? ' ultimo' : ''}"><span class="tr-av" title="${esc(quem)}">${esc(iniciais(quem) || (voce ? 'V' : 'E'))}</span>
+          <div class="tr-bolha"><div class="tr-meta"><b>${esc(quem)}</b><span class="tr-lado">${x.n === 1 ? 'abertura' : voce ? 'você' : 'escritório'}</span>${x.situacao ? `<span class="pill">${esc(x.situacao)}</span>` : ''}${x === ult ? '<span class="pill pill-soon">último</span>' : ''}<span class="tr-quando" title="${esc(fmtDataHora(x.em))}">${esc(fmtDataHora(x.em))}</span></div>
+          ${x.texto ? `<div class="tr-texto">${esc(textoPuro(x.texto))}</div><button type="button" class="tr-mais">Ver tudo</button>` : `<div class="tr-texto muted">Sem texto${x.anexos.length ? ' (só anexo)' : ''}</div>`}
+          ${x.anexos.length ? `<div class="tr-anexos">${x.anexos.map(a => `<span class="tr-arq">${icon('clip', 'ic-sm')}<span>${esc(a)}</span></span>`).join('')}</div>` : ''}</div></div>`;
+      }).join('')}</div>`;
+    };
+    const dados = () => {
+      if (st.dadosErro) return `<div class="note">${icon('info')}<div>Não consegui ler a solicitação completa agora. Use “Ver no portal”.</div></div>`;
+      if (!st.dados) return carregando('Lendo a solicitação completa no portal…');
+      if (!st.dados.grupos.length) return `<div class="pn-vazio">Sem dados para mostrar.</div>`;
+      return st.dados.grupos.map(g => `<section class="dt-grupo"><h4>${esc(g.titulo)}</h4><div class="dt-campos">${g.campos.map(c => `<div class="dt-campo${c.destaque ? ' dq' : ''}${c.longo ? ' longo' : ''}"><small>${esc(c.k)}</small><span>${esc(c.v)}</span></div>`).join('')}</div></section>`).join('')
+        + (st.dados.anexos.length ? `<section class="dt-grupo"><h4>Anexos da abertura</h4><div class="tr-anexos">${st.dados.anexos.map(a => `<span class="tr-arq">${icon('clip', 'ic-sm')}<span>${esc(a)}</span></span>`).join('')}</div></section>` : '');
+    };
+    const observar = () => {
+      const o = E.observacoesCliente(i, st.datas, S.rules);
+      if (!o.length) return st.dados || st.dadosErro ? `<div class="pn-vazio">${icon('check', 'ic-sm')} Nada especial a observar neste pedido.</div>` : carregando('Lendo as datas do pedido…');
+      return `<ul class="dt-obs">${o.map(x => `<li class="${x.alerta ? 'alerta' : ''}">${icon(x.alerta ? 'alert' : 'info', 'ic-sm')}<span>${esc(x.texto)}</span></li>`).join('')}</ul>`;
+    };
+    const desenhar = () => {
+      if (!el.isConnected) return;
+      el.querySelectorAll('[data-dt]').forEach(b => { const on = b.dataset.dt === st.aba; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+      body.innerHTML = { conversa, dados, observar }[st.aba]();
+      const dq = st.dados?.grupos.flatMap(g => g.campos).filter(c => c.destaque && !c.longo && c.k !== 'Assunto').slice(0, 6) || [];
+      el.querySelector('#dt-dq').innerHTML = dq.map(c => `<span class="dq"><small>${esc(c.k)}</small><b>${esc(c.v)}</b></span>`).join('');
+      el.querySelector('.dt-copiar').hidden = !E.observacoesCliente(i, st.datas, S.rules).length;
+      body.querySelectorAll('.tr-mais').forEach(b => b.addEventListener('click', () => { const c = b.closest('.tr-bolha'); const ab = c.classList.toggle('aberto'); b.textContent = ab ? 'Ver menos' : 'Ver tudo'; }));
+      requestAnimationFrame(() => {
+        body.querySelectorAll('.tr-texto').forEach(x => { if (x.scrollHeight > x.clientHeight + 4) x.closest('.tr-bolha')?.classList.add('longo'); });
+        if (st.aba === 'conversa') body.scrollTop = body.scrollHeight;   // a conversa abre no fim (o mais recente)
+      });
+    };
+    el.querySelectorAll('[data-dt]').forEach(b => b.addEventListener('click', () => { st.aba = b.dataset.dt; desenhar(); }));
+    desenhar();
+    if (t?.apiTramites && i.id) request({ type: 'tramites', base: t.apiTramites, solicitacao: i.id }, 20000).then((r) => {
+      if (!r || r.erro) st.trsErro = true;
+      else { st.trs = E.tramitesDe(r.itens, i.tipo, S.rules); i.veredito = E.vereditoConversa(st.trs, S.rules) || i.veredito; }
+      desenhar();
+    }); else { st.trs = []; desenhar(); }
+    const lista = t?.apiDetalhe || t?.apiLista;
+    if (lista && i.id) request({ type: 'detalheCompleto', lista, solicitacao: i.id }, 20000).then((r) => {
+      if (!r?.dados) st.dadosErro = true;
+      else {
+        st.dados = D.camposDetalhe(r.dados);
+        const d = E.datasDoAviso(r.dados);
+        for (const [k, v] of Object.entries(d)) if (v != null) st.datas[k] = v;
+      }
+      desenhar();
+    }); else { st.dadosErro = true; desenhar(); }
   }
   const fmtDataHora = (s) => { const d = new Date(s); return isNaN(d) ? String(s || '') : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); };
   /** HTML do trâmite → texto (o portal guarda a conversa em HTML). Nada é executado: o DOMParser não roda scripts. */

@@ -103,13 +103,14 @@
 
   /* ---------- Dados (só neste navegador) ---------- */
   var SKEY = 'ct-sim-portal';
-  var SEED_V = 4;
+  var SEED_V = 5;
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
     var items = {
       'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 30 }],
-      'employee-leave': [{ id: 1039, status: 'Em andamento', empregado: 'JOANA FONSECA', assunto: 'Afastamento – JOANA FONSECA – Licença maternidade', tramite: 'Escritório: recebido, em análise.', data: d(6) }],
-      'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) }]
+      'employee-leave': [{ id: 1039, status: 'Em andamento', empregado: 'JOANA FONSECA', assunto: 'Afastamento – JOANA FONSECA – Licença maternidade', tramite: 'Cliente: segue em anexo a certidão de nascimento.', data: d(6) }],
+      'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) },
+        { id: 1060, status: 'Aguardando o cliente', empregado: '', assunto: 'Informe de rendimentos 2025', tramite: 'Escritório: segue o seu comprovante de rendimentos de 2025. Qualquer dúvida, estamos à disposição.', data: d(2) }]
     };
     // histórico maior (inventado): o afastamento passa de 50 itens para testar a paginação
     var ST = ['Concluída', 'Concluída', 'Concluída', 'Concluída', 'Concluída', 'Cancelada'];   // só as duas mais novas ficam em aberto
@@ -118,7 +119,7 @@
       var nome = EMP5[(i * 7) % EMP5.length];
       items['employee-leave'].push({ id: seq++, status: i < 2 ? ['Em andamento', 'Aberta'][i] : ST[i % ST.length], empregado: nome, assunto: 'Atestado médico – ' + nome + ' – ' + d(12 + i * 5) + ' (' + (1 + i % 5) + ' dias)', tramite: 'Escritório: lançado na folha.', data: d(12 + i * 5) });
     }
-    items['vacation-calculation'] = [{ id: seq++, status: 'Aguardando o cliente', empregado: 'CAMILA ROCHA', assunto: 'Cálculo de férias – CAMILA ROCHA', tramite: 'Escritório: confirme se haverá abono pecuniário.', data: d(23) },
+    items['vacation-calculation'] = [{ id: seq++, status: 'Aguardando o cliente', empregado: 'CAMILA ROCHA', assunto: 'Cálculo de férias – CAMILA ROCHA', tramite: 'Escritório: confirme se haverá abono pecuniário.', data: d(23), inicio: d(-12), dias: 30 },
       { id: seq++, status: 'Concluída', empregado: 'BRUNO TEIXEIRA', assunto: 'Cálculo de férias – BRUNO TEIXEIRA', tramite: 'Escritório: recibo disponível.', data: d(40) }];
     items['termination-notice'] = [{ id: seq++, status: 'Em andamento', empregado: 'MARCOS VIEIRA', assunto: 'Pedido de demissão – MARCOS VIEIRA', tramite: 'Escritório: aviso emitido, aguardando assinatura.', data: d(4) }];
     items['employee-registration'] = [{ id: seq++, status: 'Concluída', empregado: 'VANESSA PRADO', assunto: 'Admissão – VANESSA PRADO', tramite: 'Escritório: registro concluído.', data: d(41) },
@@ -159,7 +160,7 @@
       var cod = codigoDe(slug, r.status);
       return Promise.resolve([
         { created: isoDe(r.data, 2), status: 1, description: '<p>Solicitação incluída pelo cliente.</p>', createdByContactExpanded: { name: 'Usuário de teste' }, attachmentsExpanded: [] },
-        { created: isoDe(r.data, 0), status: cod, description: '<p>' + esc(String(r.tramite || '').replace(/^(Escritório|Cliente):\s*/, '')) + '</p>', createdByContactExpanded: { name: /^Cliente/.test(r.tramite || '') ? 'Usuário de teste' : 'ANA ANALISTA (escritório)' }, attachmentsExpanded: [] }
+        { created: isoDe(r.data, 0), status: /^Cliente/.test(r.tramite || '') ? (FAMILIA[slug] === 'cadastro' ? 2 : FAMILIA[slug] === 'rubricas' ? 11 : 3) : cod, description: '<p>' + esc(String(r.tramite || '').replace(/^(Escritório|Cliente):\s*/, '')) + '</p>', createdByContactExpanded: { name: /^Cliente/.test(r.tramite || '') ? 'Usuário de teste' : 'ANA ANALISTA (escritório)' }, attachmentsExpanded: [] }
       ]);
     },
     // detalhe de uma solicitação ({lista}/{id}?expand=all): datas do aviso de férias e de rescisão
@@ -167,8 +168,9 @@
       var slug = API[key] || key, r = (db.items[slug] || []).find(function (x) { return guidDe(x.id) === guid; });
       if (!r) return Promise.resolve(null);
       var it = itemApi(slug, r);
-      if (r.inicio) { it.vacationStartDate = isoDe(r.inicio, 0); it.paymentDate = isoDe(r.inicio, 2); it.vacationDays = r.dias || 30; }
-      if (slug === 'termination-notice') it.adviceDate = isoDe(r.data, 0);
+      var dia = function (br, n) { return isoDe(br, n).slice(0, 10) + 'T00:00:00'; };   // datas "só dia", como no Onvio
+      if (r.inicio) { it.vacationStartDate = dia(r.inicio, 0); it.paymentDate = dia(r.inicio, 2); it.vacationDays = r.dias || 30; }
+      if (slug === 'termination-notice') it.adviceDate = dia(r.data, 0);
       return Promise.resolve(it);
     },
     detalhe: true,
