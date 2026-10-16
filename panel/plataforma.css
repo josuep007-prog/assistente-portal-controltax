@@ -546,13 +546,13 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 #eq-legais { border-top: 3px solid var(--viz-serious); }
 
 /* =================== Visual do Control Onvio (2.4) =================== */
-/* fundo da tela inicial do Control Hub: azul-claro com nuances, brilho vermelho e a logo cortada no canto */
+/* fundo da tela inicial do Control Hub, mais branco (2.5.1): nuances de azul bem leves, brilho vermelho e a logo cortada no canto */
 .plat-main { position: relative; isolation: isolate; background:
-  radial-gradient(900px 600px at 100% 100%, rgba(194,0,12,.07), transparent 70%),
-  radial-gradient(760px 520px at 0% 0%, rgba(60,120,200,.16), transparent 70%),
-  radial-gradient(680px 480px at 62% -8%, rgba(132,110,220,.09), transparent 70%),
-  radial-gradient(620px 520px at 8% 100%, rgba(40,170,170,.08), transparent 70%),
-  linear-gradient(180deg, #EEF5FC 0%, var(--page) 60%); }
+  radial-gradient(900px 600px at 100% 100%, rgba(194,0,12,.06), transparent 70%),
+  radial-gradient(760px 520px at 0% 0%, rgba(60,120,200,.045), transparent 70%),
+  radial-gradient(680px 480px at 62% -8%, rgba(132,110,220,.03), transparent 70%),
+  radial-gradient(620px 520px at 8% 100%, rgba(40,170,170,.025), transparent 70%),
+  linear-gradient(180deg, #FFFFFF 0%, #F7F9FB 70%); }
 .plat-main::before { content: ""; position: absolute; z-index: -1; pointer-events: none; right: 0; bottom: 0; width: min(86vh, 70vw, 780px); aspect-ratio: 258/320; transform: translate(46%, 16%); background: url("../icons/logo.svg") no-repeat center / contain; opacity: .1; }
 .plat-main { overflow: hidden; }
 .plat-head { background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
@@ -562,13 +562,13 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 /* destaque do Hoje com as manchas do Control Hub */
 .hj-hero { position: relative; isolation: isolate; }
 .hj-hero::before { content: ""; position: absolute; inset: -30px; z-index: -1; pointer-events: none; filter: blur(10px); background:
-  radial-gradient(420px 300px at 8% 12%, rgba(60,120,200,.30), transparent 66%),
-  radial-gradient(380px 250px at 34% 112%, rgba(194,0,12,.18), transparent 66%),
-  radial-gradient(400px 250px at 58% -4%, rgba(132,110,220,.22), transparent 66%),
-  radial-gradient(420px 300px at 96% 100%, rgba(40,170,170,.20), transparent 66%); }
-.hj-hero .hj-tick { background: color-mix(in srgb, var(--surface) 62%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); }
-.hj-hero .hj-passos { background: color-mix(in srgb, var(--surface) 25%, transparent); }
-.hj-hero .hj-step { background: color-mix(in srgb, var(--surface) 80%, transparent); }
+  radial-gradient(420px 300px at 8% 12%, rgba(60,120,200,.08), transparent 66%),
+  radial-gradient(380px 250px at 34% 112%, rgba(194,0,12,.09), transparent 66%),
+  radial-gradient(400px 250px at 58% -4%, rgba(132,110,220,.06), transparent 66%),
+  radial-gradient(420px 300px at 96% 100%, rgba(40,170,170,.06), transparent 66%); }
+.hj-hero .hj-tick { background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); }
+.hj-hero .hj-passos { background: color-mix(in srgb, var(--surface) 75%, transparent); }
+.hj-hero .hj-step { background: var(--surface); }
 /* ícone e cor por família de solicitação */
 .tp-ic { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 3px; margin-right: 6px; vertical-align: -6px; color: var(--fc); background: color-mix(in srgb, var(--fc) 13%, var(--surface)); }
 .tp-ic .ic { width: 13px; height: 13px; }
