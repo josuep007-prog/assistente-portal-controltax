@@ -462,6 +462,11 @@ t('várias empresas no mesmo login: filtra pela empresa aberta no portal', () =>
   assert.equal(E.empresaDoFiltro(l, '', 'empresa exemplo simples nacional ltda'), 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA');
   assert.deepEqual(E.empresasDasSolicitacoes(l).map(e => e.n), [1, 2]);
   assert.equal(E.filtrarPorEmpresa([l[0]], '', 'OUTRA').length, 1);   // uma empresa só: sem filtro
+  // várias empresas escolhidas (2.5)
+  assert.equal(E.filtrarPorEmpresa(l, ['EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', 'OUTRA COMERCIO LTDA'], 'X').length, 3);
+  assert.deepEqual(E.filtrarPorEmpresa(l, ['OUTRA COMERCIO LTDA'], 'X').map(i => i.id), ['b', 'c']);
+  assert.deepEqual(E.empresasSelecionadas(l, '', 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA'), ['EMPRESA EXEMPLO SIMPLES NACIONAL LTDA']);
+  assert.equal(E.empresasSelecionadas(l, '*', 'X').length, 2);
 });
 
 const T = rules.config.tabelas;
@@ -581,6 +586,10 @@ t('Dados (Control Onvio): campos em português, destaques e sem dado de saúde',
   assert.ok(todos.some(c => c.v === 'Empregador') && todos.some(c => c.v === 'Casado(a)'));
   assert.ok(!todos.some(c => /M54/.test(c.v)));
   assert.deepEqual(r.anexos, ['a.pdf']);
+  // valores que o Onvio manda em PascalCase e palavras soltas em inglês também saem em português
+  const pc = D.camposDetalhe({ reason: 'ApprenticeContractTermination', terminationType: 'EarlyTerminationByEmployee', situacao: 'Active', nome: 'Maria', codigo: 'XyzAbc' }).grupos.flatMap(g => g.campos);
+  assert.ok(pc.some(c => c.k === 'Motivo' && c.v === 'Término do contrato de aprendizagem'));
+  assert.ok(pc.some(c => c.v === 'Rescisão antecipada pelo empregado') && pc.some(c => c.v === 'Ativo') && pc.some(c => c.v === 'Maria') && pc.some(c => c.v === 'XyzAbc'));
 });
 
 console.log(`\n${n} testes ok`);

@@ -193,6 +193,12 @@
           post({ type: 'options', id: m.id, options: opts, virtual: !!opts.virtual });
           break;
         }
+        case 'empregadoDetalhe': {   // ficha do funcionário: o registro que o portal já leu (nada é gravado)
+          if (!employeesRaw.has(companyName())) { employeesCache.clear(); await employeeNames(); }
+          const alvo = norm(m.nome);
+          post({ type: 'empregadoDetalhe', id: m.id, dados: (employeesRaw.get(companyName()) || []).find(e => norm(e?.name) === alvo) || null });
+          break;
+        }
         case 'employees': {
           let names = await employeeNames();
           if (!names.length && m.aquecer && await aquecerEmpregados()) names = await employeeNames();
@@ -422,6 +428,7 @@
      e só mostra ~13 nomes por vez). O endereço é o que o próprio portal chamou nesta sessão. */
   const employeesCache = new Map();
   const employeesInfo = new Map();   // empresa → [{ nome, admissao, ativo }] (sem CPF nem outros dados)
+  const employeesRaw = new Map();    // empresa → registros completos do portal, só na memória desta aba (para a ficha do funcionário)
   let empresaVista = '', empresaDesde = 0;
   const resumoEmpregado = (e) => ({ nome: String(e?.name || '').trim(), admissao: String(e?.hireDate || e?.admissionDate || '').slice(0, 10), ativo: !/demit|deslig|termin|inativ|dismiss|fired/i.test(String(e?.status ?? '')) });
   /** Trocar de empresa sem recarregar: o que foi lido da empresa anterior não vale mais. */
@@ -438,7 +445,7 @@
     const empresa = companyName(); notaEmpresa(empresa);
     if (plat.employees) {   // simulador
       const arr = await plat.employees();
-      employeesInfo.set(empresa, arr.map(resumoEmpregado));
+      employeesInfo.set(empresa, arr.map(resumoEmpregado)); employeesRaw.set(empresa, arr);
       return [...new Set(arr.map(e => String(e?.name || '').trim()).filter(Boolean))];
     }
     // só vale uma chamada feita depois que esta empresa foi selecionada
@@ -456,7 +463,7 @@
       const j = await r.json();
       const arr = Array.isArray(j) ? j : (j.items || j.data || []);
       const names = [...new Set(arr.map(e => String(e?.name || '').trim()).filter(Boolean))];
-      if (names.length) { employeesCache.set(key, names); employeesCache.set(empresa, names); employeesInfo.set(empresa, arr.map(resumoEmpregado).filter(e => e.nome)); }
+      if (names.length) { employeesCache.set(key, names); employeesCache.set(empresa, names); employeesInfo.set(empresa, arr.map(resumoEmpregado).filter(e => e.nome)); employeesRaw.set(empresa, arr); }
       return names;
     } catch { return []; }
   }

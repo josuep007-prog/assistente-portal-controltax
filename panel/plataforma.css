@@ -170,7 +170,9 @@ button.dp-row:focus-visible { outline: 2px solid var(--blue-deep); outline-offse
 .field.pf .input[disabled] { background: var(--surface-2); color: var(--ink-3); cursor: not-allowed; }
 .pf-sec { font: 600 12px var(--f-head); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 16px 0 8px; display: flex; align-items: center; gap: 8px; }
 .pf-sec::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
-body.plat .dock { position: sticky; bottom: 18px; margin: 18px 0 0; padding: 10px 14px; border: 1px solid var(--rule); border-radius: 6px; box-shadow: var(--shadow-2); z-index: 4; }
+/* barra de ações no rodapé do cartão "Dados do pedido" (sem flutuar por cima do conteúdo) */
+body.plat .dock { position: static; margin: 0; padding: 12px 16px; border: 0; border-top: 1px solid var(--rule); border-radius: 0 0 4px 4px; box-shadow: none; backdrop-filter: none; background: var(--surface-2, var(--bg)); flex-wrap: wrap; justify-content: flex-end; z-index: auto; }
+body.plat .dock > #btn-fill { margin-right: auto; }
 body.plat .dock > .btn { flex: 0 1 auto; }
 body.plat .dock > .btn-undo { flex: 0 1 auto; order: 0; }
 
@@ -454,7 +456,30 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 @media (max-width: 760px) { .hj-equipe { grid-template-columns: minmax(0, 1fr); } }
 /* empresa do item quando há mais de uma na tela */
 .hj-emp { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px; border-radius: 3px; border: 1px solid var(--rule-strong); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-2); }
-.emp-filtro { max-width: 260px; }
+/* seletor de empresas (2.5): uma, várias ou todas */
+.emp-sel { position: relative; flex: none; }
+.emp-sel > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; max-width: 280px; cursor: pointer; }
+.emp-sel > summary::-webkit-details-marker { display: none; }
+.emp-sel .es-rot { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.emp-sel .es-seta { color: var(--ink-3); font-size: 10px; transition: transform .12s; }
+.emp-sel[open] .es-seta { transform: rotate(180deg); }
+.emp-sel[open] > summary { border-color: var(--blue-deep); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue-deep) 18%, transparent); }
+.es-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: min(420px, 86vw); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r); box-shadow: var(--shadow-2); display: grid; gap: 8px; padding: 12px; }
+.es-head { display: grid; gap: 2px; } .es-head b { font: 600 13px var(--f-head); } .es-head small { color: var(--ink-3); font-size: 11.5px; }
+.es-q { width: 100%; }
+.es-rap { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 -6px; }
+.es-lista { display: grid; gap: 2px; max-height: 300px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 4px 0; }
+.es-li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 3px; cursor: pointer; }
+.es-li:hover { background: var(--surface-2); }
+.es-li input { width: 15px; height: 15px; accent-color: var(--blue-deep); margin: 0; }
+.es-tx { display: grid; min-width: 0; } .es-tx b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.es-tx small { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.es-tag { font: 600 10px var(--f-body); color: var(--blue-deep); background: var(--info-bg); border-radius: 3px; padding: 1px 5px; margin-left: 4px; vertical-align: 1px; }
+.es-n { display: grid; justify-items: end; font: 11px var(--f-mono); color: var(--ink-3); white-space: nowrap; } .es-n em { font-style: normal; color: var(--brand-red); font-weight: 600; }
+.es-so { border: 0; background: none; color: var(--blue-deep); font-size: 11.5px; cursor: pointer; padding: 2px 4px; border-radius: 3px; opacity: 0; }
+.es-li:hover .es-so, .es-so:focus-visible { opacity: 1; } .es-so:hover { background: var(--info-bg); }
+.es-pe { display: flex; align-items: center; gap: 6px; } .es-cont { margin-right: auto; font-size: 11.5px; color: var(--ink-3); }
+.es-pe .btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* =================== Detalhe (2.4, como o do Control Onvio) =================== */
 .dt-top { display: flex; align-items: flex-start; gap: 10px; }
@@ -556,3 +581,59 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 .tool-tabs button { border-radius: 3px; }
 ::selection { background: color-mix(in srgb, var(--blue-deep) 28%, transparent); }
 @media (prefers-reduced-motion: reduce) { .plat-view.entra { animation: none; } .btn:active, .hj-sit:active, .pn-li:active { transform: none; } }
+
+/* Hoje 2.4.1: listas da Equipe e dos casos com até 5 itens à vista (o resto rola) e linhas que não estouram o cartão */
+.hj-equipe > .pn-card, .hj-casos { min-width: 0; }
+.eq-lista { display: grid; gap: 6px; align-content: start; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: 4px; }
+.eq-lista.rola { -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 22px), transparent 100%); }
+.eq-lista.rola.fim { -webkit-mask-image: none; mask-image: none; }
+.eq-li { flex-wrap: wrap; min-width: 0; row-gap: 6px; }
+.eq-li .main { flex: 1 1 170px; min-width: 0; }
+.eq-li .main b { white-space: normal; }
+.eq-acoes { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: none; }
+
+/* Funcionários (2.4.1): lista com rolagem própria (a busca fica à vista) e ficha do funcionário */
+.emp-rolagem { max-height: min(58vh, 560px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.emp-linha { cursor: pointer; }
+.emp-linha:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
+.fu-exp { display: flex; flex-wrap: wrap; gap: 6px; }
+.fu-exp .dq { display: inline-grid; grid-template-columns: auto auto; column-gap: 8px; align-items: center; padding: 6px 10px; border-radius: var(--r); background: color-mix(in srgb, var(--blue-deep) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--blue-deep) 22%, var(--rule)); }
+.fu-exp .dq small { grid-column: 1 / -1; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.fu-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.fu-sol { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; }
+.fu-sol .pn-li .tp-ic { margin-right: 0; }
+body.plat .dock .more-menu .menu { z-index: 6; }
+/* Solicitações (2.5): cartões dos tipos, como na Fila do Control Onvio — ícone na cor da família, número grande e uma linha de apoio */
+.tipos { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.tipo-c { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 11px 13px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s; }
+.tipo-c:hover { border-color: var(--rule-strong); box-shadow: 0 1px 2px rgba(15,23,32,.04), 0 6px 16px rgba(15,23,32,.06); }
+.tipo-c.on { border-color: var(--fc); box-shadow: inset 0 0 0 1px var(--fc); background: color-mix(in srgb, var(--fc) 6%, var(--surface)); }
+.tipo-c.zero { opacity: .55; } .tipo-c.zero:hover { box-shadow: none; }
+.tipo-topo { display: flex; align-items: center; min-width: 0; max-width: 100%; }
+.tipo-rot { font-size: 11.5px; font-weight: 500; line-height: 1.2; color: var(--ink-3); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tipo-c.on .tipo-rot { color: var(--ink); }
+.tipo-c > b { font: 600 24px/1 var(--f-head); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tipo-sub { font-size: 11px; color: var(--ink-3); } .tipo-sub em { font-style: normal; font-weight: 600; color: var(--brand-red); }
+.fam-todos { --fc: var(--ink-3); }
+#sol-tipos { margin-top: 12px; }
+/* cartão com a empresa: o selo da situação não quebra; empresa e nº descem para a linha de baixo quando não cabem */
+.hj-card header { flex-wrap: wrap; row-gap: 6px; }
+.hj-card .hj-chip, .hj-card .hj-num { white-space: nowrap; }
+.hj-card .hj-emp { flex: none; max-width: 130px; }
+/* Documentos (2.5): arquivos das solicitações e publicados, com o tipo do arquivo, agrupados por mês */
+.dp-tab .tab-n { margin-left: 4px; padding: 0 6px; border-radius: 3px; font: 600 10.5px var(--f-mono); background: var(--surface-3); color: var(--ink-2); }
+.dp-tab.active .tab-n { background: var(--info-bg); color: var(--blue-deep); }
+.dp-toolbar .spacer { flex: 1; }
+.seg .arq-n { font-size: 10.5px; color: var(--ink-3); margin-left: 2px; }
+.seg [aria-pressed="true"] .arq-n { color: inherit; opacity: .8; }
+.arq-cols { --cols: minmax(0, 2.4fr) minmax(0, 1fr) 120px 96px 110px; }
+.arq-nome { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.arq-tx { display: grid; min-width: 0; }
+.arq-ext { flex: none; display: inline-grid; place-items: center; width: 34px; height: 26px; border-radius: 3px; font: 700 9.5px var(--f-mono); letter-spacing: .04em; color: var(--ec); background: color-mix(in srgb, var(--ec) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ec) 30%, transparent); }
+.ext-pdf { --ec: #C2000C; } .ext-img { --ec: #7c5cc4; } .ext-xls { --ec: #2f8f3a; } .ext-doc { --ec: #3C659B; } .ext-zip { --ec: #c98a00; } .ext-outro { --ec: var(--ink-3); }
+.arq-mes { padding: 7px 16px; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); background: var(--surface-2); border-bottom: 1px solid var(--rule); }
+.dp-row.arq-cols { cursor: pointer; }
+.arq-prog { position: relative; margin: 0 0 10px; padding: 6px 10px; font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.arq-prog i { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--blue-deep); transition: width .2s; }
+.list-foot .btn { vertical-align: baseline; padding: 0 6px; }
+@media (max-width: 900px) { .arq-cols { --cols: minmax(0, 1fr) 110px 90px; } .arq-cols > :nth-child(2), .arq-cols > :nth-child(5) { display: none; } }

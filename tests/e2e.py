@@ -113,6 +113,7 @@ async def cenario_plataforma(p):
     check(await pn.evaluate("document.body.classList.contains('plat')"), 'a plataforma abre sozinha em tela cheia')
     check(await page.evaluate("document.elementFromPoint(700, 450)?.id") == 'ct-assistente-host', 'o portal fica coberto')
     await pn.click('#rail [data-mod="pendencias"]'); await page.wait_for_timeout(5000)
+    await pn.click('[data-vis-sol="tabela"]'); await page.wait_for_timeout(300)
     lista = await pn.locator('#sol-list').inner_text()
     check('JOAO DA SILVA' in lista and await pn.locator('#sol-list .dp-row').count() == 2, 'solicitações lidas com o mesmo acesso do portal (o cookie sozinho recebe 401)')
     check(await pn.locator('#plat-aviso').inner_text() == '', 'sem aviso falso de sessão expirada')
