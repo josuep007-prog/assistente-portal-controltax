@@ -1,6 +1,7 @@
 // Testes do motor de regras (sem navegador).  Rodar:  node tests/engine.test.mjs
 import * as E from '../panel/engine.js';
 import * as C from '../panel/calculos.js';
+import * as D from '../panel/dados.js';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
@@ -525,6 +526,61 @@ t('Calcular: férias com abono, adiantamento do 13º e faltas', () => {
   assert.ok(g.avisos.some(a => /24 dias/.test(a)));
   perto(linha(C.simularFerias({ salario: 3000, diasGozo: 30, emDobro: true }, T), /^Férias em dobro/), 6000, 'em dobro');
   assert.match(C.textoSimulacao(f, 'JOAO'), /Líquido estimado/);
+});
+
+t('Conversa (Control Onvio): lado de cada trâmite, o escritório pede algo?, anexo citado sem arquivo', () => {
+  const tr = E.tramitesDe([
+    { created: '2026-10-01T09:00', status: 1, description: 'Segue em anexo a certidão.', createdByContactExpanded: { name: 'Cliente' } },
+    { created: '2026-10-02T09:00', status: 4, description: '<p>Olá! Falta informar a data do pagamento. Qualquer dúvida, estamos à disposição.</p>', createdByExpanded: { name: 'ANA' } }
+  ], 'avisoFerias', rules);
+  assert.deepEqual(tr.map(x => x.lado), ['cli', 'esc']);
+  const v = E.vereditoConversa(tr, rules);
+  assert.equal(v.ultimoLado, 'esc'); assert.ok(v.pede); assert.equal(v.frase, 'Falta informar a data do pagamento.');
+  assert.ok(!v.anexoSemArquivo);   // depois da resposta do escritório, o cliente não falou em anexo
+  // resposta sem pedido (cortesia não conta) → respondida
+  assert.ok(!E.pedeAlgo('Segue o recibo de férias. Qualquer dúvida, estamos à disposição.', rules).pede);
+  assert.ok(E.pedeAlgo('Pode confirmar o último dia?', rules).pede);
+  // cliente cita anexo e nenhum arquivo chegou
+  const tr2 = E.tramitesDe([{ created: '2026-10-01', status: 1, description: 'Bom dia, segue anexo o atestado.' }], 'afastamento', rules);
+  assert.ok(E.vereditoConversa(tr2, rules).anexoSemArquivo);
+  const tr3 = E.tramitesDe([{ created: '2026-10-01', status: 1, description: 'Segue anexo.', attachmentsExpanded: [{ name: 'a.pdf' }] }], 'afastamento', rules);
+  assert.ok(!E.vereditoConversa(tr3, rules).anexoSemArquivo);
+  // em Cadastro, 3 é o cliente? não: 2 e 4 são do cliente, 3 é "Aguardando você" (escritório)
+  assert.deepEqual(E.tramitesDe([{ created: '1', status: 1 }, { created: '2', status: 3 }, { created: '3', status: 4 }], 'cadastroEmpregado', rules).map(x => x.lado), ['cli', 'esc', 'cli']);
+});
+
+t('Hoje: respondida sem pedido, casos (duplicada, aba errada, anexo), prazos legais e observações', () => {
+  const h = new Date(2026, 9, 16);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  const a = N({ id: 'a', identifier: 10, genericStatus: 4, lastUpdated: '2026-10-14', created: '2026-10-01', clientEmployeeExpanded: { name: 'JOAO' } }, 'avisoFerias');
+  a.veredito = { ultimoLado: 'esc', pede: false };
+  assert.equal(E.motivoCliente(a, h, rules), 'respondida');
+  a.veredito = { ultimoLado: 'esc', pede: true, frase: 'Falta a data.' };
+  assert.equal(E.motivoCliente(a, h, rules), 'responder');
+  assert.match(E.porqueMotivo(a, 'responder', rules), /Falta a data/);
+  const b = N({ id: 'b', identifier: 11, genericStatus: 2, lastUpdated: '2026-10-15', created: '2026-10-15', clientEmployeeExpanded: { name: 'João' } }, 'avisoFerias');
+  const g = N({ id: 'g', identifier: 12, genericStatus: 1, subject: 'Atestado médico da Maria', created: '2026-10-15' }, 'geral');
+  const casos = E.casosCliente([a, b, g], rules);
+  assert.deepEqual(casos.map(c => c.tipo).sort(), ['abaErrada', 'duplicada']);
+  assert.equal(casos.find(c => c.tipo === 'abaErrada').aba, 'afastamento');
+  // prazos legais: cálculo de férias com início em 30/10 → pagar até 28/10; admissão em 20/10 → eSocial até 19/10
+  const cf = N({ id: 'c', genericStatus: 2, created: '2026-10-10', vacationStartDate: '2026-10-30T00:00:00' }, 'calculoFerias');
+  const ad = N({ id: 'd', genericStatus: 2, created: '2026-10-21', name: 'NOVA', admissionDate: '2026-10-20T00:00:00' }, 'cadastroEmpregado');
+  const pz = E.prazosLegaisCliente([cf, ad], h, rules);
+  assert.deepEqual(pz.map(p => [p.titulo, E.fmtDate(p.alvo)]), [['Admissão no eSocial', '19/10/2026'], ['Pagamento das férias', '28/10/2026']]);
+  assert.ok(pz[0].retroativa);
+  const obs = E.observacoesCliente(N({ genericStatus: 2, created: '2026-10-10' }, 'avisoFerias'), { inicioFerias: new Date(2026, 10, 3) }, rules, h);
+  assert.ok(obs[0].alerta && /18 dias/.test(obs[0].texto));        // aviso com menos de 30 dias
+  assert.ok(obs.some(o => /02\/11\/2026|30\/10\/2026/.test(o.texto)));   // pagamento antecipado para dia útil
+});
+
+t('Dados (Control Onvio): campos em português, destaques e sem dado de saúde', () => {
+  const r = D.camposDetalhe({ id: 'x', subject: 'Férias', vacationStartDate: '2026-11-03T00:00:00', grantedBy: 'EMPLOYER', cid: 'M54', clientEmployeeExpanded: { name: 'JOAO', maritalStatus: 'MARRIED', hireDate: '2024-01-02T00:00:00' }, attachmentsExpanded: [{ id: '1', name: 'a.pdf' }] });
+  const todos = r.grupos.flatMap(g => g.campos);
+  assert.ok(todos.some(c => c.k === 'Início das férias' && c.v === '03/11/2026' && c.destaque));
+  assert.ok(todos.some(c => c.v === 'Empregador') && todos.some(c => c.v === 'Casado(a)'));
+  assert.ok(!todos.some(c => /M54/.test(c.v)));
+  assert.deepEqual(r.anexos, ['a.pdf']);
 });
 
 console.log(`\n${n} testes ok`);

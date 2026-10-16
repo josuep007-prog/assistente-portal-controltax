@@ -992,7 +992,9 @@ export const empresaDoFiltro = (itens, filtro, empresaAtual) => filtro === '*' ?
 /** Datas de um aviso de férias ou rescisão (campos do Onvio real, mapa do Control Onvio). */
 export function datasDoAviso(it) {
   const d = (v) => parseDate(texto1(v));
-  return { inicioFerias: d(it?.vacationStartDate), pagamento: d(it?.paymentDate), aviso: d(it?.adviceDate), dias: +it?.vacationDays || null };
+  return { inicioFerias: d(it?.vacationStartDate), pagamento: d(it?.paymentDate), aviso: d(it?.adviceDate || it?.noticeDate), dias: +it?.vacationDays || null,
+    desligamento: d(it?.resignationDate), avisoPrevio: d(it?.priorNoticeAdviceDate), admissao: d(it?.admissionDate || it?.startDate),
+    afastamento: d(it?.leaveDate), competencia: d(it?.effectiveDate) };
 }
 /* Avisos que pedem o cálculo: aviso de férias ou de rescisão criado no portal sem a solicitação de
    cálculo do mesmo funcionário. Férias: pagamento até 2 dias antes do início (CLT 145). Rescisão: até 10 dias
@@ -1057,8 +1059,132 @@ export function tramitesDe(lista, tipo, regras) {
     situacao: x.status != null && mapa[String(+x.status)] ? mapa[String(+x.status)][0] : (typeof x.status === 'string' ? x.status : ''),
     autor: texto1(x.createdByContactExpanded?.name, x.createdByExpanded?.name),
     texto: typeof x.description === 'string' ? x.description : '',
-    anexos: (x.attachmentsExpanded || []).map(a => a && (a.name || a.fileName)).filter(Boolean).slice(0, 30)
+    anexos: (x.attachmentsExpanded || []).map(a => a && (a.name || a.fileName)).filter(Boolean).slice(0, 30),
+    // quem escreveu (como no Control Onvio): a 1ª é a abertura (cliente); depois, pela situação que o trâmite gravou
+    lado: i === 0 || gravaCliente(regras, fam).has(Number(x.status)) ? 'cli' : 'esc'
   }));
+}
+/* Situações que o CLIENTE grava em cada família (mapa do Control Onvio): o resto é do escritório. */
+const gravaCliente = (regras, fam) => new Set((regras?.config?.statusSolicitacao?.clienteGrava?.[fam] || { padrao: [1, 3], cadastro: [1, 2, 4], rubricas: [0, 1, 11, 12] }[fam] || [1, 3]).map(Number));
+
+/* ---------- Conversa: o escritório pede algo? (2.4, regra do Control Onvio) ----------
+   Uma resposta do escritório "pede algo" se tiver uma pergunta ou uma das palavras de config.pedidoAoCliente,
+   depois de tirar as frases de cortesia (config.cortesiaCliente: "qualquer dúvida…"). O texto é lido na hora
+   e nunca guardado; volta a frase que pede, para mostrar ao cliente. */
+const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const textoPlano = (html) => String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]*>/g, ' ')
+  .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'").replace(/&[a-z#0-9]+;/gi, ' ');
+const semAcento = (x) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const acharTrecho = (texto, lista) => (lista || []).find(p => p && new RegExp(`(^|[^a-z0-9])${escRe(semAcento(p).trim())}($|[^a-z0-9])`).test(texto)) || null;
+export function pedeAlgo(html, regras) {
+  const c = regras?.config || {};
+  const plano = textoPlano(html).replace(/[ \t]+/g, ' ').trim();
+  // frases (para mostrar a que pede) e o texto sem acento para procurar
+  const frases = plano.split(/(?<=[.!?\n])\s+/).map(f => f.trim()).filter(Boolean);
+  const semCortesia = (f) => { let t = semAcento(f); for (const x of c.cortesiaCliente || []) t = t.replace(new RegExp(`${escRe(semAcento(x).trim())}[^.!?\\n]*[.!?]?`, 'g'), ' '); return t; };
+  for (const f of frases) {
+    const t = semCortesia(f);
+    if (t.includes('?')) return { pede: true, trecho: '?', frase: f };
+    const tr = acharTrecho(t, c.pedidoAoCliente);
+    if (tr) return { pede: true, trecho: tr, frase: f };
+  }
+  return { pede: false, trecho: '', frase: '' };
+}
+/** Veredito da conversa para o cliente: { ultimoLado, pede, frase, anexoSemArquivo, trecho }. */
+export function vereditoConversa(trs, regras) {
+  const l = trs || [];
+  const ult = l[l.length - 1];
+  if (!ult) return null;
+  const out = { ultimoLado: ult.lado, pede: false, frase: '', anexoSemArquivo: false, trecho: '' };
+  if (ult.lado === 'esc') Object.assign(out, pedeAlgo(ult.texto, regras));
+  // o cliente fala em anexo depois da última resposta do escritório e nenhum arquivo chegou
+  let k = l.length - 1; while (k > 0 && l[k].lado === 'cli') k--;
+  const doCliente = l.slice(l[k]?.lado === 'esc' ? k + 1 : 0).filter(x => x.lado === 'cli');
+  if (doCliente.length && !doCliente.some(x => x.anexos.length)) {
+    const cita = doCliente.map(x => acharTrecho(semAcento(textoPlano(x.texto)), regras?.config?.anexoCitado)).find(Boolean);
+    if (cita) { out.anexoSemArquivo = true; out.trecho = cita; }
+  }
+  return out;
+}
+
+/* ---------- Atenção nas suas solicitações (casos do Control Onvio, na visão do cliente) ----------
+   anexo: você falou em anexo e nenhum arquivo chegou; duplicada: duas em aberto do mesmo tipo e funcionário
+   (ou assunto, na Geral); abaErrada: pedido na Geral que tem aba própria (config.abaErrada). */
+export function abaProvavel(assunto, regras) {
+  const alvo = semAcento(assunto);
+  if (!alvo.trim()) return null;
+  for (const e of regras?.config?.abaErrada || []) {
+    if (!regras?.tipos?.[e.tipo] || e.tipo === 'geral') continue;
+    const w = (e.palavras || []).find(p => new RegExp(`(^|[^a-z0-9])${escRe(semAcento(p).trim())}([^a-z0-9]|$)`).test(alvo));
+    if (w) return { tipo: e.tipo, palavra: w };
+  }
+  return null;
+}
+export function casosCliente(itens, regras) {
+  const abertos = (itens || []).filter(i => ['aguardando', 'andamento'].includes(i.estado));
+  const casos = new Map();
+  const add = (i, tipo, extra) => { if (!casos.has(i)) casos.set(i, { item: i, tipo, ...extra }); };
+  for (const i of abertos) if (i.veredito?.anexoSemArquivo) add(i, 'anexo', { porque: 'Você falou em anexo, mas nenhum arquivo chegou ao escritório.' });
+  const chave = (i) => `${i.empresa}|${i.tipo}|${norm(i.tipo === 'geral' ? i.assunto : i.empregado).trim()}`;
+  const grupos = new Map();
+  for (const i of abertos) if (norm(i.tipo === 'geral' ? i.assunto : i.empregado).trim()) { const k = chave(i); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(i); }
+  for (const g of grupos.values()) if (g.length > 1) {
+    g.sort((a, b) => (+a.numero || 0) - (+b.numero || 0));
+    for (const i of g.slice(1)) add(i, 'duplicada', { outra: g[0], porque: `Parece repetir a nº ${g[0].numero}, que ainda está em aberto.` });
+  }
+  for (const i of abertos) if (i.tipo === 'geral') { const a = abaProvavel(i.assunto, regras); if (a) add(i, 'abaErrada', { aba: a.tipo, porque: `Pedido feito na Solicitação Geral, mas tem aba própria: ${regras.tipos[a.tipo].nome}.` }); }
+  return [...casos.values()];
+}
+
+/* ---------- Prazos legais do lado do cliente ----------
+   Pagamento dos cálculos em aberto (férias: 2 dias antes do início, CLT 145; rescisão: 10 dias do desligamento,
+   CLT 477 §6º, antecipando para o dia útil anterior) e o eSocial das admissões (empregado: até o dia anterior ao
+   início; estagiário: até config.estagiarioPrazoDias depois). Datas vindas do detalhe ou da lista. */
+export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
+  const c = regras?.config || {};
+  const utilAntes = (d) => { let x = d; while (!cal.isBusiness(x)) x = addDays(x, -1); return x; };
+  const out = [];
+  for (const i of itens || []) {
+    if (!['aguardando', 'andamento'].includes(i.estado)) continue;
+    const dt = i.datas || {};
+    let alvo = null, titulo = '', ref = '';
+    if (i.tipo === 'calculoFerias' && dt.inicioFerias) { alvo = utilAntes(addDays(dt.inicioFerias, -(c.pagamentoFeriasAntes ?? 2))); titulo = 'Pagamento das férias'; ref = `início em ${fmtDate(dt.inicioFerias)}`; }
+    else if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) { const b = dt.desligamento || dt.avisoPrevio; alvo = utilAntes(addDays(b, c.pagamentoRescisaoDias ?? 10)); titulo = 'Pagamento da rescisão'; ref = dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}`; }
+    else if (/^cadastro(Empregado|Estagiario)$/.test(i.tipo) && dt.admissao) {
+      const est = i.tipo === 'cadastroEstagiario';
+      alvo = est ? addDays(dt.admissao, c.estagiarioPrazoDias ?? 15) : addDays(dt.admissao, -1);
+      titulo = 'Admissão no eSocial'; ref = `início em ${fmtDate(dt.admissao)}${est ? ' (estágio)' : ''}`;
+    }
+    if (!alvo) continue;
+    const falta = diffDays(hoje, alvo);
+    if (falta > 15 || falta < -10) continue;
+    out.push({ item: i, titulo, alvo, ref, falta, retroativa: !!(i.criado && dt.admissao && dt.admissao < i.criado) });
+  }
+  return out.sort((a, b) => a.falta - b.falta);
+}
+
+/* ---------- O que observar (observações do Control Onvio, na voz do cliente) ----------
+   Frases de config.observacoes por tipo, com as datas da solicitação; a linha com alguma chave sem valor não
+   aparece. Alertas calculados (prazo já passou ou muito perto) vêm primeiro. */
+export function observacoesCliente(item, datas, regras = {}, hoje = today(), cal = makeCalendar(regras?.feriados)) {
+  const c = regras?.config || {};
+  const d = datas || item?.datas || {};
+  const utilAntes = (x) => { let y = x; while (!cal.isBusiness(y)) y = addDays(y, -1); return y; };
+  const ini = d.inicioFerias, pf = ini ? utilAntes(addDays(ini, -(c.pagamentoFeriasAntes ?? 2))) : null;
+  const vals = { inicio: fmtDate(ini), pagamentoFerias: fmtDate(pf), aviso: fmtDate(d.aviso || d.avisoPrevio), desligamento: fmtDate(d.desligamento),
+    admissao: fmtDate(d.admissao), afastamento: fmtDate(d.afastamento), competencia: d.competencia ? fmtDate(d.competencia).slice(3) : '',
+    pagamentoFeriasAntes: c.pagamentoFeriasAntes ?? 2, pagamentoRescisaoDias: c.pagamentoRescisaoDias ?? 10, avisoFeriasDias: c.avisoFeriasDias ?? 30,
+    estagiarioPrazoDias: c.estagiarioPrazoDias ?? 15 };
+  const out = [];
+  if (ini && /Ferias$/.test(item.tipo)) {
+    const corridos = diffDays(hoje, ini);
+    if (item.tipo === 'avisoFerias' && corridos >= 0 && corridos < vals.avisoFeriasDias) out.push({ alerta: true, texto: `Faltam ${corridos} dias para o início das férias (${vals.inicio}), menos que os ${vals.avisoFeriasDias} dias de antecedência do aviso (CLT, art. 135).` });
+    if (pf && pf < hoje) out.push({ alerta: true, texto: `O prazo de pagamento das férias (${vals.pagamentoFerias}) já passou.` });
+    else if (pf && diffDays(hoje, pf) <= 3) out.push({ alerta: true, texto: `O pagamento das férias vence em ${vals.pagamentoFerias}.` });
+  }
+  const preencher = (t) => { let falta = false; const r = String(t).replace(/\{(\w+)\}/g, (_, k) => { const v = vals[k]; if (v == null || v === '') { falta = true; return ''; } return String(v); }); return falta ? null : r; };
+  for (const t of c.observacoes?.[item.tipo] || []) { const r = preencher(t); if (r) out.push({ texto: r }); }
+  return out;
 }
 
 /* "Hoje" do cliente (no formato da tela Hoje do Control Onvio): cada solicitação tem um motivo só,
@@ -1067,17 +1193,20 @@ export const MOTIVOS_CLIENTE = [
   { k: 'prescreve', rot: 'Responda antes de prescrever', cor: 'crit' },
   { k: 'responder', rot: 'Esperando sua resposta', cor: 'serious' },
   { k: 'atrasada', rot: 'Passou da expectativa', cor: 'warn' },
+  { k: 'respondida', rot: 'Respondidas, nada pendente', cor: 's3' },
   { k: 'escritorio', rot: 'Com o escritório', cor: 's1' },
   { k: 'concluida', rot: 'Concluídas (30 dias)', cor: 'ok' }
 ];
 export function motivoCliente(i, hoje = today(), regras = {}) {
   const aviso = +regras?.config?.prescricaoAvisoDias || 10;
+  // a resposta do escritório não pede nada (lida nos trâmites, 2.4): é só conferir e concluir
+  if (i.estado === 'aguardando' && i.veredito && i.veredito.ultimoLado === 'esc' && !i.veredito.pede) return 'respondida';
   if (i.estado === 'aguardando') return i.prescreveEm != null && i.prescreveEm <= aviso ? 'prescreve' : 'responder';
   if (i.estado === 'andamento') return i.expectativa && i.expectativa < hoje ? 'atrasada' : 'escritorio';
   if (i.estado === 'concluida' && i.atualizado && diffDays(i.atualizado, hoje) <= 30) return 'concluida';
   return null;   // encerradas há mais tempo e prescritas não entram no Hoje
 }
-const ORDEM_MOTIVO = { prescreve: 0, responder: 1, atrasada: 2, escritorio: 3, concluida: 4 };
+const ORDEM_MOTIVO = { prescreve: 0, responder: 1, atrasada: 2, respondida: 3, escritorio: 4, concluida: 5 };
 /** O que pede atenção primeiro: prescrição mais perto, depois o que espera você há mais tempo. */
 export function prioridadesCliente(itens, hoje = today(), regras = {}) {
   return (itens || []).map(item => ({ item, motivo: motivoCliente(item, hoje, regras) })).filter(p => p.motivo)
@@ -1090,9 +1219,24 @@ export function acaoCliente(i, motivo) {
   switch (motivo) {
     case 'prescreve': return i.prescreveEm != null ? `Responder no portal · prescreve em ${dias(i.prescreveEm)}` : 'Responder antes de prescrever';
     case 'responder': return 'Responder no portal · o escritório espera você';
+    case 'respondida': return 'Ler a resposta e concluir no portal';
     case 'atrasada': return 'Passou da expectativa de conclusão · acompanhar';
     case 'escritorio': return `Com o escritório${i.parado != null ? ` · última movimentação há ${dias(i.parado)}` : ''}`;
     case 'concluida': return 'Concluída · ver os trâmites';
+    default: return '';
+  }
+}
+/** Por que a solicitação está nesse motivo, em palavras (como o "porquê da gravidade" do Control Onvio). */
+export function porqueMotivo(i, motivo, regras = {}) {
+  const dias = (n) => `${n} ${n === 1 ? 'dia' : 'dias'}`;
+  const prazo = +regras?.config?.prescricaoDias || 30;
+  switch (motivo) {
+    case 'prescreve': return `Esperando sua resposta há ${dias(i.parado ?? 0)}: sem resposta em ${prazo} dias, o portal encerra a solicitação.`;
+    case 'responder': return i.veredito?.frase ? `O escritório pediu: “${i.veredito.frase}”` : 'O escritório respondeu e a vez é sua.';
+    case 'respondida': return 'O escritório respondeu e não pediu nada. Confira a resposta e conclua no portal.';
+    case 'atrasada': return i.expectativa ? `A expectativa de conclusão era ${fmtDate(i.expectativa)}.` : 'Passou da expectativa de conclusão.';
+    case 'escritorio': return i.parado != null ? `Com o escritório, última movimentação há ${dias(i.parado)}.` : 'Com o escritório.';
+    case 'concluida': return i.atualizado ? `Concluída em ${fmtDate(i.atualizado)}.` : 'Concluída.';
     default: return '';
   }
 }

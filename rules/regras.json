@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.15-7",
+  "versao": "2026.10.16-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -189,6 +189,7 @@
           ]
         }
       },
+      "clienteGrava": { "padrao": [1, 3], "cadastro": [1, 2, 4], "rubricas": [0, 1, 11, 12] },
       "prescreve": [
         "padrao",
         "rubricas"
@@ -197,6 +198,206 @@
     "prescricaoDias": 30,
     "prescricaoAvisoDias": 10,
     "leituraAutomaticaSegundos": 30,
+    "pagamentoFeriasAntes": 2,
+    "pagamentoRescisaoDias": 10,
+    "avisoFeriasDias": 30,
+    "estagiarioPrazoDias": 15,
+    "pedidoAoCliente": [
+      "aguardamos",
+      "aguardando",
+      "aguardo",
+      "aguarde",
+      "aguardar",
+      "favor",
+      "por gentileza",
+      "gentileza",
+      "precisamos",
+      "precisaremos",
+      "necessitamos",
+      "necessario",
+      "necessaria",
+      "necessarios",
+      "falta",
+      "faltam",
+      "faltou",
+      "faltando",
+      "pendente",
+      "pendentes",
+      "pendencia",
+      "pendencias",
+      "envie",
+      "enviem",
+      "enviar",
+      "encaminhe",
+      "encaminhar",
+      "informe",
+      "informem",
+      "informar",
+      "confirme",
+      "confirmar",
+      "assinar",
+      "solicitamos",
+      "pedimos",
+      "poderia",
+      "poderiam",
+      "pode nos",
+      "podem nos",
+      "seu retorno",
+      "retornar",
+      "anexe",
+      "anexar",
+      "complementar",
+      "corrigir",
+      "regularizar"
+    ],
+    "cortesiaCliente": [
+      "qualquer duvida",
+      "quaisquer duvidas",
+      "fico a disposicao",
+      "ficamos a disposicao",
+      "estamos a disposicao",
+      "permaneco a disposicao",
+      "ficou alguma duvida",
+      "restou alguma duvida",
+      "em caso de duvida",
+      "em caso de duvidas",
+      "se precisar",
+      "caso precise",
+      "caso necessario"
+    ],
+    "anexoCitado": [
+      "segue anexo",
+      "segue em anexo",
+      "seguem anexos",
+      "seguem em anexo",
+      "segue o anexo",
+      "seguem os anexos",
+      "em anexo",
+      "anexei",
+      "anexado",
+      "anexados",
+      "anexada",
+      "anexadas",
+      "arquivo anexo",
+      "documento anexo",
+      "documentos anexos",
+      "conforme anexo"
+    ],
+    "abaErrada": [
+      {
+        "tipo": "calculoFerias",
+        "palavras": [
+          "calculo de ferias",
+          "recibo de ferias",
+          "pagar ferias"
+        ]
+      },
+      {
+        "tipo": "avisoFerias",
+        "palavras": [
+          "ferias",
+          "aviso de ferias",
+          "programar ferias"
+        ]
+      },
+      {
+        "tipo": "calculoRescisao",
+        "palavras": [
+          "calculo de rescisao",
+          "verbas rescisorias",
+          "termo de rescisao",
+          "trct"
+        ]
+      },
+      {
+        "tipo": "avisoRescisao",
+        "palavras": [
+          "demissao",
+          "pedido de demissao",
+          "desligamento",
+          "aviso previo",
+          "justa causa",
+          "demitir"
+        ]
+      },
+      {
+        "tipo": "afastamento",
+        "palavras": [
+          "atestado",
+          "afastamento",
+          "licenca maternidade",
+          "licenca paternidade",
+          "inss",
+          "acidente de trabalho"
+        ]
+      },
+      {
+        "tipo": "cadastroEmpregado",
+        "palavras": [
+          "admissao",
+          "admitir",
+          "novo funcionario",
+          "nova contratacao",
+          "contratar"
+        ]
+      },
+      {
+        "tipo": "cadastroEstagiario",
+        "palavras": [
+          "estagio",
+          "estagiario",
+          "estagiaria"
+        ]
+      },
+      {
+        "tipo": "rubricas",
+        "palavras": [
+          "hora extra",
+          "horas extras",
+          "comissao",
+          "rubrica",
+          "variaveis da folha"
+        ]
+      }
+    ],
+    "observacoes": {
+      "avisoFerias": [
+        "As férias começam em {inicio}. O aviso precisa ser entregue ao empregado com pelo menos {avisoFeriasDias} dias de antecedência (CLT, art. 135).",
+        "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, CLT, art. 145). Para isso, peça o Cálculo de Férias com antecedência.",
+        "Se o empregado for vender 1/3 das férias (abono pecuniário) ou adiantar a 1ª parcela do 13º, informe na solicitação."
+      ],
+      "calculoFerias": [
+        "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, em {inicio}; CLT, art. 145).",
+        "Depois do pagamento, envie o recibo de férias assinado pelo empregado."
+      ],
+      "avisoRescisao": [
+        "Data do aviso: {aviso}. As verbas rescisórias devem ser pagas em até {pagamentoRescisaoDias} dias corridos após o término do contrato (CLT, art. 477, §6º).",
+        "Para não perder o prazo, peça o Cálculo de Rescisão assim que o último dia de trabalho estiver definido.",
+        "Lembre de agendar o exame demissional, quando exigido."
+      ],
+      "calculoRescisao": [
+        "As verbas rescisórias devem ser pagas em até {pagamentoRescisaoDias} dias corridos após o término do contrato (CLT, art. 477, §6º).",
+        "Depois do pagamento, envie o comprovante e o termo de rescisão assinado."
+      ],
+      "afastamento": [
+        "Os primeiros 15 dias de afastamento por doença são pagos pela empresa; a partir do 16º dia, o empregado deve ser encaminhado ao INSS.",
+        "Envie o atestado legível, com data, período de afastamento e assinatura do médico."
+      ],
+      "cadastroEmpregado": [
+        "Início das atividades em {admissao}. A admissão precisa ser enviada ao eSocial até o dia anterior ao início, então a documentação completa deve chegar antes disso.",
+        "O exame admissional deve ser feito antes do início das atividades."
+      ],
+      "cadastroEstagiario": [
+        "O estágio precisa do termo de compromisso assinado pela empresa, pelo estagiário e pela instituição de ensino antes do início.",
+        "Início do estágio em {admissao}. O cadastro do estagiário no eSocial vai até {estagiarioPrazoDias} dias depois do início, então a documentação deve chegar o quanto antes."
+      ],
+      "cadastroContribuinte": [
+        "Informe a data de início e o valor do pró-labore ou da retirada, para o cadastro no eSocial."
+      ],
+      "rubricas": [
+        "Lançamentos da competência {competencia} precisam chegar antes do fechamento da folha; depois disso entram na competência seguinte."
+      ]
+    },
     "tabelas": {
       "vigencia": "2026",
       "revisarComEscritorio": true,
@@ -1409,6 +1610,7 @@
         "Use 'Adicionar funcionários' no portal para lançar os valores na grade."
       ],
       "apiLista": "br-payroll-sr/v1/payroll-entries",
+      "apiDetalhe": "br-payroll-sr/v2/payroll-entries",
       "apiExpand": "clientExpanded,staffResponsibleExpanded",
       "apiTramites": "br-payroll-sr/v1/payroll-entries",
       "familiaStatus": "rubricas"
