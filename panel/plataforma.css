@@ -637,3 +637,33 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .arq-prog i { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--blue-deep); transition: width .2s; }
 .list-foot .btn { vertical-align: baseline; padding: 0 6px; }
 @media (max-width: 900px) { .arq-cols { --cols: minmax(0, 1fr) 110px 90px; } .arq-cols > :nth-child(2), .arq-cols > :nth-child(5) { display: none; } }
+.hj-sit.sol-limpar { --c: var(--ink-3); color: var(--ink-2); border-style: dashed; }
+.hj-sit.sol-limpar .ic { color: var(--ink-3); }
+/* Indicador da leitura do portal (2.5.2) */
+.ph-sync { position: relative; }
+.sync-d { position: relative; }
+.sync-d > summary { list-style: none; display: flex; align-items: center; gap: 9px; padding: 5px 10px 5px 9px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); cursor: pointer; user-select: none; transition: border-color .15s, background .15s; }
+.sync-d > summary::-webkit-details-marker { display: none; }
+.sync-d > summary:hover, .sync-d[open] > summary { border-color: var(--rule-strong); background: var(--surface-2); }
+.sync-d { --st: var(--ok); } .sync-d.st-lendo { --st: var(--blue-deep); } .sync-d.st-parcial { --st: var(--warn); } .sync-d.st-erro { --st: var(--brand-red); }
+.sync-dot { position: relative; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--st); }
+.sync-d.st-ok .sync-dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--st); opacity: 0; animation: sync-pulso 2.4s ease-out infinite; }
+@keyframes sync-pulso { 0% { transform: scale(.5); opacity: .6; } 80%, 100% { transform: scale(1.3); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .sync-d.st-ok .sync-dot::after { animation: none; } }
+.sync-t { display: grid; line-height: 1.15; } .sync-t b { font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; } .sync-t small { font: 10.5px var(--f-mono); color: var(--ink-3); white-space: nowrap; }
+.sync-d.st-erro .sync-t b { color: var(--brand-red); }
+.sync-anel { flex: none; width: 16px; height: 16px; border-radius: 50%; background: conic-gradient(var(--st) var(--p, 0%), var(--rule) 0); -webkit-mask: radial-gradient(circle, transparent 4.5px, #000 5px); mask: radial-gradient(circle, transparent 4.5px, #000 5px); transition: background .9s linear; }
+.sync-spin { width: 14px; height: 14px; }
+.sync-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 300px; padding: 12px; display: grid; gap: 6px; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r); box-shadow: var(--shadow-2); font-size: 12px; color: var(--ink-2); }
+.sy-head { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--rule); } .sy-head b { font: 600 13px var(--f-head); color: var(--ink); }
+.sy-l { display: flex; justify-content: space-between; gap: 10px; } .sy-l span { color: var(--ink-3); } .sy-l b { font: 500 11.5px var(--f-mono); color: var(--ink); text-align: right; }
+.sy-conf { display: flex; gap: 6px; margin: 4px 0 2px; padding: 8px; border-radius: 3px; background: var(--ok-bg, var(--surface-2)); color: var(--ink-2); font-size: 11.5px; line-height: 1.4; } .sy-conf .ic { flex: none; color: var(--ok); margin-top: 1px; }
+.sync-pop .btn { justify-self: start; }
+/* Aviso fixo só para leitura que falhou (2.5.2) */
+.leit-causas { margin-top: 6px; font-size: 12px; } .leit-causas summary { cursor: pointer; color: var(--blue-deep); font-weight: 600; }
+.leit-causas ol { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; color: var(--ink-2); }
+/* Janela do portal mostrada por cima */
+.at-txt { margin: 0; padding: 10px 12px; border-left: 3px solid var(--warn); background: var(--surface-2); border-radius: 0 3px 3px 0; color: var(--ink); font-size: 13px; line-height: 1.45; }
+#dlg-t .ic { color: var(--warn); vertical-align: -3px; }
+.sy-causas { margin: 0; padding: 6px 8px 6px 22px; border-radius: 3px; background: var(--surface-2); display: grid; gap: 3px; font-size: 11.5px; color: var(--ink-2); }
+.plat-head { position: relative; z-index: 20; }   /* o balão do indicador passa por cima do conteúdo */

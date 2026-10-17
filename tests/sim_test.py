@@ -124,7 +124,13 @@ async def teste_plataforma(b):
     await pg.screenshot(path='/tmp/sim-20-painel.png')
     # Solicitações: todas as páginas, filtros, detalhe
     await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(800)
-    await pn.click('[data-vis-sol="tabela"]'); await pg.wait_for_timeout(300)
+    # 2.5.2: com um filtro de situação ativo, a Tabela mostra o filtro e os cartões dos tipos contam o que ela mostra
+    await pn.click('.hj-sit[data-sit="responder"]'); await pn.click('[data-vis-sol="tabela"]'); await pg.wait_for_timeout(300)
+    linhas = await pn.locator('#sol-list .dp-row').count()
+    todos = int(await pn.locator('[data-tipo-sol=""] b').inner_text())
+    ok = await pn.evaluate("!document.querySelector('#sol-sits').hidden && !!document.querySelector('.hj-sit[data-sit=responder].on') && !!document.querySelector('[data-limpar-sol]')")
+    check(linhas >= 1 and todos == linhas and ok, f'Tabela: filtro de situação à vista e cartões dos tipos contam o que a tabela mostra ({todos} = {linhas})')
+    await pn.click('[data-limpar-sol]'); await pg.wait_for_timeout(300)
     n = await pn.locator('#sol-list .dp-row').count()
     check(n == 64, f'solicitações: tabela com todas as páginas lidas, Geral inclusive ({n} de 64)')
     # várias empresas no mesmo login (2.5): por padrão a do portal; o seletor escolhe uma, várias ou todas
@@ -277,9 +283,21 @@ async def teste_plataforma(b):
     await pn.fill('#cmdk-q', 'wagner'); await pg.wait_for_timeout(300)
     check('WAGNER SOUSA' in await pn.locator('#cmdk-res').inner_text(), 'busca acha o funcionário')
     await pg.keyboard.press('Escape')
-    # Aviso do portal coberto
+    # Indicador da leitura (2.5.2): estado, há quanto tempo leu e a garantia de que nada sai do computador
+    await pn.click('#plat-sync summary'); await pg.wait_for_timeout(200)
+    pop = await pn.locator('.sync-pop').inner_text()
+    check(await pn.locator('.sync-d.st-ok').count() == 1 and 'Portal conectado' in await pn.locator('#plat-sync summary').inner_text() and 'Nada é enviado' in pop and 'Próxima leitura' in pop, 'indicador da leitura: conectado, quando leu, próxima leitura e privacidade')
+    await pn.click('#plat-sync summary')
+    # Aviso do portal coberto (2.5.2): não fica fixo; aparece por cima quando o cliente tenta agir no portal
+    await pg.wait_for_timeout(10500)
     await pg.evaluate("window.__ctSim.atencao()"); await pg.wait_for_timeout(1800)
-    check('atenção' in await pn.locator('#plat-aviso').inner_text(), 'janela do portal por baixo: a plataforma avisa')
+    check(await pn.locator('#plat-aviso').inner_text() == '' and await pn.locator('#modal').is_hidden(), 'janela do portal por baixo: sem aviso fixo enquanto o cliente não age')
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(400)
+    await pn.locator('.pd-escolha .intent').first.click(); await pg.wait_for_timeout(1200)
+    txt = await pn.locator('#modal').inner_text() if await pn.locator('#modal').is_visible() else ''
+    check('sessão vai expirar' in txt and 'entre de novo' in txt, 'ao tentar abrir um pedido, o aviso do portal aparece por cima (com a dica)')
+    await pn.evaluate("document.querySelector('#modal .dlg-x')?.click()")
+    await pg.evaluate("document.querySelector('.p-dialog')?.remove(); window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave')"); await pg.wait_for_timeout(1500)
     # Leitura automática (config.leituraAutomaticaSegundos = 30): o escritório responde e o Hoje mostra sozinho
     await pn.click('#rail [data-mod="pendencias"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(600)
     await pn.fill('#sol-q', ''); await pn.dispatch_event('#sol-q', 'input'); await pn.click('[data-vis-sol="cartoes"]'); await pg.wait_for_timeout(600); await pn.evaluate("document.activeElement?.blur()")

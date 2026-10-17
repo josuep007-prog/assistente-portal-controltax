@@ -37,6 +37,7 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 
 function request(msg, timeout = 15000, transfer = []) {
   if (!S.port) return Promise.resolve(null);
+  if (AGIR_NO_PORTAL.has(msg?.type)) S.antesDeAgir?.(msg);
   const id = ++reqId;
   return new Promise((res) => {
     const t = setTimeout(() => { waiters.delete(id); res(null); }, timeout);
@@ -44,7 +45,9 @@ function request(msg, timeout = 15000, transfer = []) {
     S.port.postMessage({ ...msg, id }, transfer);
   });
 }
-const send = (msg, transfer) => S.port?.postMessage(msg, transfer || []);
+// agir no portal (abrir, preencher, enviar) com uma janela do portal aberta: a plataforma avisa por cima (S.antesDeAgir)
+const AGIR_NO_PORTAL = new Set(['navigate', 'fill', 'requestSubmit']);
+const send = (msg, transfer) => { if (AGIR_NO_PORTAL.has(msg?.type)) S.antesDeAgir?.(msg); S.port?.postMessage(msg, transfer || []); };
 const packFiles = async (files) => Promise.all(files.map(async f => ({ name: f.name, type: f.type, lastModified: f.lastModified, buf: await f.arrayBuffer() })));
 const toast = (text) => send({ type: 'toast', text });
 
@@ -2019,7 +2022,7 @@ const P = montarPlataforma({
   S, $, esc, icon, request, send, toast, viewEl, debounce, ICONS,
   setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
   renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
-  prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado
+  prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado, copiarDiagnostico
 });
 
 /* =================== Início =================== */

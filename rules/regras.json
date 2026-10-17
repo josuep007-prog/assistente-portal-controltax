@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.16-1",
+  "versao": "2026.10.17-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -198,6 +198,10 @@
     "prescricaoDias": 30,
     "prescricaoAvisoDias": 10,
     "leituraAutomaticaSegundos": 30,
+    "dicasAvisoPortal": [
+      { "padrao": "sem permiss|n[aã]o est[aá] habilitad", "dica": "Este tipo de solicitação não está liberado para esta empresa no portal. Fale com o escritório para habilitar; enquanto isso, use outro tipo ou a Solicitação Geral." },
+      { "padrao": "sess[aã]o.*(expir|encerr)|fa[cç]a login|entre novamente", "dica": "A sessão do portal está acabando ou acabou. Clique em Ver no portal e entre de novo; a plataforma volta a ler sozinha." }
+    ],
     "pagamentoFeriasAntes": 2,
     "pagamentoRescisaoDias": 10,
     "avisoFeriasDias": 30,
@@ -3058,7 +3062,23 @@
     "plataformaVazioSolicitacoes": "Nenhuma solicitação encontrada com esses filtros.",
     "plataformaAguardando": "Há solicitação esperando sua resposta. Abra, leia o último trâmite e responda — quem conclui a solicitação é você.",
     "plataformaCalibrar": "Esta parte do portal ainda está sendo conferida pelo escritório. Por enquanto, abra direto no portal.",
-    "plataformaAtencao": "O portal está pedindo sua atenção (uma janela ou a sessão expirou).",
+    "plataformaAtencao": "O portal mostrou um aviso",
+    "leituraPortal": {
+      "titulo": "Não consegui ler o portal agora.",
+      "sub": "Os números da tela podem estar desatualizados.",
+      "causas": [
+        "Você saiu do portal ou o tempo de acesso acabou: clique em Ver no portal, entre de novo e volte.",
+        "O portal ainda não terminou de abrir, ou a extensão foi atualizada com ele aberto: recarregue a página (F5).",
+        "O portal ainda não fez nenhuma consulta desde que abriu: abra qualquer solicitação no portal (Ver no portal) e volte.",
+        "A internet oscilou: clique em Tentar de novo.",
+        "Se continuar, clique em Copiar diagnóstico e mande ao escritório (não leva nomes nem valores)."
+      ],
+      "causasParcial": [
+        "Esta empresa pode não ter acesso a esse tipo de solicitação no portal: fale com o escritório se precisar dele.",
+        "O portal pode ter demorado a responder: clique em Tentar de novo.",
+        "Se continuar, clique em Copiar diagnóstico e mande ao escritório."
+      ]
+    },
     "plataformaSemAcesso": "O portal não liberou a leitura desta lista agora. Abra qualquer solicitação no portal (Ver no portal) e volte — ou clique em Tentar de novo. Se continuar, use “Copiar diagnóstico” nas Configurações e mande ao escritório."
   },
   "avisosEscritorio": [
