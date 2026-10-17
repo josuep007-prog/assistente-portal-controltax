@@ -6,6 +6,7 @@ import asyncio, os, sys, threading, http.server, functools, json
 from playwright.async_api import async_playwright
 
 ROOT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), '..', '..', 'simulador-artefato'))
+PORT = int(os.environ.get('SIM_PORT', '8765'))   # porta do servidor local (para rodar dois testes ao mesmo tempo)
 SKEL = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"></head><body>{}</body></html>'
 
 class H(http.server.SimpleHTTPRequestHandler):
@@ -20,7 +21,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         return super().guess_type(p)
 
 def serve():
-    srv = http.server.ThreadingHTTPServer(('127.0.0.1', 8765), functools.partial(H, directory=ROOT))
+    srv = http.server.ThreadingHTTPServer(('127.0.0.1', PORT), functools.partial(H, directory=ROOT))
     threading.Thread(target=srv.serve_forever, daemon=True).start(); return srv
 
 falhas = []
@@ -37,7 +38,7 @@ async def teste_plataforma(b):
     pg = await ctx.new_page()
     erros = []
     pg.on('pageerror', lambda e: erros.append(str(e)))
-    await pg.goto('http://127.0.0.1:8765/'); await pg.wait_for_timeout(3500)
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
     pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
     portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
     total = lambda: pg.evaluate("window.__ctPlatform.fetchList('employee-leave').then(r => r.json()).then(j => j.totalItems)")
@@ -326,7 +327,7 @@ async def main():
         logs = []
         pg.on('console', lambda m: logs.append(f'[{m.type}] {m.text}'))
         pg.on('pageerror', lambda e: logs.append('PAGEERR ' + str(e)))
-        await pg.goto('http://127.0.0.1:8765/?modo=painel')   # testes da 1.x: portal à vista, painel encaixado
+        await pg.goto(f'http://127.0.0.1:{PORT}/?modo=painel')   # testes da 1.x: portal à vista, painel encaixado
         await pg.wait_for_timeout(2000)
         await pg.screenshot(path='/tmp/sim-0.png')
         pn = None
