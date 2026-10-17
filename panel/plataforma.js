@@ -139,12 +139,55 @@ export function montarPlataforma(A) {
     $('#plat-titulo').textContent = TITULOS[v] || 'Hoje';
   }
   function badge(v, n) { const b = document.querySelector(`[data-badge="${v}"]`); if (!b) return; b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n || ''); }
+  /* Indicador da leitura (2.5.2): estado (conectado, lendo, em parte, sem leitura), há quanto tempo leu, um anel até a
+     próxima leitura automática e, ao abrir, o que foi lido e a garantia de que nada sai do computador. */
+  const segLeitura = () => Math.max(15, +S.rules?.config?.leituraAutomaticaSegundos || 30);
+  const haQuanto = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 5 ? 'agora' : s < 60 ? `há ${s} s` : s < 3600 ? `há ${Math.round(s / 60)} min` : `há ${Math.round(s / 3600)} h`; };
+  const hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  let tiqueSync = null;
+  function estadoLeitura() {
+    const sol = S.plat.sol;
+    if (!sol) return 'lendo';
+    if (!sol.ok || sol.semAcesso || (S.plat.falhaLeitura || 0) > sol.quando) return 'erro';
+    if (sol.erros.length) return 'parcial';
+    return 'ok';
+  }
   function atualizarSync(txt) {
     const el = $('#plat-sync'); if (!el) return;
-    if (txt) { el.innerHTML = `<div class="spin"></div>${esc(txt)}`; return; }
-    const q = S.plat.sol?.quando;
-    el.innerHTML = q ? `<span title="Lido de novo a cada ${Math.max(15, +S.rules?.config?.leituraAutomaticaSegundos || 30)} segundos">Portal lido ${new Date(q).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span><button type="button" id="plat-ref" title="Ler de novo as solicitações e os funcionários">${icon('refresh', 'ic-sm')}</button>` : '';
-    $('#plat-ref')?.addEventListener('click', () => { P.carregarSolicitacoes(true); P.carregarEmpregados(true).then(() => P.render(S.view)); });
+    const sol = S.plat.sol, st = txt ? 'lendo' : estadoLeitura();
+    const rot = { ok: 'Portal conectado', lendo: txt || 'Lendo o portal…', parcial: 'Portal lido em parte', erro: 'Sem leitura do portal' }[st];
+    const aberto = el.querySelector('details')?.open;
+    const empresas = E.empresasDasSolicitacoes(sol?.itens || []).length;
+    const linha = (k, v) => `<div class="sy-l"><span>${k}</span><b>${v}</b></div>`;
+    el.innerHTML = `<details class="sync-d st-${st}"${aberto ? ' open' : ''}><summary title="Situação da leitura do portal">
+        <span class="sync-dot" aria-hidden="true"></span>
+        <span class="sync-t"><b>${esc(rot)}</b><small data-sync-rel>${sol?.quando && st !== 'lendo' ? `lido ${haQuanto(Date.now() - sol.quando)}` : st === 'lendo' ? 'consultando as suas listas' : ''}</small></span>
+        ${st === 'lendo' ? '<span class="spin sync-spin"></span>' : `<span class="sync-anel" data-sync-anel title="Próxima leitura automática"></span>`}
+      </summary>
+      <div class="sync-pop" role="dialog" aria-label="Leitura do portal">
+        <div class="sy-head"><span class="sync-dot"></span><b>${esc(rot)}</b></div>
+        ${sol ? `${linha('Última leitura', `${hora(sol.quando)} · <span data-sync-rel2>${haQuanto(Date.now() - sol.quando)}</span>`)}
+        ${linha('Próxima leitura', `<span data-sync-prox>—</span>`)}
+        ${linha('Solicitações lidas', `${sol.itens.length}${empresas > 1 ? ` · ${empresas} empresas` : ''}`)}
+        ${S.plat.emp ? linha('Funcionários', `${S.plat.emp.lista.filter(e => e.ativo !== false).length} ativos`) : ''}
+        ${sol.erros.length ? `${linha('Não lidas', esc(sol.erros.map(nomeTipo).join(', ')))}<ul class="sy-causas">${(S.rules?.mensagens?.leituraPortal?.causasParcial || []).map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}` : ''}
+        <p class="sy-conf">${icon('lock', 'ic-sm')}<span>O Assistente lê o portal com o seu próprio acesso, a cada ${segLeitura()} segundos, e só mostra aqui. Nada é enviado a outro lugar.</span></p>
+        <button type="button" class="btn btn-sm" id="plat-ref">${icon('refresh', 'ic-sm')} Ler agora</button>
+      </div></details>`;
+    $('#plat-ref')?.addEventListener('click', () => { el.querySelector('details').open = false; P.carregarSolicitacoes(true); P.carregarEmpregados(true).then(() => P.render(S.view)); });
+    tiqueRelogio();
+    if (!tiqueSync) tiqueSync = setInterval(tiqueRelogio, 1000);
+  }
+  // só os textos que mudam com o tempo (sem redesenhar o indicador)
+  function tiqueRelogio() {
+    const el = $('#plat-sync'), sol = S.plat.sol; if (!el || !sol?.quando) return;
+    const rel = haQuanto(Date.now() - sol.quando);
+    el.querySelectorAll('[data-sync-rel]').forEach(x => { x.textContent = `lido ${rel}`; });
+    el.querySelectorAll('[data-sync-rel2]').forEach(x => { x.textContent = rel; });
+    const prox = S.plat.proximaLeitura, total = segLeitura() * 1000;
+    const falta = prox ? Math.max(0, prox - Date.now()) : null;
+    el.querySelectorAll('[data-sync-anel]').forEach(x => { x.style.setProperty('--p', falta == null ? '0%' : `${Math.round((1 - falta / total) * 100)}%`); });
+    el.querySelectorAll('[data-sync-prox]').forEach(x => { x.textContent = falta == null ? 'automática' : falta < 1000 ? 'agora' : `em ${Math.ceil(falta / 1000)} s`; });
   }
   function atualizarCabecalho() { const e = $('#plat-empresa'); if (e) e.textContent = S.ctx.empresa || 'Portal do Cliente'; }
 
@@ -170,7 +213,9 @@ export function montarPlataforma(A) {
   function iniciarLeituraAutomatica() {
     if (relogio) return;
     const seg = Math.max(15, +S.rules?.config?.leituraAutomaticaSegundos || 30);
+    S.plat.proximaLeitura = Date.now() + seg * 1000;
     relogio = setInterval(() => {
+      S.plat.proximaLeitura = Date.now() + seg * 1000;
       if (document.hidden || S.plat.carregandoSol || S.preenchendo || !S.plat.sol) { redesenharSePreciso(); return; }
       P.carregarSolicitacoes(true, { silencioso: true });
     }, seg * 1000);
@@ -193,11 +238,11 @@ export function montarPlataforma(A) {
       itens.sort((a, b) => (b.atualizado?.getTime() || 0) - (a.atualizado?.getTime() || 0));
       const consultados = (r?.data || []).filter(g => !g.calibrar).length;
       // leitura automática que falhou: fica o que já estava na tela
-      if (silencioso && S.plat.sol && (!r || (consultados && erros.length === consultados))) { atualizarSync(); return S.plat.sol; }
+      if (silencioso && S.plat.sol && (!r || (consultados && erros.length === consultados))) { S.plat.falhaLeitura = Date.now(); atualizarSync(); avisoLeitura(); return S.plat.sol; }
       aplicarDatasGuardadas(itens); aplicarVereditos(itens);
       S.plat.sol = { itens, erros, calibrar, truncado, ok: !!r, quando: Date.now(), chaves: [...chaves], codigos, semAcesso: !!consultados && erros.length === consultados };
       atualizarBadge();
-      atualizarSync();
+      atualizarSync(); avisoLeitura();
       if (silencioso) redesenharSePreciso();
       else if (['inicio', 'pendencias'].includes(S.view) && document.body.classList.contains('plat')) P.render(S.view);
       carregarDatasAvisos(); carregarVereditos();
@@ -269,7 +314,7 @@ export function montarPlataforma(A) {
 
   /* =================== Entrada, contexto, avisos =================== */
   P.entrou = () => {
-    montarCasca(); atualizarCabecalho(); atualizarSync();
+    montarCasca(); atualizarCabecalho(); atualizarSync(); avisoLeitura();
     if (!S.rules) return;
     P.carregarSolicitacoes();
     P.carregarEmpregados().then(() => { if (['funcionarios', 'historico', 'inicio'].includes(S.view)) P.render(S.view); });
@@ -282,12 +327,46 @@ export function montarPlataforma(A) {
     if (formAgora !== ultimoForm) { ultimoForm = formAgora; S.plat.escolher = false; }   // abriu (ou fechou) um formulário
     if (empresaMudou) { S.plat.empresaFiltro = ''; S.plat.sol = null; S.plat.emp = null; S.plat.docs = null; if (document.body.classList.contains('plat')) P.entrou(); }
   };
+  /* Janela do portal (2.5.2): nunca fica fixa na tela. Aparece por cima quando é a resposta a algo que o cliente
+     acabou de fazer, ou quando ele tenta agir no portal (abrir, preencher, enviar) com ela ainda aberta. */
+  let atencaoMostrada = '';
+  ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { S.plat.ultimoGesto = Date.now(); }, true));
   P.atencao = (m) => {
-    const el = $('#plat-aviso'); if (!el) return;
-    if (!m.texto || m.ativo === false) { el.innerHTML = ''; return; }
-    el.innerHTML = `<div class="note warn" role="alert">${icon('alert')}<div style="flex:1"><b>${esc(S.rules?.mensagens?.plataformaAtencao || 'O portal está pedindo sua atenção.')}</b> <span class="muted">“${esc(m.texto)}”</span></div><button class="btn btn-sm" id="aviso-portal">${icon('external', 'ic-sm')} Ver no portal</button></div>`;
-    $('#aviso-portal').addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
+    S.plat.atencao = m.texto && m.ativo !== false ? { texto: m.texto } : null;
+    if (!S.plat.atencao) { atencaoMostrada = ''; return; }
+    if (Date.now() - Math.max(S.plat.ultimoGesto || 0, S.plat.ultimaAcao || 0) < 10000) mostrarAtencao();
   };
+  S.antesDeAgir = () => {
+    S.plat.ultimaAcao = Date.now();
+    if (S.plat.atencao && document.body.classList.contains('plat')) setTimeout(() => mostrarAtencao(true), 0);
+  };
+  function mostrarAtencao(deNovo) {
+    const a = S.plat.atencao; if (!a || (!deNovo && atencaoMostrada === a.texto)) return;
+    if (!$('#modal').hidden && $('#modal').querySelector('.dlg-atencao')) return;
+    atencaoMostrada = a.texto;
+    const dica = (S.rules.config?.dicasAvisoPortal || []).find(d => { try { return new RegExp(d.padrao, 'i').test(a.texto); } catch { return false; } });
+    dialogo({
+      titulo: `${icon('alert')} ${esc(S.rules?.mensagens?.plataformaAtencao || 'O portal mostrou um aviso')}`,
+      corpo: `<div class="dlg-atencao"><p class="muted" style="margin:0 0 8px">O portal abriu esta mensagem por baixo da plataforma:</p><blockquote class="at-txt">${esc(a.texto)}</blockquote>
+        ${dica ? `<div class="note" style="margin:10px 0 0">${icon('info')}<div>${esc(dica.dica)}</div></div>` : ''}</div>`,
+      acoes: [{ rotulo: 'Fechar' }, '|', { rotulo: `${icon('external', 'ic-sm')} Ver no portal`, cls: 'btn-primary', fn: () => send({ type: 'modo', modo: 'painel' }) }]
+    });
+  }
+  /* O único aviso fixo: quando o Assistente não consegue ler o portal, com as causas prováveis e o que fazer. */
+  function avisoLeitura() {
+    const el = $('#plat-aviso'); if (!el) return;
+    const sol = S.plat.sol, L = S.rules?.mensagens?.leituraPortal || {};
+    // leitura parcial (um tipo não lido) não vira faixa: fica no indicador, em âmbar, com o que fazer
+    const total = !!sol && (!sol.ok || sol.semAcesso || (S.plat.falhaLeitura || 0) > sol.quando);
+    if (!total) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="note warn leit-aviso" role="alert">${icon('alert')}<div style="flex:1;min-width:0">
+        <b>${esc(L.titulo || 'Não consegui ler o portal agora.')}</b> <span class="muted">${esc(L.sub || 'Os números da tela podem estar desatualizados.')}</span>
+        ${(L.causas || []).length ? `<details class="leit-causas" open><summary>Possíveis causas e o que fazer</summary><ol>${L.causas.map(c => `<li>${esc(c)}</li>`).join('')}</ol></details>` : ''}
+        <div class="actions" style="margin-top:8px"><button class="btn btn-sm btn-primary" id="leit-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button><button class="btn btn-sm" id="leit-portal">${icon('external', 'ic-sm')} Ver no portal</button><button class="btn btn-sm btn-ghost" id="leit-diag">${icon('copy', 'ic-sm')} Copiar diagnóstico</button></div></div></div>`;
+    $('#leit-tentar').addEventListener('click', () => { S.plat.falhaLeitura = 0; P.carregarSolicitacoes(true); });
+    $('#leit-portal').addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
+    $('#leit-diag').addEventListener('click', () => A.copiarDiagnostico?.());
+  }
   P.aoEnviar = (tipo) => { S.plat.enviado = { tipo, quando: Date.now() }; setTimeout(() => P.carregarSolicitacoes(true), 1500); };
 
   P.render = (v) => {
@@ -378,9 +457,7 @@ export function montarPlataforma(A) {
     const acoesEq = [];
     const quandoLido = sol?.quando ? new Date(sol.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 
-    const aviso = !sol ? '' : sol.semAcesso
-      ? `<div class="aviso-linha late">${icon('alert')}<span><b>Não consegui ler suas solicitações agora.</b> ${esc(R.mensagens?.plataformaSemAcesso || '')}</span><button type="button" class="btn btn-sm" id="hj-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button></div>`
-      : sol.erros.length ? `<div class="aviso-linha late">${icon('alert')}<span>Não consegui ler: ${esc(sol.erros.map(nomeTipo).join(', '))}. Os números abaixo podem estar incompletos.</span></div>` : '';
+    const aviso = '';   // falha de leitura: aviso único no topo (avisoLeitura)
     const enviado = S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3
       ? `<div class="aviso-linha ok">${icon('check')}<span><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada ao escritório.</b> Ela aparece aqui assim que o portal registrar.</span></div>` : '';
 
@@ -570,6 +647,7 @@ export function montarPlataforma(A) {
     if (!sol) { viewEl.innerHTML = loading('Consultando suas solicitações no portal…'); P.carregarSolicitacoes(); return; }
     const vis = itensVisiveis(), comEmpresa = variasEmpresas(vis);
     const prio = E.prioridadesCliente(vis, hoje, R);
+    const motivoDe = new Map(prio.map(p => [p.item, p.motivo]));
     let mostrados = [];
     const busca = (i) => { const q = E.norm(F.q); return !q || E.norm(`${i.numero} ${i.empregado} ${i.assunto} ${nomeTipo(i.tipo)} ${i.responsavel} ${i.status} ${i.empresa}`).includes(q); };
     viewEl.innerHTML = `
@@ -581,23 +659,26 @@ export function montarPlataforma(A) {
         <button type="button" class="btn btn-sm" id="sol-ref">${icon('refresh', 'ic-sm')} Atualizar</button>
         <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
       </div>
-      ${!sol.ok ? `<div class="note">${icon('info')}<div>Abra o Portal do Cliente para ver suas solicitações.</div></div>` : ''}
+
       ${sol.calibrar.length ? `<div class="note">${icon('info')}<div><b>${esc(sol.calibrar.map(nomeTipo).join(', '))}:</b> ${esc(R.mensagens?.plataformaCalibrar || '')} <button class="btn btn-ghost btn-sm" id="sol-geral">${icon('external', 'ic-sm')} Abrir no portal</button></div></div>` : ''}
-      ${sol.semAcesso ? `<div class="note warn">${icon('alert')}<div><b>Não consegui ler suas solicitações agora.</b> ${esc(R.mensagens?.plataformaSemAcesso || '')}<div class="actions" style="margin-top:8px"><button class="btn btn-sm" id="sol-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button><button class="btn btn-sm btn-ghost" id="sol-portal">${icon('external', 'ic-sm')} Ver no portal</button></div></div></div>`
-        : sol.erros.length ? `<div class="note warn">${icon('alert')}<div>Não consegui ler: ${esc(sol.erros.map(nomeTipo).join(', '))}. Tente atualizar daqui a pouco.</div></div>` : ''}
+
       <div class="tipos" id="sol-tipos" role="group" aria-label="Tipo de solicitação"></div>
       <div class="hj-sits" id="sol-sits" role="group" aria-label="Filtrar por situação"></div>
       <div id="sol-grupos"></div>
       ${sol.truncado ? `<p class="muted" style="font-size:11.5px">Mostrando as mais recentes de cada tipo. As mais antigas continuam no portal.</p>` : ''}`;
 
     // cartões dos tipos: quantas em aberto em cada tipo (com a busca e a situação aplicadas) e quantas esperam você
+    // (na Tabela, contam tudo o que a tabela mostra, inclusive as encerradas; nos outros modos, só as em aberto)
     const tiposHtml = () => {
-      const l = prio.filter(p => p.motivo !== 'concluida' && (!F.motivo || p.motivo === F.motivo) && busca(p.item)).map(p => p.item);
+      const tab = F.vis === 'tabela';
+      const l = tab ? vis.filter(i => (!F.motivo || motivoDe.get(i) === F.motivo) && busca(i))
+        : prio.filter(p => p.motivo !== 'concluida' && (!F.motivo || p.motivo === F.motivo) && busca(p.item)).map(p => p.item);
       const cartao = (k, rot, xs) => {
-        const suas = xs.filter(i => i.estado === 'aguardando').length;
+        const suas = xs.filter(i => i.estado === 'aguardando').length, abertas = xs.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length;
+        const sub = suas ? `<em>${suas} ${suas === 1 ? 'espera' : 'esperam'} você</em>` : abertas ? (tab ? `${abertas} em aberto` : 'com o escritório') : xs.length ? 'todas encerradas' : tab ? 'nenhuma' : 'nenhuma em aberto';
         return `<button type="button" class="tipo-c ${k ? `fam-${familiaTipo(k)}` : 'fam-todos'}${F.tipo === k ? ' on' : ''}${!xs.length ? ' zero' : ''}" data-tipo-sol="${esc(k)}" aria-pressed="${F.tipo === k}">
           <span class="tipo-topo">${k ? icTipo(k) : `<span class="tp-ic fam-todos">${icon('list', 'ic-sm')}</span>`}<span class="tipo-rot">${esc(rot)}</span></span>
-          <b>${xs.length}</b><span class="tipo-sub">${suas ? `<em>${suas} ${suas === 1 ? 'espera' : 'esperam'} você</em>` : xs.length ? 'com o escritório' : 'nenhuma em aberto'}</span></button>`;
+          <b>${xs.length}</b><span class="tipo-sub">${sub}</span></button>`;
       };
       return cartao('', 'Todos os tipos', l) + Object.keys(R.tipos).map(k => cartao(k, nomeTipo(k), l.filter(i => i.tipo === k))).join('');
     };
@@ -630,7 +711,7 @@ export function montarPlataforma(A) {
         <span class="pr-resp">${esc(i.responsavel || '—')}</span><span class="mono pr-d">${i.parado ?? 0}d</span></button>`;
     };
     const tabela = () => {
-      const l = vis.filter(i => (!F.tipo || i.tipo === F.tipo) && busca(i));
+      const l = vis.filter(i => (!F.tipo || i.tipo === F.tipo) && (!F.motivo || motivoDe.get(i) === F.motivo) && busca(i));
       $('#sol-n').textContent = `${l.length} de ${vis.length}`;
       mostrados = l.slice(0, 300);
       return `<div class="list-card"><div class="dp-listhead sol-cols"><span>Nº</span><span>Solicitação</span><span>Funcionário</span><span>Assunto</span><span>Situação</span><span>Atualizada</span></div><div id="sol-list">${mostrados.map((i, n) => `<button type="button" class="dp-row sol-cols" data-card="${n}">
@@ -656,7 +737,10 @@ export function montarPlataforma(A) {
     // redesenha só o que depende dos filtros (a busca não perde o foco)
     const desenhar = () => {
       $('#sol-tipos').innerHTML = tiposHtml(); $('#sol-sits').innerHTML = sitsHtml(); $('#sol-grupos').innerHTML = grupos();
-      $('#sol-tipos').hidden = $('#sol-sits').hidden = !!sol.semAcesso; $('#sol-sits').hidden ||= F.vis === 'tabela';
+      $('#sol-tipos').hidden = $('#sol-sits').hidden = !!sol.semAcesso;
+      // filtro ativo nunca fica escondido: um botão para tirar todos de uma vez
+      if (F.tipo || F.motivo || F.q) $('#sol-sits').insertAdjacentHTML('beforeend', `<button type="button" class="hj-sit sol-limpar" data-limpar-sol title="Mostrar todas as solicitações">${icon('x', 'ic-sm')}<span class="hj-sit-l">Limpar filtros</span></button>`);
+      $('#sol-sits').querySelector('[data-limpar-sol]')?.addEventListener('click', () => { F.tipo = ''; F.motivo = null; F.q = ''; const q = $('#sol-q'); if (q) q.value = ''; desenhar(); });
       viewEl.querySelectorAll('[data-tipo-sol]').forEach(b => b.addEventListener('click', () => { F.tipo = F.tipo === b.dataset.tipoSol ? '' : b.dataset.tipoSol; desenhar(); }));
       viewEl.querySelectorAll('[data-sit]').forEach(b => b.addEventListener('click', () => { F.motivo = F.motivo === b.dataset.sit ? null : b.dataset.sit; desenhar(); }));
       $('#sol-grupos').querySelectorAll('[data-card]').forEach(b => b.addEventListener('click', () => abrirDetalhe(mostrados[+b.dataset.card])));

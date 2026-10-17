@@ -887,7 +887,7 @@
   function verAtencao() {
     if (modo !== 'plataforma' || preenchendoAgora || navInterna) return;
     const d = [...document.querySelectorAll('[role=dialog], [role=alertdialog], .modal.show')].find(e => visible(e) && (e.innerText || '').trim());
-    const txt = d ? d.innerText.trim().replace(/\s+/g, ' ').slice(0, 160) : '';
+    const txt = d ? d.innerText.trim().replace(/\s+/g, ' ').slice(0, 400) : '';
     if (txt === atencaoVista) return;
     atencaoVista = txt;
     post({ type: 'portalAtencao', texto: txt, ativo: !!d });
