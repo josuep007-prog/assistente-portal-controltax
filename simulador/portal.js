@@ -71,6 +71,8 @@
     var basicos = [{ k: 'text', fc: 'name', label: 'Nome' }, { k: 'text', fc: 'socialName', label: 'Nome social', opt: true }, { k: 'text', fc: 'nationalIdentity', label: 'CPF' },
       { k: 'combo', fc: 'jobPositionExpanded', label: 'Cargo', opts: L.cargo, opt: true }, { k: 'combo', fc: 'occupationExpanded', label: 'Função', opts: L.cargo, opt: true }];
     if (variante !== 'contrib') basicos.push({ k: 'text', fc: 'registration', label: 'Matrícula', opt: true });
+    // dois campos que as regras não conhecem (testam o grupo 'Outros campos do portal'): um texto e uma lista
+    basicos.push({ k: 'text', fc: 'eSocialRegistration', label: 'Matrícula eSocial', opt: true }, { k: 'combo', fc: 'admissionTypeExpanded', label: 'Tipo de admissão', opts: ['Admissão', 'Transferência', 'Reintegração'], opt: true });
     basicos.push({ k: 'combo', fc: 'serviceExpanded', label: 'Serviço (sede onde ficará alocado)', opts: L.servico, opt: true }, { k: 'combo', fc: 'departmentExpanded', label: 'Departamento', opts: L.depto, opt: true }, { k: 'combo', fc: 'costCenterExpanded', label: 'Centro de custo', opts: L.cc, opt: true });
     var geralTabs;
     if (variante === 'contrib') {
@@ -263,6 +265,21 @@
     clearTimeout(toast.t); toast.t = setTimeout(function () { t.className = 'p-toast'; }, 3200);
   }
   var main = document.getElementById('p-main');
+  function marcarErro(el, msg) {
+    el.classList.add('p-invalid', 'ng-invalid', 'ng-touched'); el.setAttribute('aria-invalid', 'true');
+    var box = el.classList.contains('p-field') ? el : el.closest('.p-field'); if (!box) return;
+    var m = box.querySelector(':scope > .invalid-feedback'); if (!m) { m = h('div', { class: 'invalid-feedback', role: 'alert' }); box.appendChild(m); }
+    m.textContent = msg;
+  }
+  function limparErro(el) {
+    el.classList.remove('p-invalid', 'ng-invalid', 'ng-touched'); el.removeAttribute('aria-invalid');
+    var box = el.classList.contains('p-field') ? el : el.closest('.p-field'); var m = box && box.querySelector(':scope > .invalid-feedback'); if (m) m.remove();
+  }
+  function dataOk(v) { var m = String(v || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (!m) return false; var d = new Date(+m[3], +m[2] - 1, +m[1]); return d.getMonth() === +m[2] - 1 && d.getDate() === +m[1]; }
+  // o portal busca os municípios depois de escolher a UF: a lista fica vazia ("Carregando…") por um tempo
+  var CARGA_MUNICIPIOS_MS = 2000;
+  // anexos: o portal recusa formatos que não aceita e arquivos grandes (a calibrar no Onvio real)
+  var ANEXO_PERMITIDO = /\.(pdf|png|jpe?g|gif|bmp|tiff?|webp|heic|docx?|xlsx?|csv|txt|odt|ods|rtf|xml)$/i, ANEXO_LIMITE = 10 * 1024 * 1024;
 
   /* ---------- Componentes ---------- */
   function labelEl(f, forId) { return h('label', { for: forId, class: 'p-label' }, esc(f.label) + (f.opt ? ' <i>- opcional</i>' : '')); }
@@ -276,7 +293,7 @@
     wrap.appendChild(labelEl(f, inp.id)); wrap.appendChild(cb);
     if (f.info) wrap.appendChild(h('small', { class: 'p-help' }, 'Somente empregados ativos na competência são listados.'));
     var options = function () {
-      if (typeof f.opts === 'string' && f.opts.indexOf('cidade:') === 0) { var uf = ctx.value(f.opts.slice(7)); return CIDADES[uf] || (uf ? [uf === 'Distrito Federal' ? 'Brasília' : 'Capital de ' + uf] : []); }
+      if (typeof f.opts === 'string' && f.opts.indexOf('cidade:') === 0) { var ufFc = f.opts.slice(7), uf = ctx.value(ufFc); if (Date.now() - (ctx.mudouEm[ufFc] || 0) < CARGA_MUNICIPIOS_MS) return null; return CIDADES[uf] || (uf ? [uf === 'Distrito Federal' ? 'Brasília' : 'Capital de ' + uf] : []); }
       return f.opts || [];
     };
     function close() { cb.setAttribute('aria-expanded', 'false'); var b = document.getElementById(cb.getAttribute('aria-owns')); if (b) b.remove(); cb.classList.remove('open'); }
@@ -284,13 +301,15 @@
       if (inp.disabled) return;
       close(); cb.setAttribute('aria-expanded', 'true'); cb.classList.add('open');
       var box = h('bento-combobox-list', { id: cb.getAttribute('aria-owns'), role: 'listbox', class: 'p-list' });
-      var q = inp.value && options().indexOf(inp.value) < 0 ? inp.value.toUpperCase() : '';
+      var todas = options();
+      if (todas === null) { box.appendChild(h('div', { class: 'p-empty' }, 'Carregando…')); cb.appendChild(box); return; }
+      var q = inp.value && todas.indexOf(inp.value) < 0 ? inp.value.toUpperCase() : '';
       var norm = function (s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); };
-      var lista = options().filter(function (o) { return !q || norm(o).indexOf(norm(q)) >= 0; });
+      var lista = todas.filter(function (o) { return !q || norm(o).indexOf(norm(q)) >= 0; });
       function linha(o, i) {
         var row = h('div', { role: 'option', id: 'bui-combobox-list-' + n + '-' + i, class: 'bento-list-row', 'aria-selected': String(o === inp.value) }, '<span class="combobox__row"> ' + esc(o) + ' </span>');
         row.addEventListener('mousedown', function (e) { e.preventDefault(); });
-        row.addEventListener('click', function () { inp.value = o; close(); cb.classList.add('ng-dirty'); cb.classList.remove('p-invalid'); inp.dispatchEvent(new Event('change', { bubbles: true })); ctx.changed(f.fc, o); });
+        row.addEventListener('click', function () { inp.value = o; close(); cb.classList.add('ng-dirty'); limparErro(cb); inp.dispatchEvent(new Event('change', { bubbles: true })); ctx.changed(f.fc, o); });
         return row;
       }
       if (lista.length > 13) {
@@ -319,7 +338,8 @@
     if (f.fc) el.setAttribute('formcontrolname', f.fc);
     wrap.appendChild(labelEl(f, id)); wrap.appendChild(el);
     if (f.k === 'date') wrap.appendChild(h('span', { class: 'p-cal', 'aria-hidden': 'true' }, '▦'));
-    el.addEventListener('input', function () { el.classList.remove('p-invalid'); ctx.changed(f.fc, el.value); });
+    el.addEventListener('input', function () { limparErro(el); ctx.changed(f.fc, el.value); });
+    if (f.k === 'date') ctx.datas.push(el);
     ctx.register(f.fc || f.label, function () { return el.value; }, el, !f.opt);
     if (f.dis) ctx.dependents.push({ el: el, rule: f.dis });
     return wrap;
@@ -333,7 +353,7 @@
       if (f.fc) r.setAttribute('formcontrolname', f.fc);
       var l = h('label', { for: it[0] }, esc(it[1]));
       var item = h('span', { class: 'p-radio' }); item.appendChild(r); item.appendChild(l); row.appendChild(item);
-      r.addEventListener('change', function () { ctx.changed('radio:' + f.label, it[1]); });
+      r.addEventListener('change', function () { limparErro(wrap); ctx.changed('radio:' + f.label, it[1]); });
       if (f.dis) ctx.dependents.push({ el: r, rule: f.dis });
     });
     wrap.appendChild(row);
@@ -351,7 +371,12 @@
     sel.appendChild(btn); sel.appendChild(inp); sel.appendChild(chips); outer.appendChild(sel);
     var files = [];
     function draw() { chips.innerHTML = ''; files.forEach(function (f, i) { var c = h('span', { class: 'p-chip' }, esc(f.name) + ' (' + f.size + 'B)'); var x = h('button', { type: 'button', 'aria-label': 'Remover ' + f.name }, '×'); x.addEventListener('click', function () { files.splice(i, 1); draw(); }); c.appendChild(x); chips.appendChild(c); }); }
-    inp.addEventListener('change', function () { files = files.concat([].slice.call(inp.files || [])); draw(); });
+    inp.addEventListener('change', function () {
+      var novos = [].slice.call(inp.files || []);
+      var recusados = novos.filter(function (f) { return !ANEXO_PERMITIDO.test(f.name) || f.size > ANEXO_LIMITE; });
+      files = files.concat(novos.filter(function (f) { return recusados.indexOf(f) < 0; })); draw();
+      if (recusados.length) toast('Arquivo não permitido: ' + recusados.map(function (f) { return f.name; }).join(', ') + '. Formatos aceitos: PDF, imagens, Word, Excel e texto (até 10 MB).', 'err');
+    });
     sel.addEventListener('dragover', function (e) { e.preventDefault(); sel.classList.add('over'); });
     sel.addEventListener('dragleave', function () { sel.classList.remove('over'); });
     sel.addEventListener('drop', function (e) { e.preventDefault(); sel.classList.remove('over'); var dt = new DataTransfer(); [].forEach.call(e.dataTransfer.files, function (f) { dt.items.add(f); }); inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -434,10 +459,10 @@
   }
   function renderForm(slug) {
     var T = TYPES[slug];
-    var ctx = { getters: {}, els: {}, req: [], dependents: [], files: function () { return []; },
+    var ctx = { getters: {}, els: {}, req: [], dependents: [], datas: [], mudouEm: {}, files: function () { return []; },
       register: function (k, get, el, required) { this.getters[k] = get; this.els[k] = el; if (required !== false) this.req.push(k); },
       value: function (k) { return this.getters[k] ? this.getters[k]() : ''; },
-      changed: function () { applyDeps(); } };
+      changed: function (k) { if (k) this.mudouEm[k] = Date.now(); applyDeps(); } };
     var wizard = !!T.wizard || T.wizardButtons;
     var form = h('form', { class: 'p-form', novalidate: true });
     var head = h('div', { class: 'p-form-h' });
@@ -499,10 +524,12 @@
         if (el.tagName === 'BENTO-COMBOBOX') { var inp = el.querySelector('input'); if (inp.disabled) return false; }
         else if (el.disabled) return false;
         var v = ctx.value(k); var bad = !v || !String(v).trim();
-        if (bad) (el.tagName === 'FIELDSET' ? el : el).classList.add('p-invalid');
+        if (bad) marcarErro(el, 'Campo obrigatório');
         return bad;
       });
-      if (faltando.length && !T.wizard) { toast('Corrija os erros e tente novamente.', 'err'); return; }
+      var invalidas = ctx.datas.filter(function (el) { if (el.disabled || !el.value || dataOk(el.value)) return false; marcarErro(el, 'Data inválida'); return true; });
+      // como o portal: o envio só acontece com o formulário válido (no cadastro também)
+      if (faltando.length || invalidas.length) { toast('Corrija os erros e tente novamente.', 'err'); return; }
       var empregado = ctx.value('selectedEmployee') || ctx.value('employee') || ctx.value('name') || '';
       var assunto = ctx.value('subject') || ctx.value('Assunto') || T.nome;
       db.seq += 1;
