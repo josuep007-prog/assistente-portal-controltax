@@ -283,6 +283,10 @@ async def teste_plataforma(b):
     check(await pn.locator('#cmdk').is_visible(), 'Ctrl+K abre a busca')
     await pn.fill('#cmdk-q', 'wagner'); await pg.wait_for_timeout(300)
     check('WAGNER SOUSA' in await pn.locator('#cmdk-res').inner_text(), 'busca acha o funcionário')
+    await pn.fill('#cmdk-q', 'férias do Wagner dia 10/11'); await pg.wait_for_timeout(300)
+    check((await pn.locator('#cmdk-res [data-r="0"]').inner_text()).startswith('Entender: férias do Wagner dia 10/11'), 'Ctrl+K: frase com data ou funcionário traz "Entender: <frase>" em 1º lugar')
+    await pn.fill('#cmdk-q', 'vários atestados'); await pg.wait_for_timeout(300)
+    check('Como mando vários atestados de uma vez?' in await pn.locator('#cmdk-res').inner_text(), 'Ctrl+K: dúvidas casam pelo radical (plural acha o singular)')
     await pg.keyboard.press('Escape')
     # Indicador da leitura (2.5.2): estado, há quanto tempo leu e a garantia de que nada sai do computador
     await pn.click('#plat-sync summary'); await pg.wait_for_timeout(200)
@@ -469,6 +473,66 @@ async def main():
                 v = await leave()
                 if 'RONALDO DE SOUZA' in v.values(): break
             print('   ', await pg.evaluate("window.__ctPlatform.path()"), {k: x for k, x in v.items() if x}); check('termination-calculation/add' in await pg.evaluate("window.__ctPlatform.path()") and 'RONALDO DE SOUZA' in v.values(), 'abre o Cálculo de Rescisão escolhido, com o funcionário')
+
+            # texto livre (lote 1): correção com o cartão aberto, cartão editável, "os dois", dúvidas, palpite e vários pedidos
+            print('\n[texto livre] correção, cartão editável, dúvidas, palpite e vários pedidos')
+            async def escrever(txt, ms=1500):
+                await pn.click('.tab[data-view="inicio"]'); await pg.wait_for_timeout(300)
+                antes = await pn.locator('#sugestao').inner_text()
+                await pn.fill('#free-txt', txt); await pn.click('#free-go'); await pg.wait_for_timeout(ms)
+                for _ in range(16):   # o cartão pode esperar a lista de funcionários
+                    agora = await pn.locator('#sugestao').inner_text()
+                    if agora.strip() and agora != antes: return agora
+                    await pg.wait_for_timeout(500)
+                return await pn.locator('#sugestao').inner_text()
+            sug = await escrever('o jorge vai sair de férias dia 16/11 por 20 dias')
+            sug = await escrever('não, é dia 18/11', 1000)
+            check('18/11/2026' in sug and 'corrigido' in sug and 'JORGE OLIVEIRA ALVES' in sug, 'segundo texto sem pedido novo corrige o cartão aberto (não vira Solicitação Geral)')
+            await pn.click('#sugestao [data-tira="diasGozo"]'); await pg.wait_for_timeout(300)
+            sug = await pn.locator('#sugestao').inner_text()
+            check('Dias de gozo' not in sug and '18/11/2026' in sug, 'cartão: o x descarta um valor')
+            await pn.click('#sugestao [data-ed="inicioGozo"]'); await pg.wait_for_timeout(200)
+            await pn.fill('#sugestao .kv-in', '19/11/2026'); await pn.press('#sugestao .kv-in', 'Enter'); await pg.wait_for_timeout(300)
+            sug = await pn.locator('#sugestao').inner_text()
+            check('19/11/2026' in sug, 'cartão: um clique troca o valor antes de abrir')
+            check(await pn.locator('#sugestao [data-ambos]').count() == 1 and 'Os dois' in sug, 'férias: 3ª opção "Os dois: aviso agora e cálculo em seguida"')
+            await pn.click('#sugestao [data-ambos]')
+            for _ in range(25):
+                await pg.wait_for_timeout(700)
+                v = await leave()
+                if v.get('selectedEmployee') == 'JORGE OLIVEIRA ALVES' and v.get('vacationStartDate'): break
+            lote_txt = await pn.locator('#lote').inner_text()
+            check('vacation-notice/add' in await pg.evaluate("window.__ctPlatform.path()") and v.get('vacationStartDate') == '19/11/2026' and not v.get('vacationDays'), f'"os dois": abre o aviso com os dados do cartão ({v.get("vacationStartDate")}, dias {v.get("vacationDays")!r})')
+            check('1 de 2' in lote_txt and 'Cálculo de Férias' in lote_txt, 'o cálculo fica na fila do lote para depois do envio')
+            await pn.click('#lote-parar'); await pg.wait_for_timeout(300)
+
+            sug = await escrever('posso mandar foto do atestado?', 1000)
+            check('Encontrei nas dúvidas' in sug and 'Posso mandar foto do atestado?' in sug and 'Abrir o pedido mesmo assim' in sug, 'pergunta: mostra as dúvidas antes de propor um pedido')
+            await pn.click('#sug-mesmo'); await pg.wait_for_timeout(1200)
+            sug = await pn.locator('#sugestao').inner_text()
+            check('Afastamento de Empregado' in sug, '"Abrir o pedido mesmo assim" segue para o pedido')
+            await pn.click('#sug-x'); await pg.wait_for_timeout(200)
+
+            sug = await escrever('atestado do Ronado de 2 dias a partir de 08/10/2026')
+            check('Não achei “Ronado”' in sug and 'RONALDO DE SOUZA' in sug, 'nome com uma letra trocada vira pergunta de um clique')
+            check(await pn.locator('#sugestao [data-ed="empregado"]').count() == 0, 'o palpite não preenche sozinho')
+            await pn.click('#sugestao [data-quem="RONALDO DE SOUZA"]'); await pg.wait_for_timeout(300)
+            sug = await pn.locator('#sugestao').inner_text()
+            check(await pn.locator('#sugestao [data-ed="empregado"]').count() == 1 and 'RONALDO DE SOUZA' in sug and 'Não achei' not in sug, 'respondido "Sim": o funcionário entra no cartão')
+            sug = await escrever('vamos admitir a Maria Souza', 1000)
+            check('empregado' not in sug and 'Cadastro de Empregado' in sug, 'admissão não procura funcionário nem mostra nome técnico de campo')
+            await pn.click('#sug-x'); await pg.wait_for_timeout(200)
+
+            sug = await escrever('férias do Ronaldo dia 10/11 por 20 dias e da Joana dia 01/12 por 30 dias')
+            check('Entendi 2 pedidos' in sug and 'RONALDO DE SOUZA' in sug and 'JOANA FONSECA' in sug and '01/12/2026' in sug, 'frase com dois pedidos: "Entendi 2 pedidos" com a lista')
+            await pn.click('#sug-lote')
+            for _ in range(25):
+                await pg.wait_for_timeout(700)
+                v = await leave()
+                if v.get('selectedEmployee') == 'RONALDO DE SOUZA' and v.get('vacationDays'): break
+            lote_txt = await pn.locator('#lote').inner_text()
+            check(v.get('vacationStartDate') == '10/11/2026' and v.get('vacationDays') == '20' and '1 de 2' in lote_txt, 'vários pedidos: o lote abre o 1º preenchido e deixa o 2º na fila')
+            await pn.click('#lote-parar'); await pg.wait_for_timeout(300)
 
             # lista longa virtualizada: nomes do começo (A) e do meio (I) da lista
             print('\n[lista longa] funcionário fora das primeiras linhas da lista')

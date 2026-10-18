@@ -260,6 +260,20 @@ details.more > summary::-webkit-details-marker { display: none; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12.5px; }
 .kv dt { color: var(--ink-3); }
 .kv dd { margin: 0; font-family: var(--f-mono); font-size: 12px; }
+/* cartão "Entendi assim": cada valor troca com um clique e sai no x */
+.kv-ed dt { align-self: center; }
+.kv-ed dd { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kv-v { font: inherit; color: var(--ink); background: none; border: 0; border-bottom: 1px dashed var(--rule-strong); padding: 1px 0; cursor: text; text-align: left; }
+.kv-v:hover, .kv-v:focus-visible { border-bottom-color: var(--blue-deep); color: var(--blue-deep); outline: none; }
+.kv-x { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-3); cursor: pointer; }
+.kv-x:hover, .kv-x:focus-visible { background: var(--err-bg); color: var(--brand-red); outline: none; }
+.kv-in { height: 26px; padding: 2px 6px; font-size: 12px; min-width: 0; width: 100%; max-width: 260px; }
+.ped-lista { margin: 0; padding: 0 0 0 18px; display: grid; gap: 10px; }
+.ped-lista li { padding-left: 2px; }
+.ped-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-size: 13px; }
+.tbl-linhas { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 4px; }
+.tbl-linhas th { text-align: left; font-weight: 600; color: var(--ink-3); border-bottom: 1px solid var(--rule-strong); padding: 3px 6px 3px 0; }
+.tbl-linhas td { border-bottom: 1px solid var(--rule); padding: 4px 6px 4px 0; }
 .spin { width: 14px; height: 14px; border: 2px solid var(--rule-strong); border-top-color: var(--blue-deep); border-radius: 50%; animation: sp .8s linear infinite; flex: none; }
 @keyframes sp { to { transform: rotate(360deg); } }
 .tool-tabs { display: flex; gap: 6px; flex-wrap: wrap; }

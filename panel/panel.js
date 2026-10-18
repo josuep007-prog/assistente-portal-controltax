@@ -340,22 +340,54 @@ function renderInicio() {
 /* Texto livre: o pedido é entendido pelo que foi escrito, não pela solicitação que está aberta.
    Só preenche a solicitação aberta quando o texto é sobre ela (ou o cliente escolhe isso). */
 const mesmaFamilia = (a, b) => a === b || FAMILIAS.some(f => f.includes(a) && f.includes(b));
-/* Férias e desligamento têm duas solicitações (aviso e cálculo): no texto livre do Início, pergunta qual. */
-const ESCOLHA_AVISO_CALCULO = [
-  { tipos: ['avisoFerias', 'calculoFerias'], ajuda: { avisoFerias: 'Comunicar as datas para o escritório emitir o aviso de férias (com 30 dias de antecedência).', calculoFerias: 'Pedir o cálculo e o recibo das férias para o pagamento (até 2 dias antes do início).' } },
-  { tipos: ['avisoRescisao', 'calculoRescisao'], ajuda: { avisoRescisao: 'Comunicar a demissão ou o pedido de demissão e emitir o aviso prévio.', calculoRescisao: 'Pedir o cálculo das verbas rescisórias (TRCT) para o pagamento em até 10 dias.' } }
-];
-async function entenderTexto(texto, { origem = 'inicio' } = {}) {
+/* Cartões de escolha (aviso ou cálculo, com ou sem atestado, empate) vêm das regras: config.textoLivre.escolhas (E.escolhaPara). */
+/** Mostra o cartão do texto livre. */
+function mostrarSugestao() { if (S.view !== 'inicio') setView('inicio'); else renderSugestao(); }
+/** Campos do cartão com o que o cliente trocou ou descartou nele (ajustes: valor novo ou null). */
+function camposComAjustes(s) {
+  const c = { ...(s.analise?.campos || {}) };
+  for (const [k, v] of Object.entries(s.ajustes || {})) { if (v == null) delete c[k]; else c[k] = v; }
+  return c;
+}
+async function entenderTexto(texto, { origem = 'inicio', mesmoAssim = false } = {}) {
   const tipoAberto = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
-  const detectado = E.suggestTipoByText(texto, S.rules, null)?.tipo || null;
-  const escolha = origem === 'inicio' && ESCOLHA_AVISO_CALCULO.find(f => f.tipos.includes(detectado));
-  if (escolha) {
-    const plain = E.norm(texto);
-    const sugerido = /\bAVISO\b/.test(plain) ? escolha.tipos[0] : /CALCUL|RECIBO|VERBAS|TRCT|PAGAR|PAGAMENTO/.test(plain) ? escolha.tipos[1] : null;
-    const base = sugerido || escolha.tipos[0];
+  const sug = E.suggestTipoByText(texto, S.rules, null);
+  const detectado = sug?.tipo || null;
+  // cartão "Entendi assim" ainda aberto e um texto sem pedido novo ("não, é dia 12"): corrige o cartão
+  const s0 = S.sugestao;
+  if (origem === 'inicio' && s0?.texto && s0.analise && !s0.pergunta && !s0.pedidos && (!detectado || mesmaFamilia(detectado, s0.analise.tipoSugerido)) && !E.ehPergunta(texto, S.rules)) {
+    const base = s0.analise.tipoSugerido;
     const r = E.parseFreeText(texto, S.rules, { employees: await empregadosPara(base), tipoAtual: base });
-    S.sugestao = { texto, tipoAberto, escolha, sugerido, analise: { tipoSugerido: base, campos: r.campos, documento: { nome: 'seu pedido' } } };
-    if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+    const novos = Object.entries(r.campos).filter(([k, c]) => c.conf > 0.45 || !camposComAjustes(s0)[k]);
+    if (novos.length || r.palpite) {
+      s0.ajustes = s0.ajustes || {};
+      for (const [k, c] of novos) s0.ajustes[k] = { ...c, corrigido: !!camposComAjustes(s0)[k] };
+      if (r.palpite && !camposComAjustes(s0).empregado) s0.palpite = r.palpite;
+      if (r.linhas?.length) s0.linhas = r.linhas;
+      mostrarSugestao();
+      return;
+    }
+  }
+  // pergunta ("posso mandar foto do atestado?"): primeiro as dúvidas, com "Abrir o pedido mesmo assim"
+  if (origem === 'inicio' && !mesmoAssim && E.ehPergunta(texto, S.rules)) {
+    const faqs = E.buscarFaq(texto, S.rules, 3);
+    if (faqs.length) { S.sugestao = { texto, pergunta: true, faqs }; mostrarSugestao(); return; }
+  }
+  // vários pedidos numa frase: "Entendi N pedidos" e o lote abre um de cada vez
+  if (origem === 'inicio') {
+    // a lista da empresa inteira: a da solicitação aberta pode não ter todos (cada tela tem a sua)
+    const empregados = [...new Set([...(await empregadosDaEmpresa()), ...(detectado ? w(detectado).empregados : [])])];
+    const partes = E.dividirPedidos(texto, S.rules, { employees: empregados });
+    if (partes.length >= 2) { S.sugestao = { texto, tipoAberto, pedidos: partes }; mostrarSugestao(); return; }
+  }
+  const escolha = origem === 'inicio' && E.escolhaPara(texto, S.rules, sug);
+  if (escolha) {
+    const sugerido = E.destaqueEscolha(texto, escolha);
+    const base = sugerido || escolha.tipos[0];
+    const empregados = await empregadosPara(base);
+    const r = E.parseFreeText(texto, S.rules, { employees: empregados, tipoAtual: base });
+    S.sugestao = { texto, tipoAberto, escolha, sugerido, empregados, palpite: r.palpite, candidatos: r.candidatos, linhas: r.linhas, ajustes: {}, analise: { tipoSugerido: base, campos: r.campos, documento: { nome: 'seu pedido' } } };
+    mostrarSugestao();
     return;
   }
   // texto sobre a própria solicitação aberta (ou sem tipo claro, escrito dentro dela) → preenche ali
@@ -369,10 +401,11 @@ async function entenderTexto(texto, { origem = 'inicio' } = {}) {
     return;
   }
   const destino = detectado || tipoAberto || 'geral';  // sem tipo claro: propõe a aberta, mas só preenche se o cliente confirmar
-  const r = E.parseFreeText(texto, S.rules, { employees: await empregadosPara(destino), tipoAtual: destino });
-  S.sugestao = { texto, tipoAberto, analise: { tipoSugerido: destino, campos: r.campos, documento: { nome: 'seu pedido' } } };
+  const empregados = await empregadosPara(destino);
+  const r = E.parseFreeText(texto, S.rules, { employees: empregados, tipoAtual: destino });
+  S.sugestao = { texto, tipoAberto, empregados, palpite: r.palpite, candidatos: r.candidatos, linhas: r.linhas, ajustes: {}, analise: { tipoSugerido: destino, campos: r.campos, documento: { nome: 'seu pedido' } } };
   if (origem === 'preencher' && $('#free-sug')) renderSugestaoTexto($('#free-sug'), S.sugestao);
-  else if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+  else mostrarSugestao();
 }
 /** Primeiro nome que serve para mais de um funcionário: guarda as opções para o cliente escolher. */
 function anotarCandidatos(tipo, texto, campos) {
@@ -382,13 +415,18 @@ function anotarCandidatos(tipo, texto, campos) {
   const c = E.employeeCandidates(texto, W.empregados);
   if (c.length > 1) W.candidatos = c;
 }
-function aplicarCampos(tipo, campos, fonte) {
+/* Campos que não são do portal, mas entram no texto gerado (ex.: as linhas das variáveis da folha). */
+const CAMPOS_DO_TEXTO = ['tabelaRubricas'];
+function juntarCampos(tipo, campos, fonte) {
   const W = w(tipo); const t = tipoDef(tipo);
   for (const [k, c] of Object.entries(campos)) {
-    if (!t.campos[k] || W.editados.has(k)) continue;
+    if ((!t.campos[k] && !CAMPOS_DO_TEXTO.includes(k)) || W.editados.has(k)) continue;
     if (k === 'empregado' && W.empregados.length) { const m = E.bestMatch(c.valor, W.empregados, 0.6); if (!m) continue; c.valor = m.option; }
     W.valores[k] = { valor: c.valor, conf: c.conf ?? 0.6, fonte: c.fonte || fonte };
   }
+}
+function aplicarCampos(tipo, campos, fonte) {
+  juntarCampos(tipo, campos, fonte);
   gerarTextos(tipo);
   if (S.view === 'preencher') render(); else setView('preencher');
   if (S.prefs.preencherAoLer && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { silencioso: true });
@@ -542,6 +580,8 @@ async function abrirPedido(i) {
     if (it.texto) it.analise = E.analyzeText(it.texto, S.rules, { employees: W.empregados, tipoAtual: p.tipo });
     applyAnalysis(p.tipo, it, { preencher: false });
   }
+  // pedido que veio do texto livre (vários pedidos numa frase, ou aviso e cálculo): os campos entendidos
+  if (p.campos) { juntarCampos(p.tipo, Object.fromEntries(Object.entries(p.campos).map(([k, c]) => [k, { ...c }])), 'sua descrição'); gerarTextos(p.tipo); }
   const v = valoresAssistente(p.tipo);
   p.rotulo = [v.empregado, v.dataAfastamento || v.inicioGozo || v.dataDemissao, v.dias ? `${v.dias} ${+v.dias === 1 ? 'dia' : 'dias'}` : ''].filter(Boolean).join(' · ');
   await fillPortal(p.tipo, { silencioso: true });
@@ -589,10 +629,11 @@ function renderLote() {
   const atual = L.pedidos[L.idx];
   const st = { enviado: icon('check', 'ic-sm'), pulado: icon('minus', 'ic-sm'), atual: icon('arrow', 'ic-sm') };
   const nomeTipo = (p) => p.itens.some(i => i.documento === 'atestado') ? 'Atestado' : (S.rules.tipos[p.tipo]?.nome || 'Solicitação');
+  const rotuloPedido = (p) => p.rotulo || p.itens[0]?.nome || Object.values(p.campos || {}).filter(c => c.conf > 0.45).slice(0, 2).map(c => c.valor).join(' · ') || 'do seu texto';
   el.innerHTML = `<div class="card pad lote" aria-live="polite">
     <div class="lote-h">${icon('list', 'ic-sm')}<b>${L.concluido ? 'Lote concluído' : `Solicitação ${L.idx + 1} de ${L.pedidos.length}`}</b><small class="mono">${env} enviada(s)</small></div>
     <ol>${L.pedidos.map(p => `<li class="${p.status === 'atual' ? 'cur' : p.status === 'enviado' || p.status === 'pulado' ? 'done' : ''}">
-      <span class="n">${st[p.status] || p.n}</span><span class="what" title="${esc(p.itens.map(i => i.nome).join(', '))}">${esc(nomeTipo(p))} — ${esc(p.rotulo || p.itens[0].nome)}</span>
+      <span class="n">${st[p.status] || p.n}</span><span class="what" title="${esc(p.itens.map(i => i.nome).join(', '))}">${esc(nomeTipo(p))} — ${esc(rotuloPedido(p))}</span>
       <small class="muted">${{ enviado: 'enviada', pulado: 'pulada', atual: 'agora', pendente: 'na fila' }[p.status]}</small></li>`).join('')}</ol>
     ${L.fora?.length ? `<p class="muted" style="margin:8px 0 0;font-size:12px">Não reconheci e deixei de fora: ${esc(L.fora.map(i => i.nome).join(', '))}. Se precisar, arraste depois na solicitação certa.</p>` : ''}
     ${L.concluido ? `<div class="actions"><button class="btn btn-sm" id="lote-ok">Fechar</button></div>`
@@ -661,7 +702,7 @@ function renderSugestao() {
       <div class="card-h">${icon('spark')}<h3>${tipo ? 'Encontrei o caminho' : 'Li o arquivo'}</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
       <div class="card-b">
         <p style="margin:0 0 8px">${esc(it.nome)} parece ser <b>${esc(a.documento?.nome || 'um documento')}</b>${tipo ? ` → <b>${esc(S.rules.tipos[tipo]?.nome)}</b>` : ''}.${s.extras?.length ? ` Os outros ${s.extras.length} arquivo(s) vão junto.` : ''}</p>
-        ${nCampos ? `<p class="muted" style="margin:0 0 10px">${nCampos} informação(ões) encontradas: ${Object.keys(a.campos).slice(0, 6).map(k => esc(tipoDef(tipo || 'geral')?.campos?.[k]?.rotulo || k)).join(', ')}${nCampos > 6 ? '…' : ''}</p>` : ''}
+        ${nCampos ? `<p class="muted" style="margin:0 0 10px">${nCampos} informação(ões) encontradas: ${Object.keys(a.campos).map(k => tipoDef(tipo || 'geral')?.campos?.[k]?.rotulo).filter(Boolean).slice(0, 6).map(esc).join(', ')}${nCampos > 6 ? '…' : ''}</p>` : ''}
         ${tipo ? `<button class="btn btn-primary btn-block" id="sug-go">Abrir ${esc(S.rules.tipos[tipo]?.nome)} e preencher ${icon('arrow', 'ic-sm')}</button>` : `<p class="muted">Não reconheci o tipo. Escolha acima o que você precisa fazer — o arquivo vai junto.</p>`}
       </div>
     </div>`;
@@ -683,41 +724,137 @@ function renderSugestao() {
   }
 }
 
+/** Lista "rótulo: valor" do cartão, em que cada valor pode ser trocado (clique) ou descartado (x).
+ *  Só aparecem campos com nome para o cliente (nunca o nome técnico). */
+function kvSugestao(s, nomeCampo) {
+  const lista = Object.entries(camposComAjustes(s)).filter(([k]) => k !== 'observacoes' && k !== 'tabelaRubricas' && nomeCampo(k));
+  if (!lista.length) return '';
+  return `<dl class="kv kv-ed" style="margin-bottom:10px">${lista.map(([k, c]) => `<dt>${esc(nomeCampo(k))}</dt><dd>
+    <button type="button" class="kv-v" data-ed="${esc(k)}" title="Clique para trocar">${esc(c.valor)}</button>${c.conf < 0.6 ? ' <small class="chip warn">confira</small>' : ''}${c.corrigido ? ' <small class="chip info">corrigido</small>' : ''}
+    <button type="button" class="kv-x" data-tira="${esc(k)}" aria-label="Descartar ${esc(nomeCampo(k))}" title="Descartar">${icon('x', 'ic-sm')}</button></dd>`).join('')}</dl>`;
+}
+function ligarKv(el, s, nomeCampo, defCampo, redesenhar) {
+  el.querySelectorAll('[data-tira]').forEach(b => b.addEventListener('click', () => { s.ajustes = s.ajustes || {}; s.ajustes[b.dataset.tira] = null; redesenhar(); }));
+  el.querySelectorAll('[data-ed]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.ed; const def = defCampo(k);
+    const inp = document.createElement('input');
+    inp.className = 'input kv-in'; inp.value = camposComAjustes(s)[k]?.valor || ''; inp.setAttribute('aria-label', nomeCampo(k));
+    const opcoes = k === 'empregado' ? (s.empregados || []) : def?.seletores ? Object.keys(def.seletores) : (def?.opcoes || []);
+    if (opcoes.length) { const dl = document.createElement('datalist'); dl.id = 'kv-dl'; dl.innerHTML = opcoes.map(o => `<option value="${esc(o)}">`).join(''); el.appendChild(dl); inp.setAttribute('list', 'kv-dl'); }
+    b.replaceWith(inp); inp.focus(); inp.select();
+    let feito = false;
+    const ok = () => {
+      if (feito) return; feito = true;
+      let v = inp.value.trim();
+      if (v && def?.tipo === 'data') { const d = E.parseDate(v) || E.findDates(v)[0]; if (!d) { toast('Não entendi essa data. Escreva como dd/mm/aaaa.'); redesenhar(); return; } v = E.fmtDate(d); }
+      if (v && def?.tipo === 'numero') v = E.onlyDigits(v);
+      s.ajustes = s.ajustes || {}; s.ajustes[k] = v ? { valor: v, conf: 1, fonte: 'você' } : null;
+      if (k === 'empregado') { s.palpite = null; s.candidatos = null; }
+      redesenhar();
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } else if (e.key === 'Escape') { feito = true; redesenhar(); } });
+    inp.addEventListener('blur', ok);
+  }));
+}
+/** Funcionário que precisa de resposta: palpite ("Não achei Ronado. É RONALDO DE SOUZA?") ou homônimos ("Qual deles?"). */
+function perguntaEmpregado(s) {
+  if (camposComAjustes(s).empregado) return '';
+  if (s.candidatos?.length) return `<div class="cands" style="margin:0 0 10px"><small>Qual deles?</small>${s.candidatos.map(n => `<button type="button" class="btn btn-sm" data-quem="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
+  if (s.palpite) return `<div class="note" style="margin:0 0 10px">${icon('info')}<div>Não achei “${esc(s.palpite.trecho)}” na lista. É <b>${esc(s.palpite.nome)}</b>?
+    <div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" data-quem="${esc(s.palpite.nome)}">Sim, é essa pessoa</button><button type="button" class="btn btn-sm btn-ghost" id="sug-nao-e">Não</button></div></div></div>`;
+  return '';
+}
+function ligarPerguntaEmpregado(el, s, redesenhar) {
+  el.querySelectorAll('[data-quem]').forEach(b => b.addEventListener('click', () => { s.ajustes = s.ajustes || {}; s.ajustes.empregado = { valor: b.dataset.quem, conf: 1, fonte: 'você' }; s.palpite = null; s.candidatos = null; redesenhar(); }));
+  el.querySelector('#sug-nao-e')?.addEventListener('click', () => { s.palpite = null; redesenhar(); });
+}
+/** Variáveis da folha entendidas no texto: uma linha por funcionário (vão na descrição como itens, não como o texto). */
+function linhasHtml(s) {
+  if (!s.linhas?.length) return '';
+  const v = (l) => l.unidade === 'R$' ? l.valor : `${l.valor} ${l.unidade || ''}`;
+  return `<table class="tbl-linhas"><thead><tr><th>Funcionário</th><th>Rubrica</th><th>Valor</th></tr></thead><tbody>${s.linhas.map(l => `<tr><td>${esc(l.empregado || 'a confirmar')}</td><td>${esc(l.rubrica)}</td><td class="mono">${esc(v(l))}</td></tr>`).join('')}</tbody></table>
+    <p class="muted" style="margin:4px 0 10px;font-size:12px">Essas linhas vão na descrição para o escritório lançar. Confira os nomes das rubricas.</p>`;
+}
+
 function renderSugestaoTexto(el, s) {
-  const a = s.analise; const tipo = a.tipoSugerido; const t = tipoDef(tipo);
-  const achados = Object.entries(a.campos).filter(([k]) => k !== 'observacoes');
-  if (s.escolha) {
-    const nomeCampo = (k) => s.escolha.tipos.map(x => tipoDef(x)?.campos?.[k]?.rotulo).find(Boolean) || k;
+  const redesenhar = () => renderSugestaoTexto(el, s);
+  const fechar = () => { S.sugestao = null; el.innerHTML = ''; renderSugestao(); };
+  const aviso = (tipo) => s.tipoAberto && s.tipoAberto !== tipo ? `<p class="muted" style="margin:10px 0 0;font-size:12px">A solicitação de ${esc(S.rules.tipos[s.tipoAberto]?.nome)} que está aberta será fechada no portal sem enviar. O que eu já tinha preenchido continua guardado aqui.</p>` : '';
+  // pergunta: as dúvidas primeiro
+  if (s.pergunta) {
     el.innerHTML = `<div class="card">
-      <div class="card-h">${icon('spark')}<h3>Aviso ou cálculo?</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
-      <div class="card-b">
-        ${Object.keys(a.campos).filter(k => k !== 'observacoes').length ? `<dl class="kv" style="margin-bottom:10px">${Object.entries(a.campos).filter(([k]) => k !== 'observacoes').map(([k, c]) => `<dt>${esc(nomeCampo(k))}</dt><dd>${esc(c.valor)}</dd>`).join('')}</dl>` : ''}
-        <p style="margin:0 0 8px">Qual solicitação você quer abrir?</p>
-        <div class="escolha">${s.escolha.tipos.map(x => `<button type="button" class="opc${x === s.sugerido ? ' sug' : ''}" data-escolha="${esc(x)}">
-          <b>${esc(S.rules.tipos[x]?.nome)}${x === s.tipoAberto ? ' <small class="chip">aberta</small>' : ''}</b><small>${esc(s.escolha.ajuda[x] || '')}</small></button>`).join('')}</div>
-        ${s.tipoAberto && !s.escolha.tipos.includes(s.tipoAberto) ? `<p class="muted" style="margin:10px 0 0;font-size:12px">A solicitação de ${esc(S.rules.tipos[s.tipoAberto]?.nome)} que está aberta será fechada no portal sem enviar. O que eu já tinha preenchido continua guardado aqui.</p>` : ''}
-      </div></div>`;
-    $('#sug-x').addEventListener('click', () => { S.sugestao = null; el.innerHTML = ''; renderSugestao(); });
-    el.querySelectorAll('[data-escolha]').forEach(b => b.addEventListener('click', () => abrirDoTexto(el, s, b.dataset.escolha)));
+      <div class="card-h">${icon('info')}<h3>Encontrei nas dúvidas</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
+      <div class="card-b">${s.faqs.map((f, i) => `<details class="faq-i"${i === 0 ? ' open' : ''}><summary>${esc(f.pergunta)}</summary><p>${esc(f.resposta)}</p></details>`).join('')}
+        <div class="actions" style="margin-top:10px"><button class="btn" id="sug-mesmo">Abrir o pedido mesmo assim ${icon('arrow', 'ic-sm')}</button></div></div></div>`;
+    $('#sug-x').addEventListener('click', fechar);
+    $('#sug-mesmo').addEventListener('click', () => { S.sugestao = null; el.innerHTML = ''; entenderTexto(s.texto, { mesmoAssim: true }); });
     return;
   }
+  // vários pedidos: confere a lista e abre um de cada vez (o lote de sempre)
+  if (s.pedidos) {
+    const nome = (p) => (k) => tipoDef(p.tipo)?.campos?.[k]?.rotulo || null;
+    el.innerHTML = `<div class="card">
+      <div class="card-h">${icon('list')}<h3>Entendi ${s.pedidos.length} pedidos</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
+      <div class="card-b"><ol class="ped-lista">${s.pedidos.map((p, i) => `<li><div class="ped-h"><b>${esc(S.rules.tipos[p.tipo]?.nome || p.tipo)}</b><button type="button" class="icon-btn" data-tira-ped="${i}" aria-label="Tirar o pedido ${i + 1}">${icon('x', 'ic-sm')}</button></div>
+        ${Object.entries(p.campos).filter(([k]) => nome(p)(k)).length ? `<dl class="kv">${Object.entries(p.campos).filter(([k]) => nome(p)(k)).map(([k, c]) => `<dt>${esc(nome(p)(k))}</dt><dd>${esc(c.valor)}${c.conf < 0.6 ? ' <small class="chip warn">confira</small>' : ''}</dd>`).join('')}</dl>` : '<small class="muted">Sem dados no texto: você completa no pedido.</small>'}</li>`).join('')}</ol>
+        <p class="muted" style="margin:8px 0 10px;font-size:12.5px">Abro um de cada vez: você confere e envia cada um pelo portal; quando o portal salvar, eu abro o próximo.</p>
+        <div class="actions"><button class="btn btn-primary" id="sug-lote">Abrir um de cada vez ${icon('arrow', 'ic-sm')}</button></div>${aviso(s.pedidos[0].tipo)}</div></div>`;
+    $('#sug-x').addEventListener('click', fechar);
+    el.querySelectorAll('[data-tira-ped]').forEach(b => b.addEventListener('click', () => {
+      s.pedidos.splice(+b.dataset.tiraPed, 1);
+      if (s.pedidos.length < 2) { const p = s.pedidos[0]; Object.assign(s, { pedidos: null, ajustes: {}, analise: { tipoSugerido: p?.tipo || 'geral', campos: p?.campos || {}, documento: { nome: 'seu pedido' } } }); s.texto = p?.texto || s.texto; }
+      redesenhar();
+    }));
+    $('#sug-lote').addEventListener('click', () => { const peds = s.pedidos.map(p => ({ tipo: p.tipo, itens: [], campos: p.campos })); fechar(); iniciarLote(peds, []); });
+    return;
+  }
+  const a = s.analise; const tipo = a.tipoSugerido; const t = tipoDef(tipo);
+  if (s.escolha) {
+    const nomeCampo = (k) => s.escolha.tipos.map(x => tipoDef(x)?.campos?.[k]?.rotulo).find(Boolean) || null;
+    const defCampo = (k) => s.escolha.tipos.map(x => tipoDef(x)?.campos?.[k]).find(Boolean) || null;
+    const amb = s.escolha.ambos;
+    el.innerHTML = `<div class="card">
+      <div class="card-h">${icon('spark')}<h3>${esc(s.escolha.titulo || 'Qual pedido?')}</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
+      <div class="card-b">
+        ${kvSugestao(s, nomeCampo)}${perguntaEmpregado(s)}${linhasHtml(s)}
+        <p style="margin:0 0 8px">${esc(s.escolha.pergunta || 'Qual solicitação você quer abrir?')}</p>
+        <div class="escolha">${s.escolha.tipos.map(x => `<button type="button" class="opc${x === s.sugerido ? ' sug' : ''}" data-escolha="${esc(x)}">
+          <b>${esc(s.escolha.rotulos?.[x] || S.rules.tipos[x]?.nome)}${x === s.tipoAberto ? ' <small class="chip">aberta</small>' : ''}</b><small>${esc(s.escolha.ajuda?.[x] || '')}</small></button>`).join('')}
+          ${amb ? `<button type="button" class="opc" data-ambos="1"><b>${esc(amb.rotulo || 'Os dois')}</b><small>${esc(amb.ajuda || '')}</small></button>` : ''}</div>
+        ${s.tipoAberto && !s.escolha.tipos.includes(s.tipoAberto) ? aviso(null) : ''}
+      </div></div>`;
+    $('#sug-x').addEventListener('click', fechar);
+    el.querySelectorAll('[data-escolha]').forEach(b => b.addEventListener('click', () => abrirDoTexto(el, s, b.dataset.escolha)));
+    el.querySelector('[data-ambos]')?.addEventListener('click', () => {
+      // aviso agora e cálculo em seguida: o lote abre um, o cliente envia, e abre o outro com os mesmos dados
+      const peds = s.escolha.tipos.map(x => ({ tipo: x, itens: [], campos: comAjustes(E.parseFreeText(s.texto, S.rules, { employees: s.empregados || [], tipoAtual: x }).campos, s.ajustes) }));
+      fechar(); iniciarLote(peds, []);
+    });
+    ligarKv(el, s, nomeCampo, defCampo, redesenhar); ligarPerguntaEmpregado(el, s, redesenhar);
+    return;
+  }
+  const nomeCampo = (k) => t?.campos?.[k]?.rotulo || null;
+  const tem = !!kvSugestao(s, nomeCampo) || !!s.linhas?.length;
   el.innerHTML = `<div class="card">
     <div class="card-h">${icon('spark')}<h3>Entendi assim</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
     <div class="card-b">
       <p style="margin:0 0 8px">Solicitação: <b>${esc(t?.nome || 'Solicitação Geral')}</b></p>
-      ${achados.length ? `<dl class="kv" style="margin-bottom:10px">${achados.map(([k, c]) => `<dt>${esc(t?.campos?.[k]?.rotulo || k)}</dt><dd>${esc(c.valor)}</dd>`).join('')}</dl>` : '<p class="muted" style="margin:0 0 10px">Não encontrei dados para preencher no texto. Abra a solicitação e complete os campos.</p>'}
-      ${s.tipoAberto && s.tipoAberto !== tipo ? `<p class="muted" style="margin:0 0 10px;font-size:12px">A solicitação de ${esc(S.rules.tipos[s.tipoAberto]?.nome)} que está aberta será fechada no portal sem enviar. O que eu já tinha preenchido continua guardado aqui.</p>` : ''}
+      ${tem ? `${kvSugestao(s, nomeCampo)}${linhasHtml(s)}<p class="muted" style="margin:-4px 0 10px;font-size:11.5px">Clique num valor para trocar, ou no x para descartar.</p>` : '<p class="muted" style="margin:0 0 10px">Não encontrei dados para preencher no texto. Abra a solicitação e complete os campos.</p>'}
+      ${t?.campos?.empregado ? perguntaEmpregado(s) : ''}
+      ${aviso(tipo).replace('margin:10px 0 0', 'margin:0 0 10px')}
       <div class="actions"><button class="btn btn-primary" id="sug-go">${s.tipoAberto === tipo ? 'Preencher em' : 'Abrir'} ${esc(t?.nome || 'Solicitação Geral')} ${icon('arrow', 'ic-sm')}</button>
         ${s.tipoAberto && s.tipoAberto !== tipo ? `<button class="btn" id="sug-aqui">Usar em ${esc(S.rules.tipos[s.tipoAberto]?.nome)}</button>` : ''}</div>
       <details class="more" style="margin-top:8px"><summary>Não é isso? Escolher outra solicitação</summary>
         <div class="tool-tabs" style="margin-top:8px">${(S.rules.intencoes || []).map(i => `<button type="button" data-alt="${esc(i.tipo)}">${esc(i.titulo)}</button>`).join('')}</div></details>
     </div></div>`;
   const abrir = (destino) => abrirDoTexto(el, s, destino);
-  $('#sug-x').addEventListener('click', () => { S.sugestao = null; el.innerHTML = ''; renderSugestao(); });
+  $('#sug-x').addEventListener('click', fechar);
   $('#sug-go').addEventListener('click', () => abrir(tipo));
   $('#sug-aqui')?.addEventListener('click', () => abrir(s.tipoAberto));
   el.querySelectorAll('[data-alt]').forEach(b => b.addEventListener('click', () => abrir(b.dataset.alt)));
+  ligarKv(el, s, nomeCampo, (k) => t?.campos?.[k] || null, redesenhar); ligarPerguntaEmpregado(el, s, redesenhar);
 }
+const comAjustes = (campos, ajustes) => camposComAjustes({ analise: { campos }, ajustes });
 
 async function abrirDoTexto(el, s, destino) {
   S.sugestao = null; el.innerHTML = '';
@@ -726,8 +863,10 @@ async function abrirDoTexto(el, s, destino) {
   for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === destino); k++) await esperar(200);
   await loadEmpregados(destino);
   const r = E.parseFreeText(s.texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino });
-  anotarCandidatos(destino, s.texto, r.campos);
-  aplicarCampos(destino, r.campos, 'sua descrição');
+  // o que o cliente trocou, descartou ou corrigiu no cartão vale mais que a leitura do texto
+  const campos = comAjustes(r.campos, s.ajustes);
+  anotarCandidatos(destino, s.texto, campos);
+  aplicarCampos(destino, campos, 'sua descrição');
 }
 
 /* Documentos neutros (servem a vários pedidos) e famílias de pedidos compatíveis */
@@ -929,7 +1068,7 @@ function renderPreencher() {
   renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer();
 }
 function exemploTexto(tipo) {
-  return ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
+  return tipoDef(tipo)?.exemploTexto || ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
 }
 
 /* Etapas: documento/descrição → dados → conferência → envio */
@@ -1673,9 +1812,8 @@ function renderRepetir() {
 /* ---------- Perguntas frequentes (regras.faq) ---------- */
 function renderFaq(q) {
   const el = $('#faq'); if (!el) return;
-  const Q = E.norm(q); const toks = Q.split(' ').filter(t => t.length > 2);
-  if (!toks.length) { el.innerHTML = ''; return; }
-  const achadas = (S.rules.faq || []).map(f => ({ f, n: toks.filter(t => E.norm(`${f.pergunta} ${(f.palavras || []).join(' ')} ${f.resposta}`).includes(t)).length })).filter(x => x.n).sort((a, b) => b.n - a.n).slice(0, 4);
+  // casa pelo radical das palavras (o plural acha o singular)
+  const achadas = E.buscarFaq(q, S.rules, 4).map(f => ({ f }));
   el.innerHTML = achadas.length ? `<h2 class="sec">Dúvidas frequentes</h2>${achadas.map(({ f }) => `<details class="faq-i card"><summary>${esc(f.pergunta)}</summary><p>${esc(f.resposta)}</p></details>`).join('')}` : '';
 }
 
