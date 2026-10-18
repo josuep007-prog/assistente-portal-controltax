@@ -1344,11 +1344,16 @@ export function montarPlataforma(A) {
     const grupos = [];
     const mods = MODULOS.filter(([, t]) => !Q || bate(t)).map(([v, t, ic]) => ({ titulo: t, sub: 'Ir para', ic, fn: () => A.setView(v) }));
     grupos.push(['Ir para', mods.slice(0, Q ? 4 : 7)]);
+    // frase com data, número ou funcionário ("férias do Ronaldo dia 10/11"): o 1º resultado entende a frase inteira
+    const nomes = (S.plat.emp?.lista || []).map(e => e.nome);
+    if (toks.length >= 2 && (/\d/.test(Q) || E.findDates(q).length || (nomes.length && E.findEmployeeInText(q, nomes)?.option))) {
+      grupos.push(['Entender', [{ titulo: `Entender: ${q.trim()}`, sub: 'Abro o pedido com o que você escreveu', ic: 'chat', fn: () => A.entenderTexto(q.trim()) }]]);
+    }
     if (Q) {
       grupos.push(['Novo pedido', E.searchIntents(q, S.rules).slice(0, 4).map(it => ({ titulo: it.titulo, sub: it.subtitulo || '', ic: A.ICONS[it.icone] || 'file', fn: () => A.openTipo(it.tipo) }))]);
       grupos.push(['Funcionários', (S.plat.emp?.lista || []).filter(e => bate(e.nome)).slice(0, 5).map(e => ({ titulo: e.nome, sub: e.ativo === false ? 'Desligado' : `Admissão ${fmt(E.parseDate(e.admissao))}`, ic: 'users', fn: () => { S.plat.filtroEmp = { q: e.nome, sit: 'todos' }; A.setView('funcionarios'); } }))]);
       grupos.push(['Solicitações', (S.plat.sol?.itens || []).filter(i => bate(`${i.numero} ${i.empregado} ${i.assunto} ${nomeTipo(i.tipo)} ${i.empresa}`)).slice(0, 5).map(i => ({ titulo: i.assunto || nomeTipo(i.tipo), sub: `${variasEmpresas(S.plat.sol?.itens) ? `${rotEmpresa(i)} · ` : ''}${nomeTipo(i.tipo)}${i.numero ? ` · nº ${i.numero}` : ''} · ${i.status}`, ic: 'list', fn: () => abrirDetalhe(i) }))]);
-      grupos.push(['Dúvidas', (S.rules.faq || []).filter(f => toks.some(t => t.length > 2 && E.norm(`${f.pergunta} ${(f.palavras || []).join(' ')}`).includes(t))).slice(0, 4).map(f => ({ titulo: f.pergunta, sub: 'Dúvida frequente', ic: 'info', fn: () => dialogo({ titulo: esc(f.pergunta), corpo: `<p style="margin:0">${esc(f.resposta)}</p>`, acoes: ['|', { rotulo: 'Fechar', cls: 'btn-primary' }] }) }))]);
+      grupos.push(['Dúvidas', E.buscarFaq(q, S.rules, 4).map(f => ({ titulo: f.pergunta, sub: 'Dúvida frequente', ic: 'info', fn: () => dialogo({ titulo: esc(f.pergunta), corpo: `<p style="margin:0">${esc(f.resposta)}</p>`, acoes: ['|', { rotulo: 'Fechar', cls: 'btn-primary' }] }) }))]);
     }
     resultados = grupos.flatMap(([, l]) => l);
     let n = 0;
