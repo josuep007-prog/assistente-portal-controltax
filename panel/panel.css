@@ -158,6 +158,12 @@ h2.sec::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
 .field .cands small { font-size: 11.5px; color: var(--ink-2); font-weight: 600; }
 .field .miss { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 500; color: color-mix(in srgb, var(--warn) 70%, var(--ink)); }
 .field .miss::before { content: "!"; display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--warn); color: #fff; font-size: 10px; font-weight: 700; }
+/* o portal recusou o campo (erro de validação dele) e opção parecida escolhida na lista */
+.field.pf-err .input, .field.pf-err .seg { border-color: var(--brand-red); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-red) 18%, transparent); }
+.field .portal-erro { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 500; color: var(--brand-red); }
+.field .aprox { display: block; margin-top: 4px; font-size: 11.5px; color: color-mix(in srgb, var(--warn) 70%, var(--ink)); }
+.frow .aprox, .frow .portal-erro { margin: 0 12px 8px; }
+.tips .cands { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: 4px; }
 /* Aviso ou cálculo */
 .escolha { display: grid; gap: 8px; }
 .escolha .opc { display: grid; gap: 3px; text-align: left; padding: 10px 12px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); color: var(--ink); cursor: pointer; }

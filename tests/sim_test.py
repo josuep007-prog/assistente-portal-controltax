@@ -316,8 +316,148 @@ async def teste_plataforma(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_mecanica(b):
+    """Mecânica do preenchimento: ordem das regras, nova tentativa, só o que mudou, opções aproximadas, única opção,
+    campos fora das regras, erros do próprio portal, Desfazer coerente e anexo por anexo."""
+    import time
+    print('\n[mecânica] preenchimento no portal')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900}, permissions=['clipboard-read', 'clipboard-write'])
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    SR = '/clientcenter/pt/actions/service-request/'
+    async def espera(cond, s=30):
+        for _ in range(s * 4):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(250)
+        return False
+    async def abrir(slug):
+        await pg.evaluate(f"window.__ctSim.go('{SR}{slug}')"); await pg.wait_for_timeout(600)
+        await pg.evaluate(f"window.__ctSim.go('{SR}{slug}/add')"); await pg.wait_for_timeout(1500)
+        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+        if await pn.locator('#pd-continuar').count(): await pn.click('#pd-continuar'); await pg.wait_for_timeout(500)
+        await pg.mouse.move(1200, 600)
+    def tem(**kv):
+        async def f():
+            v = await portal(); return all(v.get(k, '') == x for k, x in kv.items())
+        return f
+    preencher = lambda tipo, valores, opts=None: pg.evaluate("([t, v, o]) => window.__ctSim.hooks().preencher(t, v, o)", [tipo, valores, opts or {}])
+    res = lambda r, k: next((x for x in r['resultados'] if x['campo'] == k), {})
+
+    # 17: na ordem das regras (o motivo só libera depois do funcionário), mesmo com os valores fora de ordem
+    await pg.evaluate(f"window.__ctSim.go('{SR}termination-calculation/add')"); await pg.wait_for_timeout(1500)
+    r = await preencher('calculoRescisao', {'motivo': 'Demitido SEM justa causa', 'dataDemissao': '15/10/2026', 'empregado': 'RONALDO DE SOUZA'})
+    v = await portal()
+    check(res(r, 'motivo').get('ok') and v.get('terminationReason') == 'Demitido SEM justa causa' and v.get('employee') == 'RONALDO DE SOUZA', 'ordem das regras: funcionário antes do motivo (o motivo não volta bloqueado)')
+    # 17: município depois da UF; a lista de municípios demora a carregar → tenta de novo e acerta
+    await pg.evaluate(f"window.__ctSim.go('{SR}employee-registration/add')"); await pg.wait_for_timeout(1500)
+    r = await preencher('cadastroEmpregado', {'municipio': 'Campinas', 'uf': 'SP'}, {'unicaOpcao': ['centroCusto', 'sindicato', 'servico', 'departamento']})
+    v = await portal()
+    m = res(r, 'municipio')
+    check(m.get('ok') and m.get('tentouDeNovo') and v.get('addressState') == 'São Paulo' and v.get('addressCity') == 'Campinas', f'UF antes do município e nova tentativa quando a lista ainda carrega ({m})')
+    # 44: única opção do portal (centro de custo e sindicato); com duas opções (departamento, serviço) não escolhe
+    check(v.get('costCenterExpanded') == 'GERAL' and v.get('laborUnionClientExpanded') == 'SINDICATO EXEMPLO' and res(r, 'centroCusto').get('unica'), 'lista com uma opção só: escolhe sozinho (centro de custo, sindicato)')
+    check(not v.get('departmentExpanded') and not v.get('serviceExpanded'), 'lista com mais de uma opção: deixa para o cliente')
+    # 32: opção aproximada, apelidos e "você quis dizer"
+    r = await preencher('cadastroEmpregado', {'grauInstrucao': 'Superior completa', 'racaCor': 'pardo', 'banco': 'Nubank'})
+    v = await portal()
+    g = res(r, 'grauInstrucao')
+    check(g.get('ok') and g.get('aproximada') and v.get('schoolingLevel') == 'Superior completo', 'opção aproximada escolhida e marcada como aproximada (Superior completa → Superior completo)')
+    check(v.get('race') == 'Parda' and not res(r, 'racaCor').get('aproximada') and v.get('paymentBankExpanded') == '260 - Nu Pagamentos', 'apelidos das regras: pardo → Parda, Nubank → 260 - Nu Pagamentos')
+    r = await preencher('cadastroEmpregado', {'racaCor': 'Prada'})
+    rc = res(r, 'racaCor')
+    check(not rc.get('ok') and set(rc.get('sugestoes', [])[:2]) == {'Parda', 'Preta'}, f'sem opção segura: sugestões para o cliente escolher ({rc.get("sugestoes")})')
+    await pg.evaluate(f"window.__ctSim.go('{SR}employee-leave/add')"); await pg.wait_for_timeout(1500)
+    r = await preencher('afastamento', {'empregado': 'JOAO'})
+    check(not res(r, 'empregado').get('ok') and not (await portal()).get('selectedEmployee'), 'funcionário: um pedaço do nome não basta')
+
+    # 15 e 2: cadastro na plataforma — campos fora das regras e só o campo mudado vai ao portal
+    await abrir('employee-registration')
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#f-extra\\\\:eSocialRegistration') && [...document.querySelectorAll('.pf-grupo > summary')].some(s => s.textContent.includes('Outros campos do portal'))"), 10)
+    check(ok, 'campos do portal fora das regras aparecem em "Outros campos do portal"')
+    await pn.evaluate("document.querySelectorAll('.pf-grupo').forEach(d => d.open = true)")
+    await pn.fill('#f-extra\\:eSocialRegistration', 'ABC-77'); await pn.dispatch_event('#f-extra\\:eSocialRegistration', 'change')
+    ok = await espera(tem(eSocialRegistration='ABC-77'), 10)
+    check(ok, 'campo fora das regras preenchido no portal pela plataforma')
+    await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(500)
+    await pn.click('#diag'); await pg.wait_for_timeout(800)
+    diag = await pg.evaluate("navigator.clipboard.readText()")
+    check('eSocialRegistration (Matrícula eSocial)' in diag and 'ABC-77' not in diag, 'diagnóstico lista os campos fora das regras só pelo nome')
+    await abrir('employee-registration')
+    # preenche tudo uma vez (documento), depois muda um campo só
+    await pg.evaluate("""async () => { const r = await fetch('exemplos/ficha-admissao.pdf'); window.__ctSim.hooks().sendFiles([new File([await r.blob()], 'ficha-admissao.pdf', { type: 'application/pdf' })]); }""")
+    await espera(tem(addressCity='São Paulo', motherName='ANA SOUZA LIMA'), 40)
+    await espera(lambda: pn.evaluate("!document.querySelector('#btn-fill')?.disabled"), 20); await pg.wait_for_timeout(1500)
+    await pg.evaluate("""() => { window.__aberturas = 0; window.__obsListas = new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeName === 'BENTO-COMBOBOX-LIST') window.__aberturas++; }))); window.__obsListas.observe(document.querySelector('main'), { childList: true, subtree: true }); }""")
+    await pn.evaluate("document.querySelectorAll('.pf-grupo').forEach(d => d.open = true)")
+    t0 = time.time()
+    await pn.fill('#f-numero', '2024'); await pn.dispatch_event('#f-numero', 'change')
+    ok = await espera(tem(addressNumber='2024'), 10)
+    dt = time.time() - t0
+    await pg.wait_for_timeout(800)
+    ab = await pg.evaluate("window.__aberturas")
+    check(ok and dt < 2.5 and ab == 0, f'mudar um campo do cadastro manda só ele: nenhuma lista reaberta ({ab}) e rápido ({dt:.1f} s)')
+
+    # 7: o portal recusa o envio (cadastro incompleto) → a plataforma mostra o que ele acusou
+    await abrir('employee-registration')
+    await pn.click('#btn-send'); await pg.wait_for_timeout(1500)
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#fill-res')?.innerText || '').includes('O portal não aceitou') && !!document.querySelector('#fr-ver-portal')"), 15)
+    check(ok, 'envio recusado: a plataforma lista os campos que o portal acusou, com "Ver no portal"')
+    check(await pn.locator('#fields .field.pf-err').count() >= 2 and 'O portal acusa' in await pn.locator('#fields').inner_text(), 'campos recusados marcados no formulário da plataforma')
+    await pn.click('#btn-send'); await pg.wait_for_timeout(1500)
+    check('O portal acusa' in await pn.locator('#modal').inner_text(), '"Conferir e enviar" mostra o que o portal ainda acusa')
+    await pn.click('#m-fix'); await pg.wait_for_timeout(300)
+    await pn.click('#fr-ver-portal'); await pg.wait_for_timeout(800)
+    check(not await pn.evaluate("document.body.classList.contains('plat')"), '"Ver no portal" mostra a página do portal')
+    await pn.click('#btn-plat'); await pg.wait_for_timeout(800)
+
+    # 18 e 22: atestado → Desfazer → mudar outro campo; anexos conferidos um a um
+    await abrir('employee-leave')
+    await pg.evaluate("""async () => { const r = await fetch('exemplos/atestado.pdf'); window.__ctSim.hooks().sendFiles([new File([await r.blob()], 'atestado.pdf', { type: 'application/pdf' })]); }""")
+    ok = await espera(tem(selectedEmployee='JOAO DA SILVA', leaveDate='05/10/2026'), 40)
+    await espera(lambda: pg.evaluate("document.querySelectorAll('.p-chip').length > 0"), 15); await pg.wait_for_timeout(1200)
+    await pn.click('#btn-undo')
+    ok = await espera(tem(selectedEmployee='', leaveDate=''), 15); await pg.wait_for_timeout(800)
+    check(ok and await pn.locator('#f-empregado').input_value() == '' and await pn.locator('#f-dataAfastamento').input_value() == '', 'Desfazer volta o formulário da plataforma junto com o portal')
+    await pn.fill('#f-conclusao', '30/10/2026'); await pn.dispatch_event('#f-conclusao', 'change')
+    ok = await espera(tem(conclusionExpectation='30/10/2026'), 10); await pg.wait_for_timeout(1000)
+    v = await portal()
+    check(ok and not v.get('selectedEmployee') and not v.get('leaveDate') and not v.get('subject'), 'depois de desfazer, mudar outro campo não traz de volta os campos desfeitos')
+    check(not await pn.locator('#btn-undo').is_visible(), 'o que o cliente digita na plataforma não entra no Desfazer')
+    # dois prints colados no mesmo minuto: nomes diferentes, os dois entram
+    await pn.evaluate("""async () => { const c = document.createElement('canvas'); c.width = c.height = 8; const b = await new Promise(r => c.toBlob(r, 'image/png'));
+      for (let i = 0; i < 2; i++) { const dt = new DataTransfer(); dt.items.add(new File([b], 'image.png', { type: 'image/png' })); document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true })); await new Promise(r => setTimeout(r, 300)); } }""")
+    await pn.click('#btn-fill')
+    ok = await espera(lambda: pg.evaluate("[...document.querySelectorAll('.p-chip')].filter(c => c.textContent.includes('print-colado')).length === 2"), 40)
+    check(ok, 'dois prints colados no mesmo minuto: nomes diferentes e os dois anexados')
+    # anexo tirado pelo cliente no portal volta para "a anexar"
+    await espera(lambda: pn.evaluate("!document.querySelector('#btn-fill')?.disabled"), 20); await pg.wait_for_timeout(800)
+    await pg.evaluate("[...document.querySelectorAll('.p-chip')].find(c => c.textContent.startsWith('atestado.pdf'))?.querySelector('button')?.click()")
+    ok = await espera(lambda: pn.evaluate("(() => { const f = [...document.querySelectorAll('#files .file')].find(x => x.textContent.includes('atestado.pdf')); return !!f && f.textContent.includes('a anexar'); })()"), 10)
+    check(ok, 'anexo tirado no portal volta para "a anexar"')
+    # arquivo que o portal recusa: aviso e "a anexar"
+    await pg.evaluate("window.__ctSim.hooks().sendFiles([new File(['x'], 'planilha.zip', { type: 'application/zip' })])")
+    await pg.wait_for_timeout(2500)
+    await pn.click('#btn-fill')
+    ok = await espera(lambda: pn.evaluate("(() => { const f = [...document.querySelectorAll('#files .file')].find(x => x.textContent.includes('planilha.zip')); return !!f && f.textContent.includes('não aceitou') && f.textContent.includes('a anexar'); })()"), 20)
+    check(ok, 'arquivo recusado pelo portal: aviso e volta para "a anexar"')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'mec':   # SIM_SO=mec roda só a mecânica do preenchimento
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_mecanica(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
     if os.environ.get('SIM_SO') == '20':   # SIM_SO=20 roda só a parte da plataforma (2.0)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
@@ -375,12 +515,17 @@ async def main():
             # cadastro com a ficha
             await pg.click('.p-menu-i[data-s="employee-registration"]'); await pg.click('[data-add]'); await pg.wait_for_timeout(1200)
             await pg.click('#sim-samples > summary'); await pg.click('[data-file="exemplos/ficha-admissao.pdf"]')
-            await pg.wait_for_timeout(9000)
+            # o município só carrega ~2 s depois da UF (como no portal): o Assistente tenta de novo no fim
+            for _ in range(40):
+                await pg.wait_for_timeout(1000)
+                if (await leave()).get('addressCity') and (await leave()).get('birthCity'): break
+            await pg.wait_for_timeout(1500)
             v2 = dict(await pg.evaluate("""() => [...document.querySelectorAll('main [formcontrolname]')].filter(e=>e.type!=='radio').map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value])"""))
             check(v2.get('name') == 'MARIA APARECIDA SOUZA LIMA', 'cadastro: nome')
             check(v2.get('motherName') == 'ANA SOUZA LIMA', 'cadastro: mãe (outra etapa)')
             check(v2.get('addressState') == 'São Paulo', 'cadastro: UF convertida (SP → São Paulo)')
             check(v2.get('addressCity') == 'São Paulo', f"cadastro: município depois da UF ({v2.get('addressCity')})")
+            check(v2.get('costCenterExpanded') == 'GERAL' and v2.get('laborUnionClientExpanded') == 'SINDICATO EXEMPLO', 'cadastro: lista com uma opção só escolhida sozinha (centro de custo, sindicato)')
             print('   cadastro:', {k: v for k, v in v2.items() if v})
             await pg.screenshot(path='/tmp/sim-2.png')
 
@@ -456,7 +601,7 @@ async def main():
             for _ in range(20):
                 await pg.wait_for_timeout(700)
                 v = await leave()
-                if v.get('selectedEmployee'): break
+                if v.get('selectedEmployee') and v.get('vacationStartDate'): break
             check(v.get('selectedEmployee') == 'JORGE OLIVEIRA ALVES' and v.get('vacationStartDate') == '16/11/2026', 'abre Aviso de Férias com o funcionário e a data preenchidos')
             await pg.wait_for_timeout(1500); v = await leave()
             check(not any('vai sair' in str(x) for x in v.values()), 'o texto escrito não vai literalmente para a descrição')
@@ -583,7 +728,7 @@ async def main():
         for _ in range(20):
             await pg.wait_for_timeout(600)
             v = await leave()
-            if v.get('selectedEmployee'): break
+            if v.get('selectedEmployee') and v.get('leaveDate'): break   # o preenchimento segue a ordem das regras: funcionário primeiro, a data depois
         check(v.get('selectedEmployee') == 'BEATRIZ CAMPOS' and v.get('leaveDate') == '06/10/2026', 'rascunho: continuar devolve os dados e preenche o portal')
         # acompanhante: aviso e tipo em aberto
         await abrir_afastamento()
@@ -658,6 +803,7 @@ async def main():
 
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await teste_plataforma(b)
+        await teste_mecanica(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 

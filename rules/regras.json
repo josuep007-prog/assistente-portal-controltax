@@ -198,6 +198,22 @@
     "prescricaoDias": 30,
     "prescricaoAvisoDias": 10,
     "leituraAutomaticaSegundos": 30,
+    "escolherUnicaOpcao": {
+      "_comentario": "Listas do portal em que o Assistente escolhe sozinho quando há uma opção só (no fim de um preenchimento, se o campo estiver vazio). A fonte aparece como 'única opção do portal'.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado",
+        "cadastroEstagiario",
+        "cadastroContribuinte"
+      ],
+      "campos": [
+        "centroCusto",
+        "sindicato",
+        "servico",
+        "departamento",
+        "categoriaEsocial"
+      ]
+    },
     "dicasAvisoPortal": [
       { "padrao": "sem permiss|n[aã]o est[aá] habilitad", "dica": "Este tipo de solicitação não está liberado para esta empresa no portal. Fale com o escritório para habilitar; enquanto isso, use outro tipo ou a Solicitação Geral." },
       { "padrao": "sess[aã]o.*(expir|encerr)|fa[cç]a login|entre novamente", "dica": "A sessão do portal está acabando ou acabou. Clique em Ver no portal e entre de novo; a plataforma volta a ler sozinha." }
@@ -1104,7 +1120,49 @@
     "DIVORCIADA": "Divorciado",
     "VIUVA": "Viúvo",
     "BRASILEIRA": "Brasil",
-    "BRASILEIRO": "Brasil"
+    "BRASILEIRO": "Brasil",
+    "_comentarioApelidos": "Apelidos acrescentados em 2026-10: raça/cor no masculino, grau de instrução antigo e bancos pelo nome. Conferir com as listas reais do Onvio (a calibrar).",
+    "PARDO": "Parda",
+    "PRETO": "Preta",
+    "NEGRO": "Preta",
+    "NEGRA": "Preta",
+    "BRANCO": "Branca",
+    "AMARELO": "Amarela",
+    "1º GRAU COMPLETO": "Fundamental completo",
+    "1º GRAU INCOMPLETO": "Fundamental incompleto",
+    "PRIMEIRO GRAU COMPLETO": "Fundamental completo",
+    "PRIMEIRO GRAU INCOMPLETO": "Fundamental incompleto",
+    "ENSINO FUNDAMENTAL COMPLETO": "Fundamental completo",
+    "ENSINO FUNDAMENTAL INCOMPLETO": "Fundamental incompleto",
+    "2º GRAU COMPLETO": "Médio completo",
+    "2º GRAU INCOMPLETO": "Médio incompleto",
+    "SEGUNDO GRAU COMPLETO": "Médio completo",
+    "SEGUNDO GRAU INCOMPLETO": "Médio incompleto",
+    "ENSINO MÉDIO COMPLETO": "Médio completo",
+    "ENSINO MÉDIO INCOMPLETO": "Médio incompleto",
+    "3º GRAU COMPLETO": "Superior completo",
+    "3º GRAU INCOMPLETO": "Superior incompleto",
+    "ENSINO SUPERIOR COMPLETO": "Superior completo",
+    "ENSINO SUPERIOR INCOMPLETO": "Superior incompleto",
+    "NUBANK": "260 - Nu Pagamentos",
+    "NU BANK": "260 - Nu Pagamentos",
+    "NU PAGAMENTOS": "260 - Nu Pagamentos",
+    "BANCO DO BRASIL": "001 - Banco do Brasil",
+    "BB": "001 - Banco do Brasil",
+    "CAIXA": "104 - Caixa Econômica Federal",
+    "CAIXA ECONÔMICA": "104 - Caixa Econômica Federal",
+    "CAIXA ECONÔMICA FEDERAL": "104 - Caixa Econômica Federal",
+    "CEF": "104 - Caixa Econômica Federal",
+    "ITAÚ": "341 - Itaú Unibanco",
+    "BANCO ITAÚ": "341 - Itaú Unibanco",
+    "BRADESCO": "237 - Bradesco",
+    "BANCO BRADESCO": "237 - Bradesco",
+    "SANTANDER": "033 - Santander",
+    "BANCO SANTANDER": "033 - Santander",
+    "INTER": "077 - Banco Inter",
+    "BANCO INTER": "077 - Banco Inter",
+    "C6": "336 - C6 Bank",
+    "C6 BANK": "336 - C6 Bank"
   },
   "intencoes": [
     {
@@ -2489,6 +2547,20 @@
           ],
           "grupo": "Geral"
         },
+        "matricula": {
+          "fc": "registration",
+          "tipo": "texto",
+          "rotulo": "Matrícula",
+          "grupo": "Geral",
+          "calibrar": true
+        },
+        "servico": {
+          "fc": "serviceExpanded",
+          "tipo": "combo",
+          "rotulo": "Serviço (sede onde ficará alocado)",
+          "grupo": "Geral",
+          "calibrar": true
+        },
         "departamento": {
           "fc": "departmentExpanded",
           "tipo": "combo",
@@ -2520,6 +2592,13 @@
           },
           "grupo": "Geral"
         },
+        "categoria": {
+          "fc": "category",
+          "tipo": "combo",
+          "rotulo": "Categoria",
+          "grupo": "Geral",
+          "calibrar": true
+        },
         "dataAdmissao": {
           "fc": "admissionDate",
           "tipo": "data",
@@ -2532,6 +2611,13 @@
           ],
           "grupo": "Geral"
         },
+        "vinculo": {
+          "fc": "employmentRelationship",
+          "tipo": "combo",
+          "rotulo": "Vínculo empregatício",
+          "grupo": "Geral",
+          "calibrar": true
+        },
         "salario": {
           "fc": "wage",
           "tipo": "moeda",
@@ -2543,6 +2629,13 @@
             "remuneração"
           ],
           "grupo": "Geral"
+        },
+        "seguroDesemprego": {
+          "fc": "unemploymentInsuranceSituation",
+          "tipo": "combo",
+          "rotulo": "Situação do seguro-desemprego",
+          "grupo": "Geral",
+          "calibrar": true
         },
         "contratoExperiencia": {
           "fc": "daysExperience",
@@ -2562,6 +2655,13 @@
             "prorrogação"
           ],
           "grupo": "Geral"
+        },
+        "cartaoPonto": {
+          "fc": "frequencyCard",
+          "tipo": "texto",
+          "rotulo": "Cartão ponto",
+          "grupo": "Geral",
+          "calibrar": true
         },
         "jornada": {
           "fc": "workDayExpanded",
@@ -2684,6 +2784,13 @@
             "CEP"
           ],
           "grupo": "Pessoal"
+        },
+        "tipoEndereco": {
+          "fc": "addressType",
+          "tipo": "combo",
+          "rotulo": "Tipo de endereço",
+          "grupo": "Pessoal",
+          "calibrar": true
         },
         "endereco": {
           "fc": "streetAddress",
@@ -3869,6 +3976,13 @@
     "admissaoFim": "Pode mandar foto bem legível ou PDF. Qualquer dúvida, é só chamar. Obrigado!",
     "anexoSoNoAssistente": "O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.",
     "envioNaoConcluido": "O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo.",
+    "envioRecusadoPortal": "O portal não aceitou: {erros}. Corrija esses campos e envie de novo.",
+    "portalAcusa": "O portal acusa: {mensagem}",
+    "listaCarregando": "O portal ainda está carregando a lista deste campo — tentei de novo",
+    "anexoRecusado": "O portal não aceitou este arquivo (formato ou tamanho?)",
+    "opcaoAproximada": "Escolhi a mais parecida: {escolhida} (no documento: {pedido}) — confira",
+    "opcaoNaoEncontrada": "Não achei “{pedido}” na lista do portal.",
+    "unicaOpcao": "única opção do portal",
     "plataformaVazioSolicitacoes": "Nenhuma solicitação encontrada com esses filtros.",
     "plataformaAguardando": "Há solicitação esperando sua resposta. Abra, leia o último trâmite e responda — quem conclui a solicitação é você.",
     "plataformaCalibrar": "Esta parte do portal ainda está sendo conferida pelo escritório. Por enquanto, abra direto no portal.",
