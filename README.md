@@ -17,6 +17,11 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.6 — preencher mais sozinho (parte 1)
+
+- **Texto livre** (`config.textoLivre`, `intencoes[].radicais/pesos/excluir`, `tipos.*.sentidoDatas`, `config.textoLivre.escolhas`): datas no sentido de cada pedido, intervalos, "preciso até" → expectativa, números por extenso, abono/13º pela palavra vizinha, erros de digitação, palpite de funcionário (pergunta), correção, cartão editável, folha por linhas (`tipos.rubricas.dicionarioRubricas`, revisar com o escritório), vários pedidos numa frase (`E.dividirPedidos`), dúvidas primeiro e "Entender:" no Ctrl+K.
+- **Preenchimento no portal:** só o campo que mudou, ordem das regras com nova tentativa, erros do portal na plataforma, "Outros campos do portal", anexos conferidos um a um, escolha aproximada com aviso (`content/opcoes.js`, `aliasesOpcoes`), única opção (`config.escolherUnicaOpcao`, revisar com o escritório).
+
 ## Novidades da 2.5
 
 - **Solicitações** no formato do escritório: cartões por tipo (`.tipo-c`, com "esperam você"), situações (`.hj-sit`) e cartões agrupados pela situação; Cartões, Lista ou Tabela (`ct.solVis`). O Hoje fica com o resumo (rosca, carrossel, próximos passos, Equipe, Atenção) e a rosca leva às Solicitações filtradas.

@@ -4,6 +4,7 @@ import * as C from '../panel/calculos.js';
 import * as D from '../panel/dados.js';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import '../content/opcoes.js';   // define globalThis.CtOpcoes (escolha de opção nas listas do portal)
 
 const rules = JSON.parse(fs.readFileSync(new URL('../rules/regras.json', import.meta.url), 'utf8'));
 const hoje = new Date(2026, 9, 9);
@@ -590,6 +591,205 @@ t('Dados (Control Onvio): campos em português, destaques e sem dado de saúde',
   const pc = D.camposDetalhe({ reason: 'ApprenticeContractTermination', terminationType: 'EarlyTerminationByEmployee', situacao: 'Active', nome: 'Maria', codigo: 'XyzAbc' }).grupos.flatMap(g => g.campos);
   assert.ok(pc.some(c => c.k === 'Motivo' && c.v === 'Término do contrato de aprendizagem'));
   assert.ok(pc.some(c => c.v === 'Rescisão antecipada pelo empregado') && pc.some(c => c.v === 'Ativo') && pc.some(c => c.v === 'Maria') && pc.some(c => c.v === 'XyzAbc'));
+});
+
+/* ---- Texto livre: datas, quantidades, pedido, funcionário, correção, folha, vários pedidos e dúvidas (nomes inventados) ---- */
+const SAB = new Date(2026, 9, 17), QUA = new Date(2026, 9, 14), JAN = new Date(2027, 0, 8);
+const FUNC = ['RONALDO DE SOUZA', 'CARLA MENDES FARIAS', 'MARIA APARECIDA LIMA', 'JOAO DA SILVA', 'JOSE CARLOS PEREIRA', 'JOSE ANTUNES', 'FRANCISCO DE MOURA'];
+const L = (txt, ctx = {}) => E.parseFreeText(txt, rules, { employees: FUNC, hoje: SAB, ...ctx });
+const V = (r) => Object.fromEntries(Object.entries(r.campos).map(([k, c]) => [k, c.valor]));
+const FD = (txt, h = SAB, sentido) => E.findDates(txt, h, { sentido, rules }).map(E.fmtDate);
+
+t('datas: passada, que vem, próxima, 1º e "segunda via" não é data', () => {
+  assert.deepEqual(FD('segunda passada'), ['12/10/2026']);
+  assert.deepEqual(FD('sexta que vem'), ['23/10/2026']);
+  assert.deepEqual(FD('próxima segunda'), ['19/10/2026']);
+  assert.deepEqual(FD('segunda via da guia'), []);
+  assert.deepEqual(FD('segunda parcela do 13'), []);
+  assert.deepEqual(FD('1º de novembro'), ['01/11/2026']);
+  assert.deepEqual(FD('dia 1º'), ['01/11/2026']);
+  assert.deepEqual(FD('3 de nov'), ['03/11/2026']);
+  assert.deepEqual(FD('daqui a 15 dias'), ['01/11/2026']);
+  assert.deepEqual(FD('semana que vem'), ['19/10/2026']);
+  assert.deepEqual(FD('dia 5 do mês que vem'), ['05/11/2026']);
+  assert.deepEqual(FD('quer vender 1/3'), []);
+  assert.deepEqual(FD('10 mais'), []);
+});
+
+t('datas: sentido por tipo (afastamento olha para trás, rescisão fica perto de hoje)', () => {
+  assert.equal(rules.tipos.afastamento.sentidoDatas, 'passado');
+  assert.equal(rules.tipos.avisoRescisao.sentidoDatas, 'perto');
+  // em janeiro, "28/12" do atestado é do ano anterior; nas férias continua indo para a frente
+  assert.deepEqual(FD('atestado a partir de 28/12', JAN, 'passado'), ['28/12/2026']);
+  assert.deepEqual(FD('a partir de 28/12', JAN), ['28/12/2027']);
+  assert.deepEqual(FD('desde o dia 13', SAB, 'passado'), ['13/10/2026']);
+  assert.deepEqual(FD('segunda', QUA, 'passado'), ['12/10/2026']);
+  assert.deepEqual(FD('segunda', QUA, 'perto'), ['12/10/2026']);
+  assert.deepEqual(FD('sexta', QUA, 'perto'), ['16/10/2026']);
+  assert.equal(V(L('atestado do Ronaldo segunda passada, 2 dias')).dataAfastamento, '12/10/2026');
+  assert.equal(V(L('atestado do Ronaldo desde o dia 13')).dataAfastamento, '13/10/2026');
+  assert.equal(V(L('atestado do Ronaldo a partir de 28/12', { hoje: JAN })).dataAfastamento, '28/12/2026');
+  assert.equal(V(L('o Ronaldo foi demitido dia 15', { tipoAtual: 'avisoRescisao' })).dataAviso, '15/10/2026');
+  assert.equal(V(L('férias do Ronaldo dia 13')).inicioGozo, '13/11/2026');   // férias: como antes
+});
+
+t('quantidades: por extenso, abono, gozo, "daqui a" e 13º só com décimo', () => {
+  assert.equal(E.numeroPorExtenso('vinte e cinco'), 25);
+  assert.equal(E.numeroPorExtenso('quarenta'), 40);
+  assert.equal(V(L('trinta dias de férias a partir do dia 10 para a Carla')).diasGozo, '30');
+  const vt = V(L('férias da Carla: vai vender 10 dias e tirar 20, a partir de 03/11'));
+  assert.equal(vt.diasGozo, '20'); assert.equal(vt.diasAbono, '10');
+  const ab = L('aviso de férias da Carla 03/11 com abono');
+  assert.equal(ab.campos.diasAbono.valor, '10'); assert.ok(ab.campos.diasAbono.conf < 0.6);   // sugestão para conferir
+  assert.equal(V(L('aviso de férias da Carla 03/11 por 20 dias com abono')).diasAbono, '10');
+  const c1 = V(L('cálculo de férias da Carla a partir do dia 13, 30 dias'));
+  assert.equal(c1.adiantar13, undefined); assert.equal(c1.diasGozo, '30');
+  const c2 = V(L('cálculo de férias da Carla, quer vender 1/3, a partir de 3/11'));
+  assert.equal(c2.abono, 'SIM'); assert.equal(c2.inicioGozo, '03/11/2026');
+  const c3 = V(L('calcular férias da Carla 03/11 vinte dias sem adiantar o 13º, sem abono'));
+  assert.equal(c3.diasGozo, '20'); assert.equal(c3.adiantar13, 'NÃO'); assert.equal(c3.abono, 'NÃO');
+  assert.equal(V(L('cálculo de férias da Carla 03/11 adiantar o 13º')).adiantar13, 'SIM');
+  assert.equal(V(L('férias da Carla daqui a 15 dias')).diasGozo, undefined);
+  const sem = L('férias da Carla dia 10/11 por uma semana');
+  assert.equal(sem.campos.diasGozo.valor, '7'); assert.ok(sem.campos.diasGozo.conf < 0.6);
+});
+
+t('intervalos e "preciso até" → expectativa de conclusão', () => {
+  const a = L('férias do Ronaldo de 03/11 a 22/11');
+  assert.equal(V(a).inicioGozo, '03/11/2026'); assert.equal(V(a).diasGozo, '20');
+  assert.equal(V(L('férias do Ronaldo de 3 a 22 de novembro')).inicioGozo, '03/11/2026');
+  assert.equal(V(L('férias do Ronaldo entre 03/11 e 22/11')).diasGozo, '20');
+  const b = L('férias do Ronaldo de 03/11 a 22/11 por 30 dias');   // a conta não bate: fica para conferir
+  assert.equal(b.campos.diasGozo.valor, '30'); assert.ok(b.campos.diasGozo.conf < 0.6);
+  const p = V(L('férias da Carla dia 10/11, preciso até sexta'));
+  assert.equal(p.inicioGozo, '10/11/2026'); assert.equal(p.conclusao, '23/10/2026');
+  const p2 = V(L('atestado do Ronaldo de 2 dias ontem, prazo dia 20'));
+  assert.equal(p2.dataAfastamento, '16/10/2026'); assert.equal(p2.conclusao, '20/10/2026');
+  assert.equal(V(L('do dia 13 ao dia 16 o Ronaldo ficou de atestado')).dias, '4');
+});
+
+t('pedido: radicais, erro de digitação, pesos, palavras que não contam e cartões de escolha', () => {
+  const tp = (x) => E.suggestTipoByText(x, rules, null)?.tipo;
+  assert.equal(tp('o Ronaldo foi demitido'), 'avisoRescisao');
+  assert.equal(tp('fériaz do Ronaldo'), 'avisoFerias');
+  assert.equal(tp('atestdo do Ronaldo de 2 dias'), 'afastamento');
+  assert.equal(tp('contratar estagiária'), 'cadastroEstagiario');
+  assert.equal(tp('folha de pagamento de setembro'), undefined);
+  assert.equal(L('calcular rescisão do Ronaldo, aviso indenizado, último dia 20/10').tipoSugerido, 'calculoRescisao');
+  const res = E.escolhaPara('calcular rescisão do Ronaldo, aviso indenizado', rules);
+  assert.equal(res.id, 'rescisao'); assert.equal(E.destaqueEscolha('calcular rescisão do Ronaldo, aviso indenizado', res), 'calculoRescisao');
+  assert.equal(E.destaqueEscolha('aviso de férias', E.escolhaPara('aviso de férias', rules)), 'avisoFerias');
+  assert.ok(E.escolhaPara('o Ronaldo vai sair de férias', rules).ambos);
+  const f = E.escolhaPara('a Carla faltou ontem', rules);
+  assert.equal(f.id, 'faltou'); assert.deepEqual(f.tipos, ['afastamento', 'rubricas']);
+  assert.equal(E.destaqueEscolha('a Carla faltou ontem sem atestado', E.escolhaPara('a Carla faltou ontem sem atestado', rules)), 'rubricas');
+  assert.equal(E.escolhaPara('atestado da Carla, ela faltou ontem', rules), null);
+  // empate de verdade vira cartão com os dois pedidos
+  const emp = E.escolhaPara('licença e registro', rules);
+  assert.equal(emp.id, 'empate'); assert.deepEqual([...emp.tipos].sort(), ['afastamento', 'cadastroEmpregado']);
+});
+
+t('funcionário: palpite por apelido, sobrenome e uma letra (pergunta, não preenche); só quando o pedido tem o campo', () => {
+  const r1 = L('férias do Ronado dia 10/11');
+  assert.equal(r1.campos.empregado, undefined); assert.equal(r1.palpite.nome, 'RONALDO DE SOUZA'); assert.equal(r1.palpite.trecho, 'Ronado');
+  assert.equal(L('férias do Souza dia 10/11').palpite.porque, 'sobrenome');
+  const ze = L('férias do Zé Carlos dia 10/11');
+  assert.equal(ze.palpite.nome, 'JOSE CARLOS PEREIRA'); assert.equal(ze.palpite.porque, 'apelido');
+  assert.equal(L('férias do Chico dia 10/11').palpite.nome, 'FRANCISCO DE MOURA');
+  const adm = L('vamos admitir a Maria Souza');
+  assert.equal(adm.tipoSugerido, 'cadastroEmpregado'); assert.equal(adm.campos.empregado, undefined); assert.equal(adm.palpite, null);
+});
+
+t('correção na mesma frase', () => {
+  const a = L('férias do Ronaldo dia 10/11, não, é dia 12/11');
+  assert.equal(V(a).inicioGozo, '12/11/2026'); assert.equal(V(a).empregado, 'RONALDO DE SOUZA'); assert.deepEqual(a.corrigidos, ['inicioGozo']);
+  const b = V(L('atestado do Ronaldo de 3 dias, na verdade 20 dias'));
+  assert.equal(b.dias, '20'); assert.equal(b.tipoAfastamento, 'Doença período superior a 15 dias');
+  assert.equal(V(L('o Ronaldo, na verdade, vai sair de férias dia 10/11')).inicioGozo, '10/11/2026');
+});
+
+t('variáveis da folha: competência, "vale" e uma linha por funcionário', () => {
+  assert.equal(V(L('horas extras de dezembro', { hoje: JAN })).competencia, '12/2026');
+  assert.equal(V(L('horas extras de outubro')).competencia, '10/2026');
+  assert.equal(V(L('faltas do mês passado')).competencia, '09/2026');
+  assert.equal(V(L('comissões deste mês')).competencia, '10/2026');
+  assert.equal(V(L('desconto de vale transporte')).tipoLancamento, 'MENSAL');
+  assert.equal(V(L('vale salarial do Ronaldo R$ 500')).tipoLancamento, 'ADIANTAMENTO');
+  assert.ok(rules.tipos.rubricas.dicionarioRubricas.revisarComEscritorio);
+  const r = L('Ronaldo fez 10 horas extras, Carla 2 faltas e 1 atraso');
+  assert.deepEqual(r.linhas.map(l => [l.empregado, l.rubrica, l.valor]), [['RONALDO DE SOUZA', 'Horas extras 50%', '10'], ['CARLA MENDES FARIAS', 'Faltas', '2'], ['CARLA MENDES FARIAS', 'Atrasos', '1']]);
+  assert.match(r.campos.tabelaRubricas.valor, /• RONALDO DE SOUZA — Horas extras 50%: 10 horas/);
+  assert.ok(!/fez/.test(r.campos.tabelaRubricas.valor));   // itens entendidos, não o texto
+});
+
+t('vários pedidos numa frase: um por funcionário (herda o comum) e férias em dois períodos', () => {
+  const P = (x) => E.dividirPedidos(x, rules, { employees: FUNC, hoje: SAB }).map(p => [p.tipo, V(p)]);
+  assert.deepEqual(P('férias do Ronaldo dia 10/11 por 20 dias e da Carla dia 01/12 por 30'), [
+    ['avisoFerias', { empregado: 'RONALDO DE SOUZA', inicioGozo: '10/11/2026', diasGozo: '20' }],
+    ['avisoFerias', { empregado: 'CARLA MENDES FARIAS', inicioGozo: '01/12/2026', diasGozo: '30' }]]);
+  const at = P('atestado da Maria de 2 dias ontem e do João de 1 dia hoje');
+  assert.deepEqual(at.map(([tp, v]) => [tp, v.empregado, v.dataAfastamento, v.dias]), [['afastamento', 'MARIA APARECIDA LIMA', '16/10/2026', '2'], ['afastamento', 'JOAO DA SILVA', '17/10/2026', '1']]);
+  const per = P('férias do Ronaldo em dois períodos: 10/11 por 20 dias e 01/12 por 10 dias');
+  assert.deepEqual(per.map(([, v]) => [v.empregado, v.inicioGozo, v.diasGozo]), [['RONALDO DE SOUZA', '10/11/2026', '20'], ['RONALDO DE SOUZA', '01/12/2026', '10']]);
+  const junt = P('férias do Ronaldo e da Carla dia 10/11 por 30 dias');
+  assert.equal(junt[0][1].inicioGozo, '10/11/2026'); assert.equal(junt[1][1].diasGozo, '30');
+  assert.deepEqual(P('férias do Ronaldo dia 10/11 por 20 dias'), []);
+  assert.deepEqual(P('Ronaldo 10 horas extras, Carla 2 faltas'), []);   // a folha é um pedido só
+});
+
+t('dúvidas: pergunta, radical e as novas (13º, prazos de férias, pró-labore)', () => {
+  assert.ok(E.ehPergunta('posso mandar foto do atestado?', rules));
+  assert.ok(E.ehPergunta('como mando vários atestados', rules));
+  assert.ok(!E.ehPergunta('férias do Ronaldo dia 10/11', rules));
+  const q = (x) => E.buscarFaq(x, rules)[0]?.pergunta;
+  assert.equal(q('posso mandar foto do atestado?'), 'Posso mandar foto do atestado?');
+  assert.equal(q('como mando vários atestados?'), 'Como mando vários atestados de uma vez?');
+  assert.match(q('quando pago o 13º?'), /13º/);
+  assert.match(q('prazos de férias'), /prazos das férias/);
+  assert.match(q('pró-labore do sócio'), /pró-labore/);
+  assert.ok(rules.faq.filter(f => f.revisarComEscritorio).length >= 3);
+});
+
+t('texto livre continua sem ir para a descrição (correção, folha e vários pedidos)', () => {
+  for (const txt of ['férias do Ronaldo dia 10/11, não, é dia 12/11, avisa ele por favor', 'Ronaldo fez 10 horas extras, avisa ele por favor']) {
+    const r = L(txt);
+    assert.ok(!Object.values(r.campos).some(c => /avisa ele/.test(String(c.valor))), txt);
+  }
+});
+
+t('listas do portal: a comparação do conteúdo é a mesma do motor', () => {
+  const pares = [['PARDO', 'Parda'], ['Nubank', '260 - Nu Pagamentos'], ['JOAO', 'JOAO DA SILVA'], ['Superior completa', 'Superior completo'], ['Sem justa causa', 'Demitido SEM justa causa'], ['xyz', 'Brasil'], ['São Paulo', 'SAO PAULO']];
+  for (const [a, b] of pares) assert.equal(globalThis.CtOpcoes.similaridade(a, b), E.similarity(a, b), `${a} × ${b}`);
+});
+
+t('listas do portal: escolha exata, aproximada, sugestões e funcionário', () => {
+  const O = globalThis.CtOpcoes;
+  const raca = ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena', 'Não informado'];
+  assert.deepEqual(O.escolher('parda', raca), { opcao: 'Parda', score: 1, exata: true, sugestoes: [] });
+  const sup = O.escolher('Superior completa', ['Superior incompleto', 'Superior completo', 'Médio completo']);
+  assert.equal(sup.opcao, 'Superior completo'); assert.equal(sup.exata, false);
+  // "Prada" fica no meio de Parda e Preta: não escolhe sozinho, sugere as duas
+  const pr = O.escolher('Prada', raca);
+  assert.equal(pr.opcao, null); assert.deepEqual(pr.sugestoes.slice(0, 2).sort(), ['Parda', 'Preta']);
+  // funcionário: pedaço de nome nunca basta; abaixo de 0,9 pergunta
+  const emp = ['JOAO DA SILVA', 'JOANA FONSECA', 'JORGE OLIVEIRA ALVES'];
+  assert.equal(O.escolher('JOAO', emp, { pessoa: true }).opcao, null);
+  assert.equal(O.escolher('JOAO DA SILVA', emp, { pessoa: true }).opcao, 'JOAO DA SILVA');
+  assert.equal(O.escolher('JOAO DA SILVAA', emp, { pessoa: true }).opcao, 'JOAO DA SILVA');
+  assert.equal(O.escolher('JORGE ALVES', emp, { pessoa: true }).opcao, null);
+});
+
+t('regras: apelidos de opções, campos novos do cadastro e única opção', () => {
+  const al = (v) => Object.entries(rules.aliasesOpcoes).find(([k]) => !k.startsWith('_') && E.norm(k) === E.norm(v))?.[1];
+  assert.equal(al('pardo'), 'Parda'); assert.equal(al('2º grau completo'), 'Médio completo'); assert.equal(al('Nubank'), '260 - Nu Pagamentos'); assert.equal(al('Itaú'), '341 - Itaú Unibanco');
+  const c = rules.tipos.cadastroEmpregado.campos; const ordem = Object.keys(c);
+  for (const [k, fc] of [['matricula', 'registration'], ['servico', 'serviceExpanded'], ['categoria', 'category'], ['vinculo', 'employmentRelationship'], ['seguroDesemprego', 'unemploymentInsuranceSituation'], ['cartaoPonto', 'frequencyCard'], ['tipoEndereco', 'addressType']]) { assert.equal(c[k].fc, fc); assert.equal(c[k].calibrar, true); }
+  // ordem do preenchimento = ordem das regras: UF antes do município, país → UF → município de nascimento
+  assert.ok(ordem.indexOf('uf') < ordem.indexOf('municipio') && ordem.indexOf('paisNascimento') < ordem.indexOf('ufNascimento') && ordem.indexOf('ufNascimento') < ordem.indexOf('municipioNascimento'));
+  for (const tp of ['avisoRescisao', 'calculoRescisao', 'afastamento']) assert.equal(Object.keys(rules.tipos[tp].campos).indexOf('empregado'), 0, tp);
+  const u = rules.config.escolherUnicaOpcao;
+  assert.equal(u.revisarComEscritorio, true); assert.ok(u.campos.includes('centroCusto') && u.campos.includes('sindicato'));
+  for (const k of u.campos) assert.equal(E.resolveTipo(rules, 'cadastroEstagiario').campos[k]?.tipo, 'combo', k);
 });
 
 console.log(`\n${n} testes ok`);

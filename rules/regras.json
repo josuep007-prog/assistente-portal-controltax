@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.17-1",
+  "versao": "2026.10.18-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -198,6 +198,22 @@
     "prescricaoDias": 30,
     "prescricaoAvisoDias": 10,
     "leituraAutomaticaSegundos": 30,
+    "escolherUnicaOpcao": {
+      "_comentario": "Listas do portal em que o Assistente escolhe sozinho quando há uma opção só (no fim de um preenchimento, se o campo estiver vazio). A fonte aparece como 'única opção do portal'.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado",
+        "cadastroEstagiario",
+        "cadastroContribuinte"
+      ],
+      "campos": [
+        "centroCusto",
+        "sindicato",
+        "servico",
+        "departamento",
+        "categoriaEsocial"
+      ]
+    },
     "dicasAvisoPortal": [
       { "padrao": "sem permiss|n[aã]o est[aá] habilitad", "dica": "Este tipo de solicitação não está liberado para esta empresa no portal. Fale com o escritório para habilitar; enquanto isso, use outro tipo ou a Solicitação Geral." },
       { "padrao": "sess[aã]o.*(expir|encerr)|fa[cç]a login|entre novamente", "dica": "A sessão do portal está acabando ou acabou. Clique em Ver no portal e entre de novo; a plataforma volta a ler sozinha." }
@@ -287,6 +303,631 @@
       "documentos anexos",
       "conforme anexo"
     ],
+    "textoLivre": {
+      "descricao": "Palavras que o Assistente usa para entender o texto livre (Início, Novo pedido e Ctrl+K). Com ou sem acento, tanto faz; um * no fim casa o começo da palavra (demit* = demitido, demitir…).",
+      "sentidoDatas": "futuro",
+      "naoEhDiaDaSemana": [
+        "via",
+        "parcela",
+        "vez",
+        "opção",
+        "quinzena",
+        "chamada",
+        "etapa",
+        "instância",
+        "mão",
+        "pessoa",
+        "fase",
+        "turma",
+        "metade",
+        "guia",
+        "folha"
+      ],
+      "passado": [
+        "passada",
+        "passado",
+        "última",
+        "último"
+      ],
+      "proximo": [
+        "que vem",
+        "próxima",
+        "próximo",
+        "seguinte"
+      ],
+      "prazo": [
+        "preciso até",
+        "precisa até",
+        "precisamos até",
+        "preciso para",
+        "precisa para",
+        "prazo",
+        "prazo até",
+        "urgente até",
+        "urgente para",
+        "pronto até",
+        "entregar até",
+        "até no máximo",
+        "no máximo até"
+      ],
+      "correcao": [
+        "não,",
+        "na verdade",
+        "aliás",
+        "ou melhor",
+        "errei",
+        "corrigindo",
+        "quer dizer",
+        "digo,"
+      ],
+      "descartaAntes": [
+        "daqui a",
+        "daqui",
+        "há",
+        "faz",
+        "dentro de",
+        "em até",
+        "antecedência de",
+        "prazo de",
+        "mais de",
+        "menos de"
+      ],
+      "descartaDepois": [
+        "atrás",
+        "antes",
+        "depois",
+        "de antecedência",
+        "úteis",
+        "de aviso",
+        "de prazo",
+        "de experiência",
+        "de carência"
+      ],
+      "abono": {
+        "verbos": [
+          "vender",
+          "vende",
+          "vendendo",
+          "venda de",
+          "vai vender",
+          "abono de",
+          "converter",
+          "converte"
+        ],
+        "sim": [
+          "com abono",
+          "abono pecuniário",
+          "vender",
+          "vende",
+          "vendendo",
+          "vai vender"
+        ],
+        "nao": [
+          "sem abono",
+          "não vai vender",
+          "não vender",
+          "sem vender",
+          "não quer vender"
+        ]
+      },
+      "gozoVerbos": [
+        "tirar",
+        "tira",
+        "tirando",
+        "gozar",
+        "goza",
+        "por",
+        "durante"
+      ],
+      "abonoPadraoDias": 10,
+      "decimoTerceiro": {
+        "palavras": [
+          "13º",
+          "13°",
+          "13o",
+          "décimo terceiro",
+          "décimo",
+          "13 salário",
+          "13º salário",
+          "parcela do 13",
+          "adiantar o 13",
+          "adiantar 13",
+          "adiantamento do 13"
+        ],
+        "nao": [
+          "sem adiantar",
+          "não adiantar",
+          "sem o 13",
+          "sem 13",
+          "sem o 13º",
+          "sem 13º",
+          "não quer adiantar",
+          "sem adiantamento do 13"
+        ]
+      },
+      "motivosRescisao": [
+        {
+          "valor": "Pedido de demissão SEM justa causa",
+          "dadoPor": "EMPREGADO",
+          "palavras": [
+            "pediu demissão",
+            "pedido de demissão",
+            "pedir demissão",
+            "quer sair",
+            "pediu para sair",
+            "pediu as contas",
+            "pedir as contas",
+            "pediu a conta"
+          ]
+        },
+        {
+          "valor": "Demitido COM justa causa",
+          "dadoPor": "EMPREGADOR",
+          "palavras": [
+            "justa causa",
+            "com justa causa"
+          ],
+          "exceto": [
+            "sem justa causa"
+          ]
+        },
+        {
+          "valor": "Demitido SEM justa causa",
+          "dadoPor": "EMPREGADOR",
+          "palavras": [
+            "sem justa causa",
+            "demit*",
+            "demissão",
+            "dispens*",
+            "deslig*",
+            "mandar embora",
+            "mandei embora",
+            "mandou embora",
+            "vou mandar embora"
+          ]
+        }
+      ],
+      "pergunta": [
+        "como",
+        "posso",
+        "pode",
+        "podemos",
+        "qual",
+        "quais",
+        "quando",
+        "quanto",
+        "quantos",
+        "quantas",
+        "onde",
+        "por que",
+        "porque",
+        "o que",
+        "devo",
+        "tem como",
+        "é possível",
+        "existe",
+        "quem"
+      ],
+      "palavrasVazias": [
+        "como",
+        "posso",
+        "pode",
+        "podemos",
+        "qual",
+        "quais",
+        "quando",
+        "quanto",
+        "quantos",
+        "quantas",
+        "onde",
+        "que",
+        "porque",
+        "para",
+        "pra",
+        "com",
+        "sem",
+        "uma",
+        "uns",
+        "umas",
+        "dos",
+        "das",
+        "nos",
+        "nas",
+        "pelo",
+        "pela",
+        "isso",
+        "esse",
+        "essa",
+        "este",
+        "esta",
+        "ele",
+        "ela",
+        "eles",
+        "elas",
+        "meu",
+        "minha",
+        "seu",
+        "sua",
+        "mandar",
+        "mando",
+        "manda",
+        "fazer",
+        "faço",
+        "quero",
+        "queria",
+        "preciso",
+        "precisa",
+        "tem",
+        "tenho",
+        "vai",
+        "vou",
+        "foi",
+        "era",
+        "ser",
+        "estar",
+        "está",
+        "favor",
+        "obrigado",
+        "obrigada",
+        "até",
+        "desde",
+        "partir",
+        "mais",
+        "menos",
+        "aqui",
+        "lá",
+        "também",
+        "então",
+        "mesmo",
+        "devo",
+        "existe",
+        "quem"
+      ],
+      "naoSaoNomes": [
+        "vale",
+        "luz",
+        "campos",
+        "rios",
+        "reis",
+        "prado",
+        "mota",
+        "costa",
+        "rocha",
+        "dias",
+        "dia",
+        "hoje",
+        "ontem",
+        "amanhã",
+        "semana",
+        "mês",
+        "ano",
+        "anos",
+        "horas",
+        "hora",
+        "extra",
+        "extras",
+        "falta",
+        "faltas",
+        "faltou",
+        "atestado",
+        "férias",
+        "abono",
+        "vender",
+        "tirar",
+        "sair",
+        "voltar",
+        "entrar",
+        "aviso",
+        "cálculo",
+        "calcular",
+        "pedido",
+        "solicitação",
+        "funcionário",
+        "funcionária",
+        "empregado",
+        "empregada",
+        "colaborador",
+        "colaboradora",
+        "empresa",
+        "escritório",
+        "portal",
+        "período",
+        "períodos",
+        "trabalho",
+        "demissão",
+        "demitido",
+        "demitida",
+        "salário",
+        "parcela",
+        "prazo",
+        "urgente",
+        "verdade",
+        "aliás",
+        "melhor",
+        "errei",
+        "segunda",
+        "terça",
+        "quarta",
+        "quinta",
+        "sexta",
+        "sábado",
+        "domingo",
+        "passada",
+        "próxima",
+        "depois",
+        "antes",
+        "nova",
+        "novo",
+        "outra",
+        "outro"
+      ],
+      "apelidos": {
+        "zé": [
+          "josé"
+        ],
+        "zeca": [
+          "josé"
+        ],
+        "chico": [
+          "francisco"
+        ],
+        "bia": [
+          "beatriz"
+        ],
+        "tião": [
+          "sebastião"
+        ],
+        "quim": [
+          "joaquim"
+        ],
+        "dudu": [
+          "eduardo"
+        ],
+        "duda": [
+          "eduarda",
+          "maria"
+        ],
+        "nando": [
+          "fernando"
+        ],
+        "nanda": [
+          "fernanda"
+        ],
+        "gabi": [
+          "gabriela",
+          "gabriel"
+        ],
+        "rafa": [
+          "rafael",
+          "rafaela"
+        ],
+        "manu": [
+          "manuela",
+          "emanuele",
+          "emanuelle"
+        ],
+        "guto": [
+          "augusto",
+          "gustavo"
+        ],
+        "beto": [
+          "roberto",
+          "alberto",
+          "humberto"
+        ],
+        "carlinhos": [
+          "carlos"
+        ],
+        "paulinho": [
+          "paulo"
+        ],
+        "toninho": [
+          "antônio"
+        ],
+        "tonho": [
+          "antônio"
+        ],
+        "pedrinho": [
+          "pedro"
+        ],
+        "mari": [
+          "mariana",
+          "maria"
+        ],
+        "fabi": [
+          "fabiana",
+          "fabíola"
+        ],
+        "cris": [
+          "cristina",
+          "cristiane",
+          "cristiano"
+        ],
+        "dani": [
+          "daniela",
+          "daniel",
+          "danielle"
+        ],
+        "léo": [
+          "leonardo",
+          "leandro"
+        ],
+        "gui": [
+          "guilherme"
+        ],
+        "vini": [
+          "vinícius"
+        ],
+        "xande": [
+          "alexandre"
+        ],
+        "lu": [
+          "luciana",
+          "luana",
+          "lúcia"
+        ],
+        "ju": [
+          "juliana",
+          "júlia"
+        ],
+        "tati": [
+          "tatiana",
+          "tatiane"
+        ],
+        "lipe": [
+          "felipe"
+        ]
+      },
+      "competencia": {
+        "passado": [
+          "mês passado",
+          "mês anterior",
+          "último mês"
+        ],
+        "atual": [
+          "este mês",
+          "esse mês",
+          "mês atual",
+          "deste mês",
+          "desse mês",
+          "neste mês",
+          "nesse mês"
+        ],
+        "proximo": [
+          "mês que vem",
+          "próximo mês"
+        ]
+      },
+      "adiantamento": [
+        "adiantamento",
+        "adiantamento salarial",
+        "vale salarial"
+      ],
+      "escolhas": [
+        {
+          "id": "ferias",
+          "titulo": "Aviso ou cálculo?",
+          "pergunta": "Qual solicitação você quer abrir?",
+          "tipos": [
+            "avisoFerias",
+            "calculoFerias"
+          ],
+          "ajuda": {
+            "avisoFerias": "Comunicar as datas para o escritório emitir o aviso de férias (com 30 dias de antecedência).",
+            "calculoFerias": "Pedir o cálculo e o recibo das férias para o pagamento (até 2 dias antes do início)."
+          },
+          "destaque": {
+            "avisoFerias": {
+              "aviso": 2,
+              "avisar": 1,
+              "programar": 1
+            },
+            "calculoFerias": {
+              "calcul*": 2,
+              "recibo": 2,
+              "pagar": 1,
+              "pagamento": 1
+            }
+          },
+          "ambos": {
+            "rotulo": "Os dois: aviso agora e cálculo em seguida",
+            "ajuda": "Abro o aviso de férias; depois que você enviar, abro o cálculo com os mesmos dados."
+          }
+        },
+        {
+          "id": "rescisao",
+          "titulo": "Aviso ou cálculo?",
+          "pergunta": "Qual solicitação você quer abrir?",
+          "tipos": [
+            "avisoRescisao",
+            "calculoRescisao"
+          ],
+          "ajuda": {
+            "avisoRescisao": "Comunicar a demissão ou o pedido de demissão e emitir o aviso prévio.",
+            "calculoRescisao": "Pedir o cálculo das verbas rescisórias (TRCT) para o pagamento em até 10 dias."
+          },
+          "destaque": {
+            "avisoRescisao": {
+              "aviso": 2,
+              "avisar": 1
+            },
+            "calculoRescisao": {
+              "calcul*": 2,
+              "verbas": 2,
+              "trct": 2,
+              "recibo": 1,
+              "pagar": 1,
+              "pagamento": 1,
+              "acerto": 1
+            }
+          },
+          "naoContam": [
+            "aviso indenizado",
+            "aviso trabalhado",
+            "aviso prévio indenizado",
+            "aviso prévio trabalhado"
+          ],
+          "ambos": {
+            "rotulo": "Os dois: aviso agora e cálculo em seguida",
+            "ajuda": "Abro o aviso prévio; depois que você enviar, abro o cálculo da rescisão com os mesmos dados."
+          }
+        },
+        {
+          "id": "faltou",
+          "titulo": "Com ou sem atestado?",
+          "pergunta": "A falta tem atestado?",
+          "quando": {
+            "radicais": [
+              "falt"
+            ],
+            "exceto": [
+              "atestado",
+              "hora extra",
+              "horas extras",
+              "comissão",
+              "desconto",
+              "descontar",
+              "folha",
+              "variáveis",
+              "bônus"
+            ],
+            "naoContam": [
+              "sem atestado"
+            ]
+          },
+          "tipos": [
+            "afastamento",
+            "rubricas"
+          ],
+          "rotulos": {
+            "afastamento": "Com atestado",
+            "rubricas": "Sem atestado"
+          },
+          "ajuda": {
+            "afastamento": "Abrir um Afastamento de Empregado e anexar o atestado.",
+            "rubricas": "Lançar a falta nas Variáveis da folha para o desconto."
+          },
+          "destaque": {
+            "afastamento": {
+              "atestado": 2,
+              "médico": 1,
+              "doente": 1,
+              "doença": 1
+            },
+            "rubricas": {
+              "sem atestado": 3,
+              "descont*": 2,
+              "injustificad*": 2
+            }
+          }
+        }
+      ],
+      "pesos": {
+        "verbas rescisórias": 2,
+        "trct": 2,
+        "verbas": 2
+      }
+    },
     "abaErrada": [
       {
         "tipo": "calculoFerias",
@@ -368,7 +1009,11 @@
       "avisoFerias": [
         "As férias começam em {inicio}. O aviso precisa ser entregue ao empregado com pelo menos {avisoFeriasDias} dias de antecedência (CLT, art. 135).",
         "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, CLT, art. 145). Para isso, peça o Cálculo de Férias com antecedência.",
-        "Se o empregado for vender 1/3 das férias (abono pecuniário) ou adiantar a 1ª parcela do 13º, informe na solicitação."
+        "Se o empregado for vender 1/3 das férias (abono pecuniário) ou adiantar a 1ª parcela do 13º, informe na solicitação.",
+        "verbas",
+        "acerto",
+        "calcular rescisão",
+        "cálculo da rescisão"
       ],
       "calculoFerias": [
         "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, em {inicio}; CLT, art. 145).",
@@ -475,7 +1120,49 @@
     "DIVORCIADA": "Divorciado",
     "VIUVA": "Viúvo",
     "BRASILEIRA": "Brasil",
-    "BRASILEIRO": "Brasil"
+    "BRASILEIRO": "Brasil",
+    "_comentarioApelidos": "Apelidos acrescentados em 2026-10: raça/cor no masculino, grau de instrução antigo e bancos pelo nome. Conferir com as listas reais do Onvio (a calibrar).",
+    "PARDO": "Parda",
+    "PRETO": "Preta",
+    "NEGRO": "Preta",
+    "NEGRA": "Preta",
+    "BRANCO": "Branca",
+    "AMARELO": "Amarela",
+    "1º GRAU COMPLETO": "Fundamental completo",
+    "1º GRAU INCOMPLETO": "Fundamental incompleto",
+    "PRIMEIRO GRAU COMPLETO": "Fundamental completo",
+    "PRIMEIRO GRAU INCOMPLETO": "Fundamental incompleto",
+    "ENSINO FUNDAMENTAL COMPLETO": "Fundamental completo",
+    "ENSINO FUNDAMENTAL INCOMPLETO": "Fundamental incompleto",
+    "2º GRAU COMPLETO": "Médio completo",
+    "2º GRAU INCOMPLETO": "Médio incompleto",
+    "SEGUNDO GRAU COMPLETO": "Médio completo",
+    "SEGUNDO GRAU INCOMPLETO": "Médio incompleto",
+    "ENSINO MÉDIO COMPLETO": "Médio completo",
+    "ENSINO MÉDIO INCOMPLETO": "Médio incompleto",
+    "3º GRAU COMPLETO": "Superior completo",
+    "3º GRAU INCOMPLETO": "Superior incompleto",
+    "ENSINO SUPERIOR COMPLETO": "Superior completo",
+    "ENSINO SUPERIOR INCOMPLETO": "Superior incompleto",
+    "NUBANK": "260 - Nu Pagamentos",
+    "NU BANK": "260 - Nu Pagamentos",
+    "NU PAGAMENTOS": "260 - Nu Pagamentos",
+    "BANCO DO BRASIL": "001 - Banco do Brasil",
+    "BB": "001 - Banco do Brasil",
+    "CAIXA": "104 - Caixa Econômica Federal",
+    "CAIXA ECONÔMICA": "104 - Caixa Econômica Federal",
+    "CAIXA ECONÔMICA FEDERAL": "104 - Caixa Econômica Federal",
+    "CEF": "104 - Caixa Econômica Federal",
+    "ITAÚ": "341 - Itaú Unibanco",
+    "BANCO ITAÚ": "341 - Itaú Unibanco",
+    "BRADESCO": "237 - Bradesco",
+    "BANCO BRADESCO": "237 - Bradesco",
+    "SANTANDER": "033 - Santander",
+    "BANCO SANTANDER": "033 - Santander",
+    "INTER": "077 - Banco Inter",
+    "BANCO INTER": "077 - Banco Inter",
+    "C6": "336 - C6 Bank",
+    "C6 BANK": "336 - C6 Bank"
   },
   "intencoes": [
     {
@@ -491,6 +1178,10 @@
         "novo funcionário",
         "registro",
         "registrar"
+      ],
+      "radicais": [
+        "contrat",
+        "admit"
       ]
     },
     {
@@ -504,7 +1195,15 @@
         "estagiário",
         "estagiária",
         "tce"
-      ]
+      ],
+      "radicais": [
+        "estagi"
+      ],
+      "pesos": {
+        "estágio": 2,
+        "estagiário": 2,
+        "estagiária": 2
+      }
     },
     {
       "id": "contribuinte",
@@ -561,7 +1260,19 @@
         "licença",
         "maternidade",
         "inss",
-        "cat"
+        "cat",
+        "licença médica",
+        "internado",
+        "internada",
+        "internação",
+        "cirurgia"
+      ],
+      "radicais": [
+        "afast",
+        "atestad"
+      ],
+      "excluir": [
+        "sem atestado"
       ]
     },
     {
@@ -578,7 +1289,18 @@
         "pediu demissão",
         "pedido de demissão",
         "aviso prévio",
-        "justa causa"
+        "justa causa",
+        "mandar embora",
+        "mandei embora",
+        "mandou embora",
+        "saiu da empresa",
+        "pediu as contas",
+        "pedir as contas"
+      ],
+      "radicais": [
+        "demit",
+        "deslig",
+        "dispens"
       ]
     },
     {
@@ -615,7 +1337,28 @@
         "rubrica",
         "folha",
         "adiantamento",
-        "plr"
+        "plr",
+        "sem atestado",
+        "atraso",
+        "atrasos",
+        "adicional noturno",
+        "hora noturna"
+      ],
+      "radicais": [
+        "falt",
+        "descont"
+      ],
+      "pesos": {
+        "hora extra": 2,
+        "horas extras": 2,
+        "sem atestado": 2
+      },
+      "excluir": [
+        "folha de pagamento",
+        "holerite",
+        "holerites",
+        "contracheque",
+        "contracheques"
       ]
     },
     {
@@ -641,6 +1384,7 @@
     "geral": {
       "nome": "Solicitação Geral",
       "slug": "general-requests",
+      "exemploTexto": "preciso da segunda via da guia do FGTS até sexta",
       "api": null,
       "setor": "Qualquer setor",
       "complexidade": "simples",
@@ -688,6 +1432,8 @@
     "afastamento": {
       "nome": "Afastamento de Empregado",
       "slug": "employee-leave",
+      "sentidoDatas": "passado",
+      "exemploTexto": "atestado de 20 dias a partir de ontem",
       "api": "employee-leave",
       "setor": "Pessoal",
       "complexidade": "simples",
@@ -1019,6 +1765,7 @@
     "avisoFerias": {
       "nome": "Aviso Prévio de Férias",
       "slug": "vacation-notice",
+      "exemploTexto": "férias dia 10/11 por 30 dias",
       "api": "prior-notice-vacations",
       "setor": "Pessoal",
       "complexidade": "simples",
@@ -1178,6 +1925,7 @@
     "calculoFerias": {
       "nome": "Cálculo de Férias",
       "slug": "vacation-calculation",
+      "exemploTexto": "férias a partir de 03/11, 30 dias, adiantar 13º",
       "api": "vacation-calculations",
       "setor": "Pessoal",
       "complexidade": "calculo",
@@ -1297,6 +2045,8 @@
     "avisoRescisao": {
       "nome": "Aviso Prévio de Rescisão",
       "slug": "termination-notice",
+      "sentidoDatas": "perto",
+      "exemploTexto": "pediu demissão hoje",
       "api": "prior-notice-terminations",
       "setor": "Pessoal",
       "complexidade": "simples",
@@ -1432,6 +2182,8 @@
     "calculoRescisao": {
       "nome": "Cálculo de Rescisão",
       "slug": "termination-calculation",
+      "sentidoDatas": "perto",
+      "exemploTexto": "último dia 20/10, aviso indenizado",
       "api": "termination-calculations",
       "setor": "Pessoal",
       "complexidade": "calculo",
@@ -1538,6 +2290,122 @@
     "rubricas": {
       "nome": "Lançamento de Rubricas",
       "slug": "payroll-entries",
+      "exemploTexto": "Ronaldo 10 horas extras, Carla 2 faltas, mês passado",
+      "dicionarioRubricas": {
+        "revisarComEscritorio": true,
+        "descricao": "Rubricas que o texto livre reconhece (\"Ronaldo 10 horas extras, Carla 2 faltas\"). Os nomes vão na descrição como itens entendidos, para o escritório lançar; confira com os eventos da folha.",
+        "itens": [
+          {
+            "rubrica": "Horas extras 50%",
+            "palavras": [
+              "hora extra",
+              "horas extras",
+              "he",
+              "extras",
+              "hora extra 50",
+              "horas extras 50",
+              "extra 50%"
+            ],
+            "unidade": "horas"
+          },
+          {
+            "rubrica": "Horas extras 100%",
+            "palavras": [
+              "hora extra 100",
+              "horas extras 100",
+              "extra 100%",
+              "extras 100%",
+              "horas extras em domingo",
+              "horas extras no feriado"
+            ],
+            "unidade": "horas"
+          },
+          {
+            "rubrica": "Faltas",
+            "palavras": [
+              "falta",
+              "faltas",
+              "faltou",
+              "falta injustificada",
+              "faltas injustificadas"
+            ],
+            "unidade": "dias"
+          },
+          {
+            "rubrica": "Atrasos",
+            "palavras": [
+              "atraso",
+              "atrasos",
+              "horas de atraso"
+            ],
+            "unidade": "horas"
+          },
+          {
+            "rubrica": "Adicional noturno",
+            "palavras": [
+              "adicional noturno",
+              "hora noturna",
+              "horas noturnas"
+            ],
+            "unidade": "horas"
+          },
+          {
+            "rubrica": "Comissão",
+            "palavras": [
+              "comissão",
+              "comissões"
+            ],
+            "unidade": "R$"
+          },
+          {
+            "rubrica": "Bônus / prêmio",
+            "palavras": [
+              "bônus",
+              "prêmio",
+              "gratificação"
+            ],
+            "unidade": "R$"
+          },
+          {
+            "rubrica": "Desconto de vale-transporte",
+            "palavras": [
+              "vale transporte",
+              "vale-transporte",
+              "vt"
+            ],
+            "unidade": "R$"
+          },
+          {
+            "rubrica": "Desconto de vale-refeição",
+            "palavras": [
+              "vale refeição",
+              "vale-refeição",
+              "vale alimentação",
+              "vale-alimentação",
+              "vr"
+            ],
+            "unidade": "R$"
+          },
+          {
+            "rubrica": "Adiantamento salarial",
+            "palavras": [
+              "adiantamento",
+              "vale salarial",
+              "adiantamento salarial"
+            ],
+            "unidade": "R$"
+          },
+          {
+            "rubrica": "Desconto diverso",
+            "palavras": [
+              "desconto",
+              "descontar",
+              "descontos"
+            ],
+            "unidade": "R$"
+          }
+        ]
+      },
       "api": "payroll-entries",
       "setor": "Pessoal",
       "complexidade": "simples",
@@ -1679,6 +2547,20 @@
           ],
           "grupo": "Geral"
         },
+        "matricula": {
+          "fc": "registration",
+          "tipo": "texto",
+          "rotulo": "Matrícula",
+          "grupo": "Geral",
+          "calibrar": true
+        },
+        "servico": {
+          "fc": "serviceExpanded",
+          "tipo": "combo",
+          "rotulo": "Serviço (sede onde ficará alocado)",
+          "grupo": "Geral",
+          "calibrar": true
+        },
         "departamento": {
           "fc": "departmentExpanded",
           "tipo": "combo",
@@ -1710,6 +2592,13 @@
           },
           "grupo": "Geral"
         },
+        "categoria": {
+          "fc": "category",
+          "tipo": "combo",
+          "rotulo": "Categoria",
+          "grupo": "Geral",
+          "calibrar": true
+        },
         "dataAdmissao": {
           "fc": "admissionDate",
           "tipo": "data",
@@ -1722,6 +2611,13 @@
           ],
           "grupo": "Geral"
         },
+        "vinculo": {
+          "fc": "employmentRelationship",
+          "tipo": "combo",
+          "rotulo": "Vínculo empregatício",
+          "grupo": "Geral",
+          "calibrar": true
+        },
         "salario": {
           "fc": "wage",
           "tipo": "moeda",
@@ -1733,6 +2629,13 @@
             "remuneração"
           ],
           "grupo": "Geral"
+        },
+        "seguroDesemprego": {
+          "fc": "unemploymentInsuranceSituation",
+          "tipo": "combo",
+          "rotulo": "Situação do seguro-desemprego",
+          "grupo": "Geral",
+          "calibrar": true
         },
         "contratoExperiencia": {
           "fc": "daysExperience",
@@ -1752,6 +2655,13 @@
             "prorrogação"
           ],
           "grupo": "Geral"
+        },
+        "cartaoPonto": {
+          "fc": "frequencyCard",
+          "tipo": "texto",
+          "rotulo": "Cartão ponto",
+          "grupo": "Geral",
+          "calibrar": true
         },
         "jornada": {
           "fc": "workDayExpanded",
@@ -1874,6 +2784,13 @@
             "CEP"
           ],
           "grupo": "Pessoal"
+        },
+        "tipoEndereco": {
+          "fc": "addressType",
+          "tipo": "combo",
+          "rotulo": "Tipo de endereço",
+          "grupo": "Pessoal",
+          "calibrar": true
         },
         "endereco": {
           "fc": "streetAddress",
@@ -3059,6 +3976,13 @@
     "admissaoFim": "Pode mandar foto bem legível ou PDF. Qualquer dúvida, é só chamar. Obrigado!",
     "anexoSoNoAssistente": "O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.",
     "envioNaoConcluido": "O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo.",
+    "envioRecusadoPortal": "O portal não aceitou: {erros}. Corrija esses campos e envie de novo.",
+    "portalAcusa": "O portal acusa: {mensagem}",
+    "listaCarregando": "O portal ainda está carregando a lista deste campo — tentei de novo",
+    "anexoRecusado": "O portal não aceitou este arquivo (formato ou tamanho?)",
+    "opcaoAproximada": "Escolhi a mais parecida: {escolhida} (no documento: {pedido}) — confira",
+    "opcaoNaoEncontrada": "Não achei “{pedido}” na lista do portal.",
+    "unicaOpcao": "única opção do portal",
     "plataformaVazioSolicitacoes": "Nenhuma solicitação encontrada com esses filtros.",
     "plataformaAguardando": "Há solicitação esperando sua resposta. Abra, leia o último trâmite e responda — quem conclui a solicitação é você.",
     "plataformaCalibrar": "Esta parte do portal ainda está sendo conferida pelo escritório. Por enquanto, abra direto no portal.",
@@ -3182,6 +4106,60 @@
         "antigo"
       ],
       "resposta": "Assim que receber. Atestados antigos podem cair numa folha já fechada e gerar ajustes no mês seguinte."
+    },
+    {
+      "pergunta": "Posso adiantar a 1ª parcela do 13º nas férias?",
+      "palavras": [
+        "13º",
+        "décimo",
+        "terceiro",
+        "parcela",
+        "adiantar",
+        "adiantamento",
+        "13o"
+      ],
+      "resposta": "Pode, se o funcionário pedir. O pedido costuma ser feito em janeiro; fora disso, depende de a empresa concordar. No Cálculo de Férias, marque “Adiantar 13º salário”. Fora das férias, a 1ª parcela é paga até 30 de novembro e a 2ª até 20 de dezembro.",
+      "revisarComEscritorio": true
+    },
+    {
+      "pergunta": "Quais são os prazos das férias?",
+      "palavras": [
+        "prazo",
+        "prazos",
+        "férias",
+        "antecedência",
+        "vencer",
+        "vencidas",
+        "dobro",
+        "conceder"
+      ],
+      "resposta": "Aviso: pelo menos 30 dias antes do início. Pagamento: até 2 dias antes do início. As férias precisam começar nos 12 meses seguintes ao período aquisitivo; depois disso, são pagas em dobro. E não podem começar nos 2 dias antes de feriado ou do descanso semanal.",
+      "revisarComEscritorio": true
+    },
+    {
+      "pergunta": "Quantos dias de férias o funcionário pode vender?",
+      "palavras": [
+        "vender",
+        "venda",
+        "abono",
+        "terço",
+        "pecuniário"
+      ],
+      "resposta": "Até 1/3 das férias (10 dias em 30 de férias) — é o abono pecuniário. Quem pede é o funcionário, até 15 dias antes do fim do período aquisitivo.",
+      "revisarComEscritorio": true
+    },
+    {
+      "pergunta": "Como funciona o pró-labore do sócio?",
+      "palavras": [
+        "pró-labore",
+        "prolabore",
+        "labore",
+        "sócio",
+        "sócios",
+        "retirada"
+      ],
+      "resposta": "O pró-labore é a remuneração do sócio que trabalha na empresa: tem desconto de INSS (11%) e de IRRF pela tabela e entra na folha todo mês. Para incluir um sócio ou mudar o valor, use “Sócio ou autônomo” ou a Solicitação Geral, informando o valor e a partir de qual mês.",
+      "revisarComEscritorio": true
     }
   ],
   "agendaFixa": {
