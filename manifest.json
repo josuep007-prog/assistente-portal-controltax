@@ -28,7 +28,7 @@
     },
     {
       "matches": ["https://onvio.com.br/clientcenter/*"],
-      "js": ["content/content.js"],
+      "js": ["content/opcoes.js", "content/content.js"],
       "run_at": "document_idle"
     }
   ],

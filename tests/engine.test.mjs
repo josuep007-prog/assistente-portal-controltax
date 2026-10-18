@@ -4,6 +4,7 @@ import * as C from '../panel/calculos.js';
 import * as D from '../panel/dados.js';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import '../content/opcoes.js';   // define globalThis.CtOpcoes (escolha de opção nas listas do portal)
 
 const rules = JSON.parse(fs.readFileSync(new URL('../rules/regras.json', import.meta.url), 'utf8'));
 const hoje = new Date(2026, 9, 9);
@@ -590,6 +591,41 @@ t('Dados (Control Onvio): campos em português, destaques e sem dado de saúde',
   const pc = D.camposDetalhe({ reason: 'ApprenticeContractTermination', terminationType: 'EarlyTerminationByEmployee', situacao: 'Active', nome: 'Maria', codigo: 'XyzAbc' }).grupos.flatMap(g => g.campos);
   assert.ok(pc.some(c => c.k === 'Motivo' && c.v === 'Término do contrato de aprendizagem'));
   assert.ok(pc.some(c => c.v === 'Rescisão antecipada pelo empregado') && pc.some(c => c.v === 'Ativo') && pc.some(c => c.v === 'Maria') && pc.some(c => c.v === 'XyzAbc'));
+});
+
+t('listas do portal: a comparação do conteúdo é a mesma do motor', () => {
+  const pares = [['PARDO', 'Parda'], ['Nubank', '260 - Nu Pagamentos'], ['JOAO', 'JOAO DA SILVA'], ['Superior completa', 'Superior completo'], ['Sem justa causa', 'Demitido SEM justa causa'], ['xyz', 'Brasil'], ['São Paulo', 'SAO PAULO']];
+  for (const [a, b] of pares) assert.equal(globalThis.CtOpcoes.similaridade(a, b), E.similarity(a, b), `${a} × ${b}`);
+});
+
+t('listas do portal: escolha exata, aproximada, sugestões e funcionário', () => {
+  const O = globalThis.CtOpcoes;
+  const raca = ['Branca', 'Preta', 'Parda', 'Amarela', 'Indígena', 'Não informado'];
+  assert.deepEqual(O.escolher('parda', raca), { opcao: 'Parda', score: 1, exata: true, sugestoes: [] });
+  const sup = O.escolher('Superior completa', ['Superior incompleto', 'Superior completo', 'Médio completo']);
+  assert.equal(sup.opcao, 'Superior completo'); assert.equal(sup.exata, false);
+  // "Prada" fica no meio de Parda e Preta: não escolhe sozinho, sugere as duas
+  const pr = O.escolher('Prada', raca);
+  assert.equal(pr.opcao, null); assert.deepEqual(pr.sugestoes.slice(0, 2).sort(), ['Parda', 'Preta']);
+  // funcionário: pedaço de nome nunca basta; abaixo de 0,9 pergunta
+  const emp = ['JOAO DA SILVA', 'JOANA FONSECA', 'JORGE OLIVEIRA ALVES'];
+  assert.equal(O.escolher('JOAO', emp, { pessoa: true }).opcao, null);
+  assert.equal(O.escolher('JOAO DA SILVA', emp, { pessoa: true }).opcao, 'JOAO DA SILVA');
+  assert.equal(O.escolher('JOAO DA SILVAA', emp, { pessoa: true }).opcao, 'JOAO DA SILVA');
+  assert.equal(O.escolher('JORGE ALVES', emp, { pessoa: true }).opcao, null);
+});
+
+t('regras: apelidos de opções, campos novos do cadastro e única opção', () => {
+  const al = (v) => Object.entries(rules.aliasesOpcoes).find(([k]) => !k.startsWith('_') && E.norm(k) === E.norm(v))?.[1];
+  assert.equal(al('pardo'), 'Parda'); assert.equal(al('2º grau completo'), 'Médio completo'); assert.equal(al('Nubank'), '260 - Nu Pagamentos'); assert.equal(al('Itaú'), '341 - Itaú Unibanco');
+  const c = rules.tipos.cadastroEmpregado.campos; const ordem = Object.keys(c);
+  for (const [k, fc] of [['matricula', 'registration'], ['servico', 'serviceExpanded'], ['categoria', 'category'], ['vinculo', 'employmentRelationship'], ['seguroDesemprego', 'unemploymentInsuranceSituation'], ['cartaoPonto', 'frequencyCard'], ['tipoEndereco', 'addressType']]) { assert.equal(c[k].fc, fc); assert.equal(c[k].calibrar, true); }
+  // ordem do preenchimento = ordem das regras: UF antes do município, país → UF → município de nascimento
+  assert.ok(ordem.indexOf('uf') < ordem.indexOf('municipio') && ordem.indexOf('paisNascimento') < ordem.indexOf('ufNascimento') && ordem.indexOf('ufNascimento') < ordem.indexOf('municipioNascimento'));
+  for (const tp of ['avisoRescisao', 'calculoRescisao', 'afastamento']) assert.equal(Object.keys(rules.tipos[tp].campos).indexOf('empregado'), 0, tp);
+  const u = rules.config.escolherUnicaOpcao;
+  assert.equal(u.revisarComEscritorio, true); assert.ok(u.campos.includes('centroCusto') && u.campos.includes('sindicato'));
+  for (const k of u.campos) assert.equal(E.resolveTipo(rules, 'cadastroEstagiario').campos[k]?.tipo, 'combo', k);
 });
 
 console.log(`\n${n} testes ok`);
