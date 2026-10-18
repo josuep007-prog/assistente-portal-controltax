@@ -143,13 +143,15 @@
 
   /* ============ Colar (Ctrl+V) um print ou arquivo na página ============ */
   const editavel = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  // nome de print colado: hora com segundos e um contador (dois prints no mesmo minuto não ficam com o mesmo nome)
+  let printSeq = 0;
+  const nomeDoPrint = (f) => { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `print-colado-${p(d.getHours())}h${p(d.getMinutes())}m${p(d.getSeconds())}s-${++printSeq}.${/jpe?g/i.test(f.type || '') ? 'jpg' : 'png'}`; };
   document.addEventListener('paste', (e) => {
     if (editavel(e.target) || editavel(document.activeElement)) return;      // colar texto num campo do portal: não mexe
     const files = [...(e.clipboardData?.files || [])];
     if (!files.length) return;
     e.preventDefault();
-    const hora = new Date().toTimeString().slice(0, 5).replace(':', 'h');
-    const nomeados = files.map((f, i) => /^image\.(png|jpe?g)$/i.test(f.name) || !f.name ? new File([f], `print-colado-${hora}${files.length > 1 ? '-' + (i + 1) : ''}.png`, { type: f.type || 'image/png' }) : f);
+    const nomeados = files.map(f => /^image\.(png|jpe?g)$/i.test(f.name) || !f.name ? new File([f], nomeDoPrint(f), { type: f.type || 'image/png' }) : f);
     setPanel(true);
     setTimeout(() => sendFiles(nomeados, 'colado'), port ? 0 : 900);
     toast('Arquivo colado: o Assistente vai ler.');
@@ -178,15 +180,15 @@
         case 'navigate': while (navInterna) await sleep(150); await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
         case 'fill': {
           preenchendoAgora = true;
-          let r; try { r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), m.opts || {})); } finally { preenchendoAgora = false; }
+          let r; try { r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), { ...(m.opts || {}), reqId: m.id })); } finally { preenchendoAgora = false; }
           if (modo === 'plataforma') iframe?.focus();   // o preenchimento foca campos do portal: devolve o teclado à plataforma
           post({ type: 'fillResult', id: m.id, ...r });
           sendContext(); avisarDesfazer();
-          if (m.opts?.avisoDesfazer !== false && r.mudou) toast('Preenchido pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });
+          if (m.opts?.avisoDesfazer !== false && !m.opts?.semDesfazer && r.mudou) toast('Preenchido pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });
           break;
         }
         case 'undo': { const r = await desfazer(); post({ type: 'undoResult', id: m.id, ...r }); break; }
-        case 'attach': { const n = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n }); sendContext(); break; }
+        case 'attach': { const a = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n: a.n, anexos: a }); sendContext(); break; }
         case 'getOptions': {
           const opts = await comboLock(() => comboOptions(m.locator, m.force));
           if (modo === 'plataforma') iframe?.focus();
@@ -241,7 +243,8 @@
         }
         case 'abrirNoPortal': await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id }); break;
         case 'setBadge': setBadge(m.n); break;
-        case 'toast': toast(m.text); break;
+        // "Ver no portal" no aviso: o portal fica coberto pela plataforma, o botão mostra a página com o painel ao lado
+        case 'toast': toast(m.text, m.ms || 2600, m.acao === 'verPortal' ? { rotulo: 'Ver no portal', fn: () => setModo('painel') } : null); break;
         default: break;
       }
     } catch (err) {
@@ -320,7 +323,55 @@
     const tipo = tipoKey && rules ? resolveTipoLocal(tipoKey) : null;
     const campos = {};
     if (tipo) for (const [k, def] of Object.entries(tipo.campos)) if (!def.somenteAssistente) campos[k] = readField(def);
-    return { campos, anexos: attachedNames(), temArquivo: !!mainEl().querySelector('input[type=file]') };
+    return { campos, extras: tipo ? camposForaDasRegras(tipo) : {}, erros: tipo ? errosDoPortal(tipoKey) : [], anexos: attachedNames(), temArquivo: !!mainEl().querySelector('input[type=file]') };
+  }
+  const limparRotulo = (s) => String(s || '').replace(/\s*-\s*opcional\s*$/i, '').replace(/\s*\*\s*$/, '').replace(/\s+/g, ' ').trim();
+  const tipoDoElemento = (el) => el.tagName === 'BENTO-COMBOBOX' ? 'combo' : el.tagName === 'TEXTAREA' ? 'textarea' : /DD\/MM/i.test(el.getAttribute('placeholder') || '') ? 'data' : 'texto';
+  /** Campos do portal que as regras não conhecem (um Onvio novo, ou um campo que o escritório ainda não pôs nas regras).
+   *  Chave "extra:<formcontrolname>": a plataforma mostra e preenche; o diagnóstico leva só os nomes. */
+  function camposForaDasRegras(tipo) {
+    const conhecidos = new Set(Object.values(tipo?.campos || {}).map(d => d.fc).filter(Boolean));
+    const out = {};
+    for (const el of mainEl().querySelectorAll('[formcontrolname]')) {
+      if (/^(radio|checkbox|file|hidden)$/i.test(el.type || '') || el.closest('app-help-menu')) continue;
+      if (el.tagName !== 'BENTO-COMBOBOX' && el.closest('bento-combobox')) continue;
+      const fc = el.getAttribute('formcontrolname');
+      if (!fc || conhecidos.has(fc) || out['extra:' + fc]) continue;
+      const alvo = el.tagName === 'BENTO-COMBOBOX' ? el.querySelector('input') : el;
+      if (!alvo || !/^(INPUT|TEXTAREA)$/.test(alvo.tagName)) continue;
+      const r = readField({ fc });
+      out['extra:' + fc] = { fc, rotulo: limparRotulo(labelFor(alvo)) || fc, tipo: tipoDoElemento(el), valor: r.valor || '', disabled: !!r.disabled, existe: true };
+    }
+    return out;
+  }
+  /* Erros de validação do próprio portal (Angular/Bento): só o rótulo e a mensagem curta, nunca o valor.
+     Classes e textos a calibrar no Onvio real; o simulador imita ng-invalid/aria-invalid e .invalid-feedback. */
+  const SEL_INVALIDO = '[formcontrolname].ng-invalid.ng-touched, [formcontrolname].ng-invalid.ng-dirty, [aria-invalid="true"], .is-invalid';
+  const SEL_MSG_ERRO = '.invalid-feedback, .bento-form-error, .form-error, .error-message, .field-error, mat-error, [class*="error-message"], [class*="validation-message"]';
+  const textoCurto = (t) => { const s = String(t || '').replace(/\s+/g, ' ').trim().replace(/\d{3,}/g, '…'); return s.length > 70 ? s.slice(0, 67) + '…' : s; };
+  function errosDoPortal(tipoKey) {
+    const tipo = tipoKey ? resolveTipoLocal(tipoKey) : null;
+    const defs = Object.entries(tipo?.campos || {});
+    const campos = [];
+    for (const el of mainEl().querySelectorAll(SEL_INVALIDO)) {
+      let c = el.closest('bento-combobox[formcontrolname]') || el;
+      if (c.type === 'radio') c = c.closest('fieldset, [role=radiogroup]') || c;
+      if (/^(FORM|BUTTON)$/.test(c.tagName) || c.hasAttribute('formgroupname') || c.hasAttribute('formarrayname') || c.closest('#ct-assistente-host') || campos.includes(c)) continue;
+      campos.push(c);
+    }
+    const msgs = new Map();
+    for (const m of mainEl().querySelectorAll(SEL_MSG_ERRO)) {
+      if (!(m.innerText || '').trim()) continue;
+      // a mensagem é do campo que está no mesmo bloco (o primeiro ancestral que contém um campo inválido)
+      for (let p = m.parentElement, i = 0; p && i < 4; p = p.parentElement, i++) { const dono = campos.find(c => p.contains(c)); if (dono) { if (!msgs.has(dono)) msgs.set(dono, m.innerText); break; } }
+    }
+    return campos.slice(0, 20).map(c => {
+      const fc = c.getAttribute('formcontrolname') || '';
+      const rotulo = limparRotulo(c.matches('fieldset') ? (c.querySelector('legend')?.innerText || '') : labelFor(c.tagName === 'BENTO-COMBOBOX' ? (c.querySelector('input') || c) : c));
+      let k = fc ? (defs.find(([, d]) => d.fc === fc)?.[0] || 'extra:' + fc) : '';
+      if (!k) k = defs.find(([, d]) => d.seletores && c.querySelector?.(Object.values(d.seletores)[0]))?.[0] || defs.find(([, d]) => d.rotuloCampo && norm(d.rotuloCampo) === norm(rotulo))?.[0] || '';
+      return { k, fc, rotulo: rotulo || fc || 'Campo', mensagem: textoCurto(msgs.get(c)) || 'não aceito pelo portal' };
+    });
   }
   function resolveTipoLocal(key) {
     const t = rules?.tipos?.[key]; if (!t) return null;
@@ -497,61 +548,81 @@
     return opts;
   }
 
-  function similarity(a, b) {
-    const A = norm(a), B = norm(b);
-    if (!A || !B) return 0; if (A === B) return 1;
-    const curto = Math.min(A.length, B.length);
-    if (curto >= 4 && (A.includes(B) || B.includes(A))) return 0.9;
-    const ta = A.split(' '), tb = B.split(' ');
-    return ta.filter(t => tb.includes(t)).length / Math.max(ta.length, tb.length);
+  const bloqueado = (el) => !!(el?.disabled || el?.classList?.contains('disabled') || el?.getAttribute?.('aria-disabled') === 'true' || el?.querySelector?.('input:disabled'));
+  const aliasDe = (v) => (rules?.aliasesOpcoes ? Object.entries(rules.aliasesOpcoes).find(([k]) => !k.startsWith('_') && norm(k) === norm(v))?.[1] : null) || null;
+  const setValor = (inp, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, v); inp.dispatchEvent(new Event('input', { bubbles: true })); };
+  const caixaDe = (cb) => document.getElementById(cb.getAttribute('aria-owns'));
+  /** Digita na lista para filtrar (sem tirar o foco: o blur fecharia a lista) e devolve as linhas à vista. */
+  async function filtrar(cb, inp, texto) {
+    inp.focus(); setValor(inp, texto);
+    inp.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+    await sleep(texto ? 500 : 300);
+    if (cb.getAttribute('aria-expanded') !== 'true') { inp.click(); await sleep(350); }
+    return readOpts(caixaDe(cb));
+  }
+  /** Lista virtualizada (cdk-virtual-scroll, ~13 linhas no DOM): rola e entrega as linhas a fn até ela devolver algo. */
+  async function rolarLista(cb, fn) {
+    const vp = (caixaDe(cb) || document).querySelector?.('cdk-virtual-scroll-viewport') || [...document.querySelectorAll('cdk-virtual-scroll-viewport')].find(v => v.offsetParent);
+    if (!vp || vp.scrollHeight <= vp.clientHeight + 5) return null;
+    const t0 = Date.now();
+    for (let y = 0; y <= vp.scrollHeight && Date.now() - t0 < 4000; y += Math.max(120, vp.clientHeight - 40)) {
+      vp.scrollTop = y; vp.dispatchEvent(new Event('scroll')); await sleep(90);
+      const achou = fn(readOpts(vp)); if (achou) return achou;
+    }
+    vp.scrollTop = 0; vp.dispatchEvent(new Event('scroll')); await sleep(60);
+    return null;
   }
 
-  async function pickCombo(cb, value) {
+  /** Escolhe na lista do portal. Igual (ou pelo apelido das regras) primeiro; senão a mais parecida, com a
+   *  mesma comparação do motor (CtOpcoes, content/opcoes.js), e avisa que foi aproximada. Funcionário
+   *  (pessoa): nunca por pedaço de palavra e só com 0,9 ou mais; abaixo disso devolve sugestões. */
+  async function pickCombo(cb, value, o = {}) {
     await reveal(cb);
     if (!visible(cb)) return { ok: false, motivo: 'campo não visível' };
-    if (cb.classList.contains('disabled') || cb.querySelector('input:disabled')) return { ok: false, motivo: 'campo bloqueado' };
-    let { inp, box } = await openCombo(cb);
+    if (bloqueado(cb)) return { ok: false, motivo: 'campo bloqueado' };
+    const pedido = String(value);
+    const { inp, box } = await openCombo(cb);
     let opts = readOpts(box);
-    for (let i = 0; i < 5 && !opts.length; i++) { await sleep(300); box = document.getElementById(cb.getAttribute('aria-owns')); opts = readOpts(box); }
-    let best = null, score = 0;
-    const alias = rules?.aliasesOpcoes ? Object.entries(rules.aliasesOpcoes).find(([k]) => !k.startsWith('_') && norm(k) === norm(value))?.[1] : null;
-    if (alias && !opts.some(o => norm(o.text) === norm(value))) value = alias;
-    const score1 = () => { for (const o of opts) { const s = similarity(value, o.text); if (s > score) { score = s; best = o; } } };
-    score1();
-    if (score < 0.99) {
-      // não achou exato entre os itens visíveis (listas longas ou virtualizadas): digita para filtrar
-      // digita sem tirar o foco (blur fecharia a lista)
-      inp.focus();
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, value);
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-      inp.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
-      await sleep(500);
-      if (cb.getAttribute('aria-expanded') !== 'true') { inp.click(); await sleep(350); }
-      box = document.getElementById(cb.getAttribute('aria-owns'));
-      opts = readOpts(box); best = null; score = 0; score1();
-      // a lista não filtrou (ou filtrou pouco): procura rolando a lista virtualizada
-      if (score < 0.99) {
-        const vp = (box || document).querySelector?.('cdk-virtual-scroll-viewport') || [...document.querySelectorAll('cdk-virtual-scroll-viewport')].find(v => v.offsetParent);
-        if (vp && vp.scrollHeight > vp.clientHeight + 5) {
-          const t0 = Date.now();
-          for (let y = 0; y <= vp.scrollHeight && score < 0.99 && Date.now() - t0 < 4000; y += Math.max(120, vp.clientHeight - 40)) {
-            vp.scrollTop = y; vp.dispatchEvent(new Event('scroll')); await sleep(90);
-            opts = readOpts(vp); score1();
-          }
-          if (best && !best.el.isConnected) { vp.scrollTop = Math.max(0, vp.scrollTop - vp.clientHeight); vp.dispatchEvent(new Event('scroll')); await sleep(90); opts = readOpts(vp); best = null; score = 0; score1(); }
-        }
-      }
-      if (!(best && score >= 0.6)) { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(inp, ''); inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    for (const t0 = Date.now(); !opts.length && Date.now() - t0 < (o.esperaLista || 1500);) {
+      await sleep(300);
+      if (cb.getAttribute('aria-expanded') !== 'true') { inp.click(); await sleep(250); }   // a lista fechou sozinha (foco que saiu de outro campo)
+      opts = readOpts(caixaDe(cb));
     }
-    if (best && score >= 0.6) {
-      best.el.scrollIntoView({ block: 'nearest' });
-      best.el.click(); await sleep(200);
+    // nenhuma opção: o portal ainda está carregando a lista (não é "opção que não existe")
+    if (!opts.length) { await closeCombo(cb); return { ok: false, motivo: 'lista vazia' }; }
+    const procurados = [pedido, aliasDe(pedido)].filter(Boolean);
+    const exato = (lista) => lista.find(x => procurados.some(p => norm(x.text) === norm(p)));
+    const todas = new Set(opts.map(x => x.text));
+    const juntar = (lista) => lista.forEach(x => todas.add(x.text));
+    let alvo = exato(opts), escolha = null;
+    // não está entre as linhas à vista (lista longa ou virtualizada): digita para filtrar — o apelido primeiro (é o nome da lista)
+    for (const p of [...procurados].reverse()) {
+      if (alvo) break;
+      const f = await filtrar(cb, inp, p); juntar(f);
+      alvo = exato(f) || await rolarLista(cb, (l) => { juntar(l); return exato(l); });
+    }
+    if (!alvo) {
+      // nada igual: compara com a lista inteira (sem filtro)
+      juntar(await filtrar(cb, inp, ''));
+      await rolarLista(cb, (l) => { juntar(l); return null; });
+      const notas = procurados.map(p => CtOpcoes.escolher(p, [...todas], { pessoa: !!o.pessoa })).sort((a, b) => (b.opcao ? 1 : 0) - (a.opcao ? 1 : 0) || b.score - a.score);
+      escolha = notas[0] || null;
+      if (escolha?.opcao) {
+        const igual = (l) => l.find(x => x.text === escolha.opcao);
+        alvo = igual(readOpts(caixaDe(cb))) || await rolarLista(cb, igual);
+        if (!alvo) { const f = await filtrar(cb, inp, escolha.opcao); alvo = igual(f) || await rolarLista(cb, igual); }
+      }
+    }
+    if (alvo) {
+      alvo.el.scrollIntoView({ block: 'nearest' });
+      alvo.el.click(); await sleep(200);
       if (cb.getAttribute('aria-expanded') === 'true') await closeCombo(cb);
       mark(cb);
-      return { ok: true, valor: best.text, score };
+      const aprox = !!escolha?.opcao;
+      return { ok: true, valor: alvo.text, score: aprox ? escolha.score : 1, ...(aprox ? { aproximada: true, pedido } : {}) };
     }
-    await closeCombo(cb);
-    return { ok: false, motivo: `opção "${value}" não encontrada` };
+    setValor(inp, ''); await closeCombo(cb);
+    return { ok: false, motivo: `opção "${pedido}" não encontrada`, sugestoes: escolha?.sugestoes || [] };
   }
 
   async function setRadio(def, value) {
@@ -566,7 +637,24 @@
     return { ok: r.checked, valor: entry[0] };
   }
 
-  const ORDER = { combo: 0, radio: 1, data: 2, competencia: 2, texto: 3, numero: 3, cpf: 3, pis: 3, cep: 3, email: 3, telefone: 3, moeda: 3, textarea: 4 };
+  /* Tipos de campo comparados só pelos números (as máscaras do portal mudam pontos, barras e espaços). */
+  const SO_DIGITOS = new Set(['data', 'competencia', 'cpf', 'pis', 'cep', 'telefone', 'moeda', 'numero']);
+  /** O portal já está com este valor? Então o campo é pulado (não reabre a lista nem tira o foco). */
+  function jaIgual(def, atual, v) {
+    if (!atual) return false;
+    if (SO_DIGITOS.has(def.tipo)) { const a = String(atual).replace(/\D/g, ''); return !!a && a === String(v).replace(/\D/g, ''); }
+    if (norm(atual) === norm(v)) return true;
+    const al = def.tipo === 'combo' || def.tipo === 'radio' ? aliasDe(v) : null;
+    return !!al && norm(al) === norm(atual);
+  }
+  /** Definição de um campo: o das regras, ou um campo do portal fora das regras ("extra:<formcontrolname>"). */
+  function defDoCampo(tipo, k) {
+    if (tipo.campos[k]) return tipo.campos[k];
+    if (!String(k).startsWith('extra:')) return null;
+    const fc = k.slice(6); const el = findField({ fc });
+    return { fc, tipo: el ? tipoDoElemento(el) : 'texto', rotulo: fc, extra: true };
+  }
+  const PARA_TENTAR_DE_NOVO = new Set(['campo bloqueado', 'campo não visível', 'lista vazia']);
 
   async function fillForm(tipoKey, values, files, opts) {
     const tipo = resolveTipoLocal(tipoKey);
@@ -576,46 +664,92 @@
       await navigate(tipo.slug, true);
       await waitForForm(8000);
     }
+    // na ordem das etapas e dos campos das regras (funcionário antes do motivo, UF antes do município);
+    // campos fora das regras vão no fim
+    const ordem = Object.keys(tipo.campos);
+    const pos = (k) => { const i = ordem.indexOf(k); return i < 0 ? ordem.length : i; };
     const entries = Object.entries(values)
-      .filter(([k, v]) => tipo.campos[k] && !tipo.campos[k].somenteAssistente && v != null && String(v).trim() !== '')
-      .sort(([a], [b]) => (ORDER[tipo.campos[a].tipo] ?? 3) - (ORDER[tipo.campos[b].tipo] ?? 3));
+      .filter(([k, v]) => { const d = defDoCampo(tipo, k); return d && !d.somenteAssistente && v != null && String(v).trim() !== ''; })
+      .sort(([a], [b]) => pos(a) - pos(b));
     const resultados = [];
     const firstStepBtn = document.querySelector('button.bento-wizard-step');
+    const avancou = (n) => { if (opts.reqId) post({ type: 'fillProgress', id: opts.reqId, n, m: entries.length }); };
     // como estava antes: é o que o "Desfazer" devolve
     const antes = {};
-    for (const [k] of entries) antes[k] = readField(tipo.campos[k]).valor || '';
-    for (const [k, v] of entries) {
-      const def = tipo.campos[k];
+    for (const [k] of entries) antes[k] = readField(defDoCampo(tipo, k)).valor || '';
+    const umCampo = async (k, v, esperaLista) => {
+      const def = defDoCampo(tipo, k);
       try {
-        if (def.tipo === 'radio') { resultados.push({ campo: k, ...(await setRadio(def, v)) }); continue; }
+        const atual = readField(def).valor || '';
+        if (jaIgual(def, atual, v)) return { ok: true, valor: atual, igual: true };
+        if (def.tipo === 'radio') return await setRadio(def, v);
         const el = findField(def);
-        if (!el) { resultados.push({ campo: k, ok: false, motivo: 'campo não está nesta tela' }); continue; }
-        if (el.tagName === 'BENTO-COMBOBOX') { resultados.push({ campo: k, ...(await pickCombo(el, String(v))) }); continue; }
+        if (!el) return { ok: false, motivo: 'campo não está nesta tela' };
+        if (el.tagName === 'BENTO-COMBOBOX') return await pickCombo(el, String(v), { pessoa: def.fonte === 'empregado', esperaLista });
         await reveal(el);
-        if (el.disabled) { resultados.push({ campo: k, ok: false, motivo: 'campo bloqueado' }); continue; }
+        if (el.disabled) return { ok: false, motivo: 'campo bloqueado' };
         const cur = (el.value || '').trim();
-        if (cur && opts.naoSobrescrever && cur !== String(v)) { resultados.push({ campo: k, ok: false, motivo: 'já preenchido (mantido)' }); continue; }
+        if (cur && opts.naoSobrescrever && cur !== String(v)) return { ok: false, motivo: 'já preenchido (mantido)' };
         let val = String(v);
         if (def.tipo === 'moeda') val = val.replace(/[^\d,.]/g, '');
         setNative(el, val); mark(el);
         await sleep(40);
-        resultados.push({ campo: k, ok: true, valor: el.value });
+        return { ok: true, valor: el.value };
       } catch (e) {
-        resultados.push({ campo: k, ok: false, motivo: String(e.message || e) });
+        return { ok: false, motivo: String(e.message || e) };
+      }
+    };
+    // o cliente saiu do formulário no meio (cancelou, abriu outro): para, sem escrever no formulário novo
+    const formulario = mainEl().querySelector('form');
+    const saiu = () => !!formulario && !formulario.isConnected;
+    for (const [i, [k, v]] of entries.entries()) {
+      if (saiu()) break;
+      avancou(i); resultados.push({ campo: k, ...(await umCampo(k, v)) });
+    }
+    if (saiu()) return { ok: false, resultados, anexados: 0, anexos: null, depois: {}, mudou: false, erro: 'O formulário foi fechado durante o preenchimento.' };
+    // o que voltou bloqueado, escondido ou com a lista vazia: o portal pode estar carregando (ex.: municípios
+    // depois da UF). Espera até ~5 s e tenta de novo, uma vez.
+    const deNovo = resultados.filter(x => !x.ok && PARA_TENTAR_DE_NOVO.has(x.motivo));
+    if (deNovo.length) {
+      const pronto = (x) => { const d = defDoCampo(tipo, x.campo); const el = d.seletores ? mainEl().querySelector(Object.values(d.seletores)[0]) : findField(d); return !!el && !bloqueado(el); };
+      // lista vazia: a nova tentativa já espera a lista (até 5 s); bloqueado ou escondido: espera ficar livre
+      const esperar = () => deNovo.some(x => x.motivo !== 'lista vazia' && !pronto(x));
+      for (const t0 = Date.now(); Date.now() - t0 < 5000 && esperar();) { await sleep(300); avancou(entries.length); }
+      for (const x of deNovo) {
+        avancou(entries.length);
+        const novo = await umCampo(x.campo, values[x.campo], 5000);
+        const i = resultados.indexOf(x);
+        resultados[i] = { campo: x.campo, ...novo, tentouDeNovo: true };
+        if (!novo.ok && novo.motivo === 'lista vazia') resultados[i].motivo = rules?.mensagens?.listaCarregando || 'O portal ainda está carregando a lista deste campo — tentei de novo';
       }
     }
-    let anexados = 0, anexadosNomes = [];
-    const nomesAntes = new Set(attachedNames().map(norm));
-    if (files?.length) { anexados = await attachFiles(files); anexadosNomes = attachedNames().filter(n => !nomesAntes.has(norm(n))); }
-    if (firstStepBtn && opts.voltarInicio !== false) { firstStepBtn.click(); await sleep(200); }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // listas com uma opção só (centro de custo, sindicato…): escolhe sozinho, só nos campos que as regras marcam
+    for (const k of opts.unicaOpcao || []) {
+      const def = tipo.campos[k];
+      if (!def || def.tipo !== 'combo' || String(values[k] ?? '').trim()) continue;
+      const el = findField(def);
+      if (!el || el.tagName !== 'BENTO-COMBOBOX' || bloqueado(el) || readField(def).valor) continue;
+      avancou(entries.length);
+      const lista = await comboOptions(def, true);
+      if (lista.length !== 1) continue;
+      await sleep(250);   // a lista acabou de fechar: espera antes de abrir de novo
+      antes[k] = '';
+      const res = await pickCombo(el, lista[0]);
+      if (res.ok) resultados.push({ campo: k, ...res, unica: true });
+    }
+    let anexos = null;
+    if (files?.length) anexos = await attachFiles(files);
+    const mexeu = resultados.some(x => x.ok && !x.igual) || !!anexos?.n;
+    if (firstStepBtn && opts.voltarInicio !== false && mexeu) { firstStepBtn.click(); await sleep(200); }
+    if (mexeu && opts.voltarInicio !== false) window.scrollTo({ top: 0, behavior: 'smooth' });
     const depois = {};
-    for (const [k] of entries) depois[k] = readField(tipo.campos[k]).valor || '';
+    for (const k of Object.keys(antes)) depois[k] = readField(defDoCampo(tipo, k)).valor || '';
     // guarda só o que de fato mudou
     const mudancas = Object.fromEntries(Object.keys(antes).filter(k => antes[k] !== depois[k]).map(k => [k, antes[k]]));
+    const anexadosNomes = anexos?.aceitos || [];
     const mudou = Object.keys(mudancas).length > 0 || anexadosNomes.length > 0;
     if (mudou && !opts.semDesfazer) { desfazerPilha.push({ path: currentPath(), tipo: tipoKey, antes: mudancas, anexos: anexadosNomes }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
-    return { ok: true, resultados, anexados, depois, mudou };
+    return { ok: true, resultados, anexados: anexos?.n || 0, anexos, depois, mudou };
   }
 
   /* ============ Desfazer o último preenchimento ============ */
@@ -654,7 +788,7 @@
     const campos = [], falhas = [], anexos = [];
     await comboLock(async () => {
       for (const [k, v] of Object.entries(d.antes)) {
-        const def = tipo?.campos[k]; if (!def) continue;
+        const def = tipo && defDoCampo(tipo, k); if (!def) continue;
         try {
           let r;
           if (def.tipo === 'radio') {
@@ -673,24 +807,30 @@
     });
     sendContext(); avisarDesfazer();
     toast(falhas.length ? `Desfeito em parte: confira ${falhas.length} item(ns) no formulário.` : 'Preenchimento desfeito: o formulário voltou a como estava.', 4000);
-    post({ type: 'undone', campos, anexos, falhas });
-    return { ok: !falhas.length, campos, anexos, falhas };
+    // os valores que voltaram: a plataforma mostra o mesmo que o portal
+    const valores = Object.fromEntries(campos.map(k => [k, d.antes[k] || '']));
+    post({ type: 'undone', campos, anexos, falhas, valores });
+    return { ok: !falhas.length, campos, anexos, falhas, valores };
   }
 
+  /** Anexa e confere arquivo por arquivo se o portal ficou com ele (pode recusar por formato ou tamanho — a calibrar no Onvio real). */
   async function attachFiles(files) {
     const inp = mainEl().querySelector('input[type=file]');
-    if (!inp) return 0;
+    if (!inp) return { n: 0, aceitos: [], recusados: [], jaEstavam: [], semCampo: true };
     await reveal(inp);
     const already = new Set(attachedNames().map(norm));
-    const dt = new DataTransfer();
-    for (const f of files) if (!already.has(norm(f.name))) dt.items.add(f);
-    if (!dt.files.length) return 0;
+    const dt = new DataTransfer(); const jaEstavam = [];
+    for (const f of files) if (already.has(norm(f.name))) jaEstavam.push(f.name); else dt.items.add(f);
+    if (!dt.files.length) return { n: 0, aceitos: [], recusados: [], jaEstavam };
+    const enviados = [...dt.files].map(f => f.name);
     inp.__ctOwn = true;
     inp.files = dt.files;
     inp.dispatchEvent(new Event('change', { bubbles: true }));
     setTimeout(() => { inp.__ctOwn = false; }, 0);
-    await sleep(500);
-    return dt.files.length;
+    let agora = [];
+    for (let i = 0; i < 8; i++) { await sleep(250); agora = attachedNames().map(norm); if (enviados.every(n => agora.includes(norm(n)))) break; }
+    const aceitos = enviados.filter(n => agora.includes(norm(n)));
+    return { n: aceitos.length, aceitos, recusados: enviados.filter(n => !aceitos.includes(n)), jaEstavam };
   }
 
   async function waitForForm(ms) {
@@ -910,7 +1050,8 @@
     const onde = currentPath();
     clearTimeout(envioVigiado);
     envioVigiado = setTimeout(() => {
-      if (currentPath() === onde && submitButton()) post({ type: 'envioNaoConcluido' });
+      // o portal recusou: leva junto o que ele marcou como inválido (só rótulo e mensagem curta)
+      if (currentPath() === onde && submitButton()) post({ type: 'envioNaoConcluido', erros: errosDoPortal(tipoBySlug(routeInfo().slug)) });
     }, 4500);
   }
 
@@ -1022,6 +1163,8 @@
     modoAberto = inicial;
     if (inicial === 'plataforma') setModo('plataforma');
     // ganchos para o simulador (soltar exemplos, abrir o painel, trocar o modo)
-    plat.expose?.({ openPanel: () => setPanel(true), modo: (m) => setModo(m), sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); } });
+    plat.expose?.({ openPanel: () => setPanel(true), modo: (m) => setModo(m), sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); },
+      // testes do simulador: o mesmo preenchimento que o painel pede (nunca envia)
+      preencher: (tipo, values, opts) => comboLock(() => fillForm(tipo, values || {}, [], opts || {})) });
   });
 })();
