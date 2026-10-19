@@ -221,6 +221,274 @@
     "pagamentoFeriasAntes": 2,
     "pagamentoRescisaoDias": 10,
     "avisoFeriasDias": 30,
+    "avisoPrevioContagem": {
+      "revisarComEscritorio": true,
+      "_comentario": "Uma conta só para o aviso trabalhado, no formulário e no Calcular: o dia do aviso não conta e o último conta (Súmula 380 do TST). Aviso dado em 01/10 com 30 dias termina em 31/10; último dia 31/10 → aviso em 01/10. Antes o Calcular contava o dia do aviso (−29).",
+      "diasTrabalhados": 30
+    },
+    "expectativaConclusao": {
+      "ativo": true,
+      "revisarComEscritorio": true,
+      "calibrar": true,
+      "explicacao": "Prazo interno do escritório para este tipo de pedido (config.prazoInternoDiasUteis), em dias úteis a partir de hoje.",
+      "_comentario": "Sugere a Expectativa de conclusão (só em campo vazio e não mexido). A calibrar no Onvio real: se o portal já traz uma data nesse campo."
+    },
+    "tipoAvisoModalidade": {
+      "revisarComEscritorio": true,
+      "_comentario": "Aviso da modalidade do Calcular → rádio 'Aviso prévio' do Cálculo de Rescisão. Decisão do escritório: o que marcar quando o empregado não cumpre o aviso.",
+      "indenizado": "INDENIZADO",
+      "trabalhado": "TRABALHADO",
+      "dispensado": "AUSÊNCIA/DISPENSA",
+      "naoCumprido": "AUSÊNCIA/DISPENSA"
+    },
+    "motivoAuto": [
+      {
+        "_comentario": "Motivo da rescisão (lista do portal) pelo jeito de dizer, pelo documento e pela modalidade do Calcular, em ordem de prioridade. palavras: alguma destas; e: e também alguma destas; exceto: nenhuma destas; nenhum: não escolhe (o cliente confere com a dica). A calibrar no Onvio real: os textos da lista de motivos, se existe opção de acordo e qual vale no término da experiência.",
+        "calibrar": true,
+        "revisarComEscritorio": true,
+        "palavras": [
+          "experiência",
+          "contrato de experiência",
+          "período de experiência"
+        ],
+        "e": [
+          "fim",
+          "término",
+          "termino",
+          "termina*",
+          "acab*",
+          "venc*",
+          "encerr*",
+          "não vai ser efetivad*",
+          "não vou efetivar",
+          "não vamos efetivar",
+          "não efetivar",
+          "não renov*",
+          "não vai renovar"
+        ],
+        "exceto": [
+          "antecip*",
+          "antes do fim",
+          "antes do término",
+          "antes de terminar",
+          "antes de acabar",
+          "pediu demissão",
+          "pedido de demissão",
+          "pediu para sair",
+          "quer sair",
+          "pediu as contas"
+        ],
+        "modalidades": [
+          "fimContrato"
+        ],
+        "valor": "Término de contrato de trabalho por tempo determinado",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "experiência",
+          "contrato de experiência",
+          "período de experiência"
+        ],
+        "e": [
+          "pediu demissão",
+          "pedido de demissão",
+          "pedir demissão",
+          "pediu para sair",
+          "quer sair",
+          "pediu as contas",
+          "pedir as contas",
+          "pediu a conta"
+        ],
+        "modalidades": [
+          "antecipadaEmpregado"
+        ],
+        "valor": "Rescisão contrato experiência antecipado pelo empregado",
+        "dadoPor": "EMPREGADO"
+      },
+      {
+        "palavras": [
+          "experiência",
+          "contrato de experiência",
+          "período de experiência"
+        ],
+        "e": [
+          "demit*",
+          "demissão",
+          "dispens*",
+          "deslig*",
+          "mandar embora",
+          "mandei embora",
+          "mandou embora",
+          "antecip*",
+          "antes do fim",
+          "antes do término",
+          "sem justa causa"
+        ],
+        "modalidades": [
+          "antecipadaEmpregador"
+        ],
+        "valor": "Rescisão contrato experiência antecipado pelo empregador",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "tempo determinado",
+          "prazo determinado",
+          "contrato temporário",
+          "contrato a prazo",
+          "contrato por prazo"
+        ],
+        "e": [
+          "pediu demissão",
+          "pedido de demissão",
+          "pediu para sair",
+          "quer sair",
+          "pediu as contas"
+        ],
+        "valor": "Antecipado pelo empregado (tempo determinado)",
+        "dadoPor": "EMPREGADO"
+      },
+      {
+        "palavras": [
+          "tempo determinado",
+          "prazo determinado",
+          "contrato temporário",
+          "contrato a prazo",
+          "contrato por prazo"
+        ],
+        "e": [
+          "antecip*",
+          "antes do fim",
+          "antes do término",
+          "demit*",
+          "dispens*",
+          "deslig*",
+          "mandar embora"
+        ],
+        "exceto": [
+          "no fim",
+          "no término"
+        ],
+        "valor": "Antecipado pelo empregador (tempo determinado)",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "tempo determinado",
+          "prazo determinado",
+          "contrato temporário",
+          "contrato a prazo",
+          "contrato por prazo"
+        ],
+        "valor": "Término de contrato de trabalho por tempo determinado",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "acordo",
+          "comum acordo",
+          "484-a",
+          "484 a",
+          "demissão consensual",
+          "rescisão consensual",
+          "distrato"
+        ],
+        "exceto": [
+          "acordo coletivo",
+          "convenção coletiva",
+          "acordo de compensação"
+        ],
+        "modalidades": [
+          "acordo"
+        ],
+        "nenhum": true,
+        "dica": "Acordo entre empregado e empresa (art. 484-A): a lista de motivos do portal não tem essa opção. Deixei o motivo vazio — escolha com o seu analista e explique o acordo na descrição."
+      },
+      {
+        "palavras": [
+          "culpa recíproca"
+        ],
+        "modalidades": [
+          "culpaReciproca"
+        ],
+        "valor": "Culpa recíproca",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "extinção da empresa",
+          "fechamento da empresa",
+          "encerramento da empresa",
+          "fechar a empresa",
+          "empresa vai fechar",
+          "empresa fechou",
+          "encerrar as atividades",
+          "encerramento das atividades",
+          "fim das atividades"
+        ],
+        "valor": "Extinção da empresa",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "modalidades": [
+          "semJustaCausa"
+        ],
+        "valor": "Demitido SEM justa causa",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "modalidades": [
+          "pedidoDemissao"
+        ],
+        "valor": "Pedido de demissão SEM justa causa",
+        "dadoPor": "EMPREGADO"
+      },
+      {
+        "modalidades": [
+          "justaCausa"
+        ],
+        "valor": "Demitido COM justa causa",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "modalidades": [
+          "rescisaoIndireta",
+          "falecimento"
+        ],
+        "nenhum": true,
+        "dica": "Esta modalidade não tem um motivo certo na lista do portal. Deixei o motivo vazio — escolha com o seu analista."
+      }
+    ],
+    "experienciaSaidas": {
+      "revisarComEscritorio": true,
+      "_comentario": "As três saídas da experiência que vence (Hoje e ficha do funcionário). Decisão do escritório: qual pedido usar para prorrogar e para encerrar. motivos: o motivo da lista do portal para cada caso (a calibrar no Onvio real).",
+      "motivos": {
+        "termino": "Término de contrato de trabalho por tempo determinado",
+        "antecipadoEmpregador": "Rescisão contrato experiência antecipado pelo empregador",
+        "antecipadoEmpregado": "Rescisão contrato experiência antecipado pelo empregado"
+      },
+      "prorrogar": {
+        "rotulo": "Prorrogar",
+        "explicacao": "Imprima o termo de prorrogação, colha as assinaturas antes do fim do 1º período e mande ao escritório. O total da experiência não pode passar de {max} dias.",
+        "modelo": "prorrogacaoExperiencia",
+        "pedido": "geral",
+        "valores": {
+          "departamento": "PESSOAL",
+          "assunto": "Prorrogação do contrato de experiência – {empregado}",
+          "descricao": "Prorrogação do contrato de experiência de {empregado} (admissão em {dataAdmissao}) por mais {diasProrrogacao} dias, até {fimProrrogacao}. Segue o termo assinado."
+        }
+      },
+      "encerrar": {
+        "rotulo": "Encerrar no fim",
+        "explicacao": "No fim do contrato de experiência não há aviso prévio: peça o Cálculo de Rescisão com o último dia da experiência.",
+        "pedido": "calculoRescisao"
+      },
+      "efetivar": {
+        "rotulo": "Efetivar",
+        "explicacao": "Se {empregado} vai continuar, não precisa fazer nada: depois de {fim}, o contrato passa a ser por prazo indeterminado. Se quiser, avise o escritório para atualizar o cadastro."
+      }
+    },
     "estagiarioPrazoDias": 15,
     "pedidoAoCliente": [
       "aguardamos",
@@ -443,6 +711,35 @@
           "sem 13º",
           "não quer adiantar",
           "sem adiantamento do 13"
+        ]
+      },
+      "tipoAviso": {
+        "_comentario": "Tipo de aviso do Cálculo de Rescisão pelo texto livre, sempre pela expressão inteira: 'aviso dispensado' conta, 'vamos dispensar' sozinho não. A primeira que casar vale.",
+        "AUSÊNCIA/DISPENSA": [
+          "aviso dispensado",
+          "dispensado do aviso",
+          "dispensa do aviso",
+          "dispensa do cumprimento",
+          "dispensar o aviso",
+          "dispensar do aviso",
+          "sem cumprir o aviso",
+          "não vai cumprir o aviso",
+          "não cumprirá o aviso",
+          "ausência"
+        ],
+        "INDENIZADO": [
+          "indenizad*",
+          "aviso pago",
+          "vamos pagar o aviso"
+        ],
+        "TRABALHADO": [
+          "trabalhad*",
+          "cumprir o aviso",
+          "vai cumprir o aviso",
+          "cumprirá o aviso",
+          "cumprindo o aviso",
+          "trabalhando o aviso",
+          "vai trabalhar o aviso"
         ]
       },
       "motivosRescisao": [
@@ -1009,11 +1306,7 @@
       "avisoFerias": [
         "As férias começam em {inicio}. O aviso precisa ser entregue ao empregado com pelo menos {avisoFeriasDias} dias de antecedência (CLT, art. 135).",
         "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, CLT, art. 145). Para isso, peça o Cálculo de Férias com antecedência.",
-        "Se o empregado for vender 1/3 das férias (abono pecuniário) ou adiantar a 1ª parcela do 13º, informe na solicitação.",
-        "verbas",
-        "acerto",
-        "calcular rescisão",
-        "cálculo da rescisão"
+        "Se o empregado for vender 1/3 das férias (abono pecuniário) ou adiantar a 1ª parcela do 13º, informe na solicitação."
       ],
       "calculoFerias": [
         "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, em {inicio}; CLT, art. 145).",
@@ -1838,23 +2131,65 @@
           "rotulo": "Expectativa de conclusão"
         }
       },
-      "anexos": [],
+      "anexos": [
+        {
+          "id": "requerimentoAbono",
+          "rotulo": "Requerimento de abono pecuniário assinado",
+          "documento": "requerimentoAbono",
+          "modelo": "abonoFerias",
+          "obrigatorio": false
+        }
+      ],
+      "condicionais": [
+        {
+          "_comentario": "Abono pecuniário: o requerimento assinado do funcionário vai junto (decisão do escritório).",
+          "revisarComEscritorio": true,
+          "se": {
+            "campo": "diasAbono",
+            "preenchido": true,
+            "maiorQue": 0
+          },
+          "anexos": [
+            "requerimentoAbono"
+          ]
+        }
+      ],
       "calculados": {
-        "fimGozo": {
-          "formula": "somarDias",
+        "_comentario": "Datas que dá para calcular: só entram em campo vazio e não mexido pelo cliente, como 'calculado — confira', e mudam quando a data de início muda.",
+        "dataPagamento": {
+          "campo": "dataPagamento",
+          "formula": "diasAntes",
           "de": "inicioGozo",
-          "dias": "diasGozo",
-          "menos": 1
+          "dias": "config.pagamentoFeriasAntes",
+          "diaUtil": "antes",
+          "explicacao": "Até 2 dias antes do início das férias (CLT, art. 145), no dia útil anterior."
         },
-        "dataPagamentoSugerida": {
-          "formula": "subtrairDias",
-          "de": "inicioGozo",
-          "dias": 2
-        },
-        "dataAvisoSugerida": {
-          "formula": "hoje"
+        "dataAviso": {
+          "campo": "dataAviso",
+          "formula": "hoje",
+          "revisarComEscritorio": true,
+          "explicacao": "A data em que o aviso é entregue ao funcionário (hoje)."
         }
       },
+      "depoisDeEnviar": [
+        {
+          "tipo": "calculoFerias",
+          "titulo": "Enviar o Cálculo de Férias de {empregado}",
+          "prazo": {
+            "formula": "pagamentoFerias",
+            "de": "inicioGozo",
+            "diasUteisAntes": "calculo"
+          },
+          "levar": [
+            "empregado",
+            "inicioGozo",
+            "diasGozo",
+            "diasAbono→abono"
+          ],
+          "dica": "O pagamento das férias sai até 2 dias antes do início; o escritório precisa do pedido antes disso.",
+          "revisarComEscritorio": true
+        }
+      ],
       "verificacoes": [
         {
           "tipo": "antecedenciaMinima",
@@ -1964,6 +2299,11 @@
           "seletores": {
             "NÃO": "#radioBasic-bonus0",
             "SIM": "#radioBasic-bonus1"
+          },
+          "porNumero": {
+            "campo": "diasAbono",
+            "maiorQueZero": "SIM",
+            "zero": "NÃO"
           }
         },
         "adiantar13": {
@@ -1998,6 +2338,26 @@
           "rotulo": "Aviso de férias assinado",
           "documento": "avisoFeriasAssinado",
           "obrigatorio": false
+        },
+        {
+          "id": "requerimentoAbono",
+          "rotulo": "Requerimento de abono pecuniário assinado",
+          "documento": "requerimentoAbono",
+          "modelo": "abonoFerias",
+          "obrigatorio": false
+        }
+      ],
+      "condicionais": [
+        {
+          "_comentario": "Abono pecuniário: o requerimento assinado do funcionário vai junto (decisão do escritório).",
+          "revisarComEscritorio": true,
+          "se": {
+            "campo": "abono",
+            "igual": "SIM"
+          },
+          "anexos": [
+            "requerimentoAbono"
+          ]
         }
       ],
       "verificacoes": [
@@ -2133,11 +2493,44 @@
           }
         }
       ],
+      "depoisDeEnviar": [
+        {
+          "tipo": "calculoRescisao",
+          "titulo": "Enviar o Cálculo de Rescisão de {empregado}",
+          "prazo": {
+            "formula": "pagamentoRescisao",
+            "de": "dataAviso",
+            "diasUteisAntes": "calculo"
+          },
+          "levar": [
+            "empregado",
+            "motivo",
+            "dataAviso→dataAvisoPrevio"
+          ],
+          "dica": "As verbas são pagas em até 10 dias do fim do contrato (com aviso indenizado, conta da data do aviso).",
+          "revisarComEscritorio": true
+        },
+        {
+          "titulo": "Agendar o exame demissional (ASO) de {empregado}",
+          "prazo": {
+            "formula": "dias",
+            "de": "dataAviso",
+            "dias": 10
+          },
+          "se": {
+            "campo": "motivo",
+            "preenchido": true
+          },
+          "revisarComEscritorio": true,
+          "dica": "O exame demissional é feito até 10 dias depois do fim do contrato (NR-7), quando exigido."
+        }
+      ],
       "anexos": [
         {
           "id": "cartaPedido",
           "rotulo": "Carta de pedido de demissão assinada",
           "documento": "pedidoDemissao",
+          "modelo": "pedidoDemissao",
           "obrigatorio": false
         }
       ],
@@ -2216,7 +2609,10 @@
         "dataAvisoPrevio": {
           "fc": "priorNoticeDate",
           "tipo": "data",
-          "rotulo": "Data do aviso prévio"
+          "rotulo": "Data do aviso prévio",
+          "tambem": [
+            "dataAviso"
+          ]
         },
         "tipoAviso": {
           "tipo": "radio",
@@ -2245,11 +2641,38 @@
           "rotulo": "Expectativa de conclusão"
         }
       },
+      "calculados": {
+        "_comentario": "Data de demissão pelo aviso (trabalhado: o fim do aviso; indenizado ou dispensa: a data do aviso) e o inverso, quando o tipo de aviso está escolhido. Só em campo vazio e não mexido.",
+        "dataDemissao": {
+          "campo": "dataDemissao",
+          "formula": "demissaoPeloAviso",
+          "de": "dataAvisoPrevio",
+          "explicacao": "Pelo aviso: trabalhado termina 30 dias depois da data do aviso; indenizado sai na data do aviso."
+        },
+        "dataAvisoPrevio": {
+          "campo": "dataAvisoPrevio",
+          "formula": "avisoPelaDemissao",
+          "de": "dataDemissao",
+          "explicacao": "Pela data de demissão: trabalhado começou 30 dias antes; indenizado é a própria data."
+        }
+      },
       "anexos": [
         {
           "id": "avisoAssinado",
           "rotulo": "Aviso prévio ou pedido de demissão assinado",
           "documento": "pedidoDemissao",
+          "documentos": [
+            "pedidoDemissao",
+            "avisoEmpregador"
+          ],
+          "modelo": "pedidoDemissao",
+          "modeloSe": {
+            "campo": "motivo",
+            "contem": [
+              "Pedido de demissão",
+              "antecipado pelo empregado"
+            ]
+          },
           "obrigatorio": false
         },
         {
@@ -3651,6 +4074,34 @@
           ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
+      "opcoesPorPalavra": [
+        {
+          "campo": "tipoAviso",
+          "_comentario": "Tipo de aviso do Cálculo de Rescisão pelo que o documento diz (expressão inteira; com as opções impressas, só a marcada).",
+          "opcoes": {
+            "TRABALHADO": [
+              "cumprirei o aviso",
+              "cumprirei o aviso prévio",
+              "cumprir o aviso prévio",
+              "aviso prévio trabalhado",
+              "aviso trabalhado",
+              "deverá cumprir o aviso"
+            ],
+            "AUSÊNCIA/DISPENSA": [
+              "dispensa do cumprimento",
+              "dispensa do cumprimento do aviso prévio",
+              "dispensa do aviso",
+              "aviso dispensado",
+              "dispensado do cumprimento"
+            ],
+            "INDENIZADO": [
+              "aviso prévio indenizado",
+              "aviso indenizado",
+              "indenizado"
+            ]
+          }
+        }
+      ],
       "valores": {
         "motivo": "Pedido de demissão SEM justa causa",
         "avisoDadoPor": "EMPREGADO"
@@ -3680,6 +4131,34 @@
           ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
+      "opcoesPorPalavra": [
+        {
+          "campo": "tipoAviso",
+          "_comentario": "Tipo de aviso do Cálculo de Rescisão pelo que o documento diz (expressão inteira; com as opções impressas, só a marcada).",
+          "opcoes": {
+            "TRABALHADO": [
+              "cumprirei o aviso",
+              "cumprirei o aviso prévio",
+              "cumprir o aviso prévio",
+              "aviso prévio trabalhado",
+              "aviso trabalhado",
+              "deverá cumprir o aviso"
+            ],
+            "AUSÊNCIA/DISPENSA": [
+              "dispensa do cumprimento",
+              "dispensa do cumprimento do aviso prévio",
+              "dispensa do aviso",
+              "aviso dispensado",
+              "dispensado do cumprimento"
+            ],
+            "INDENIZADO": [
+              "aviso prévio indenizado",
+              "aviso indenizado",
+              "indenizado"
+            ]
+          }
+        }
+      ],
       "valores": {
         "motivo": "Demitido SEM justa causa",
         "avisoDadoPor": "EMPREGADOR"
@@ -3876,6 +4355,65 @@
       ],
       "minPalavras": 2,
       "forte": [
+        "aviso de férias"
+      ],
+      "extrair": {
+        "inicioGozo": [
+          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(?:de\\s*|a\\s*partir\\s*de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "(?:in[íi]cio\\s*(?:do\\s*gozo|das\\s*f[ée]rias)|gozar[áa]?\\s*(?:suas\\s*|as\\s*)?f[ée]rias\\s*(?:a\\s*partir\\s*de|de|no\\s*per[íi]odo\\s*de))\\s*:?\\s*(?:de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})"
+        ],
+        "fimGozo": [
+          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(?:de\\s*)?\\d{1,2}/\\d{1,2}/\\d{2,4}\\s*(?:a|at[ée]|-)\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "(?:t[ée]rmino|fim)\\s*(?:do\\s*gozo|das\\s*f[ée]rias)\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})"
+        ],
+        "diasGozo": [
+          "(?<![\\d/])(\\d{1,2})\\s*(?:\\([a-zà-ú ]+\\)\\s*)?dias\\s*(?:de\\s*)?(?:gozo|f[ée]rias)",
+          "dias\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(\\d{1,2})"
+        ],
+        "diasAbono": [
+          "(?<![\\d/])(\\d{1,2})\\s*(?:\\([a-zà-ú ]+\\)\\s*)?dias\\s*(?:de\\s*)?abono",
+          "abono\\s*(?:pecuni[áa]rio)?\\s*(?:de\\s*)?:?\\s*(\\d{1,2})\\s*dias",
+          "dias\\s*de\\s*abono(?:\\s*pecuni[áa]rio)?\\s*:?\\s*(\\d{1,2})"
+        ]
+      },
+      "opcoesPorPalavra": [
+        {
+          "campo": "abono",
+          "_comentario": "Abono só com a opção marcada ou com dias de abono maiores que zero (campos.abono.porNumero).",
+          "soMarcada": true,
+          "opcoes": {
+            "SIM": [
+              "abono pecuniário",
+              "converter 1/3",
+              "conversão de 1/3"
+            ],
+            "NÃO": [
+              "sem abono"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "requerimentoAbono",
+      "nome": "Requerimento de abono pecuniário",
+      "tipoSolicitacao": "avisoFerias",
+      "revisarComEscritorio": true,
+      "palavras": [
+        "abono pecuniário",
+        "requeiro",
+        "conversão de 1/3",
+        "um terço",
+        "período aquisitivo",
+        "art. 143"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "requerimento de abono pecuniário",
+        "requeiro a conversão"
+      ],
+      "negativas": [
+        "recibo de férias",
         "aviso de férias"
       ]
     },
@@ -4282,6 +4820,11 @@
           "k": "aviso",
           "rotulo": "Aviso prévio",
           "tipo": "opcoes",
+          "de": "tipoAviso",
+          "mapa": {
+            "TRABALHADO": "Cumprirei o aviso prévio de 30 dias.",
+            "AUSÊNCIA/DISPENSA": "Solicito a dispensa do cumprimento do aviso prévio, ciente de que ele poderá ser descontado."
+          },
           "opcoes": [
             "Cumprirei o aviso prévio de 30 dias.",
             "Solicito a dispensa do cumprimento do aviso prévio, ciente de que ele poderá ser descontado."
