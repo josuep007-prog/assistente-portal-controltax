@@ -910,4 +910,18 @@ t('cadastro pelo texto: ficha colada sem "admissão" e frases soltas (data pelo 
   assert.equal(f.campos.descricao, undefined); assert.equal(f.campos.observacoes, undefined);
 });
 
+t('estagiário e contribuinte: categorias do eSocial/SEFIP pelas regras e tipo pelo texto', () => {
+  const est = E.resolveTipo(rules, 'cadastroEstagiario').campos.categoriaEsocial;
+  assert.match(est.padrao, /Estagi/); assert.equal(est.revisarComEscritorio, true);
+  const P = (x) => E.parseFreeText(x, rules, { hoje });
+  const s = P('novo sócio com pró-labore de 5000 a partir de 01/11');
+  assert.equal(s.tipoSugerido, 'cadastroContribuinte'); assert.equal(s.campos.tipoContribuinte.valor, 'Sócio'); assert.equal(s.campos.salario.valor, '5000');
+  const a = P('cadastro de autônomo RPA, CPF 529.982.247-25');
+  assert.equal(a.campos.tipoContribuinte.valor, 'Autônomo'); assert.equal(a.campos.nome, undefined);
+  const t = rules.tipos.cadastroContribuinte;
+  const cs = E.activeConditionals(t, { tipoContribuinte: 'Sócio' }); assert.match(cs[0].valores.categoriaEsocial, /^721/); assert.match(cs[0].valores.categoriaSefip, /^11/);
+  const ca = E.activeConditionals(t, { tipoContribuinte: 'Autônomo' }); assert.match(ca[0].valores.categoriaEsocial, /^701/); assert.match(ca[0].valores.categoriaSefip, /^13/);
+  assert.ok(t.condicionais.every(c => c.revisarComEscritorio));
+});
+
 console.log(`\n${n} testes ok`);

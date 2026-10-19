@@ -414,6 +414,14 @@
         "fimDoValor": ["com", "e", "salário", "salario", "cpf", "rg", "dia", "a partir", "começa", "comeca", "entra", "no", "na", "ganhando", "recebendo", "experiência", "experiencia", "nascid*", "em", "admissão", "admissao", "pis", "mãe", "mae", "jornada", "carga", "bolsa", "pró-labore", "que", "para", "pra", "função", "funcao", "cargo", "nome", "data"],
         "admitir": ["admitir", "admitimos", "admitindo", "contratar", "contratamos", "contratei", "contratando", "contratação de", "contratação da", "contratação do", "admissão de", "admissão da", "admissão do", "registrar", "cadastrar", "cadastro de", "cadastro da", "cadastro do", "novo funcionário", "nova funcionária", "novo empregado", "nova empregada", "novo estagiário", "nova estagiária"]
       },
+      "tipoContribuinte": {
+        "_comentario": "No cadastro de contribuinte, estas palavras marcam o Tipo; as categorias do eSocial e da SEFIP vêm das condicionais do tipo.",
+        "revisarComEscritorio": true,
+        "opcoes": [
+          { "valor": "Sócio", "palavras": ["sócio", "sócia", "pró-labore", "prolabore", "pro labore", "diretor", "administrador"] },
+          { "valor": "Autônomo", "palavras": ["autônomo", "autônoma", "rpa", "recibo de pagamento autônomo", "prestador de serviço", "prestadora de serviço", "freelancer"] }
+        ]
+      },
       "naoEhDiaDaSemana": [
         "via",
         "parcela",
@@ -3446,7 +3454,10 @@
         "categoriaEsocial": {
           "fc": "eSocialCategory",
           "tipo": "combo",
-          "rotulo": "Categoria eSocial"
+          "rotulo": "Categoria eSocial",
+          "padrao": "901 - Estagiário",
+          "revisarComEscritorio": true,
+          "calibrar": true
         },
         "instituicaoEnsino": {
           "fc": "educationalInstitutionExpanded",
@@ -3618,6 +3629,19 @@
           ]
         }
       },
+      "condicionais": [
+        {
+          "_comentario": "Categorias do eSocial e da SEFIP pelo tipo de contribuinte (o texto exato das opções: calibrar no Onvio real).",
+          "revisarComEscritorio": true,
+          "se": { "campo": "tipoContribuinte", "contem": ["sócio", "socio", "diretor"] },
+          "valores": { "categoriaEsocial": "721 - Contribuinte individual - Diretor não empregado", "categoriaSefip": "11 - Contribuinte individual - Diretor" }
+        },
+        {
+          "revisarComEscritorio": true,
+          "se": { "campo": "tipoContribuinte", "contem": ["autônomo", "autonomo", "rpa"] },
+          "valores": { "categoriaEsocial": "701 - Contribuinte individual - Autônomo", "categoriaSefip": "13 - Contribuinte individual - Autônomo" }
+        }
+      ],
       "anexos": [
         {
           "id": "identidade",
