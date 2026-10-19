@@ -888,4 +888,26 @@ t('leitor de documento pessoal: CNH antiga e nova (campos compostos), CIN, CTPS 
   assert.deepEqual([t2.titulo, t2.zona, t2.secao], ['123456789012', '123', '0456']);
 });
 
+t('cadastro pelo texto: ficha colada sem "admissão" e frases soltas (data pelo papel, salário sem R$, 45+45, cargo, CPF, nome)', () => {
+  const P = (x, emp = []) => E.parseFreeText(x, rules, { hoje, employees: emp });
+  const ficha = P('Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste\nData de nascimento: 12/03/1995\nNaturalidade: Vitória/ES');
+  assert.equal(ficha.tipoSugerido, 'cadastroEmpregado');
+  assert.equal(ficha.campos.mae.valor, 'Mãe de Teste'); assert.equal(ficha.campos.nascimento.valor, '12/03/1995'); assert.equal(ficha.campos.ufNascimento.valor, 'ES');
+  assert.equal(ficha.campos.municipio, undefined);   // a naturalidade não vira endereço
+  assert.equal(E.suggestTipoByText('Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste', rules, null).tipo, 'cadastroEmpregado');
+  const f = P('vamos admitir a Fulana de Teste, CPF 529.982.247-25, nascida em 12/03/1995, começa dia 03/11, salário 2500, experiência 45+45, cargo vendedora');
+  const v = Object.fromEntries(Object.entries(f.campos).map(([k, c]) => [k, c.valor]));
+  assert.deepEqual(v, { nome: 'Fulana de Teste', cpf: '529.982.247-25', nascimento: '12/03/1995', dataAdmissao: '03/11/2026', salario: '2500', contratoExperiencia: '45', prorrogacao: '45', cargo: 'vendedora' });
+  assert.match(f.campos.nascimento.fonte, /nascida em 12\/03\/1995/);
+  // sem palavra antes, uma data antiga não vira admissão; "nasceu em 12/03/95" é 1995
+  const g = P('contratar o pedro de teste, 12/03/1995, entra 10/11/2026 com salário de R$ 1.800,00');
+  assert.equal(g.campos.dataAdmissao.valor, '10/11/2026'); assert.equal(g.campos.nascimento, undefined); assert.equal(g.campos.nome.valor, 'Pedro de Teste');
+  assert.equal(P('admitir a joana de teste, nasceu em 12/03/95').campos.nascimento.valor, '12/03/1995');
+  // CPF digitado inválido entra para a conferência acusar; funcionário da lista não vira nome
+  assert.equal(P('admitir a Fulana de Teste, CPF 111.111.111-12').campos.cpf.valor, '111.111.111-12');
+  assert.equal(P('vamos admitir a Maria Souza', ['MARIA SOUZA']).campos.nome, undefined);
+  // o texto nunca vai para a descrição
+  assert.equal(f.campos.descricao, undefined); assert.equal(f.campos.observacoes, undefined);
+});
+
 console.log(`\n${n} testes ok`);

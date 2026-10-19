@@ -1055,7 +1055,7 @@ function renderPreencher() {
   const drop = `<div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Ou cole um print (Ctrl+V). Eu leio, preencho e anexo.</small></div></div>`;
   const livre = `<div class="free mini">
       <label for="free-form" class="sr">Escreva o pedido com suas palavras</label>
-      <input id="free-form" class="input" placeholder="Ou escreva: ex. ${esc(exemploTexto(tipo))}" autocomplete="off">
+      <textarea id="free-form" class="input" rows="2" placeholder="Ou escreva (ou cole a ficha do funcionário): ex. ${esc(exemploTexto(tipo))}" autocomplete="off" title="Enter envia; Shift+Enter quebra a linha"></textarea>
       <button class="btn btn-sm" id="free-form-go">Preencher</button>
     </div>
     <div id="free-sug"></div>`;
@@ -1111,7 +1111,8 @@ function renderPreencher() {
   $('#btn-clear').addEventListener('click', () => { S.work[tipo] = null; w(tipo).rascunhoVisto = true; apagarRascunho(tipo); loadEmpregados(tipo); render(); });
   const ff = () => { const v = $('#free-form').value.trim(); if (v) { entenderTexto(v, { origem: 'preencher' }); } };
   $('#free-form-go').addEventListener('click', ff);
-  $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ff(); } });
+  // Enter envia; Shift+Enter quebra a linha (uma ficha colada chega com as linhas intactas)
+  $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
   renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo);
@@ -1140,7 +1141,7 @@ function renderSugestoesCadastro(tipo) {
   $('#sug-nao').addEventListener('click', () => { W.sugestoesDispensadas = sug.map(([k]) => k); el.innerHTML = ''; });
 }
 function exemploTexto(tipo) {
-  return tipoDef(tipo)?.exemploTexto || ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
+  return tipoDef(tipo)?.exemploTexto || ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', cadastroEmpregado: 'admitir a Maria Souza, começa 03/11, salário 2500, experiência 45+45', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
 }
 
 /* Etapas: documento/descrição → dados → conferência → envio */
@@ -2029,9 +2030,11 @@ function renderRepetir() {
   if (!h) { el.innerHTML = ''; return; }
   el.innerHTML = `<button class="li repetir" type="button" id="rep-go">${icon('refresh')}<div class="main"><b>Repetir a última solicitação</b><small>${esc(h.resumo)} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div>${icon('arrow', 'ic-sm')}</button>`;
   $('#rep-go').addEventListener('click', async () => {
-    const t = tipoDef(h.tipo); const W = w(h.tipo);
-    // cadastro: só as escolhas da empresa (cargo, departamento…); os dados da pessoa anterior ficam de fora
+    // cadastro: só as escolhas da empresa (cargo, departamento…); os dados da pessoa anterior ficam de fora,
+    // inclusive o que tinha ficado guardado de um cadastro começado
     const cadastro = !!E.camposDaEmpresa(h.tipo, S.rules);
+    if (cadastro && S.work[h.tipo]) { const { empregados, opcoes } = S.work[h.tipo]; S.work[h.tipo] = null; Object.assign(w(h.tipo), { empregados, opcoes }); }
+    const t = tipoDef(h.tipo); const W = w(h.tipo);
     for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) {
       if (k === 'dias' || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
       W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };

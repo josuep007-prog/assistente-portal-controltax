@@ -396,6 +396,24 @@
     "textoLivre": {
       "descricao": "Palavras que o Assistente usa para entender o texto livre (Início, Novo pedido e Ctrl+K). Com ou sem acento, tanto faz; um * no fim casa o começo da palavra (demit* = demitido, demitir…).",
       "sentidoDatas": "futuro",
+      "cadastro": {
+        "_comentario": "Cadastros pelo texto. Ficha colada ('Nome: … CPF: … Nome da mãe: …') com pelo menos fichaMinRotulos rótulos usa a mesma leitura dos documentos e abre o Cadastro mesmo sem a palavra admissão. Nas frases soltas, cada data ganha papel pela palavra antes dela (datas[]); sem palavra, só vira admissão se não for de mais de admissaoAteDiasAtras dias atrás. fimDoValor: palavras que encerram um cargo ou nome.",
+        "fichaMinRotulos": 3,
+        "admissaoAteDiasAtras": 365,
+        "datas": [
+          { "campo": "nascimento", "palavras": ["nascid*", "nasceu", "nascimento", "nasc", "aniversário", "data de nascimento"] },
+          { "campo": "dataRg", "palavras": ["emissão do rg", "emissão da identidade", "rg emitido em", "identidade emitida em", "expedição", "expedid*", "data de emissão"] },
+          { "campo": "cnhValidade", "palavras": ["validade da cnh", "cnh vence", "cnh válida até", "vencimento da cnh"] },
+          { "campo": "dataAdmissao", "palavras": ["começa", "começar", "começará", "comec*", "entra", "entrar", "entrará", "inicia", "iniciar", "início", "admissão", "admitid*", "admitir", "contratad*", "contratar", "a partir de", "a partir do dia", "primeiro dia", "vigência", "início do estágio"] }
+        ],
+        "salario": ["salário", "salario de", "bolsa", "bolsa-auxílio", "bolsa auxílio", "pró-labore", "prolabore", "pro labore", "remuneração", "vai ganhar", "ganhando", "recebendo", "vai receber"],
+        "experiencia": ["contrato de experiência", "período de experiência", "experiência"],
+        "prorrogacao": ["prorrogação", "prorroga", "prorrogar", "prorrogável"],
+        "cargo": ["para o cargo de", "no cargo de", "cargo de", "cargo", "contratado como", "contratada como", "admitido como", "admitida como", "vai trabalhar como", "para trabalhar como", "vai ser"],
+        "funcao": ["para a função de", "na função de", "função de", "função"],
+        "fimDoValor": ["com", "e", "salário", "salario", "cpf", "rg", "dia", "a partir", "começa", "comeca", "entra", "no", "na", "ganhando", "recebendo", "experiência", "experiencia", "nascid*", "em", "admissão", "admissao", "pis", "mãe", "mae", "jornada", "carga", "bolsa", "pró-labore", "que", "para", "pra", "função", "funcao", "cargo", "nome", "data"],
+        "admitir": ["admitir", "admitimos", "admitindo", "contratar", "contratamos", "contratei", "contratando", "contratação de", "contratação da", "contratação do", "admissão de", "admissão da", "admissão do", "registrar", "cadastrar", "cadastro de", "cadastro da", "cadastro do", "novo funcionário", "nova funcionária", "novo empregado", "nova empregada", "novo estagiário", "nova estagiária"]
+      },
       "naoEhDiaDaSemana": [
         "via",
         "parcela",

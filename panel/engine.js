@@ -656,6 +656,11 @@ export function suggestTipoByText(text, rules, atual) {
   const T = ' ' + norm(text) + ' ';
   if (T.trim().length < 4) return null;
   const l = pontuarIntencoes(text, rules).filter(x => x.tipo !== atual && x.pontos > 0);
+  // ficha colada ("Nome: … CPF: … Nome da mãe: …") abre o Cadastro mesmo sem a palavra admissão
+  if (!atual && (!l.length || (!CADASTROS.includes(l[0].tipo) && l[0].pontos < 3))) {
+    const n = fichaColada(text, rules);
+    if (n && (!l.length || l[0].pontos < n)) return { tipo: 'cadastroEmpregado', hits: n, pontos: n, ficha: true, intencao: (rules?.intencoes || []).find(i => i.tipo === 'cadastroEmpregado') || null };
+  }
   if (!l.length) return null;
   const best = l[0];
   const empate = l.filter(x => x !== best && Math.abs(x.pontos - best.pontos) < 0.01).map(x => x.tipo);
@@ -1176,8 +1181,8 @@ export function parseFreeText(text, rules, ctx = {}) {
       break;
     }
     case 'cadastroEmpregado': case 'cadastroEstagiario': case 'cadastroContribuinte': {
-      if (d0) put('dataAdmissao', d0);
-      const sal = String(text).match(/R\$\s*([\d.]+,\d{2}|\d+)/); if (sal) put('salario', sal[1]);
+      // ficha colada (mesma leitura dos documentos) e frases soltas: cada data com o seu papel
+      for (const [k, v] of Object.entries(lerCadastroTexto(text, tipo, rules, { hoje, employees: ctx.employees || [] }))) campos[k] = v;
       break;
     }
     default: break;
@@ -1186,6 +1191,109 @@ export function parseFreeText(text, rules, ctx = {}) {
   if (prazo && def?.campos?.conclusao) put('conclusao', fmtDate(prazo.d));
   // o texto do cliente serve só para entender o pedido: não vai literalmente para a descrição
   return { tipoSugerido: tipo, campos, datas: normais.map(fmtDate), intervalo, prazo: prazo ? fmtDate(prazo.d) : null, palpite, linhas, ...(candidatosNome ? { candidatos: candidatosNome } : {}) };
+}
+
+/* ---------- Cadastro pelo texto: ficha colada e frases soltas (config.textoLivre.cadastro) ---------- */
+const CAD_PADRAO = {
+  fichaMinRotulos: 3, admissaoAteDiasAtras: 365,
+  datas: [{ campo: 'nascimento', palavras: ['nascid*', 'nasceu', 'nascimento'] }, { campo: 'dataAdmissao', palavras: ['comec*', 'entra', 'inicio', 'admissao', 'a partir de'] }],
+  salario: ['salario', 'bolsa', 'pro-labore'], experiencia: ['experiencia'], prorrogacao: ['prorrogacao'], cargo: ['cargo'], funcao: ['funcao'],
+  fimDoValor: ['com', 'e', 'cpf', 'dia', 'salario', 'no', 'na', 'em'], admitir: ['admitir', 'contratar']
+};
+export const CADASTROS = ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte'];
+const cadCfg = (rules) => ({ ...CAD_PADRAO, ...(tl(rules).cadastro || {}) });
+/** Ficha colada ("Nome: … CPF: … Nome da mãe: …"): quantos rótulos do cadastro aparecem (0 abaixo do mínimo das regras). */
+export function fichaColada(text, rules, tipoKey = 'cadastroEmpregado') {
+  const def = resolveTipo(rules, tipoKey); if (!def || !/[:\-–]/.test(String(text || ''))) return 0;
+  const n = Object.keys(extractByLabels(text, def.campos)).length;
+  return n >= (cadCfg(rules).fichaMinRotulos || 3) ? n : 0;
+}
+const ARTIGOS_NOME = /^(?:a|o|as|os|um|uma|da|do|de|nova|novo|funcionari[oa]|empregad[oa]|estagiari[oa]|colaborador[a]?|senhor[a]?|sr[a]?|chamad[oa])$/;
+const tituloSeMinusculo = (s) => s === s.toLowerCase() ? s.replace(/(^|\s)(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/\s(D[aeo]s?|E)(?=\s)/g, (m) => m.toLowerCase()) : s;
+/** Cadastro escrito com as próprias palavras: { campo: { valor, conf, fonte } }. O texto nunca vai para a descrição. */
+export function lerCadastroTexto(text, tipoKey, rules, { hoje = today(), employees = [] } = {}) {
+  const c = cadCfg(rules); const def = resolveTipo(rules, tipoKey); if (!def) return {};
+  const src = String(text || '').normalize('NFC'); const t = plain(src);
+  const out = {};
+  const put = (k, v, conf = 0.6, fonte = 'sua descrição') => { if (v == null || v === '' || !def.campos[k] || out[k]) return; out[k] = { valor: String(v), conf, fonte }; };
+  // 1) ficha colada: a mesma leitura de um arquivo
+  if (fichaColada(src, rules, tipoKey)) {
+    const a = analyzeText(src, rules, { tipoAtual: tipoKey, hoje });
+    for (const [k, v] of Object.entries(a.campos)) put(k, v.valor, v.conf, `ficha colada (${v.fonte})`);
+  }
+  const rFim = rxTermos(c.fimDoValor);
+  const ehFim = (pw) => !!rFim && new RegExp(`^${rFim}$`).test(pw);
+  /** Palavras depois de um termo, até pontuação, número ou uma palavra de fim. */
+  const depoisDe = (lista, max = 5) => {
+    const r = rxTermos(lista); if (!r) return null;
+    const m = t.match(new RegExp(`(?<![a-z0-9])${r}(?![a-z0-9])\\s*:?\\s*`)); if (!m) return null;
+    const pal = [];
+    for (const w of src.slice(m.index + m[0].length).split(/\s+/)) {
+      const wc = w.replace(/[.,;:!?)]+$/, ''); const pw = plain(wc);
+      if (!pal.length && /^(?:de|da|do)$/.test(pw)) continue;
+      if (!pw || /[^a-z'´-]/.test(pw) || ehFim(pw)) break;
+      pal.push(wc); if (wc !== w || pal.length >= max) break;
+    }
+    while (pal.length && /^(?:de|da|do|dos|das|e)$/i.test(pal[pal.length - 1])) pal.pop();
+    return pal.join(' ') || null;
+  };
+  // 2) datas: o papel vem da palavra logo antes ("nascida em", "começa", "emissão do RG"); sem palavra, só uma data recente vira admissão
+  const papeis = (c.datas || []).map(d => ({ campo: d.campo, r: rxTermos(d.palavras) })).filter(x => x.r);
+  let fimAnt = 0;
+  for (const x of analisarDatas(src, hoje, { sentido: 'futuro', rules }).lista) {
+    if (x.prazo) { fimAnt = x.fim; continue; }
+    const ini = Math.max(fimAnt, x.idx - 45); const janela = t.slice(ini, x.idx);
+    let melhor = null;
+    for (const p of papeis) for (const m of janela.matchAll(new RegExp(`(?<![a-z0-9])${p.r}(?![a-z0-9])`, 'g'))) { const f = m.index + m[0].length; const meio = janela.slice(f); if (/[,;.]\s/.test(meio + ' ') || meio.trim().split(/\s+/).filter(Boolean).length > 3) continue; if (!melhor || f > melhor.f) melhor = { campo: p.campo, f, i: m.index }; }
+    let d = x.d;
+    if (melhor) {
+      if (melhor.campo === 'nascimento' && d > hoje) d = new Date(d.getFullYear() - 100, d.getMonth(), d.getDate());   // "12/03/95"
+      put(melhor.campo, fmtDate(d), 0.6, `“${src.slice(ini + melhor.i, x.fim).trim()}”`);
+    } else if (diffDays(d, hoje) <= (c.admissaoAteDiasAtras ?? 365)) put('dataAdmissao', fmtDate(d), 0.5);
+    fimAnt = x.fim;
+  }
+  // 3) salário, bolsa ou pró-labore: com ou sem R$
+  const NUM = '(\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,2})?|\\d+(?:,\\d{1,2})?)';
+  const rSal = rxTermos(c.salario);
+  const sal = (rSal && t.match(new RegExp(`(?<![a-z])${rSal}(?![a-z])\\s*(?:de\\s+|:\\s*|=\\s*|sera\\s+|vai ser\\s+)?(?:r\\$\\s*)?${NUM}(?![\\d/])`)))
+    || t.match(new RegExp(`r\\$\\s*${NUM}`)) || t.match(new RegExp(`${NUM}\\s*reais`));
+  if (sal) put('salario', sal[1]);
+  // 4) experiência: "45 + 45", "experiência de 45 dias", "prorrogação de 45"
+  const xp = t.match(/(?<![\d/.,])(\d{1,2})\s*(?:dias?\s*)?(?:\+|mais)\s*(\d{1,2})(?![\d/])/);
+  if (xp && +xp[1] + +xp[2] <= 90) { put('contratoExperiencia', xp[1]); put('prorrogacao', xp[2]); }
+  const nDepois = (lista) => { const r = rxTermos(lista); const m = r && (t.match(new RegExp(`(?<![a-z])${r}(?![a-z])\\s*(?:de\\s+|:\\s*)?(${RX_NUM})\\s*(?:dias)?`)) || t.match(new RegExp(`(${RX_NUM})\\s*dias\\s*(?:de\\s+)?${r}(?![a-z])`))); return m ? numeroPorExtenso(m[1]) : null; };
+  if (!xp) { put('contratoExperiencia', nDepois(c.experiencia)); put('prorrogacao', nDepois(c.prorrogacao)); }
+  // 5) cargo e função
+  put('cargo', depoisDe(c.cargo), 0.55); put('funcao', depoisDe(c.funcao), 0.55);
+  // 6) CPF (o inválido entra para a conferência acusar), PIS e e-mail
+  for (const [k, v] of Object.entries(extractGeneric(src))) if (k !== 'cep') put(k, v.valor, v.conf);
+  const cpfD = t.match(/cpf\s*(?:n[o.]?\s*)?:?\s*(\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d)/);
+  if (cpfD) put('cpf', fmtCPF(cpfD[1]), 0.45);
+  // 7) nome depois de "admitir/contratar" (quando não é alguém da lista)
+  const rAdm = rxTermos(c.admitir);
+  const mAdm = rAdm && def.campos.nome && t.match(new RegExp(`(?<![a-z])${rAdm}(?![a-z])\\s*`));
+  if (mAdm) {
+    const vaz = new Set([...(tl(rules).palavrasVazias || []), ...MESES, ...DIAS_SEMANA].map(plain));
+    // "contratar estagiária Ana", "cadastro de autônomo": a palavra do tipo de cadastro não é nome
+    const doTipo = new Set([...(tl(rules).tipoContribuinte?.opcoes || []).flatMap(o => o.palavras || []), ...(rules?.intencoes || []).filter(i => CADASTROS.includes(i.tipo)).flatMap(i => i.palavras || [])].flatMap(p => plain(p).split(/[^a-z]+/)).filter(x => x.length > 2));
+    const pal = [];
+    for (const w of src.slice(mAdm.index + mAdm[0].length).split(/\s+/)) {
+      const wc = w.replace(/[.,;:!?)]+$/, ''); const pw = plain(wc);
+      if (!pal.length && (ARTIGOS_NOME.test(pw) || doTipo.has(pw))) continue;
+      if (doTipo.has(pw)) break;
+      if (!pw || /[^a-z'´-]/.test(pw)) break;
+      if (pal.length && CONECTORES.has(norm(wc))) { pal.push(wc); continue; }
+      if (vaz.has(pw) || ehFim(pw)) break;
+      pal.push(wc); if (wc !== w || pal.length >= 7) break;
+    }
+    while (pal.length && CONECTORES.has(norm(pal[pal.length - 1]))) pal.pop();
+    const nome = pal.join(' ');
+    const daLista = employees.length && findEmployeeInText(nome, employees, { soPrimeiroNome: false })?.option;
+    if (pal.filter(x => !CONECTORES.has(norm(x))).length >= 2 && !daLista) put('nome', tituloSeMinusculo(nome), 0.55);
+  }
+  // 8) contribuinte: sócio/pró-labore ou autônomo/RPA marcam o Tipo (as categorias vêm das condicionais)
+  for (const o of tl(rules).tipoContribuinte?.opcoes || []) if (temTermo(t, o.palavras)) { put('tipoContribuinte', o.valor); break; }
+  return out;
 }
 
 /* ---------- Vários pedidos numa frase ---------- */

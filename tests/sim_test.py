@@ -450,12 +450,75 @@ async def teste_mecanica(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_cadastro(b):
+    """Lote 3: cadastro sem os dados da pessoa anterior, sugestões da empresa e ficha colada no campo de várias linhas."""
+    print('\n[cadastro] repetir sem dados pessoais, sugestões e ficha colada')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/?modo=painel'); await pg.wait_for_timeout(2500)
+    painel = lambda: next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    def tem(**kv):
+        async def f():
+            v = await portal(); return all(v.get(k) == x for k, x in kv.items())
+        return f
+    pn = painel()
+    await pg.evaluate("window.__ctSim.hooks()?.openPanel()"); await pg.wait_for_timeout(600)
+    empresa = (await pn.inner_text('#empresa')).strip()
+    # um cadastro enviado por uma versão antiga, com os dados da pessoa (dados inventados)
+    h = {'chave': 'x', 'quando': 1, 'empresa': empresa, 'tipo': 'cadastroEmpregado', 'status': 'enviado', 'resumo': 'Cadastro de teste', 'anexos': [],
+         'valores': {'nome': 'PESSOA ANTERIOR DE TESTE', 'cpf': '529.982.247-25', 'mae': 'MAE ANTERIOR', 'cep': '01310-100', 'sexo': 'Feminino', 'cargo': 'VENDEDOR', 'dataAdmissao': '01/10/2026'}}
+    await pn.evaluate("h => chrome.storage.local.set({ historico: [h] })", h)
+    await pg.reload(); await pg.wait_for_timeout(2500)
+    await pg.evaluate("window.__ctSim.hooks()?.openPanel()"); await pg.wait_for_timeout(800)
+    pn = painel()
+    await pn.click('.tab[data-view="inicio"]'); await pg.wait_for_timeout(600)
+    await pn.click('#rep-go')
+    ok = await espera(tem(jobPositionExpanded='VENDEDOR'), 25)
+    v = await portal()
+    check(ok and not v.get('name') and not v.get('nationalIdentity') and not v.get('motherName') and not v.get('zipCode'), f"repetir um cadastro leva só o cargo, sem nome, CPF, mãe e CEP ({ {k: x for k, x in v.items() if x} })")
+    pn = painel()
+    sug = await pn.inner_text('#sug-cad') if await pn.locator('#sug-cad').count() else ''
+    check('Sugestões para este cadastro' in sug and '45' in sug and '529.982' not in sug, 'sugestões do cadastro: experiência 45 + 45, sem dados pessoais')
+    if await pn.locator('#sug-todas').count(): await pn.click('#sug-todas')
+    elif await pn.locator('[data-sug]').count(): await pn.click('[data-sug]')
+    ok = await espera(tem(daysExperience='45', extensionDays='45'), 20)
+    check(ok, 'usar as sugestões: experiência e prorrogação vão ao portal')
+    # campo de texto de várias linhas: Shift+Enter quebra a linha, Enter envia
+    check(await pn.evaluate("document.querySelector('#free-form')?.tagName") == 'TEXTAREA', 'campo de texto do Preencher tem várias linhas')
+    await pn.click('#free-form'); await pn.type('#free-form', 'linha 1'); await pn.press('#free-form', 'Shift+Enter'); await pn.type('#free-form', 'linha 2')
+    check(await pn.evaluate("document.querySelector('#free-form').value") == 'linha 1\nlinha 2', 'Shift+Enter quebra a linha sem enviar')
+    await pn.fill('#free-form', 'Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste\nData de nascimento: 12/03/1995')
+    await pn.press('#free-form', 'Enter')
+    ok = await espera(tem(name='Fulana de Teste', motherName='Mãe de Teste'), 25)
+    v = await portal()
+    check(ok, f"ficha colada preenche nome e mãe ({v.get('name')}, {v.get('motherName')})")
+    check('Nome:' not in (v.get('comments') or '') and 'Nome:' not in (v.get('description') or ''), 'o texto colado não vai para observações/descrição')
+    await pg.click('.form__buttons--cancel'); await pg.wait_for_timeout(800)
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
 async def main():
     serve()
     if os.environ.get('SIM_SO') == 'mec':   # SIM_SO=mec roda só a mecânica do preenchimento
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_mecanica(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_cadastro(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == '20':   # SIM_SO=20 roda só a parte da plataforma (2.0)
@@ -804,6 +867,7 @@ async def main():
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await teste_plataforma(b)
         await teste_mecanica(b)
+        await teste_cadastro(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 
