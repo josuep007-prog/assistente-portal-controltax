@@ -1463,6 +1463,9 @@ function avisosExtras(tipo, vals) {
   const docs = W.arquivos.filter(a => !a.removido && !a.outroTipo && a.status === 'ok');
   for (const a of docs) {
     for (const av of a.analise?.avisos || []) out.push({ nivel: av.nivel, grupo: 'Documento', mensagem: docs.length > 1 ? `${a.nome}: ${av.mensagem}` : av.mensagem });
+    // comprovante em nome de outra pessoa (pode ser de um parente): compara com o nome do cadastro
+    const avc = a.analise?.titular && !(a.analise.avisos || []).some(x => x.id === 'comprovanteOutraPessoa') ? E.avisoComprovante(a.analise.titular, vals.nome, S.rules) : null;
+    if (avc) out.push({ nivel: avc.nivel, grupo: 'Documento', mensagem: avc.mensagem });
     if (a.metodo === 'ocr' && a.confianca != null && a.confianca < 60) out.push({ nivel: 'info', grupo: 'Documento', mensagem: `A leitura de “${a.nome}” foi difícil (letra à mão ou foto). Confira os campos — os duvidosos ficam em amarelo.` });
   }
   const dup = duplicado(tipo, vals);
