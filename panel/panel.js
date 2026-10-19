@@ -1075,7 +1075,7 @@ function renderPreencher() {
     </div>`;
   // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
   viewEl.innerHTML = plat ? `
-    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div>
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
         <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
@@ -1087,6 +1087,7 @@ function renderPreencher() {
     ${cab}
     <div id="modo-seguro"></div>
     <div id="rascunho"></div>
+    <div id="sug-cad"></div>
     ${drop}
     ${livre}
     ${arquivos}
@@ -1113,7 +1114,30 @@ function renderPreencher() {
   $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
-  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer();
+  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo);
+}
+/* Cadastro: "Como na última admissão", padrões da empresa e experiência 45 + 45 — sugestões que o cliente usa ou não.
+   Só campos da empresa (config.camposDaEmpresa); só aparece o que ainda está vazio aqui e no portal. */
+function renderSugestoesCadastro(tipo) {
+  const el = $('#sug-cad'); if (!el) return;
+  const W = w(tipo); const pv = portalValores(tipo);
+  const sug = Object.entries(E.sugestoesCadastro(tipo, S.rules, { empresa: S.ctx.empresa, historico: S.historico }))
+    .filter(([k]) => !W.valores[k]?.valor && !pv[k] && !W.editados.has(k) && !(W.sugestoesDispensadas || []).includes(k) && (S.ctx.form?.campos?.[k]?.existe !== false));
+  if (!sug.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="note sug-cad">${icon('info')}<div style="flex:1;min-width:0"><b>Sugestões para este cadastro</b> <small class="muted">— escolhas da empresa, para você conferir. Os dados da pessoa não são copiados.</small>
+    <div class="list" style="margin-top:6px">${sug.map(([k, c]) => `<div class="li"><div class="main"><b>${esc(rotuloDe(tipo, k))}: ${esc(c.valor)}</b><small>${esc(c.fonte.charAt(0).toUpperCase() + c.fonte.slice(1))}</small></div><button type="button" class="btn btn-sm" data-sug="${esc(k)}">Usar</button></div>`).join('')}</div>
+    <div class="actions" style="margin-top:6px">${sug.length > 1 ? '<button type="button" class="btn btn-primary btn-sm" id="sug-todas">Usar todas</button>' : ''}<button type="button" class="btn btn-ghost btn-sm" id="sug-nao">Agora não</button></div></div></div>`;
+  const usar = async (keys) => {
+    const mapa = Object.fromEntries(sug);
+    for (const k of keys) { W.valores[k] = { ...mapa[k] }; if (S.modo === 'plataforma') W.fonteVerdade[k] = 'plataforma'; }
+    gerarTextos(tipo);
+    renderSugestoesCadastro(tipo);
+    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) await fillPortal(tipo, { so: keys, daPlataforma: S.modo === 'plataforma' });
+    if (S.view === 'preencher') { renderFieldsOnly(); updateChecks(); }
+  };
+  el.querySelectorAll('[data-sug]').forEach(b => b.addEventListener('click', () => usar([b.dataset.sug])));
+  $('#sug-todas')?.addEventListener('click', () => usar(sug.map(([k]) => k)));
+  $('#sug-nao').addEventListener('click', () => { W.sugestoesDispensadas = sug.map(([k]) => k); el.innerHTML = ''; });
 }
 function exemploTexto(tipo) {
   return tipoDef(tipo)?.exemploTexto || ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
@@ -1785,13 +1809,16 @@ async function copiarResumo(tipo) {
 }
 
 /* =================== Modelos =================== */
-const PESSOAIS = new Set(['empregado', 'nome', 'nomeSocial', 'cpf', 'pis', 'rg', 'orgaoRg', 'ufRg', 'dataRg', 'titulo', 'zona', 'secao', 'reservista', 'cnh', 'cnhCategoria', 'cnhValidade', 'mae', 'pai', 'conjuge', 'nascimento', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cid', 'medico', 'numeroCat', 'agencia', 'conta', 'digitoConta', 'assunto', 'descricao', 'ctpsNumero', 'ctpsSerie']);
+const PESSOAIS = new Set(['empregado', 'nome', 'nomeSocial', 'cpf', 'pis', 'rg', 'orgaoRg', 'ufRg', 'dataRg', 'titulo', 'zona', 'secao', 'reservista', 'cnh', 'cnhCategoria', 'cnhValidade', 'mae', 'pai', 'conjuge', 'nascimento', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cid', 'medico', 'numeroCat', 'agencia', 'conta', 'digitoConta', 'assunto', 'descricao', 'ctpsNumero', 'ctpsSerie', 'ctpsUf',
+  'sexo', 'racaCor', 'estadoCivil', 'grauInstrucao', 'nacionalidade', 'paisNascimento', 'ufNascimento', 'municipioNascimento', 'deficiencia', 'possuiDependentes', 'banco', 'tipoConta', 'formaPagamento', 'tipoEndereco', 'matricula', 'instituicaoEnsino', 'inss']);
 async function salvarModeloUI(tipo) {
   const t = tipoDef(tipo); const v = valoresAssistente(tipo);
-  const valores = Object.fromEntries(Object.entries({ ...v, ...portalValores(tipo) }).filter(([k]) => !k.startsWith('extra:')).filter(([k]) => !PESSOAIS.has(k) && t.campos[k]?.tipo !== 'data' && t.campos[k]?.tipo !== 'competencia' || k === 'observacoes' || k === 'tabelaRubricas'));
+  // cadastro: só os campos da empresa (lista nas regras); outros pedidos: tudo menos dados pessoais e datas
+  const daEmpresa = E.camposDaEmpresa(tipo, S.rules);
+  const valores = Object.fromEntries(Object.entries({ ...v, ...portalValores(tipo) }).filter(([k]) => !k.startsWith('extra:')).filter(([k]) => daEmpresa ? daEmpresa.includes(k) : (!PESSOAIS.has(k) && t.campos[k]?.tipo !== 'data' && t.campos[k]?.tipo !== 'competencia' || k === 'observacoes' || k === 'tabelaRubricas')));
   const m = $('#modal'); m.hidden = false;
   m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mm"><h3 id="mm">Salvar como modelo</h3>
-    <p class="muted" style="margin:0 0 10px">Guarda o que se repete (tipo, textos, rubricas), sem dados pessoais nem datas. Fica só neste computador.</p>
+    <p class="muted" style="margin:0 0 10px">${daEmpresa ? 'Guarda só as escolhas da empresa (cargo, departamento, jornada…), sem os dados da pessoa.' : 'Guarda o que se repete (tipo, textos, rubricas), sem dados pessoais nem datas.'} Fica só neste computador.</p>
     <div class="field"><label for="m-nome">Nome do modelo</label><input class="input" id="m-nome" value="${esc(t.nome)}"></div>
     <p class="muted" style="font-size:12px">${Object.keys(valores).length ? 'Inclui: ' + esc(Object.keys(valores).map(k => t.campos[k]?.rotulo || (k === 'observacoes' ? 'Observações' : k === 'tabelaRubricas' ? 'Tabela de rubricas' : k)).join(', ')) : 'Nenhum dado reaproveitável ainda — o modelo vai abrir a solicitação vazia.'}</p>
     <div class="actions"><button class="btn btn-primary" id="m-save">Salvar</button><button class="btn" id="m-cancel">Cancelar</button></div></div>`;
@@ -1815,7 +1842,8 @@ async function renderModelosInicio() {
   el.querySelectorAll('[data-use]').forEach(b => b.addEventListener('click', async () => {
     const md = modelos.find(x => x.id === b.dataset.use); if (!md) return;
     const W = w(md.tipo);
-    for (const [k, v] of Object.entries(md.valores)) W.valores[k] = { valor: v, conf: 1, fonte: 'modelo' };
+    // modelos antigos de cadastro podem ter dados da pessoa: só os campos da empresa voltam
+    for (const [k, v] of Object.entries(E.camposDaEmpresa(md.tipo, S.rules) ? E.valoresReaproveitaveis(md.tipo, md.valores, S.rules) : md.valores)) W.valores[k] = { valor: v, conf: 1, fonte: 'modelo' };
     gerarTextos(md.tipo, true);
     await openTipo(md.tipo, { manter: true });
     if (S.prefs.preencherAoLer) setTimeout(() => fillPortal(md.tipo, { silencioso: true }), 900);
@@ -1999,15 +2027,17 @@ function renderRepetir() {
   el.innerHTML = `<button class="li repetir" type="button" id="rep-go">${icon('refresh')}<div class="main"><b>Repetir a última solicitação</b><small>${esc(h.resumo)} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div>${icon('arrow', 'ic-sm')}</button>`;
   $('#rep-go').addEventListener('click', async () => {
     const t = tipoDef(h.tipo); const W = w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores || {})) {
-      if (['assunto', 'descricao', 'cid', 'dias'].includes(k) || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
+    // cadastro: só as escolhas da empresa (cargo, departamento…); os dados da pessoa anterior ficam de fora
+    const cadastro = !!E.camposDaEmpresa(h.tipo, S.rules);
+    for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) {
+      if (k === 'dias' || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
       W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };
     }
     W.rascunhoVisto = true;
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true });
     if (S.prefs.preencherAoLer) setTimeout(() => fillPortal(h.tipo, { silencioso: true }), 900);
-    toast('Repeti os dados da última solicitação, menos as datas. Confira e complete.');
+    toast(cadastro ? 'Repeti só as escolhas da empresa (cargo, departamento, jornada…). Os dados da pessoa ficam de fora: complete com os do novo funcionário.' : 'Repeti os dados da última solicitação, menos as datas. Confira e complete.');
   });
 }
 
@@ -2091,11 +2121,12 @@ async function salvarHistorico(tipo, status) {
   const prev = status === 'enviado'
     ? historico.findIndex(h => h.chave === chave && h.status === 'preenchido')
     : historico.findIndex(h => h.chave === chave && h.status === 'preenchido' && Date.now() - h.quando < 6 * 3600e3);
-  const item = { chave, quando: Date.now(), empresa: S.ctx.empresa, tipo, status, resumo: valores.assunto || S.rules.tipos[tipo]?.nome, valores, anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
-  // a descrição pode trazer o CID; nada disso é usado para reaproveitar o pedido
-  delete item.valores.cid; delete item.valores.descricao; delete item.valores.observacoes;
+  // a descrição pode trazer o CID; um cadastro enviado fica só com o nome, as datas da Agenda e os campos da empresa
+  const item = { chave, quando: Date.now(), empresa: S.ctx.empresa, tipo, status, resumo: valores.assunto || S.rules.tipos[tipo]?.nome, valores: E.valoresParaHistorico(tipo, valores, status, S.rules), anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
   if (prev >= 0) historico.splice(prev, 1);
   historico.unshift(item);
+  // cadastro começado e não enviado: depois do prazo do rascunho, os dados da pessoa saem do histórico
+  for (const h of historico) if (h.status !== 'enviado' && Date.now() - h.quando > RASCUNHO_DIAS * 864e5 && E.camposDaEmpresa(h.tipo, S.rules)) h.valores = E.valoresParaHistorico(h.tipo, h.valores, 'enviado', S.rules);
   S.historico = historico.slice(0, 200);
   await chrome.storage.local.set({ historico: S.historico });
 }
@@ -2161,7 +2192,7 @@ async function renderHistorico() {
   viewEl.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', async () => {
     const h = historico[+b.dataset.i];
     const W = w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true });
   }));

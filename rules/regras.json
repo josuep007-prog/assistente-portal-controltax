@@ -214,6 +214,48 @@
         "categoriaEsocial"
       ]
     },
+    "camposDaEmpresa": {
+      "_comentario": "Nos cadastros, 'Repetir a última solicitação', o clique no histórico, 'Salvar como modelo' e 'Como na última admissão' levam só estes campos (escolhas da empresa). Nada de nome, CPF, mãe, endereço, banco, sexo, raça/cor, estado civil, naturalidade, deficiência ou dependentes. Um cadastro enviado fica no histórico só com os campos de 'historicoEnviado' (o que a Agenda usa) e estes. Padrões por empresa: empresas.<trecho do nome>.padroes = { campo: valor } (ou { tipo: { campo: valor } }), sugeridos para conferir.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado",
+        "cadastroEstagiario",
+        "cadastroContribuinte"
+      ],
+      "campos": [
+        "departamento",
+        "centroCusto",
+        "sindicato",
+        "jornada",
+        "cargaHoraria",
+        "cargo",
+        "funcao",
+        "contratoExperiencia",
+        "prorrogacao",
+        "servico",
+        "categoria",
+        "vinculo",
+        "categoriaEsocial",
+        "categoriaSefip",
+        "tipoContribuinte",
+        "agenteIntegracao"
+      ],
+      "historicoEnviado": [
+        "nome",
+        "dataAdmissao",
+        "contratoExperiencia",
+        "prorrogacao"
+      ]
+    },
+    "experienciaSugerida": {
+      "_comentario": "Sugestão (confiança baixa, o cliente confere) para o contrato de experiência de um cadastro novo com os campos vazios.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado"
+      ],
+      "contratoExperiencia": 45,
+      "prorrogacao": 45
+    },
     "dicasAvisoPortal": [
       { "padrao": "sem permiss|n[aã]o est[aá] habilitad", "dica": "Este tipo de solicitação não está liberado para esta empresa no portal. Fale com o escritório para habilitar; enquanto isso, use outro tipo ou a Solicitação Geral." },
       { "padrao": "sess[aã]o.*(expir|encerr)|fa[cç]a login|entre novamente", "dica": "A sessão do portal está acabando ou acabou. Clique em Ver no portal e entre de novo; a plataforma volta a ler sozinha." }

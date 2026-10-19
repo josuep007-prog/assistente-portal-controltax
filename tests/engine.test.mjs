@@ -792,4 +792,35 @@ t('regras: apelidos de opções, campos novos do cadastro e única opção', () 
   for (const k of u.campos) assert.equal(E.resolveTipo(rules, 'cadastroEstagiario').campos[k]?.tipo, 'combo', k);
 });
 
+/* ---------- Lote 3: cadastro e documentos pessoais ---------- */
+t('cadastro: repetir, histórico e modelo levam só os campos da empresa', () => {
+  const pessoa = { nome: 'FULANA DE TESTE', cpf: '529.982.247-25', mae: 'MAE DE TESTE', cep: '29000-000', endereco: 'Rua Inventada', banco: '001 - Banco do Brasil', sexo: 'Feminino', racaCor: 'Parda', estadoCivil: 'Solteiro', municipioNascimento: 'Vitória', deficiencia: 'Não', possuiDependentes: 'Sim', agencia: '1234', dataAdmissao: '03/11/2026',
+    cargo: 'VENDEDOR', departamento: 'COMERCIAL', jornada: '44 HORAS', contratoExperiencia: '45', prorrogacao: '45', sindicato: 'SINDICATO X', assunto: 'Admissão', descricao: 'texto' };
+  const r = E.valoresReaproveitaveis('cadastroEmpregado', pessoa, rules);
+  assert.deepEqual(Object.keys(r).sort(), ['cargo', 'contratoExperiencia', 'departamento', 'jornada', 'prorrogacao', 'sindicato']);
+  // outros pedidos: como antes (menos assunto, descrição e CID)
+  assert.deepEqual(E.valoresReaproveitaveis('avisoFerias', { empregado: 'JOAO', inicioGozo: '10/11/2026', assunto: 'x', cid: 'M54' }, rules), { empregado: 'JOAO', inicioGozo: '10/11/2026' });
+  // histórico de um cadastro enviado: nome, datas da Agenda e campos da empresa
+  const h = E.valoresParaHistorico('cadastroEmpregado', pessoa, 'enviado', rules);
+  for (const k of ['cpf', 'mae', 'cep', 'endereco', 'banco', 'sexo', 'racaCor', 'agencia', 'descricao']) assert.equal(h[k], undefined, k);
+  assert.equal(h.nome, 'FULANA DE TESTE'); assert.equal(h.dataAdmissao, '03/11/2026'); assert.equal(h.cargo, 'VENDEDOR');
+  // começado e não enviado: guarda tudo (para continuar), menos CID/descrição
+  assert.equal(E.valoresParaHistorico('cadastroEmpregado', pessoa, 'preenchido', rules).cpf, '529.982.247-25');
+  assert.equal(rules.config.camposDaEmpresa.revisarComEscritorio, true);
+});
+
+t('cadastro: sugestões da última admissão, padrões da empresa e 45 + 45 (confiança baixa)', () => {
+  const R = { ...rules, empresas: { 'EXEMPLO': { padroes: { departamento: 'ADMINISTRATIVO', cadastroEmpregado: { jornada: '44 HORAS' }, avisoFerias: { diasGozo: '30' } } } } };
+  const historico = [{ status: 'enviado', tipo: 'cadastroEmpregado', empresa: 'EMPRESA EXEMPLO LTDA', valores: { nome: 'OUTRA PESSOA', cpf: '529.982.247-25', cargo: 'VENDEDOR', sindicato: 'SIND' } }];
+  const s = E.sugestoesCadastro('cadastroEmpregado', R, { empresa: 'EMPRESA EXEMPLO LTDA', historico });
+  assert.equal(s.cargo.valor, 'VENDEDOR'); assert.equal(s.cargo.fonte, 'como na última admissão');
+  assert.equal(s.departamento.valor, 'ADMINISTRATIVO'); assert.equal(s.jornada.valor, '44 HORAS'); assert.equal(s.diasGozo, undefined);
+  assert.equal(s.contratoExperiencia.valor, '45'); assert.equal(s.prorrogacao.valor, '45'); assert.ok(s.contratoExperiencia.conf < 0.6);
+  assert.equal(s.nome, undefined); assert.equal(s.cpf, undefined);
+  // outra empresa: sem a última admissão nem os padrões
+  const o = E.sugestoesCadastro('cadastroEmpregado', R, { empresa: 'OUTRA LTDA', historico });
+  assert.equal(o.cargo, undefined); assert.equal(o.departamento, undefined);
+  assert.deepEqual(E.sugestoesCadastro('afastamento', R, { empresa: 'EMPRESA EXEMPLO LTDA', historico }), {});
+});
+
 console.log(`\n${n} testes ok`);

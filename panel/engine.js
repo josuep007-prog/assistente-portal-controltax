@@ -308,6 +308,63 @@ export function activeConditionals(tipo, values) {
   return (tipo.condicionais || []).filter(c => matchCond(c.se, values));
 }
 
+/* ---------------- Cadastros: o que se repete é da empresa, não da pessoa ---------------- */
+/* regras: config.camposDaEmpresa = { tipos, campos, historicoEnviado }; empresas.<trecho>.padroes; config.experienciaSugerida */
+const CAMPOS_EMPRESA_PADRAO = {
+  tipos: ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte'],
+  campos: ['departamento', 'centroCusto', 'sindicato', 'jornada', 'cargaHoraria', 'cargo', 'funcao', 'contratoExperiencia', 'prorrogacao'],
+  historicoEnviado: ['nome', 'dataAdmissao', 'contratoExperiencia', 'prorrogacao']
+};
+const cfgEmpresa = (rules) => ({ ...CAMPOS_EMPRESA_PADRAO, ...(rules?.config?.camposDaEmpresa || {}) });
+/** Campos da empresa do tipo (null quando o tipo não é um cadastro: lá vale o comportamento antigo). */
+export function camposDaEmpresa(tipoKey, rules) {
+  const c = cfgEmpresa(rules);
+  return (c.tipos || []).includes(tipoKey) ? [...(c.campos || [])] : null;
+}
+/** O que pode ir de uma solicitação para outra (repetir, histórico, modelo): nunca assunto, descrição e CID;
+ *  num cadastro, só os campos da empresa — os dados da pessoa anterior ficam de fora. */
+export function valoresReaproveitaveis(tipoKey, valores, rules) {
+  const lista = camposDaEmpresa(tipoKey, rules); const out = {};
+  for (const [k, v] of Object.entries(valores || {})) {
+    if (['assunto', 'descricao', 'cid'].includes(k) || v == null || v === '') continue;
+    if (lista && !lista.includes(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+/** Valores guardados no histórico: um cadastro enviado fica só com o nome, as datas da Agenda e os campos da empresa. */
+export function valoresParaHistorico(tipoKey, valores, status, rules) {
+  const lista = camposDaEmpresa(tipoKey, rules);
+  const v = { ...(valores || {}) }; delete v.cid; delete v.descricao; delete v.observacoes;
+  if (!lista || status !== 'enviado') return v;
+  const manter = new Set([...lista, ...(cfgEmpresa(rules).historicoEnviado || [])]);
+  return Object.fromEntries(Object.entries(v).filter(([k]) => manter.has(k) || k === 'assunto'));
+}
+/** Ajustes da empresa pelo trecho do nome (regras.empresas). */
+export function ajustesDaEmpresa(rules, empresa) {
+  const E1 = norm(empresa);
+  const ent = E1 && Object.entries(rules?.empresas || {}).find(([k]) => k && !k.startsWith('_') && E1.includes(norm(k)));
+  return ent ? ent[1] || {} : null;
+}
+/** Sugestões para um cadastro novo (o cliente confere e escolhe "Usar"): última admissão da empresa,
+ *  padrões da empresa e experiência 45 + 45. Devolve { campo: { valor, conf, fonte } } só de campos da empresa. */
+export function sugestoesCadastro(tipoKey, rules, { empresa = '', historico = [] } = {}) {
+  const lista = camposDaEmpresa(tipoKey, rules); if (!lista) return {};
+  const tipo = resolveTipo(rules, tipoKey); const out = {};
+  const put = (k, v, conf, fonte) => { if (v == null || v === '' || out[k] || !tipo?.campos?.[k] || !lista.includes(k)) return; out[k] = { valor: String(v), conf, fonte }; };
+  const ult = (historico || []).find(h => h.status === 'enviado' && h.tipo === tipoKey && h.empresa === empresa);
+  if (ult) for (const [k, v] of Object.entries(valoresReaproveitaveis(tipoKey, ult.valores, rules))) put(k, v, 0.5, 'como na última admissão');
+  const pad = ajustesDaEmpresa(rules, empresa)?.padroes || {};
+  for (const [k, v] of Object.entries(pad)) if (v && typeof v === 'object') { if (k === tipoKey) for (const [k2, v2] of Object.entries(v)) put(k2, v2, 0.5, 'padrão da empresa'); }
+  for (const [k, v] of Object.entries(pad)) if (typeof v !== 'object') put(k, v, 0.5, 'padrão da empresa');
+  const xp = rules?.config?.experienciaSugerida;
+  if (xp && (xp.tipos || ['cadastroEmpregado']).includes(tipoKey)) {
+    put('contratoExperiencia', xp.contratoExperiencia, 0.4, `sugestão: ${xp.contratoExperiencia} + ${xp.prorrogacao} dias`);
+    put('prorrogacao', xp.prorrogacao, 0.4, `sugestão: ${xp.contratoExperiencia} + ${xp.prorrogacao} dias`);
+  }
+  return out;
+}
+
 /* ---------------- Regras de prazo compartilhadas ---------------- */
 /** Súmula 380 do TST (art. 132 do Código Civil): não conta o dia do aviso, conta o último. */
 export const fimDoAviso = (dataAviso, dias = 30) => addDays(dataAviso, dias);
