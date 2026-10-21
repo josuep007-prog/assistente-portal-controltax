@@ -503,7 +503,7 @@ async def teste_cadastro(b):
     v = await portal()
     check(ok, f"ficha colada preenche nome e mãe ({v.get('name')}, {v.get('motherName')})")
     check('Nome:' not in (v.get('comments') or '') and 'Nome:' not in (v.get('description') or ''), 'o texto colado não vai para observações/descrição')
-    await pg.click('.form__buttons--cancel'); await pg.wait_for_timeout(800)
+    await pg.click('main button:has-text("CANCELAR")'); await pg.wait_for_timeout(800)   # o cadastro é um assistente de etapas
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
