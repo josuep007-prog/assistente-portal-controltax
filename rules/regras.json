@@ -214,6 +214,96 @@
         "categoriaEsocial"
       ]
     },
+    "leitorPessoal": {
+      "_comentario": "Leitor de RG, CNH, CIN, CTPS digital, título e comprovante de CPF (documentos[].leitor = 'pessoal'): uma linha só de rótulos tem o valor na linha de baixo. Em PDF as colunas vêm separadas por espaços; em foto, cada valor é casado pelo tipo (tipos) na ordem dos rótulos. 'campoA+campoB' desmembra um rótulo composto; campos que começam com '_' são rótulos conhecidos cujo valor não interessa ('_data' = uma data). layouts: palavras que identificam o documento (na ordem), campos que ele pode preencher, maeLinha (qual linha da filiação é a mãe, 1 ou 2; o primeiro nome terminado em 'a' decide quando só um termina), rgIgualCpf (CIN) e padroesTexto (título: zona e seção sem dois-pontos). Calibrado com exemplos inventados; a calibrar com documentos reais (sem guardá-los).",
+      "layouts": {
+        "cin": { "palavras": ["carteira de identidade nacional"], "rgIgualCpf": true, "maeLinha": 1, "campos": ["nome", "nomeSocial", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "cpf", "rg", "dataRg", "orgaoRg", "ufRg", "sexo"] },
+        "cnh": { "palavras": ["carteira nacional de habilitação", "habilitação", "detran", "cat. hab.", "renach"], "maeLinha": 2, "campos": ["nome", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "rg", "orgaoRg", "ufRg", "cpf", "cnh", "cnhValidade", "cnhCategoria"] },
+        "ctps": { "palavras": ["carteira de trabalho digital", "ctps digital", "nome civil"], "campos": ["nome", "nomeSocial", "cpf", "nascimento", "sexo", "mae", "pai", "pis"] },
+        "titulo": { "palavras": ["justiça eleitoral", "título eleitoral", "título de eleitor"], "campos": ["nome", "nascimento", "mae", "pai", "titulo", "zona", "secao"], "padroesTexto": { "titulo": ["\\b(\\d{4}\\s?\\d{4}\\s?\\d{4})\\b"], "zona": ["\\bzona\\s*:?\\s*(\\d{1,4})\\b"], "secao": ["\\bse[çc][ãa]o\\s*:?\\s*(\\d{1,4})\\b"] } },
+        "cpf": { "palavras": ["cadastro de pessoas físicas", "situação cadastral"], "campos": ["nome", "cpf", "nascimento"] },
+        "rg": { "palavras": ["registro geral", "carteira de identidade", "secretaria de segurança", "secretaria da segurança"], "maeLinha": 2, "campos": ["nome", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "rg", "dataRg", "orgaoRg", "ufRg", "cpf", "pis"] }
+      },
+      "porDocumento": { "identidade": "rg", "ctps": "ctps", "titulo": "titulo", "cpf": "cpf" },
+      "rotulos": {
+        "nome": ["nome", "nome civil", "nome e sobrenome", "nome do eleitor", "nome do titular"],
+        "nomeSocial": ["nome social"],
+        "filiacao": ["filiação", "filiação mãe pai", "filiação pai mãe"],
+        "mae": ["mãe", "nome da mãe"],
+        "pai": ["pai", "nome do pai"],
+        "nascimento": ["data de nascimento", "data nascimento", "nascimento", "data de nasc", "nasc"],
+        "municipioNascimento": ["naturalidade", "local de nascimento", "local nascimento"],
+        "rg": ["registro geral", "rg", "nº do rg", "número do rg", "doc identidade"],
+        "dataRg": ["data de expedição", "expedição", "data expedição"],
+        "orgaoRg": ["órgão expedidor", "órgão emissor", "org emissor"],
+        "cpf": ["cpf", "nº do cpf", "número do cpf", "número de inscrição no cpf"],
+        "cnh": ["nº registro", "n registro", "registro", "nº do registro"],
+        "cnhValidade": ["validade"],
+        "cnhCategoria": ["cat. hab.", "cat hab", "categoria"],
+        "rg+orgaoRg+ufRg": ["doc. identidade/órg. emissor/uf", "doc. identidade / órg. emissor / uf", "doc identidade org emissor uf"],
+        "nascimento+municipioNascimento+ufNascimento": ["data, local e uf de nascimento", "data local e uf de nascimento"],
+        "titulo": ["inscrição", "nº de inscrição", "número de inscrição", "nº inscrição"],
+        "zona": ["zona"],
+        "secao": ["seção"],
+        "pis": ["pis/pasep", "pis", "nis", "nit"],
+        "sexo": ["sexo"],
+        "_data": ["1ª habilitação", "primeira habilitação", "data emissão", "data de emissão", "data da emissão", "data de domicílio eleitoral"],
+        "_texto": ["permissão", "acc", "observações", "nacionalidade", "município/uf", "município", "uf", "doc. origem", "doc origem", "local", "assinatura do titular", "assinatura do portador", "assinatura"],
+        "_numero": ["nº renach", "renach", "espelho", "código de segurança"]
+      },
+      "tipos": { "nascimento": "data", "dataRg": "data", "cnhValidade": "data", "rg": "numero", "cnh": "numero", "cpf": "cpf", "titulo": "numero", "zona": "numero", "secao": "numero", "pis": "numero", "orgaoRg": "sigla", "ufRg": "uf", "ufNascimento": "uf", "cnhCategoria": "categoria", "nome": "nome", "nomeSocial": "nome", "mae": "nome", "pai": "nome", "municipioNascimento": "texto", "sexo": "texto" },
+      "padroes": {
+        "rg": "^(?:\\d{1,2}\\.?\\d{3}\\.?\\d{3}(?:-?[\\dXx])?|\\d{5,14}(?:-?[\\dXx])?)$",
+        "cnh": "^\\d{9,11}$",
+        "cnhCategoria": "^(?:ACC|A|B|C|D|E|AB|AC|AD|AE)$",
+        "titulo": "^\\d{4}\\s?\\d{4}\\s?\\d{4}$",
+        "zona": "^\\d{1,4}$",
+        "secao": "^\\d{1,4}$",
+        "orgaoRg": "^(?:SSP|SESP|SDS|PC|IFP|DETRAN|DIC|IGP|SJS|SEJUSP|PM|MAER|MEX|MMA|POF|DPF|SPTC|IIRGD|CGPI|SSPDS|ITEP|IML|SEDS|SJTC|CNH|OAB|CRM|CREA|[A-Z]{3,6})$"
+      }
+    },
+    "camposDaEmpresa": {
+      "_comentario": "Nos cadastros, 'Repetir a última solicitação', o clique no histórico, 'Salvar como modelo' e 'Como na última admissão' levam só estes campos (escolhas da empresa). Nada de nome, CPF, mãe, endereço, banco, sexo, raça/cor, estado civil, naturalidade, deficiência ou dependentes. Um cadastro enviado fica no histórico só com os campos de 'historicoEnviado' (o que a Agenda usa) e estes. Padrões por empresa: empresas.<trecho do nome>.padroes = { campo: valor } (ou { tipo: { campo: valor } }), sugeridos para conferir.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado",
+        "cadastroEstagiario",
+        "cadastroContribuinte"
+      ],
+      "campos": [
+        "departamento",
+        "centroCusto",
+        "sindicato",
+        "jornada",
+        "cargaHoraria",
+        "cargo",
+        "funcao",
+        "contratoExperiencia",
+        "prorrogacao",
+        "servico",
+        "categoria",
+        "vinculo",
+        "categoriaEsocial",
+        "categoriaSefip",
+        "tipoContribuinte",
+        "agenteIntegracao"
+      ],
+      "historicoEnviado": [
+        "nome",
+        "dataAdmissao",
+        "contratoExperiencia",
+        "prorrogacao"
+      ]
+    },
+    "experienciaSugerida": {
+      "_comentario": "Sugestão (confiança baixa, o cliente confere) para o contrato de experiência de um cadastro novo com os campos vazios.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado"
+      ],
+      "contratoExperiencia": 45,
+      "prorrogacao": 45
+    },
     "dicasAvisoPortal": [
       { "padrao": "sem permiss|n[aã]o est[aá] habilitad", "dica": "Este tipo de solicitação não está liberado para esta empresa no portal. Fale com o escritório para habilitar; enquanto isso, use outro tipo ou a Solicitação Geral." },
       { "padrao": "sess[aã]o.*(expir|encerr)|fa[cç]a login|entre novamente", "dica": "A sessão do portal está acabando ou acabou. Clique em Ver no portal e entre de novo; a plataforma volta a ler sozinha." }
@@ -306,6 +396,32 @@
     "textoLivre": {
       "descricao": "Palavras que o Assistente usa para entender o texto livre (Início, Novo pedido e Ctrl+K). Com ou sem acento, tanto faz; um * no fim casa o começo da palavra (demit* = demitido, demitir…).",
       "sentidoDatas": "futuro",
+      "cadastro": {
+        "_comentario": "Cadastros pelo texto. Ficha colada ('Nome: … CPF: … Nome da mãe: …') com pelo menos fichaMinRotulos rótulos usa a mesma leitura dos documentos e abre o Cadastro mesmo sem a palavra admissão. Nas frases soltas, cada data ganha papel pela palavra antes dela (datas[]); sem palavra, só vira admissão se não for de mais de admissaoAteDiasAtras dias atrás. fimDoValor: palavras que encerram um cargo ou nome.",
+        "fichaMinRotulos": 3,
+        "admissaoAteDiasAtras": 365,
+        "datas": [
+          { "campo": "nascimento", "palavras": ["nascid*", "nasceu", "nascimento", "nasc", "aniversário", "data de nascimento"] },
+          { "campo": "dataRg", "palavras": ["emissão do rg", "emissão da identidade", "rg emitido em", "identidade emitida em", "expedição", "expedid*", "data de emissão"] },
+          { "campo": "cnhValidade", "palavras": ["validade da cnh", "cnh vence", "cnh válida até", "vencimento da cnh"] },
+          { "campo": "dataAdmissao", "palavras": ["começa", "começar", "começará", "comec*", "entra", "entrar", "entrará", "inicia", "iniciar", "início", "admissão", "admitid*", "admitir", "contratad*", "contratar", "a partir de", "a partir do dia", "primeiro dia", "vigência", "início do estágio"] }
+        ],
+        "salario": ["salário", "salario de", "bolsa", "bolsa-auxílio", "bolsa auxílio", "pró-labore", "prolabore", "pro labore", "remuneração", "vai ganhar", "ganhando", "recebendo", "vai receber"],
+        "experiencia": ["contrato de experiência", "período de experiência", "experiência"],
+        "prorrogacao": ["prorrogação", "prorroga", "prorrogar", "prorrogável"],
+        "cargo": ["para o cargo de", "no cargo de", "cargo de", "cargo", "contratado como", "contratada como", "admitido como", "admitida como", "vai trabalhar como", "para trabalhar como", "vai ser"],
+        "funcao": ["para a função de", "na função de", "função de", "função"],
+        "fimDoValor": ["com", "e", "salário", "salario", "cpf", "rg", "dia", "a partir", "começa", "comeca", "entra", "no", "na", "ganhando", "recebendo", "experiência", "experiencia", "nascid*", "em", "admissão", "admissao", "pis", "mãe", "mae", "jornada", "carga", "bolsa", "pró-labore", "que", "para", "pra", "função", "funcao", "cargo", "nome", "data"],
+        "admitir": ["admitir", "admitimos", "admitindo", "contratar", "contratamos", "contratei", "contratando", "contratação de", "contratação da", "contratação do", "admissão de", "admissão da", "admissão do", "registrar", "cadastrar", "cadastro de", "cadastro da", "cadastro do", "novo funcionário", "nova funcionária", "novo empregado", "nova empregada", "novo estagiário", "nova estagiária"]
+      },
+      "tipoContribuinte": {
+        "_comentario": "No cadastro de contribuinte, estas palavras marcam o Tipo; as categorias do eSocial e da SEFIP vêm das condicionais do tipo.",
+        "revisarComEscritorio": true,
+        "opcoes": [
+          { "valor": "Sócio", "palavras": ["sócio", "sócia", "pró-labore", "prolabore", "pro labore", "diretor", "administrador"] },
+          { "valor": "Autônomo", "palavras": ["autônomo", "autônoma", "rpa", "recibo de pagamento autônomo", "prestador de serviço", "prestadora de serviço", "freelancer"] }
+        ]
+      },
       "naoEhDiaDaSemana": [
         "via",
         "parcela",
@@ -2590,6 +2706,10 @@
             "Não": "#radioBasic-firstJob0",
             "Sim": "#radioBasic-firstJob1"
           },
+          "sinonimos": [
+            "primeiro emprego",
+            "1º emprego"
+          ],
           "grupo": "Geral"
         },
         "categoria": {
@@ -2643,16 +2763,20 @@
           "rotulo": "Contrato de experiência (dias)",
           "sinonimos": [
             "contrato de experiência",
-            "experiência"
+            "experiência",
+            "período de experiência",
+            "prazo de experiência"
           ],
-          "grupo": "Geral"
+          "grupo": "Geral",
+          "prorrogacaoEm": "prorrogacao"
         },
         "prorrogacao": {
           "fc": "extensionDays",
           "tipo": "numero",
           "rotulo": "Dias de prorrogação",
           "sinonimos": [
-            "prorrogação"
+            "prorrogação",
+            "dias de prorrogação"
           ],
           "grupo": "Geral"
         },
@@ -2849,7 +2973,8 @@
             "município",
             "cidade"
           ],
-          "grupo": "Pessoal"
+          "grupo": "Pessoal",
+          "separaUf": "uf"
         },
         "email": {
           "fc": "primaryEmailAddress",
@@ -2906,7 +3031,9 @@
           "rotulo": "UF de nascimento",
           "obrigatorio": true,
           "sinonimos": [
-            "naturalidade UF"
+            "naturalidade UF",
+            "UF de nascimento",
+            "estado de nascimento"
           ],
           "grupo": "Pessoal"
         },
@@ -2918,9 +3045,12 @@
           "sinonimos": [
             "naturalidade",
             "município de nascimento",
-            "local de nascimento"
+            "local de nascimento",
+            "natural de",
+            "cidade de nascimento"
           ],
-          "grupo": "Pessoal"
+          "grupo": "Pessoal",
+          "separaUf": "ufNascimento"
         },
         "sexo": {
           "tipo": "radio",
@@ -3005,6 +3135,13 @@
             "Não": "#radioBasic-hasDependents0",
             "Sim": "#radioBasic-hasDependents1"
           },
+          "sinonimos": [
+            "possui dependentes",
+            "nº de dependentes",
+            "número de dependentes",
+            "quantidade de dependentes",
+            "dependentes"
+          ],
           "grupo": "Pessoal"
         },
         "deficiencia": {
@@ -3014,7 +3151,15 @@
             "Não": "#radioBasic-isDisabledPerson0",
             "Sim": "#radioBasic-isDisabledPerson1"
           },
-          "grupo": "Pessoal"
+          "sinonimos": [
+            "pessoa com deficiência",
+            "portador de deficiência",
+            "deficiência",
+            "PCD",
+            "PNE"
+          ],
+          "grupo": "Pessoal",
+          "outroTextoVira": "Sim"
         },
         "rg": {
           "fc": "identityCard",
@@ -3026,7 +3171,8 @@
             "registro geral",
             "carteira de identidade"
           ],
-          "grupo": "Documentos"
+          "grupo": "Documentos",
+          "separaOrgaoUf": ["orgaoRg", "ufRg"]
         },
         "orgaoRg": {
           "fc": "issuingAgency",
@@ -3035,14 +3181,22 @@
           "sinonimos": [
             "órgão expedidor",
             "órgão emissor",
-            "expedidor"
+            "expedidor",
+            "org. emissor",
+            "órgão"
           ],
-          "grupo": "Documentos"
+          "grupo": "Documentos",
+          "separaUf": "ufRg"
         },
         "ufRg": {
           "fc": "identityState",
           "tipo": "combo",
           "rotulo": "UF do RG",
+          "sinonimos": [
+            "UF do RG",
+            "UF da identidade",
+            "UF de expedição"
+          ],
           "grupo": "Documentos"
         },
         "dataRg": {
@@ -3261,10 +3415,49 @@
       "botaoEnviar": "SALVAR E ENVIAR",
       "herdaCamposDe": "cadastroEmpregado",
       "campos": {
+        "nome": {
+          "fc": "name",
+          "tipo": "texto",
+          "rotulo": "Nome",
+          "obrigatorio": true,
+          "sinonimos": [
+            "nome completo",
+            "nome do empregado",
+            "nome do funcionário",
+            "nome",
+            "estagiário",
+            "estagiária",
+            "estagiário(a)",
+            "nome do estagiário",
+            "nome do(a) estagiário(a)"
+          ],
+          "grupo": "Geral"
+        },
+        "dataAdmissao": {
+          "fc": "admissionDate",
+          "tipo": "data",
+          "rotulo": "Data de admissão",
+          "obrigatorio": true,
+          "sinonimos": [
+            "data de admissão",
+            "admissão",
+            "início",
+            "início do estágio",
+            "data de início do estágio",
+            "vigência",
+            "período de vigência",
+            "início da vigência",
+            "vigência do estágio"
+          ],
+          "grupo": "Geral"
+        },
         "categoriaEsocial": {
           "fc": "eSocialCategory",
           "tipo": "combo",
-          "rotulo": "Categoria eSocial"
+          "rotulo": "Categoria eSocial",
+          "padrao": "901 - Estagiário",
+          "revisarComEscritorio": true,
+          "calibrar": true
         },
         "instituicaoEnsino": {
           "fc": "educationalInstitutionExpanded",
@@ -3313,7 +3506,8 @@
           "rotulo": "Nível",
           "sinonimos": [
             "nível",
-            "curso"
+            "nível de escolaridade",
+            "nível do curso"
           ]
         },
         "salario": {
@@ -3435,6 +3629,19 @@
           ]
         }
       },
+      "condicionais": [
+        {
+          "_comentario": "Categorias do eSocial e da SEFIP pelo tipo de contribuinte (o texto exato das opções: calibrar no Onvio real).",
+          "revisarComEscritorio": true,
+          "se": { "campo": "tipoContribuinte", "contem": ["sócio", "socio", "diretor"] },
+          "valores": { "categoriaEsocial": "721 - Contribuinte individual - Diretor não empregado", "categoriaSefip": "11 - Contribuinte individual - Diretor" }
+        },
+        {
+          "revisarComEscritorio": true,
+          "se": { "campo": "tipoContribuinte", "contem": ["autônomo", "autonomo", "rpa"] },
+          "valores": { "categoriaEsocial": "701 - Contribuinte individual - Autônomo", "categoriaSefip": "13 - Contribuinte individual - Autônomo" }
+        }
+      ],
       "anexos": [
         {
           "id": "identidade",
@@ -3737,9 +3944,13 @@
         "doc. identidade",
         "secretaria de segurança",
         "detran",
-        "renach"
+        "renach",
+        "carteira de identidade nacional",
+        "data, local e uf de nascimento",
+        "cat. hab."
       ],
-      "minPalavras": 1
+      "minPalavras": 1,
+      "leitor": "pessoal"
     },
     {
       "id": "cpf",
@@ -3751,7 +3962,8 @@
         "comprovante de inscrição",
         "situação cadastral"
       ],
-      "minPalavras": 2
+      "minPalavras": 2,
+      "leitor": "pessoal"
     },
     {
       "id": "comprovanteEndereco",
@@ -3770,7 +3982,12 @@
         "telefone",
         "internet"
       ],
-      "minPalavras": 2
+      "minPalavras": 2,
+      "endereco": true,
+      "naoPreenche": [
+        "nome"
+      ],
+      "_comentario": "endereco: este documento pode preencher o endereço (só o comprovante e a ficha). naoPreenche: o titular pode ser um parente — o nome do cadastro não vem daqui."
     },
     {
       "id": "ctps",
@@ -3782,7 +3999,8 @@
         "contratos de trabalho",
         "carteira de trabalho digital"
       ],
-      "minPalavras": 1
+      "minPalavras": 1,
+      "leitor": "pessoal"
     },
     {
       "id": "fichaAdmissao",
@@ -3803,7 +4021,8 @@
         "ficha de admissão",
         "ficha de registro",
         "ficha cadastral"
-      ]
+      ],
+      "endereco": true
     },
     {
       "id": "tce",
@@ -3902,12 +4121,14 @@
         "zona",
         "seção",
         "eleitor",
-        "tribunal superior eleitoral"
+        "tribunal superior eleitoral",
+        "título eleitoral"
       ],
       "forte": [
         "justiça eleitoral"
       ],
-      "minPalavras": 2
+      "minPalavras": 2,
+      "leitor": "pessoal"
     },
     {
       "id": "trct",
@@ -3967,6 +4188,8 @@
     }
   ],
   "mensagens": {
+    "comprovanteOutraPessoa": "O comprovante de residência está em nome de {titular}. Tudo bem se for de um parente (pai, mãe, cônjuge): nesse caso o escritório pode pedir uma declaração de residência assinada pelo titular.",
+    "filiacaoConfira": "Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira (e troque no campo Nome da mãe, se for o outro).",
     "envioOk": "Tudo certo! Pode enviar.",
     "envioComPendencias": "Antes de enviar, veja os pontos abaixo. Você pode corrigir agora ou enviar assim mesmo.",
     "abaErrada": "Isso parece ser um pedido de {tipo}. Usando a solicitação específica, as informações chegam completas e o atendimento é mais rápido.",

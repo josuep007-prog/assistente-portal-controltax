@@ -792,4 +792,136 @@ t('regras: apelidos de opções, campos novos do cadastro e única opção', () 
   for (const k of u.campos) assert.equal(E.resolveTipo(rules, 'cadastroEstagiario').campos[k]?.tipo, 'combo', k);
 });
 
+/* ---------- Lote 3: cadastro e documentos pessoais ---------- */
+t('cadastro: repetir, histórico e modelo levam só os campos da empresa', () => {
+  const pessoa = { nome: 'FULANA DE TESTE', cpf: '529.982.247-25', mae: 'MAE DE TESTE', cep: '29000-000', endereco: 'Rua Inventada', banco: '001 - Banco do Brasil', sexo: 'Feminino', racaCor: 'Parda', estadoCivil: 'Solteiro', municipioNascimento: 'Vitória', deficiencia: 'Não', possuiDependentes: 'Sim', agencia: '1234', dataAdmissao: '03/11/2026',
+    cargo: 'VENDEDOR', departamento: 'COMERCIAL', jornada: '44 HORAS', contratoExperiencia: '45', prorrogacao: '45', sindicato: 'SINDICATO X', assunto: 'Admissão', descricao: 'texto' };
+  const r = E.valoresReaproveitaveis('cadastroEmpregado', pessoa, rules);
+  assert.deepEqual(Object.keys(r).sort(), ['cargo', 'contratoExperiencia', 'departamento', 'jornada', 'prorrogacao', 'sindicato']);
+  // outros pedidos: como antes (menos assunto, descrição e CID)
+  assert.deepEqual(E.valoresReaproveitaveis('avisoFerias', { empregado: 'JOAO', inicioGozo: '10/11/2026', assunto: 'x', cid: 'M54' }, rules), { empregado: 'JOAO', inicioGozo: '10/11/2026' });
+  // histórico de um cadastro enviado: nome, datas da Agenda e campos da empresa
+  const h = E.valoresParaHistorico('cadastroEmpregado', pessoa, 'enviado', rules);
+  for (const k of ['cpf', 'mae', 'cep', 'endereco', 'banco', 'sexo', 'racaCor', 'agencia', 'descricao']) assert.equal(h[k], undefined, k);
+  assert.equal(h.nome, 'FULANA DE TESTE'); assert.equal(h.dataAdmissao, '03/11/2026'); assert.equal(h.cargo, 'VENDEDOR');
+  // começado e não enviado: guarda tudo (para continuar), menos CID/descrição
+  assert.equal(E.valoresParaHistorico('cadastroEmpregado', pessoa, 'preenchido', rules).cpf, '529.982.247-25');
+  assert.equal(rules.config.camposDaEmpresa.revisarComEscritorio, true);
+});
+
+t('cadastro: sugestões da última admissão, padrões da empresa e 45 + 45 (confiança baixa)', () => {
+  const R = { ...rules, empresas: { 'EXEMPLO': { padroes: { departamento: 'ADMINISTRATIVO', cadastroEmpregado: { jornada: '44 HORAS' }, avisoFerias: { diasGozo: '30' } } } } };
+  const historico = [{ status: 'enviado', tipo: 'cadastroEmpregado', empresa: 'EMPRESA EXEMPLO LTDA', valores: { nome: 'OUTRA PESSOA', cpf: '529.982.247-25', cargo: 'VENDEDOR', sindicato: 'SIND' } }];
+  const s = E.sugestoesCadastro('cadastroEmpregado', R, { empresa: 'EMPRESA EXEMPLO LTDA', historico });
+  assert.equal(s.cargo.valor, 'VENDEDOR'); assert.equal(s.cargo.fonte, 'como na última admissão');
+  assert.equal(s.departamento.valor, 'ADMINISTRATIVO'); assert.equal(s.jornada.valor, '44 HORAS'); assert.equal(s.diasGozo, undefined);
+  assert.equal(s.contratoExperiencia.valor, '45'); assert.equal(s.prorrogacao.valor, '45'); assert.ok(s.contratoExperiencia.conf < 0.6);
+  assert.equal(s.nome, undefined); assert.equal(s.cpf, undefined);
+  // outra empresa: sem a última admissão nem os padrões
+  const o = E.sugestoesCadastro('cadastroEmpregado', R, { empresa: 'OUTRA LTDA', historico });
+  assert.equal(o.cargo, undefined); assert.equal(o.departamento, undefined);
+  assert.deepEqual(E.sugestoesCadastro('afastamento', R, { empresa: 'EMPRESA EXEMPLO LTDA', historico }), {});
+});
+
+t('ficha e TCE: 45 + 45, naturalidade e SSP/UF, sim/não, endereço separado, vigência e curso', () => {
+  const ficha = 'FICHA DE ADMISSÃO\nNome completo: Fulana de Teste\nCPF: 529.982.247-25   Data de nascimento: 12/03/1995\nNaturalidade: São Paulo - SP\nRG: 1234567   Órgão expedidor: SSP/SP\nNome da mãe: Mãe de Teste\nEndereço: Rua das Flores, 123, Apto 45 - Jardim América\nCEP: 29000-000   Cidade: Vitória/ES\nContrato de experiência: 45 + 45 dias\nPrimeiro emprego: sim   PCD: não   Dependentes: 2';
+  const v = Object.fromEntries(Object.entries(E.analyzeText(ficha, rules, { tipoAtual: 'cadastroEmpregado' }).campos).map(([k, c]) => [k, c.valor]));
+  assert.equal(v.contratoExperiencia, '45'); assert.equal(v.prorrogacao, '45');
+  assert.equal(v.municipioNascimento, 'São Paulo'); assert.equal(v.ufNascimento, 'SP');
+  assert.equal(v.orgaoRg, 'SSP'); assert.equal(v.ufRg, 'SP');
+  assert.equal(v.endereco, 'Rua das Flores'); assert.equal(v.numero, '123'); assert.equal(v.complemento, 'Apto 45'); assert.equal(v.bairro, 'Jardim América');
+  assert.equal(v.municipio, 'Vitória'); assert.equal(v.uf, 'ES');
+  assert.equal(v.primeiroEmprego, 'Sim'); assert.equal(v.deficiencia, 'Não'); assert.equal(v.possuiDependentes, 'Sim');
+  // a conferência não acusa mais "no máximo 90"
+  assert.ok(!E.runChecks('cadastroEmpregado', v, [], rules).some(x => /90/.test(x.mensagem) && x.nivel === 'erro'));
+  const tce = E.analyzeText('TERMO DE COMPROMISSO DE ESTÁGIO\nEstagiário(a): Beltrano de Teste\nCurso: Administração\nNível: Superior\nVigência: 01/11/2026 a 31/10/2027\nBolsa auxílio: R$ 1.200,00', rules, { tipoAtual: 'cadastroEstagiario' }).campos;
+  assert.equal(tce.nome.valor, 'Beltrano de Teste'); assert.equal(tce.dataAdmissao.valor, '01/11/2026'); assert.equal(tce.nivel.valor, 'Superior');
+  assert.ok(!(rules.tipos.cadastroEstagiario.campos.nivel.sinonimos || []).includes('curso'));
+  assert.deepEqual(E.separarUf('Vitória/ES'), { antes: 'Vitória', uf: 'ES' }); assert.equal(E.separarUf('São Paulo'), null);
+  assert.deepEqual(E.diasExperiencia('45 + 45 dias'), [45, 45]); assert.equal(E.simNao('nenhum'), 'Não'); assert.equal(E.simNao('3'), 'Sim');
+});
+
+t('endereço só do comprovante e da ficha; comprovante em nome de outra pessoa gera aviso educativo', () => {
+  const rg = E.analyzeText('CARTEIRA DE IDENTIDADE\nREGISTRO GERAL\n12345678\nNATURALIDADE\nVITÓRIA - ES\nÓrgão expedidor: SSP/ES', rules, { tipoAtual: 'cadastroEmpregado' }).campos;
+  for (const k of ['cep', 'municipio', 'uf', 'endereco']) assert.equal(rg[k], undefined, k);
+  assert.equal(rg.municipioNascimento.valor, 'VITÓRIA'); assert.equal(rg.ufNascimento.valor, 'ES'); assert.equal(rg.ufRg.valor, 'ES');
+  const conta = 'CONTA DE ENERGIA - FATURA\nNome: JOSE DE TESTE SOUZA\nRUA DAS PALMEIRAS, 45, CASA 2 - CENTRO\nVILA VELHA - ES  CEP 29100-200\nVencimento: 10/11/2026  Consumo kWh 150';
+  const c = E.analyzeText(conta, rules, { tipoAtual: 'cadastroEmpregado', nome: 'Fulana de Teste' });
+  assert.equal(c.documento.id, 'comprovanteEndereco'); assert.equal(c.campos.nome, undefined);
+  assert.equal(c.campos.endereco.valor, 'RUA DAS PALMEIRAS'); assert.equal(c.campos.numero.valor, '45'); assert.equal(c.campos.complemento.valor, 'CASA 2'); assert.equal(c.campos.bairro.valor, 'CENTRO'); assert.equal(c.campos.municipio.valor, 'VILA VELHA'); assert.equal(c.campos.cep.valor, '29100-200');
+  assert.equal(c.titular, 'JOSE DE TESTE SOUZA'); assert.ok(c.avisos.some(a => a.id === 'comprovanteOutraPessoa' && /declaração/.test(a.mensagem)));
+  assert.equal(E.avisoComprovante('FULANA DE TESTE', 'Fulana de Teste', rules), null);
+});
+
+/* RG, CNH, CIN, CTPS digital e título com o rótulo em cima do valor (dados inventados, no layout desses documentos) */
+const RG_PDF = 'CARTEIRA DE IDENTIDADE\nREGISTRO GERAL           DATA DE EXPEDIÇÃO\n12.345.678-9             10/05/2015\nNOME\nFULANA DE TESTE SILVA\nFILIAÇÃO\nJOSÉ DE TESTE SILVA\nMARIA DE TESTE SILVA\nNATURALIDADE             DATA DE NASCIMENTO\nVITÓRIA - ES             12/03/1995\nDOC. ORIGEM\nC.NASC. LV 12 FL 34\nCPF\n529.982.247-25';
+const valores = (txt) => { const r = E.analyzeText(txt, rules, { tipoAtual: 'cadastroEmpregado' }); return { r, v: Object.fromEntries(Object.entries(r.campos).map(([k, c]) => [k, c.valor])) }; };
+t('leitor de documento pessoal: RG em PDF (colunas) e como sai do OCR (sem os espaços)', () => {
+  const ocr = RG_PDF.replace(/ {2,}/g, ' ').replace('VITÓRIA - ES', 'SÃO PAULO SP');
+  for (const [txt, cidade, uf] of [[RG_PDF, 'VITÓRIA', 'ES'], [ocr, 'SÃO PAULO', 'SP']]) {
+    const { r, v } = valores(txt);
+    assert.equal(r.documento.id, 'identidade'); assert.equal(r.layout, 'rg');
+    assert.equal(v.nome, 'FULANA DE TESTE SILVA'); assert.equal(v.rg, '12.345.678-9'); assert.equal(v.dataRg, '10/05/2015');
+    assert.equal(v.nascimento, '12/03/1995'); assert.equal(v.municipioNascimento, cidade); assert.equal(v.ufNascimento, uf); assert.equal(v.cpf, '529.982.247-25');
+    // filiação: as duas linhas; a mãe fica para confirmar
+    assert.deepEqual(r.filiacao, ['JOSÉ DE TESTE SILVA', 'MARIA DE TESTE SILVA']); assert.equal(v.mae, 'MARIA DE TESTE SILVA'); assert.ok(r.campos.mae.conf < 0.6);
+    assert.ok(r.avisos.some(a => a.id === 'filiacao'));
+    assert.match(r.campos.nome.fonte, /NOME/); assert.match(r.campos.dataRg.fonte, /EXPEDIÇÃO/);
+    for (const k of ['cep', 'municipio', 'uf']) assert.equal(v[k], undefined, k);
+  }
+});
+t('leitor de documento pessoal: CNH antiga e nova (campos compostos), CIN, CTPS digital e título', () => {
+  const { r: cnh, v: c } = valores('CARTEIRA NACIONAL DE HABILITAÇÃO\nNOME\nCICLANO DE TESTE PEREIRA\nDOC. IDENTIDADE/ÓRG. EMISSOR/UF\n1234567 SSP ES\nCPF DATA NASCIMENTO\n111.444.777-35 20/07/1988\nFILIAÇÃO\nPEDRO DE TESTE PEREIRA\nANA DE TESTE PEREIRA\nPERMISSÃO ACC CAT. HAB.\nAB\nNº REGISTRO VALIDADE 1ª HABILITAÇÃO\n01234567890 15/08/2030 20/01/2010');
+  assert.equal(cnh.layout, 'cnh');
+  assert.deepEqual([c.rg, c.orgaoRg, c.ufRg], ['1234567', 'SSP', 'ES']);
+  assert.deepEqual([c.cpf, c.nascimento, c.cnhCategoria, c.cnh, c.cnhValidade, c.mae], ['111.444.777-35', '20/07/1988', 'AB', '01234567890', '15/08/2030', 'ANA DE TESTE PEREIRA']);
+  assert.equal(c.dataRg, undefined);   // 1ª habilitação não é a emissão do RG
+  const { v: n } = valores('CARTEIRA NACIONAL DE HABILITAÇÃO\n2 e 1 NOME E SOBRENOME\nCICLANO DE TESTE PEREIRA\n4a DATA, LOCAL E UF DE NASCIMENTO\n20/07/1988, VILA VELHA, ES\n5 Nº REGISTRO 9 CAT. HAB.\n01234567890 B\n4b VALIDADE\n15/08/2030');
+  assert.deepEqual([n.nome, n.nascimento, n.municipioNascimento, n.ufNascimento, n.cnh, n.cnhCategoria, n.cnhValidade], ['CICLANO DE TESTE PEREIRA', '20/07/1988', 'VILA VELHA', 'ES', '01234567890', 'B', '15/08/2030']);
+  const { r: cin, v: i } = valores('CARTEIRA DE IDENTIDADE NACIONAL\nNOME\nBELTRANA DE TESTE COSTA\nDATA DE NASCIMENTO SEXO\n05/11/1999 F\nFILIAÇÃO\nJOANA DE TESTE COSTA\nCARLOS DE TESTE COSTA\nNATURALIDADE\nCARIACICA/ES\nCPF\n529.982.247-25');
+  assert.equal(cin.layout, 'cin'); assert.equal(i.rg, '52998224725'); assert.equal(i.mae, 'JOANA DE TESTE COSTA'); assert.equal(i.sexo, 'Feminino'); assert.equal(i.municipioNascimento, 'CARIACICA');
+  const { v: ct } = valores('Carteira de Trabalho Digital\nNome Civil\nBELTRANA DE TESTE COSTA\nCPF\n529.982.247-25\nData de Nascimento\n05/11/1999\nNacionalidade\nBrasileira');
+  assert.equal(ct.nome, 'BELTRANA DE TESTE COSTA'); assert.equal(ct.nascimento, '05/11/1999');
+  const { r: tit, v: ti } = valores('JUSTIÇA ELEITORAL\nTÍTULO ELEITORAL\nNOME DO ELEITOR\nFULANA DE TESTE SILVA\nINSCRIÇÃO ZONA SEÇÃO\n1234 5678 9012 0123 0456\nMUNICÍPIO/UF\nVITÓRIA/ES\nDATA DE EMISSÃO\n10/05/2015');
+  assert.equal(tit.documento.id, 'titulo'); assert.deepEqual([ti.titulo, ti.zona, ti.secao, ti.municipioNascimento, ti.dataRg], ['123456789012', '0123', '0456', undefined, undefined]);
+  const { v: t2 } = valores('JUSTIÇA ELEITORAL - TÍTULO DE ELEITOR\nINSCRIÇÃO 1234 5678 9012 ZONA 123 SEÇÃO 0456');
+  assert.deepEqual([t2.titulo, t2.zona, t2.secao], ['123456789012', '123', '0456']);
+});
+
+t('cadastro pelo texto: ficha colada sem "admissão" e frases soltas (data pelo papel, salário sem R$, 45+45, cargo, CPF, nome)', () => {
+  const P = (x, emp = []) => E.parseFreeText(x, rules, { hoje, employees: emp });
+  const ficha = P('Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste\nData de nascimento: 12/03/1995\nNaturalidade: Vitória/ES');
+  assert.equal(ficha.tipoSugerido, 'cadastroEmpregado');
+  assert.equal(ficha.campos.mae.valor, 'Mãe de Teste'); assert.equal(ficha.campos.nascimento.valor, '12/03/1995'); assert.equal(ficha.campos.ufNascimento.valor, 'ES');
+  assert.equal(ficha.campos.municipio, undefined);   // a naturalidade não vira endereço
+  assert.equal(E.suggestTipoByText('Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste', rules, null).tipo, 'cadastroEmpregado');
+  const f = P('vamos admitir a Fulana de Teste, CPF 529.982.247-25, nascida em 12/03/1995, começa dia 03/11, salário 2500, experiência 45+45, cargo vendedora');
+  const v = Object.fromEntries(Object.entries(f.campos).map(([k, c]) => [k, c.valor]));
+  assert.deepEqual(v, { nome: 'Fulana de Teste', cpf: '529.982.247-25', nascimento: '12/03/1995', dataAdmissao: '03/11/2026', salario: '2500', contratoExperiencia: '45', prorrogacao: '45', cargo: 'vendedora' });
+  assert.match(f.campos.nascimento.fonte, /nascida em 12\/03\/1995/);
+  // sem palavra antes, uma data antiga não vira admissão; "nasceu em 12/03/95" é 1995
+  const g = P('contratar o pedro de teste, 12/03/1995, entra 10/11/2026 com salário de R$ 1.800,00');
+  assert.equal(g.campos.dataAdmissao.valor, '10/11/2026'); assert.equal(g.campos.nascimento, undefined); assert.equal(g.campos.nome.valor, 'Pedro de Teste');
+  assert.equal(P('admitir a joana de teste, nasceu em 12/03/95').campos.nascimento.valor, '12/03/1995');
+  // CPF digitado inválido entra para a conferência acusar; funcionário da lista não vira nome
+  assert.equal(P('admitir a Fulana de Teste, CPF 111.111.111-12').campos.cpf.valor, '111.111.111-12');
+  assert.equal(P('vamos admitir a Maria Souza', ['MARIA SOUZA']).campos.nome, undefined);
+  // o texto nunca vai para a descrição
+  assert.equal(f.campos.descricao, undefined); assert.equal(f.campos.observacoes, undefined);
+});
+
+t('estagiário e contribuinte: categorias do eSocial/SEFIP pelas regras e tipo pelo texto', () => {
+  const est = E.resolveTipo(rules, 'cadastroEstagiario').campos.categoriaEsocial;
+  assert.match(est.padrao, /Estagi/); assert.equal(est.revisarComEscritorio, true);
+  const P = (x) => E.parseFreeText(x, rules, { hoje });
+  const s = P('novo sócio com pró-labore de 5000 a partir de 01/11');
+  assert.equal(s.tipoSugerido, 'cadastroContribuinte'); assert.equal(s.campos.tipoContribuinte.valor, 'Sócio'); assert.equal(s.campos.salario.valor, '5000');
+  const a = P('cadastro de autônomo RPA, CPF 529.982.247-25');
+  assert.equal(a.campos.tipoContribuinte.valor, 'Autônomo'); assert.equal(a.campos.nome, undefined);
+  const t = rules.tipos.cadastroContribuinte;
+  const cs = E.activeConditionals(t, { tipoContribuinte: 'Sócio' }); assert.match(cs[0].valores.categoriaEsocial, /^721/); assert.match(cs[0].valores.categoriaSefip, /^11/);
+  const ca = E.activeConditionals(t, { tipoContribuinte: 'Autônomo' }); assert.match(ca[0].valores.categoriaEsocial, /^701/); assert.match(ca[0].valores.categoriaSefip, /^13/);
+  assert.ok(t.condicionais.every(c => c.revisarComEscritorio));
+});
+
 console.log(`\n${n} testes ok`);

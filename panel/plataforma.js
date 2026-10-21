@@ -1051,17 +1051,19 @@ export function montarPlataforma(A) {
     $('#ag-hist').innerHTML = hist.length ? hist.slice(0, 40).map((h, n) => `<button type="button" class="pn-li" data-hist="${n}"><div class="main"><b>${esc(h.resumo)}</b><small>${esc(nomeTipo(h.tipo))} · ${new Date(h.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</small></div><span class="pill pill-${h.status === 'enviado' ? 'ok' : 'soon'}">${esc(h.status)}</span></button>`).join('') : '<div class="pn-vazio">As solicitações que você fizer com o Assistente aparecem aqui.</div>';
     viewEl.querySelectorAll('[data-dia]').forEach(b => b.addEventListener('click', () => abrirDia(b.dataset.dia)));
     viewEl.querySelectorAll('[data-cont]').forEach(b => b.addEventListener('click', () => reaproveitar(inacabados[+b.dataset.cont])));
-    viewEl.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => reaproveitar(hist[+b.dataset.hist])));
+    viewEl.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => reaproveitar(hist[+b.dataset.hist], true)));
     $('#ag-prev').addEventListener('click', () => { const d = new Date(G.ano, G.mes - 1, 1); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
     $('#ag-next').addEventListener('click', () => { const d = new Date(G.ano, G.mes + 1, 1); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
     $('#ag-hoje').addEventListener('click', () => { const d = E.today(); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
     $('#ag-filtro').addEventListener('change', (e) => { G.filtro = e.target.value; renderAgenda(); });
     $('#ag-novo').addEventListener('click', () => editarLembrete(null, E.iso(E.today())));
   }
-  async function reaproveitar(h) {
+  async function reaproveitar(h, outroPedido = false) {
     if (!h) return;
     const W = A.w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores || {})) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    // outro pedido a partir do histórico: num cadastro, só os campos da empresa (nada da pessoa anterior)
+    const vals = outroPedido ? E.valoresReaproveitaveis(h.tipo, h.valores, S.rules) : h.valores || {};
+    for (const [k, v] of Object.entries(vals)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     W.rascunhoVisto = true;
     A.gerarTextos(h.tipo, true);
     await A.openTipo(h.tipo, { manter: true });
