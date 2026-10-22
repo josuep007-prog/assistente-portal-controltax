@@ -2245,6 +2245,7 @@
         "Médico/CRM: {medico}",
         "CAT nº {numeroCat} emitida em {dataCat} ({tipoCat})",
         "Documento anexo: {anexosNomes}",
+        "{regra60Texto}",
         "{notasDocumento}",
         "{observacoes}"
       ],
@@ -5415,6 +5416,7 @@
     "cpfDeOutraPessoa": "O CPF do documento ({cpf}) não é de nenhum funcionário da lista — pode ser de um dependente. Confira de quem é o documento.",
     "lotePessoas": "Há documentos de {n} pessoas: abri um pedido para cada uma, para não misturar os dados.",
     "loteSemPessoa": "Não sei de quem é este documento",
+    "planilhaSemCabecalho": "Não achei o cabeçalho de rubricas (Empregado, Rubrica, Valor — ou uma coluna por rubrica) em “{arquivo}”: a planilha vai só anexada, sem montar os lançamentos.",
     "planilhaNaoAchei": "Na planilha, não achei na lista de funcionários: {nomes}. Confira os nomes antes de enviar.",
     "planilhaDesligados": "Na planilha há funcionário(s) desligado(s): {nomes}. Confira com o escritório.",
     "planilhaRepetidas": "Linhas repetidas na planilha (mesmo funcionário e rubrica): {linhas}.",

@@ -8,7 +8,7 @@ rm -rf "$DST" && mkdir -p "$DST/simulador"
 cp "$SRC/simulador/index.html" "$DST/index.html"
 cp "$SRC/simulador/portal.js" "$SRC/simulador/portal.css" "$SRC/simulador/sim.js" "$DST/simulador/"
 cp -r "$SRC/simulador/exemplos" "$DST/exemplos"
-for d in platform content panel lib fonts icons rules; do cp -r "$SRC/$d" "$DST/$d"; done
+for d in platform content panel lib fonts icons rules modelos; do cp -r "$SRC/$d" "$DST/$d"; done
 rm -rf "$DST/lib/xlsx"   # no simulador vem da CDN (ver platform/shim.js)
 mv "$DST/lib/tesseract/lang/por.traineddata.gz" "$DST/lib/tesseract/lang/por.traineddata.gz.wasm"
 # o publicador de artefatos recusa bytes de controle crus: troca por escapes \xNN (equivalentes em JS)

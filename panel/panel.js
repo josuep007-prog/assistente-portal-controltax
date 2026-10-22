@@ -236,6 +236,7 @@ const msgAproximada = (a) => (S.rules.mensagens?.opcaoAproximada || 'Escolhi a m
    Uma carga por vez por tipo, com novas tentativas enquanto o portal ainda carrega a lista. */
 const cargasEmpregados = new Map();
 const empregadosEmpresa = new Map();   // empresa → nomes (só na memória desta aba)
+const desligadosEmpresa = new Map();   // empresa → nomes dos desligados (só na memória; para conferir a planilha de rubricas)
 function loadEmpregados(tipo) {
   if (!cargasEmpregados.has(tipo)) cargasEmpregados.set(tipo, carregarEmpregados(tipo).finally(() => cargasEmpregados.delete(tipo)));
   return cargasEmpregados.get(tipo);
@@ -273,6 +274,7 @@ async function empregadosDaEmpresa() {
   if (conhecidos?.length) return conhecidos;
   const r = await request({ type: 'employees' }, 8000);
   if (r?.names?.length && S.ctx.empresa) empregadosEmpresa.set(S.ctx.empresa, r.names);
+  if (r?.detalhes?.length && S.ctx.empresa) desligadosEmpresa.set(S.ctx.empresa, r.detalhes.filter(d => d.ativo === false).map(d => d.nome));
   if (r?.detalhes?.length && S.ctx.empresa) guardarEquipe(S.ctx.empresa, r.detalhes);
   return r?.names || [];
 }
@@ -616,8 +618,11 @@ async function handleVarios(files, origem) {
   if (S.modo === 'plataforma' ? S.view !== 'preencher' : !['inicio', 'preencher'].includes(S.view)) setView(S.modo === 'plataforma' || S.ctx.route?.mode === 'form' ? 'preencher' : 'inicio'); else renderLote();
   for (const it of itens) { await processItem(it, null); renderLote(); }
   S.loteLeitura = null;
-  const { pedidos, fora } = montarPedidos(itens);
-  if (pedidos.length >= 2) return iniciarLote(pedidos, fora);
+  // de quem é cada documento: relê com a lista de funcionários da empresa (o pedido é de um tipo e de uma pessoa)
+  const lista = await empregadosDaEmpresa();
+  if (lista.length) for (const it of itens) if (it.texto && it.analise?.tipoSugerido && !it.rubricas && it.status === 'ok') it.analise = analisarItem(it, it.analise.tipoSugerido, lista);
+  const { pedidos, fora, pessoas } = montarPedidos(itens);
+  if (pedidos.length >= 2) return iniciarLote(pedidos, fora, pessoas);
   renderLote();
   const tipoForm = S.ctx.route?.mode === 'form' ? S.ctx.tipo : null;
   if (tipoForm) {
@@ -634,61 +639,20 @@ async function handleVarios(files, origem) {
     return;
   }
   const principal = pedidos[0]?.itens[0] || itens[0];
-  S.sugestao = { item: principal, extras: itens.filter(i => i !== principal) };
+  // o cartão usa o tipo que mais aparece nos arquivos (não o do primeiro)
+  S.sugestao = { item: principal, extras: itens.filter(i => i !== principal), tipo: E.tipoMaisFrequente(itens, S.rules) || pedidos[0]?.tipo || null };
   mostrarSugestao();
 }
 
-function montarPedidos(itens) {
-  const individuais = S.rules.config?.umPedidoPorDocumento || ['atestado'];
-  const pedidos = []; const grupos = new Map(); const neutros = [];
-  for (const it of itens) {
-    const tipo = it.analise?.tipoSugerido || null;
-    if (individuais.includes(it.documento)) pedidos.push({ tipo: tipo || 'afastamento', itens: [it] });
-    else if (tipo && !DOCS_NEUTROS.includes(it.documento)) { if (!grupos.has(tipo)) grupos.set(tipo, []); grupos.get(tipo).push(it); }
-    else neutros.push(it);
-  }
-  // P5 — cadastro: um pedido por pessoa (nome/CPF); documentos de duas pessoas não se misturam
-  const cad = (t) => E.CADASTROS.includes(t);
-  const pessoas = []; const semPessoa = [];
-  const juntar = (tipo, it) => {
-    const p = it.analise?.pessoa; if (!p) { semPessoa.push({ tipo, it }); return; }
-    const g = pessoas.find(x => E.mesmaPessoa(x.pessoa, p) === true);
-    if (g) { g.itens.push(it); if (!DOCS_NEUTROS.includes(it.documento)) g.tipo = tipo; } else pessoas.push({ tipo, pessoa: p, itens: [it] });
-  };
-  for (const [tipo, lista] of [...grupos]) if (cad(tipo)) { grupos.delete(tipo); lista.forEach(it => juntar(tipo, it)); }
-  const neutrosPessoa = neutros.filter(it => cad(it.analise?.tipoSugerido) && it.analise?.pessoa);
-  const distintas = neutrosPessoa.reduce((acc, it) => acc.some(p => E.mesmaPessoa(p, it.analise.pessoa) === true) ? acc : [...acc, it.analise.pessoa], []);
-  if (pessoas.length || distintas.length > 1) for (const it of neutrosPessoa) { neutros.splice(neutros.indexOf(it), 1); juntar(it.analise.tipoSugerido, it); }
-  if (semPessoa.length) { if (pessoas.length === 1) pessoas[0].itens.push(...semPessoa.map(x => x.it)); else pessoas.push({ tipo: semPessoa[0].tipo, pessoa: null, itens: semPessoa.map(x => x.it) }); }
-  // comprovante: vai para o cadastro de quem é o titular, quando há mais de um
-  if (pessoas.length > 1) for (const it of [...neutros]) { const tt = it.analise?.titular; const g = tt && pessoas.find(x => E.mesmaPessoa(x.pessoa, { nome: tt }) === true); if (g) { g.itens.push(it); neutros.splice(neutros.indexOf(it), 1); } }
-  for (const g of pessoas) pedidos.push({ tipo: g.tipo, itens: g.itens });
-  // documento que acompanha um atestado (ex.: CAT da mesma data) entra na mesma solicitação
-  const data = (it) => it.analise?.campos?.dataAfastamento?.valor || null;
-  for (const [tipo, lista] of grupos) {
-    for (const it of [...lista]) {
-      const alvo = pedidos.find(p => p.tipo === tipo && data(p.itens[0]) && data(p.itens[0]) === data(it));
-      if (alvo) { alvo.itens.push(it); lista.splice(lista.indexOf(it), 1); }
-    }
-    if (lista.length) pedidos.push({ tipo, itens: lista });
-  }
-  // documentos neutros (RG, certidão…) só entram se houver uma única solicitação possível
-  let fora = [];
-  if (neutros.length) {
-    const naoIndiv = pedidos.filter(p => !individuais.includes(p.itens[0].documento));
-    if (pedidos.length === 1) pedidos[0].itens.push(...neutros);
-    else if (naoIndiv.length === 1) naoIndiv[0].itens.push(...neutros);
-    else fora = neutros;
-  }
-  return { pedidos, fora };
-}
+/** Um pedido por tipo e por pessoa (a lógica está no motor: E.montarPedidosLote, com testes). */
+const montarPedidos = (itens) => E.montarPedidosLote(itens, S.rules);
 
-async function iniciarLote(pedidos, fora) {
+async function iniciarLote(pedidos, fora, pessoas = []) {
   // pergunta a empresa uma vez só: todas as solicitações do lote vão para ela
   if (!(await empresaDoPedido(null))) return;
-  S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pausado: false, concluido: false };
+  S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pessoas, pausado: false, concluido: false };
   S.sugestao = null;
-  toast(`${pedidos.length} solicitações para abrir, uma de cada vez.`);
+  toast(pessoas.length >= 2 ? (S.rules.mensagens?.lotePessoas || 'Há documentos de {n} pessoas: abri um pedido para cada uma, para não misturar os dados.').replace('{n}', pessoas.length) : `${pedidos.length} solicitações para abrir, uma de cada vez.`);
   await abrirPedido(0);
 }
 
@@ -782,24 +746,60 @@ function renderLote() {
   const env = L.pedidos.filter(p => p.status === 'enviado').length;
   const atual = L.pedidos[L.idx];
   const st = { enviado: icon('check', 'ic-sm'), pulado: icon('minus', 'ic-sm'), atual: icon('arrow', 'ic-sm') };
-  const nomeTipo = (p) => p.itens.some(i => i.documento === 'atestado') ? 'Atestado' : (S.rules.tipos[p.tipo]?.nome || 'Solicitação');
-  const rotuloPedido = (p) => p.rotulo || p.itens[0]?.nome || Object.values(p.campos || {}).filter(c => c.conf > 0.45).slice(0, 2).map(c => c.valor).join(' · ') || 'do seu texto';
+  const nomeTipo = (p) => p.itens.some(i => i.documento === 'atestado') ? 'Atestado' : p.itens.some(i => i.documento === 'comparecimento') ? 'Declaração de comparecimento' : (S.rules.tipos[p.tipo]?.nome || 'Solicitação');
+  const rotuloPedido = (p) => p.rotulo || p.pessoa?.nome || p.itens[0]?.nome || Object.values(p.campos || {}).filter(c => c.conf > 0.45).slice(0, 2).map(c => c.valor).join(' · ') || 'do seu texto';
   el.innerHTML = `<div class="card pad lote" aria-live="polite">
     <div class="lote-h">${icon('list', 'ic-sm')}<b>${L.concluido ? 'Lote concluído' : `Solicitação ${L.idx + 1} de ${L.pedidos.length}`}</b><small class="mono">${env} enviada(s)</small></div>
     <ol>${L.pedidos.map(p => `<li class="${p.status === 'atual' ? 'cur' : p.status === 'enviado' || p.status === 'pulado' ? 'done' : ''}">
       <span class="n">${st[p.status] || p.n}</span><span class="what" title="${esc(p.itens.map(i => i.nome).join(', '))}">${esc(nomeTipo(p))} — ${esc(rotuloPedido(p))}</span>
       <small class="muted">${{ enviado: 'enviada', pulado: 'pulada', atual: 'agora', pendente: 'na fila' }[p.status]}</small></li>`).join('')}</ol>
-    ${L.fora?.length ? `<p class="muted" style="margin:8px 0 0;font-size:12px">Não reconheci e deixei de fora: ${esc(L.fora.map(i => i.nome).join(', '))}. Se precisar, arraste depois na solicitação certa.</p>` : ''}
+    ${L.pessoas?.length >= 2 ? `<p class="muted" style="margin:8px 0 0;font-size:12px">${esc((S.rules.mensagens?.lotePessoas || 'Há documentos de {n} pessoas: abri um pedido para cada uma, para não misturar os dados.').replace('{n}', L.pessoas.length))}</p>` : ''}
+    ${L.fora?.length ? `<div class="note warn" id="lote-fora" style="margin-top:8px">${icon('alert')}<div style="flex:1;min-width:0"><b>${esc(S.rules.mensagens?.loteSemPessoa || 'Não sei de quem é este documento')}</b>
+      ${L.fora.map((it, i) => `<div class="lote-fora-i" style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><span title="${esc(it.nome)}" style="flex:1;min-width:120px">${esc(it.nome)} <small class="muted">(${esc(it.analise?.documento?.nome || 'documento')})</small></span>
+        <select class="input" data-fora="${i}" aria-label="Em qual pedido vai ${esc(it.nome)}"><option value="">Escolher o pedido…</option>${L.pedidos.map((p, k) => p.status === 'pendente' ? `<option value="${k}">${esc(nomeTipo(p))} — ${esc(rotuloPedido(p))}</option>` : '').join('')}<option value="x">Deixar de fora</option></select></div>`).join('')}</div></div>` : ''}
     ${L.concluido ? `<div class="actions"><button class="btn btn-sm" id="lote-ok">Fechar</button></div>`
       : L.pausado ? `<div class="note warn" style="margin-top:8px">${icon('alert')}<div>A solicitação ${L.idx + 1} foi fechada sem enviar.</div></div>
         <div class="actions"><button class="btn btn-primary btn-sm" id="lote-reabrir">Abrir de novo</button><button class="btn btn-sm" id="lote-pular">Pular</button><button class="btn btn-ghost btn-sm" id="lote-parar">Parar</button></div>`
       : atual ? `<p class="muted" style="margin:8px 0 0;font-size:12px">${L.navegando ? 'Abrindo e preenchendo…' : atual.resumo ? 'Preenchi tudo e abri o resumo: confira e clique em “Enviar ao escritório”. Quando o portal salvar, eu abro a próxima.' : `Confira os dados e clique em ${esc(tipoDef(atual.tipo)?.botaoEnviar || 'ADICIONAR')} no portal (ou em “Conferir e enviar”). Quando o portal salvar, eu abro a próxima.`}</p>
         <div class="actions"><button class="btn btn-sm" id="lote-pular" ${L.navegando ? 'disabled' : ''}>Pular esta</button><button class="btn btn-ghost btn-sm" id="lote-parar">Parar</button></div>` : ''}
   </div>`;
+  el.querySelectorAll('[data-fora]').forEach(sel => sel.addEventListener('change', () => {
+    const it = L.fora[+sel.dataset.fora]; if (!it || !sel.value) return;
+    if (sel.value !== 'x') { const p = L.pedidos[+sel.value]; if (p && p.status === 'pendente') p.itens.push(it); }
+    L.fora = L.fora.filter(x => x !== it); renderLote();
+  }));
   $('#lote-ok')?.addEventListener('click', () => { S.lote = null; renderLote(); });
   $('#lote-parar')?.addEventListener('click', () => { S.lote = null; renderLote(); toast('Lote parado. O que já foi enviado continua no portal.'); });
   $('#lote-pular')?.addEventListener('click', pularPedido);
   $('#lote-reabrir')?.addEventListener('click', () => abrirPedido(S.lote.idx));
+}
+
+/** Texto para o cliente quando um arquivo não pôde ser lido (regras: mensagens.leitura*): o que fazer, sem culpa. */
+function msgLeitura(motivo, item) {
+  const M = S.rules.mensagens || {};
+  const m = { heic: M.leituraHeic, tiff: M.leituraTiff, senha: M.leituraPdfSenha, imagem: M.leituraImagem }[motivo];
+  return m || (M.leituraFalhou || 'Não consegui ler “{arquivo}”. Escolha o pedido e eu anexo o arquivo assim mesmo.').replace('{arquivo}', item.nome);
+}
+/** De quem são os CPFs do documento: pergunta à aba do portal (só o nome volta; a lista com os CPFs não sai de lá).
+ *  Guarda no arquivo { cpf: nome | null } e se a lista traz CPF. Lista sem CPF (campo a calibrar): nada muda. */
+const cpfsPerguntados = new Map();   // empresa|cpf → nome | null (só na memória desta aba)
+async function resolverCpfs(item) {
+  const cpfs = item.analise?.cpfs || []; if (!cpfs.length || !S.port) return;
+  const falta = cpfs.filter(c => !cpfsPerguntados.has(`${S.ctx.empresa}|${c}`));
+  if (falta.length) {
+    const r = await request({ type: 'empregadoPorCpf', cpfs: falta }, 9000);
+    if (!r?.achados) return;
+    for (const c of falta) cpfsPerguntados.set(`${S.ctx.empresa}|${c}`, r.achados.find(a => a.cpf === c)?.nome || null);
+    cpfsPerguntados.set(`${S.ctx.empresa}|_listaTemCpf`, !!r.listaTemCpf);
+  }
+  item.cpfNomes = Object.fromEntries(cpfs.map(c => [c, cpfsPerguntados.get(`${S.ctx.empresa}|${c}`) ?? null]));
+  item.cpfListaTemCpf = cpfsPerguntados.get(`${S.ctx.empresa}|_listaTemCpf`) === true;
+}
+/** Planilha de rubricas: nomes conferidos com a lista de funcionários da empresa (não achei, desligado, linha repetida). */
+async function conferirPlanilhaItem(item) {
+  const R = item.rubricas; if (!R) return;
+  const nomes = await empregadosDaEmpresa();
+  R.conferencia = E.conferirPlanilha(R.linhas, nomes, desligadosEmpresa.get(S.ctx.empresa) || []);
 }
 
 async function processItem(item, tipoAtual) {
@@ -808,19 +808,32 @@ async function processItem(item, tipoAtual) {
     const bar = document.querySelector(`[data-file="${item.id}"] .prog i`); if (bar) bar.style.width = `${Math.round(p * 100)}%`;
     const st = document.querySelector(`[data-file="${item.id}"] small`); if (st) st.textContent = item.etapa;
   };
+  const M = S.rules.mensagens || {};
   try {
-    const r = await readFile(item.file, onProgress, { ocr: S.prefs.ocrAutomatico });
+    const r = await readFile(item.file, onProgress, { ocr: S.prefs.ocrAutomatico, ocrMaxPaginas: S.rules.config?.ocrMaxPaginas || 8 });
     item.texto = r.texto; item.metodo = r.metodo; item.tabela = r.tabela; item.confianca = r.confianca ?? null; item.rotacao = r.rotacao || 0;
+    // só na memória: as palavras da foto com posição e confiança, e a imagem de onde saíram (recorte dos campos com dúvida)
+    item.palavras = r.palavras || null; item.imagens = r.imagens || null; item.paginasTotal = r.paginas || 1;
+    // PDF com vários documentos: cada trecho é lido pelo seu documento (o endereço só do comprovante)
+    const partes = r.paginasTexto?.length > 1 ? E.separarDocumentos(r.paginasTexto, S.rules) : [];
+    item.partes = partes.length > 1 ? partes : null;
+    // planilha: só vira rubricas se o cabeçalho bater (formato longo ou largo, em qualquer aba)
+    item.rubricas = r.tabela ? E.lerPlanilhaRubricas(r.abas || [{ nome: '', linhas: r.tabela }], S.rules, { nomeArquivo: item.nome }) : null;
+    if (item.rubricas) await conferirPlanilhaItem(item);
     if (tipoAtual && !w(tipoAtual).empregados.length) await loadEmpregados(tipoAtual);
     const empregados = tipoAtual ? w(tipoAtual).empregados : [];
     item.analise = analisarItem(item, tipoAtual, empregados);
-    if (r.tabela && (tipoAtual === 'rubricas' || !tipoAtual)) {
+    if (item.analise.cpfs?.length) { await resolverCpfs(item); if (item.cpfNomes) item.analise = analisarItem(item, tipoAtual, empregados); }
+    if (item.rubricas && (tipoAtual === 'rubricas' || !tipoAtual)) {
       item.analise.tipoSugerido = tipoAtual || 'rubricas';
       item.analise.documento = { id: 'planilha', nome: 'Planilha de lançamentos' };
     }
     item.documento = item.analise.documento?.id || null;
-    item.resumo = E.summarizeDocument(item.analise, r.texto || '');
-    if (item.documento === 'aso') item.aso = E.readASO(r.texto || '');
+    item.documentos = item.analise.documentos || null;
+    item.resumo = item.rubricas ? `${item.rubricas.linhas.length} lançamento(s)${item.rubricas.competencia ? ' · ' + item.rubricas.competencia : ''}` : E.summarizeDocument(item.analise, r.texto || '');
+    const regraAso = (S.rules.documentos || []).find(d => d.id === 'aso');
+    const textoAso = item.partes ? item.partes.find(p => p.documento === 'aso')?.texto : (item.documento === 'aso' ? r.texto : null);
+    if (textoAso) item.aso = E.readASO(textoAso, regraAso);
     const tipoAlvo = tipoAtual || item.analise.tipoSugerido;
     if (S.prefs.usarIa && S.rules.config?.usarIaDoChromeQuandoDisponivel && tipoAlvo && r.texto && await aiAvailable()) {
       onProgress(0.95, 'Conferindo com a IA do Chrome');
@@ -831,10 +844,15 @@ async function processItem(item, tipoAtual) {
     }
     item.status = r.metodo === 'nao-suportado' ? 'nao-lido' : 'ok';
     const dificil = r.metodo === 'ocr' && item.confianca != null && item.confianca < 60;
-    item.etapa = r.metodo === 'nao-suportado' ? 'Formato não lido — será só anexado' : `${item.analise.documento?.nome || 'Documento'} · ${r.metodo === 'ocr' ? (dificil ? 'leitura difícil, confira' : 'lido por OCR') : 'lido'}${item.rotacao ? ' (imagem girada)' : ''}${item.resumo ? ' · ' + item.resumo : ''}`;
+    // páginas: "li N de M" quando o limite (15 páginas de texto, config.ocrMaxPaginas de OCR) deixou páginas de fora
+    item.paginasLidas = r.paginasLidas ?? r.paginas ?? 1;
+    item.avisoPaginas = r.paginas > 1 && item.paginasLidas < r.paginas ? (M.leituraPaginas || 'Li {lidas} de {total} páginas de “{arquivo}” (o limite é {limite}).').replace('{lidas}', item.paginasLidas).replace('{total}', r.paginas).replace('{arquivo}', item.nome).replace('{limite}', r.ocrCortado ? (S.rules.config?.ocrMaxPaginas || 8) : (r.limitePaginas || 15)) : null;
+    item.etapa = r.metodo === 'nao-suportado' ? (r.motivo ? msgLeitura(r.motivo, item) : 'Formato não lido — será só anexado')
+      : `${item.analise.documento?.nome || 'Documento'}${item.documentos?.length > 1 ? ` + ${item.documentos.length - 1} outro(s)` : ''} · ${r.metodo === 'ocr' ? (dificil ? 'leitura difícil, confira' : 'lido por OCR') : 'lido'}${item.rotacao ? ' (imagem girada)' : ''}${item.resumo ? ' · ' + item.resumo : ''}${item.avisoPaginas ? ` · li ${item.paginasLidas} de ${r.paginas} páginas` : ''}`;
+    if (r.tabela && !item.rubricas && tipoAtual === 'rubricas') item.etapa = (M.planilhaSemCabecalho || 'Não achei o cabeçalho de rubricas (Empregado, Rubrica, Valor) em “{arquivo}”: ela vai só anexada.').replace('{arquivo}', item.nome);
   } catch (err) {
     console.error(err);
-    item.status = 'erro'; item.etapa = 'Não consegui ler este arquivo. Ele ainda pode ser anexado.';
+    item.status = 'erro'; item.falhou = true; item.etapa = msgLeitura(err?.motivo, item);
     item.analise = { documento: null, campos: {}, tipoSugerido: null };
   }
 }
@@ -849,8 +867,16 @@ function renderSugestao() {
     return;
   }
   const a = it.analise || {};
-  const tipo = a.tipoSugerido;
+  const falhou = it.status === 'erro' || it.status === 'nao-lido';   // não deu para ler: o cartão diz isso, em vez de "parece ser um documento"
+  const tipo = falhou ? null : (s.tipo ?? a.tipoSugerido);
   const nCampos = Object.keys(a.campos || {}).length;
+  if (falhou) {
+    el.innerHTML = `<div class="card"><div class="card-h">${icon('alert')}<h3>Não consegui ler o arquivo</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
+      <div class="card-b"><p style="margin:0 0 8px"><b>${esc(it.nome)}</b></p><p class="muted" id="sug-escolha" style="margin:0">${esc(it.etapa)}</p>
+      ${(() => { const m = (S.rules.mensagens?.leituraFalhou || 'Não consegui ler “{arquivo}”. Escolha o pedido e eu anexo o arquivo assim mesmo.').replace('{arquivo}', it.nome); return m === it.etapa ? '' : `<p class="muted" style="margin:8px 0 0">${esc(m)}</p>`; })()}</div></div>`;
+    $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
+    return;
+  }
   el.innerHTML = `
     <div class="card">
       <div class="card-h">${icon('spark')}<h3>${tipo ? 'Encontrei o caminho' : 'Li o arquivo'}</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
@@ -1022,7 +1048,14 @@ async function abrirDoTexto(el, s, destino) {
    é só sugestão: não vai ao portal, não entra no assunto/descrição nem conta como preenchido até o cliente tocar em "Usar". */
 const ehSugestao = (v) => !!(v && v.origem && !v.confirmado && v.valor != null && v.valor !== '' && (v.conf ?? 1) < E.limiarPortal(S.rules));
 /** Lê o texto de um arquivo com o tipo e os funcionários (e a qualidade do OCR: leitura fraca vira sugestão). */
-const analisarItem = (item, tipo, empregados = []) => E.analyzeText(item.texto || item.nome || '', S.rules, { employees: empregados, tipoAtual: tipo, metodo: item.metodo, confiancaOcr: item.confianca });
+function analisarItem(item, tipo, empregados = []) {
+  const ctx = { employees: empregados, tipoAtual: tipo, metodo: item.metodo, confiancaOcr: item.confianca, cpfNomes: item.cpfNomes, cpfListaTemCpf: item.cpfListaTemCpf };
+  const a = item.partes?.length > 1 ? E.analisarPartes(item.partes, S.rules, ctx) : E.analyzeText(item.texto || item.nome || '', S.rules, ctx);
+  // foto: confiança das palavras de onde cada valor saiu (valor mal lido vira sugestão); nunca para dados de saúde
+  const alvo = tipo || a.tipoSugerido;
+  if (item.palavras?.length && alvo) { E.aplicarLeituraDasPalavras(a.campos, item.palavras, tipoDef(alvo), S.rules); a.pessoa = E.pessoaDaAnalise({ campos: a.campos, paciente: a.paciente }); }
+  return a;
+}
 /** Usar uma sugestão do documento: vira valor confirmado (vai ao portal e entra no texto). */
 async function usarSugestao(tipo, k) {
   const W = w(tipo); const v = W.valores[k]; if (!v?.valor) return;
@@ -1043,11 +1076,10 @@ function htmlSugestao(k, v) {
 }
 
 /* Documentos neutros (servem a vários pedidos) e famílias de pedidos compatíveis */
-const DOCS_NEUTROS = ['certidao', 'aso', 'identidade', 'cpf', 'comprovanteEndereco', 'ctps', 'seguro', 'bancario'];
 const FAMILIAS = [['avisoFerias', 'calculoFerias'], ['avisoRescisao', 'calculoRescisao'], ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte']];
 function docDeOutroTipo(item, tipo) {
   const doc = item.analise?.documento; const dt = doc?.tipoSolicitacao;
-  if (!dt || dt === tipo || DOCS_NEUTROS.includes(doc.id)) return null;
+  if (!dt || dt === tipo || E.docsNeutros(S.rules).includes(doc.id)) return null;
   if (FAMILIAS.some(f => f.includes(dt) && f.includes(tipo))) return null;
   return dt;
 }
@@ -1064,7 +1096,7 @@ function applyAnalysis(tipo, item, opts = {}) {
     if (!t.campos[k] || W.editados.has(k)) continue;
     const cur = W.valores[k];
     // cada valor guarda o arquivo de onde veio (origem); o que já foi confirmado pelo cliente não é trocado por uma leitura
-    if (!cur || (!cur.confirmado && (cur.conf ?? 0) <= c.conf)) W.valores[k] = { valor: c.valor, conf: c.conf, fonte: c.fonte, origem: item.id, origemNome: item.nome, ...(c.confira ? { confira: c.confira } : {}) };
+    if (!cur || (!cur.confirmado && (cur.conf ?? 0) <= c.conf)) W.valores[k] = { valor: c.valor, conf: c.conf, fonte: c.fonte, origem: item.id, origemNome: item.nome, ...(c.confira ? { confira: c.confira } : {}), ...(c.leitura ? { leitura: c.leitura } : {}) };
   }
   // nome lido no documento e homônimos (o cliente escolhe)
   if (!item.outroTipo && !item.outraPessoa && t.campos.empregado) {
@@ -1078,10 +1110,7 @@ function applyAnalysis(tipo, item, opts = {}) {
   }
   ajustarDepartamento(tipo);
   // tabela de rubricas: o texto da descrição e as linhas para a grade do portal (todas as planilhas do pedido)
-  if (item.tabela && tipo === 'rubricas') {
-    W.valores.tabelaRubricas = { valor: tabelaRubricasTexto(item.tabela), conf: 0.9, fonte: item.nome };
-    W.linhasRubricas = W.arquivos.filter(a => a.tabela && !a.removido).flatMap(a => E.linhasDaPlanilha(a.tabela, S.rules)); W.grade = null;
-  }
+  if (item.rubricas && tipo === 'rubricas') aplicarPlanilhaRubricas(W);
   // sugere outro tipo
   gerarTextos(tipo);
   if (S.view === 'preencher') render();
@@ -1102,10 +1131,18 @@ function usarDocumentoNoLugar(tipo, item) {
   applyAnalysis(tipo, item);
 }
 
-function tabelaRubricasTexto(rows) {
-  return E.linhasDaPlanilha(rows, S.rules).map(l => `• ${l.empregado} — ${l.rubrica}: ${l.valor}`).join('\n');
+/** Planilhas de rubricas do pedido (qualquer formato): o resumo e os totais na descrição, as linhas para a grade (com o nome
+ *  que a lista de funcionários usa), a competência e o tipo de lançamento lidos do título, da aba ou do nome do arquivo. */
+function aplicarPlanilhaRubricas(W) {
+  const lidas = W.arquivos.filter(a => a.rubricas && !a.removido).map(a => a.rubricas);
+  const linhas = lidas.flatMap(R => R.linhas.map(l => ({ ...l, empregado: R.conferencia?.nomes?.[l.empregado] || l.empregado })));
+  W.valores.tabelaRubricas = { valor: linhas.map(l => `• ${l.empregado} — ${l.rubrica}: ${l.valor}`).join('\n'), conf: 0.9, fonte: lidas.map(R => R.aba).filter(Boolean).join(', ') || 'planilha' };
+  W.valores.totaisRubricas = { valor: E.textoTotaisRubricas(E.totaisRubricas(linhas)), conf: 0.9, fonte: 'planilha' };
+  W.linhasRubricas = linhas; W.grade = null;
+  const R0 = lidas[0];
+  if (R0?.competencia && !W.editados.has('competencia') && !W.valores.competencia?.confirmado && !W.valores.competencia?.valor) W.valores.competencia = { valor: R0.competencia, conf: 0.7, fonte: 'título, aba ou nome da planilha' };
+  if (R0?.tipoLancamento && !W.editados.has('tipoLancamento') && !W.valores.tipoLancamento?.valor) W.valores.tipoLancamento = { valor: R0.tipoLancamento, conf: 0.65, fonte: 'título, aba ou nome da planilha' };
 }
-
 /* =================== Valores combinados =================== */
 function portalValores(tipo) {
   const out = {};
@@ -1131,9 +1168,9 @@ function anexosAtuais(tipo) {
   const nomesPortal = S.ctx.tipo === tipo ? (S.ctx.form?.anexos || []) : [];
   const out = nomesPortal.map(n => {
     const f = W.arquivos.find(a => E.norm(a.nome) === E.norm(n));
-    return { nome: n, documento: f?.documento || null };
+    return { nome: n, documento: f?.documento || null, documentos: f?.documentos || null, aso: f?.aso || null };
   });
-  for (const a of W.arquivos) if (!out.some(o => E.norm(o.nome) === E.norm(a.nome)) && a.status !== 'erro' && !a.removido) out.push({ nome: a.nome, documento: a.documento, pendente: true });
+  for (const a of W.arquivos) if (!out.some(o => E.norm(o.nome) === E.norm(a.nome)) && a.status !== 'erro' && !a.removido) out.push({ nome: a.nome, documento: a.documento, documentos: a.documentos || null, aso: a.aso || null, pendente: true });
   return out;
 }
 
@@ -1206,6 +1243,10 @@ function gerarTextos(tipo, force = false) {
   vals.anexosNomes = anexosAtuais(tipo).map(a => a.nome).join(', ');
   vals.observacoes = W.valores.observacoes?.valor || '';
   vals.documentoPrincipal = documentoPrincipal(tipo);
+  // o que o documento traz e o portal não tem campo (DIB/DCB da carta do INSS, totais do espelho de ponto): só leitura com confiança
+  const limiar = E.limiarPortal(S.rules);
+  vals.notasDocumento = W.arquivos.filter(a => !a.removido && !a.outroTipo && !a.outraPessoa && a.status === 'ok').flatMap(a => a.analise?.notas || []).filter(n => (n.conf ?? 1) >= limiar).map(n => n.texto).join('\n');
+  vals.regra60Texto = W.regra60?.sim ? W.regra60.texto : '';
   if (t.campos.assunto && (t.assuntos || t.assunto) && (force || !W.editados.has('assunto'))) {
     const s = E.renderFirst(t.assuntos || t.assunto, vals); if (s) W.valores.assunto = { valor: s, conf: 0.9, fonte: 'gerado' };
   }
@@ -1254,7 +1295,8 @@ function renderPreencher() {
     </div>
     <div id="free-sug"></div>`;
   const arquivos = `<div class="files" id="files"></div><div id="outro-tipo"></div><div id="doc-checklist"></div>`;
-  const dicas = (t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : '';
+  const modeloPlanilha = tipo === 'rubricas' ? `<a class="btn btn-sm btn-ghost" id="baixar-modelo" href="../modelos/modelo-rubricas.csv" download="modelo-rubricas.csv">${icon('sheet', 'ic-sm')} Baixar planilha modelo</a>` : '';
+  const dicas = (t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>${modeloPlanilha}` : modeloPlanilha;
   const dock = `<div class="dock" id="dock">
       <button class="btn btn-primary" id="btn-fill">${icon('fill', 'ic-sm')} Preencher no portal</button>
       <button class="btn btn-undo" id="btn-undo" hidden>${icon('undo', 'ic-sm')} Desfazer o preenchimento</button>
@@ -1269,7 +1311,7 @@ function renderPreencher() {
     </div>`;
   // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
   viewEl.innerHTML = plat ? `
-    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div><div id="grade-rub"></div>
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div><div id="confira-leituras"></div><div id="grade-rub"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
         <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
@@ -1283,6 +1325,7 @@ function renderPreencher() {
     <div id="rascunho"></div>
     <div id="sug-cad"></div>
     <div id="dica-pedido"></div>
+    <div id="confira-leituras"></div>
     <div id="grade-rub"></div>
     ${drop}
     ${livre}
@@ -1399,11 +1442,8 @@ function renderDocChecklist() {
   const t = tipoDef(S.ctx.tipo); const anexos = t.anexos || [];
   if (anexos.length < 3) { el.innerHTML = ''; return; }
   const atuais = anexosAtuais(S.ctx.tipo);
-  const W = w(S.ctx.tipo);
-  const inapto = W.arquivos.find(a => a.aso?.resultado === 'INAPTO' && !a.removido);
   el.innerHTML = `<div class="card pad doclist"><b class="dl-t">Documentos para enviar</b>
-    ${anexos.map(a => { const ok = atuais.some(x => E.anexoAceita(a, x.documento)); const md = !ok && a.modelo && (!a.modeloSe || E.condicaoVale(a.modeloSe, valoresParaChecar(S.ctx.tipo))) ? botaoModelo(a.modelo) : ''; return `<div class="dl-i ${ok ? 'ok' : ''}"><span class="st">${icon(ok ? 'check' : 'minus', 'ic-sm')}</span><span>${esc(a.rotulo)}${a.obrigatorio ? '' : ' <small class="muted">(se houver)</small>'}</span>${md}</div>`; }).join('')}
-    ${inapto ? `<div class="note err" style="margin-top:8px">${icon('alert')}<div>O ASO anexado está como <b>INAPTO</b>. Fale com o seu analista antes de seguir com a admissão.</div></div>` : ''}
+    ${anexos.map(a => { const ok = atuais.some(x => E.anexoCasa(a, x)); const md = !ok && a.modelo && (!a.modeloSe || E.condicaoVale(a.modeloSe, valoresParaChecar(S.ctx.tipo))) ? botaoModelo(a.modelo) : ''; return `<div class="dl-i ${ok ? 'ok' : ''}"><span class="st">${icon(ok ? 'check' : 'minus', 'ic-sm')}</span><span>${esc(a.rotulo)}${a.obrigatorio ? '' : ' <small class="muted">(se houver)</small>'}</span>${md}</div>`; }).join('')}
   </div>`;
   ligarModelos(el, S.ctx.tipo);
 }
@@ -1718,6 +1758,12 @@ function avisosExtras(tipo, vals) {
     // comprovante em nome de outra pessoa (pode ser de um parente): compara com o nome do cadastro
     const avc = a.analise?.titular && !(a.analise.avisos || []).some(x => x.id === 'comprovanteOutraPessoa') ? E.avisoComprovante(a.analise.titular, vals.nome, S.rules) : null;
     if (avc) out.push({ nivel: avc.nivel, grupo: 'Documento', mensagem: avc.mensagem });
+    // páginas que o limite deixou de fora e planilha de rubricas conferida com a lista de funcionários
+    if (a.avisoPaginas) out.push({ nivel: 'info', grupo: 'Documento', mensagem: a.avisoPaginas });
+    const cf = a.rubricas?.conferencia; const M = S.rules.mensagens || {};
+    if (cf?.naoAchados.length) out.push({ nivel: 'atencao', grupo: 'Planilha', mensagem: (M.planilhaNaoAchei || 'Na planilha, não achei na lista de funcionários: {nomes}.').replace('{nomes}', cf.naoAchados.join(', ')) });
+    if (cf?.desligados.length) out.push({ nivel: 'atencao', grupo: 'Planilha', mensagem: (M.planilhaDesligados || 'Na planilha há funcionário(s) desligado(s): {nomes}.').replace('{nomes}', cf.desligados.join(', ')) });
+    if (cf?.repetidas.length) out.push({ nivel: 'atencao', grupo: 'Planilha', mensagem: (M.planilhaRepetidas || 'Linhas repetidas na planilha: {linhas}.').replace('{linhas}', cf.repetidas.map(r => `${r.empregado} (${r.rubrica})`).join(', ')) });
     if (a.metodo === 'ocr' && a.confianca != null && a.confianca < 60) out.push({ nivel: 'info', grupo: 'Documento', mensagem: `A leitura de “${a.nome}” foi difícil (letra à mão ou foto). Confira os campos — os duvidosos ficam em amarelo.` });
   }
   const dup = duplicado(tipo, vals);
@@ -1787,7 +1833,7 @@ function updateChecks() {
     $(`#f-${b.dataset.campo}`)?.focus();
   }));
   const dot = $('#dot-preencher'); if (dot) { dot.hidden = !c.erro; dot.textContent = c.erro || ''; }
-  renderStepper(list); renderDocChecklist(); renderDicaPedido(tipo);
+  renderStepper(list); renderDocChecklist(); renderDicaPedido(tipo); renderConfiraLeituras(tipo);
 }
 /* "Gerar pelo modelo" (anexos[].modelo): o modelo da carta já preenchido com o funcionário, as datas, a empresa e a admissão. */
 const botaoModelo = (id) => (S.rules.modelosDocumento || []).some(m => m.id === id) ? `<button type="button" class="btn btn-sm btn-ghost chk-modelo" data-modelo="${esc(id)}">${icon('fill', 'ic-sm')} Gerar pelo modelo</button>` : '';
@@ -1835,6 +1881,9 @@ function renderDicaPedido(tipo) {
     if (novos.length) partes.push({ k: `av|${av.id}|${novos.map(x => x.join('=')).join(',')}`, html: `<div class="note">${icon('info')}<div>O aviso ${tAviso === 'avisoFerias' ? 'de férias' : 'de rescisão'} de <b>${esc(nomeCurto(v.empregado))}</b>${av.numero ? ` (nº ${esc(av.numero)})` : ''} já está no portal: ${esc(novos.map(([k, x]) => `${rotuloDe(tipo, k)} ${x}`).join(' · '))}.
       <div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" id="dp-aviso">Usar os dados do aviso${quando ? ` de ${quando}` : ''}</button><button type="button" class="btn btn-sm btn-ghost" id="dp-aviso-nao">Agora não</button></div></div></div>` });
   }
+  // atestados do mesmo funcionário que se somam (regra dos 60 dias): "É a mesma doença?"
+  const q60 = tipo === 'afastamento' ? pergunta60(tipo) : null;
+  if (q60) partes.push(q60);
   const chave = partes.map(x => x.k).join('#');
   if (el.dataset.chave === chave) return;
   el.dataset.chave = chave;
@@ -1852,6 +1901,92 @@ function renderDicaPedido(tipo) {
     if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: Object.keys(vv.valores) });
   });
   $('#dp-aviso-nao')?.addEventListener('click', () => { W.avisoUsado = true; renderDicaPedido(tipo); });
+  $('#r60-sim')?.addEventListener('click', () => {
+    const r = q60.r; W.regra60 = { sim: true, chave: q60.k, texto: r.texto };
+    W.valores.tipoAfastamento = { valor: r.tipoSugerido, conf: 1, fonte: 'regra dos 60 dias (você confirmou)' }; W.editados.add('tipoAfastamento'); W.fonteVerdade.tipoAfastamento = 'plataforma';
+    gerarTextos(tipo); render();
+    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: ['tipoAfastamento'] });
+  });
+  $('#r60-nao')?.addEventListener('click', () => { W.regra60 = { sim: false, chave: q60.k }; renderDicaPedido(tipo); });
+}
+/* Foto com dúvida: o recorte da imagem de onde o valor saiu, ao lado do campo (nunca para CID e médico). Tudo só na memória do painel. */
+async function recorteDa(item, leitura) {
+  const img = item.imagens?.[leitura.pagina]; if (!img) return null;
+  const chave = `${leitura.pagina}|${leitura.bbox.x0},${leitura.bbox.y0},${leitura.bbox.x1},${leitura.bbox.y1}`;
+  item.recortes = item.recortes || {};
+  if (item.recortes[chave] !== undefined) return item.recortes[chave];
+  try {
+    const bmp = await createImageBitmap(img);
+    const m = S.rules.config?.recorteLeitura?.margem ?? 12;
+    const x0 = Math.max(0, leitura.bbox.x0 - m), y0 = Math.max(0, leitura.bbox.y0 - m), x1 = Math.min(bmp.width, leitura.bbox.x1 + m), y1 = Math.min(bmp.height, leitura.bbox.y1 + m);
+    const larg = x1 - x0, alt = y1 - y0; if (larg < 4 || alt < 4) return (item.recortes[chave] = null);
+    const esc_ = Math.max(1, Math.min(3, 320 / larg));
+    const cv = document.createElement('canvas'); cv.width = Math.round(larg * esc_); cv.height = Math.round(alt * esc_);
+    cv.getContext('2d').drawImage(bmp, x0, y0, larg, alt, 0, 0, cv.width, cv.height);
+    return (item.recortes[chave] = cv.toDataURL('image/png'));
+  } catch { return (item.recortes[chave] = null); }
+}
+/** Campos lidos de foto com palavras mal lidas (sugestão com `confira: 'leitura'`): precisam de uma conferência do cliente. */
+function leiturasParaConferir(tipo) {
+  const W = w(tipo); const out = [];
+  for (const [k, v] of Object.entries(W.valores)) {
+    if (!ehSugestao(v) || v.confira !== 'leitura' || !v.leitura || ['cid', 'medico'].includes(k) || campoDef(tipo, k)?.sensivel || campoDef(tipo, k)?.somenteAssistente) continue;
+    const item = W.arquivos.find(a => a.id === v.origem && !a.removido && a.imagens);
+    if (item) out.push({ k, v, item });
+  }
+  return out;
+}
+function renderConfiraLeituras(tipo) {
+  const el = $('#confira-leituras'); if (!el) return;
+  const lista = leiturasParaConferir(tipo);
+  const chave = JSON.stringify(lista.map(x => [x.k, x.v.valor]));
+  if (el.dataset.chave === chave) return;
+  el.dataset.chave = chave;
+  if (!lista.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="note warn confira-box">${icon('alert')}<div style="flex:1;min-width:0"><b>Confira estas leituras</b> <small class="muted">— ${esc(S.rules.mensagens?.confiraLeituras || 'A foto estava difícil nestes campos. Compare com o recorte e confirme.')}</small>
+    <div class="list" style="margin-top:6px">${lista.map(({ k, v }) => `<div class="li" data-confira="${esc(k)}"><div class="main"><b>${esc(rotuloDe(tipo, k))}: ${esc(v.valor)}</b><img class="recorte" alt="Trecho da foto de onde li ${esc(rotuloDe(tipo, k))}" hidden style="display:block;max-width:100%;max-height:70px;margin-top:4px;border:1px solid var(--line,#ccc);border-radius:4px"></div>
+      <button type="button" class="btn btn-sm btn-primary" data-conf-k="${esc(k)}">Confirmar</button><button type="button" class="btn btn-sm btn-ghost" data-corr-k="${esc(k)}">Corrigir</button></div>`).join('')}</div>
+    ${lista.length > 1 ? '<div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm" id="conf-todas">Confirmar todas</button></div>' : ''}</div></div>`;
+  lista.forEach(async ({ k, v, item }) => {
+    const url = await recorteDa(item, v.leitura); const img = el.querySelector(`[data-confira="${CSS.escape(k)}"] img.recorte`);
+    if (url && img) { img.src = url; img.hidden = false; }
+  });
+  el.querySelectorAll('[data-conf-k]').forEach(b => b.addEventListener('click', () => usarSugestao(tipo, b.dataset.confK)));
+  el.querySelectorAll('[data-corr-k]').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.corrK; const inp = $(`#f-${CSS.escape(k)}`);
+    if (inp) inp.focus(); else { const def = campoDef(tipo, k); if (def) send({ type: 'highlight', locator: def }); }
+  }));
+  $('#conf-todas')?.addEventListener('click', async () => { for (const { k } of lista) await usarSugestao(tipo, k); });
+}
+/** Os atestados já enviados por este computador (histórico, sem CID) e os do lote em andamento (CID só na memória). */
+function atestadosAnteriores() {
+  const out = []; const limiar = E.limiarPortal(S.rules);
+  for (const h of S.historico || []) if (h.status === 'enviado' && h.empresa === S.ctx.empresa && h.tipo === 'afastamento' && h.valores?.empregado && h.valores.dataAfastamento && +h.valores.dias > 0) out.push({ empregado: h.valores.empregado, data: h.valores.dataAfastamento, dias: h.valores.dias, origem: 'histórico' });
+  for (const p of S.lote?.pedidos || []) for (const it of p.itens) {
+    const c = it.analise?.campos || {}; const nome = c.empregado?.valor || it.analise?.paciente;
+    if (it.documento === 'atestado' && nome && c.dataAfastamento?.conf >= limiar && c.dias?.conf >= limiar) out.push({ empregado: nome, data: c.dataAfastamento.valor, dias: c.dias.valor, origem: 'lote', cid: c.cid?.valor || null });
+  }
+  return out;
+}
+/** A pergunta "É a mesma doença?" quando a soma passa de 15 dias (regras: config.regra60dias; decisão do escritório). */
+function pergunta60(tipo) {
+  const R = E.regra60(S.rules); if (R.ativo === false || R.perguntar === false) return null;
+  const W = w(tipo); const v = valoresParaChecar(tipo);
+  if (!v.empregado || !v.dataAfastamento || !(+v.dias > 0)) return null;
+  const lista = atestadosAnteriores();
+  const r = E.somaAtestados({ empregado: v.empregado, data: v.dataAfastamento, dias: v.dias }, lista, S.rules);
+  if (!r?.passa) return null;
+  const k = `r60|${v.empregado}|${v.dataAfastamento}|${r.soma}`;
+  if (W.regra60?.chave === k) return null;
+  const conta = `${r.anteriores.map(a => `${a.dias} ${a.dias === 1 ? 'dia' : 'dias'} em ${a.data.slice(0, 5)}`).join(' + ')} + ${+v.dias} ${+v.dias === 1 ? 'dia' : 'dias'} agora = ${r.soma} dias`;
+  // dentro do lote, o CID lido sugere a resposta (só em memória: nunca é guardado nem mostrado, só o "parecem da mesma doença")
+  const cidAtual = W.valores.cid?.valor;
+  const doLote = r.anteriores.map(a => lista.find(x => x.origem === 'lote' && x.data === a.data && E.mesmaPessoa({ nome: x.empregado }, { nome: v.empregado }) === true));
+  const mesma = cidAtual && doLote.length && doLote.every(x => x?.cid && E.mesmaDoencaPeloCid(x.cid, cidAtual) === true);
+  const pergunta = (R.pergunta || '{funcionario} tem outro atestado há pouco tempo: {conta}. Juntos passam de {limite} dias. É a mesma doença?').replace('{funcionario}', nomeCurto(v.empregado)).replace('{conta}', conta).replace('{limite}', R.limiteDias);
+  const html = `<div class="note warn" id="r60">${icon('alert')}<div><b>${esc(pergunta)}</b>${mesma ? '<br><small>Pelos documentos do lote, parecem ser da mesma doença.</small>' : ''}<br><small class="muted">Pela regra dos 60 dias (Decreto 3.048/99, art. 75), afastamentos pela mesma doença se somam e o INSS paga a partir do 16º dia.</small>
+    <div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm${mesma ? ' btn-primary' : ''}" id="r60-sim">Sim, é a mesma doença</button><button type="button" class="btn btn-sm btn-ghost" id="r60-nao">Não é</button></div></div></div>`;
+  return { k, html, r };
 }
 /** Valores sugeridos por outra tela (dados do aviso, 1ª data de férias): entram para conferir, não como digitados pelo cliente —
  *  um documento arrastado depois ainda pode corrigi-los. Não passam por cima do que o cliente digitou. */

@@ -98,7 +98,8 @@ async function ocrImage(source, onProgress) {
   const w = await getOcr();
   const { data } = await w.recognize(source, { rotateAuto: true });
   // palavras com a posição e a confiança de cada uma: só na memória (recorte da foto nos campos com dúvida)
-  const palavras = (data.words || []).filter(x => x?.text && x.bbox).map(x => ({ t: x.text, conf: Math.round(x.confidence || 0), bbox: { x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1 } }));
+  // com a imagem girada pelo próprio OCR (rotateAuto) as coordenadas são de outra imagem: sem posição, sem recorte
+  const palavras = Math.abs(data.rotateRadians || 0) > 0.02 ? [] : (data.words || []).filter(x => x?.text && x.bbox).map(x => ({ t: x.text, conf: Math.round(x.confidence || 0), bbox: { x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1 } }));
   return { texto: data.text || '', conf: data.confidence || 0, palavras };
 }
 
