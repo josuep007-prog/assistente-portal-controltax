@@ -229,17 +229,17 @@
         "avisoFeriasAssinado": "avisoFerias"
       },
       "rotulos": {
-        "nome": ["nome", "nome civil", "nome e sobrenome", "nome do eleitor", "nome do titular"],
-        "nomeSocial": ["nome social"],
-        "filiacao": ["filiação", "filiação mãe pai", "filiação pai mãe"],
+        "nome": ["nome", "nome civil", "nome e sobrenome", "nome do eleitor", "nome do titular", "nome / name"],
+        "nomeSocial": ["nome social", "nome social / social name"],
+        "filiacao": ["filiação", "filiação mãe pai", "filiação pai mãe", "filiação / filiation"],
         "mae": ["mãe", "nome da mãe"],
         "pai": ["pai", "nome do pai"],
-        "nascimento": ["data de nascimento", "data nascimento", "nascimento", "data de nasc", "nasc"],
-        "municipioNascimento": ["naturalidade", "local de nascimento", "local nascimento"],
+        "nascimento": ["data de nascimento", "data nascimento", "nascimento", "data de nasc", "nasc", "data de nascimento / date of birth"],
+        "municipioNascimento": ["naturalidade", "local de nascimento", "local nascimento", "naturalidade / place of birth"],
         "rg": ["registro geral", "rg", "nº do rg", "número do rg", "doc identidade"],
         "dataRg": ["data de expedição", "expedição", "data expedição"],
-        "orgaoRg": ["órgão expedidor", "órgão emissor", "org emissor"],
-        "cpf": ["cpf", "nº do cpf", "número do cpf", "número de inscrição no cpf"],
+        "orgaoRg": ["órgão expedidor", "órgão emissor", "org emissor", "órgão expedidor / issuing authority"],
+        "cpf": ["cpf", "nº do cpf", "número do cpf", "número de inscrição no cpf", "registro geral - cpf / personal number", "cpf / personal number"],
         "cnh": ["nº registro", "n registro", "registro", "nº do registro"],
         "cnhValidade": ["validade"],
         "cnhCategoria": ["cat. hab.", "cat hab", "categoria"],
@@ -249,15 +249,15 @@
         "zona": ["zona"],
         "secao": ["seção"],
         "pis": ["pis/pasep", "pis", "nis", "nit"],
-        "sexo": ["sexo"],
+        "sexo": ["sexo", "sexo / sex"],
         "_data": ["1ª habilitação", "primeira habilitação", "data emissão", "data de emissão", "data da emissão", "data de domicílio eleitoral", "retorno ao trabalho", "data de retorno"],
-        "_texto": ["permissão", "acc", "observações", "nacionalidade", "município/uf", "município", "uf", "doc. origem", "doc origem", "local", "assinatura do titular", "assinatura do portador", "assinatura"],
+        "_texto": ["permissão", "acc", "observações", "nacionalidade", "município/uf", "município", "uf", "doc. origem", "doc origem", "local", "assinatura do titular", "assinatura do portador", "assinatura", "nacionalidade / nationality"],
         "_numero": ["nº renach", "renach", "espelho", "código de segurança"],
         "inicioGozo+fimGozo": ["período de gozo", "período de férias"],
         "_data+_data": ["período aquisitivo"],
         "diasGozo": ["dias de férias", "dias de gozo"]
       },
-      "tipos": { "nascimento": "data", "dataRg": "data", "cnhValidade": "data", "rg": "numero", "cnh": "numero", "cpf": "cpf", "titulo": "numero", "zona": "numero", "secao": "numero", "pis": "numero", "orgaoRg": "sigla", "ufRg": "uf", "ufNascimento": "uf", "cnhCategoria": "categoria", "nome": "nome", "nomeSocial": "nome", "mae": "nome", "pai": "nome", "municipioNascimento": "texto", "sexo": "texto",
+      "tipos": { "nascimento": "data", "dataRg": "data", "cnhValidade": "data", "rg": "numero", "cnh": "numero", "cpf": "cpf", "titulo": "numero", "zona": "numero", "secao": "numero", "pis": "numero", "orgaoRg": "sigla", "ufRg": "uf", "ufNascimento": "uf", "cnhCategoria": "categoria", "nome": "nome", "nomeSocial": "nome", "mae": "nome", "pai": "nome", "municipioNascimento": "texto", "sexo": "sexo",
         "inicioGozo": "data",
         "fimGozo": "data",
         "diasGozo": "numero"
@@ -269,8 +269,9 @@
         "titulo": "^\\d{4}\\s?\\d{4}\\s?\\d{4}$",
         "zona": "^\\d{1,4}$",
         "secao": "^\\d{1,4}$",
-        "orgaoRg": "^(?:SSP|SESP|SDS|PC|IFP|DETRAN|DIC|IGP|SJS|SEJUSP|PM|MAER|MEX|MMA|POF|DPF|SPTC|IIRGD|CGPI|SSPDS|ITEP|IML|SEDS|SJTC|CNH|OAB|CRM|CREA|[A-Z]{3,6})$",
-        "diasGozo": "^\\d{1,2}$"
+        "orgaoRg": "^(?:SSP|SESP|SDS|PC|IFP|DETRAN|DIC|IGP|SJS|SEJUSP|PM|MAER|MEX|MMA|POF|DPF|SPTC|IIRGD|CGPI|SSPDS|ITEP|IML|SEDS|SJTC|CNH|OAB|CRM|CREA|[A-Z]{3,6})(?:\\/[A-Z]{2})?$",
+        "diasGozo": "^\\d{1,2}$",
+        "sexo": "^(?:F|M|FEM\\.?|MASC\\.?|FEMININO|MASCULINO)$"
       }
     },
     "camposDaEmpresa": {

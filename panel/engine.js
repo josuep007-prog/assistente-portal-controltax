@@ -2068,7 +2068,7 @@ export function lerDocumentoPessoal(text, cfg = {}, docId = null) {
       case 'cpf': return /^\d{3}[.,]?\d{3}[.,]?\d{3}-?\d{2}$/.test(x.replace(/\s+/g, ''));   // OCR: "000 .123.407-23"
       case 'numero': return /\d/.test(x) && /^[\d.\-\/ Xx]+$/.test(x);
       case 'uf': return x.length === 2 && UF_SET.has(x.toUpperCase());
-      case 'sigla': return /^[A-Za-z]{2,8}$/.test(x);
+      case 'sigla': return /^[A-Za-z]{2,8}(?:\/[A-Za-z]{2})?$/.test(x);   // "SSP/ES": órgão e UF juntos (o cadastro separa)
       case 'categoria': return /^(?:ACC|[A-E]{1,2})$/i.test(x);
       case 'nome': return !/\d/.test(x) && /\p{L}{2}/u.test(x);
       default: return /\p{L}/u.test(x);
