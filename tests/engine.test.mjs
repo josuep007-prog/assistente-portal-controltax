@@ -1203,4 +1203,12 @@ t('leitor (12): aviso de férias em tabela — o gozo não é o período aquisit
   assert.equal(rg.mae.valor, 'MARTA DE TESTE');
 });
 
+t('leitor: CIN com rótulos bilíngues, órgão "SSP/ES" e sexo ao lado da nacionalidade', () => {
+  const cin = 'CARTEIRA DE IDENTIDADE NACIONAL\nNOME / NAME\nFULANA DE TESTE\nSEXO / SEX NACIONALIDADE / NATIONALITY DATA DE NASCIMENTO\nF BRA 05/12/1995\nREGISTRO GERAL - CPF / PERSONAL NUMBER\n529.982.247-25\nNATURALIDADE / PLACE OF BIRTH\nSERRA/ES\nÓRGÃO EXPEDIDOR DATA DE EMISSÃO VALIDADE\nSSP/ES 10/05/2025 10/05/2035';
+  const c = L5(cin, 'cadastroEmpregado').campos;
+  assert.equal(c.nome.valor, 'FULANA DE TESTE'); assert.equal(c.sexo.valor, 'Feminino'); assert.equal(c.nascimento.valor, '05/12/1995');
+  assert.equal(c.cpf.valor, '529.982.247-25'); assert.equal(c.municipioNascimento.valor, 'SERRA'); assert.equal(c.ufNascimento.valor, 'ES');
+  assert.equal(c.orgaoRg.valor, 'SSP'); assert.equal(c.ufRg.valor, 'ES');
+});
+
 console.log(`\n${n} testes ok`);

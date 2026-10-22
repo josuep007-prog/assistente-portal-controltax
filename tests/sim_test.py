@@ -648,6 +648,60 @@ async def teste_lote4(b):
     await ctx.close()
 
 
+async def teste_sugestao(b):
+    """Lote 5 (P1): valor lido com dúvida não vai ao portal sozinho; aparece como sugestão de um clique ("Usar")."""
+    import datetime
+    print('\n[leitor] sugestão de um clique: o que foi lido com dúvida não vai ao portal sozinho')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def _auto_empresa():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa_emp = asyncio.create_task(_auto_empresa())
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    # atestado (texto inventado) em que a data só aparece num "Data:" genérico: a data fica como sugestão
+    dia = (datetime.date.today() - datetime.timedelta(days=3)).strftime('%d/%m/%Y')
+    txt = f'ATESTADO MÉDICO\nAtesto que JOAO DA SILVA foi atendido em consulta e deverá permanecer afastado de suas atividades por 2 (dois) dias.\nData: {dia}\nDra. Fictícia de Teste\nCRM-ES 1234'
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("""(t) => { const f = new File([t], 'atestado-teste.txt', { type: 'text/plain' }); window.__ctSim.hooks().sendFiles([f]); }""", txt)
+    await pg.wait_for_timeout(1500)
+    if await pn.locator('#sug-go').count(): await pn.click('#sug-go')
+    for _ in range(80):
+        v = await portal()
+        if v.get('selectedEmployee') == 'JOAO DA SILVA': break
+        await pg.wait_for_timeout(500)
+    await pg.wait_for_timeout(2500)
+    v = await portal()
+    check(v.get('selectedEmployee') == 'JOAO DA SILVA', f"funcionário com o nome inteiro vai ao portal ({v.get('selectedEmployee')})")
+    check(not v.get('leaveDate'), f"data lida com dúvida NÃO vai ao portal sozinha ({v.get('leaveDate')})")
+    sug = pn.locator('[data-campo="dataAfastamento"] [data-usar-k="dataAfastamento"]')
+    check(await sug.count() == 1 and dia in await pn.locator('[data-campo="dataAfastamento"] .sug-doc').inner_text(), 'formulário mostra a sugestão com o botão Usar')
+    check(await pn.locator('#f-dataAfastamento').input_value() == '', 'o campo fica vazio até o cliente usar')
+    if await sug.count(): await sug.click()
+    async def data_ok():
+        return (await portal()).get('leaveDate') == dia
+    ok = await espera(data_ok, 15)
+    check(ok, 'Usar: a data vai ao portal')
+    check(await pn.locator('#f-dataAfastamento').input_value() == dia, 'Usar: o campo da plataforma mostra a data')
+    tarefa_emp.cancel()
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
 async def teste_cadastro(b):
     """Lote 3: cadastro sem os dados da pessoa anterior, sugestões da empresa e ficha colada no campo de várias linhas."""
     print('\n[cadastro] repetir sem dados pessoais, sugestões e ficha colada')
@@ -711,6 +765,12 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_lote4(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'sug':   # SIM_SO=sug roda só a sugestão de um clique do leitor (lote 5)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_sugestao(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'mec':   # SIM_SO=mec roda só a mecânica do preenchimento
@@ -1084,6 +1144,7 @@ async def main():
         await teste_mecanica(b)
         await teste_cadastro(b)
         await teste_lote4(b)
+        await teste_sugestao(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 
