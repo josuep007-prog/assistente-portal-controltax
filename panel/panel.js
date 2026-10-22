@@ -63,7 +63,7 @@ function requestFill(msg, transfer = [], aoAvancar = null, inatividade = 25000) 
   });
 }
 // agir no portal (abrir, preencher, enviar) com uma janela do portal aberta: a plataforma avisa por cima (S.antesDeAgir)
-const AGIR_NO_PORTAL = new Set(['navigate', 'fill', 'requestSubmit']);
+const AGIR_NO_PORTAL = new Set(['navigate', 'fill', 'requestSubmit', 'preencherGrade', 'prepararResposta']);
 const send = (msg, transfer) => { if (AGIR_NO_PORTAL.has(msg?.type)) S.antesDeAgir?.(msg); S.port?.postMessage(msg, transfer || []); };
 const packFiles = async (files) => Promise.all(files.map(async f => ({ name: f.name, type: f.type, lastModified: f.lastModified, buf: await f.arrayBuffer() })));
 const toast = (text) => send({ type: 'toast', text });
@@ -453,6 +453,7 @@ async function entenderTexto(texto, { origem = 'inicio', mesmoAssim = false } = 
     await loadEmpregados(tipoAberto);
     const r = E.parseFreeText(texto, S.rules, { employees: w(tipoAberto).empregados, tipoAtual: tipoAberto });
     anotarCandidatos(tipoAberto, texto, r.campos);
+    if (tipoAberto === 'rubricas' && r.linhas?.length) { w(tipoAberto).linhasRubricas = r.linhas; w(tipoAberto).grade = null; }
     $('#free-sug') && ($('#free-sug').innerHTML = '');
     aplicarCampos(tipoAberto, r.campos, 'sua descrição');
     if (r.dicas?.length) toast(r.dicas.join(' '));
@@ -996,6 +997,8 @@ async function abrirDoTexto(el, s, destino) {
   anotarCandidatos(destino, s.texto, campos);
   // cálculo de um aviso que já está no portal: os dados do aviso entram como sugestão (o texto vale mais)
   if (s.avisoNoPortal && PAR_AVISO[destino] === s.avisoNoPortal.tipo) { const vv = E.valoresDoAviso(s.avisoNoPortal, S.rules); aplicarSugestoes(destino, vv.valores, vv.fonte); w(destino).avisoUsado = true; }
+  // variáveis da folha entendidas no texto: as linhas também podem ir para a grade do portal
+  if (destino === 'rubricas' && (s.linhas || r.linhas)?.length) { w(destino).linhasRubricas = s.linhas || r.linhas; w(destino).grade = null; }
   aplicarCampos(destino, campos, 'sua descrição');
 }
 
@@ -1031,8 +1034,11 @@ function applyAnalysis(tipo, item, opts = {}) {
     if (m) W.valores.empregado.valor = m.option; else W.valores.empregado.conf = 0.3;
   }
   ajustarDepartamento(tipo);
-  // tabela de rubricas
-  if (item.tabela && tipo === 'rubricas') W.valores.tabelaRubricas = { valor: tabelaRubricasTexto(item.tabela), conf: 0.9, fonte: item.nome };
+  // tabela de rubricas: o texto da descrição e as linhas para a grade do portal (todas as planilhas do pedido)
+  if (item.tabela && tipo === 'rubricas') {
+    W.valores.tabelaRubricas = { valor: tabelaRubricasTexto(item.tabela), conf: 0.9, fonte: item.nome };
+    W.linhasRubricas = W.arquivos.filter(a => a.tabela && !a.removido).flatMap(a => E.linhasDaPlanilha(a.tabela, S.rules)); W.grade = null;
+  }
   // sugere outro tipo
   gerarTextos(tipo);
   if (S.view === 'preencher') render();
@@ -1040,15 +1046,7 @@ function applyAnalysis(tipo, item, opts = {}) {
 }
 
 function tabelaRubricasTexto(rows) {
-  if (!rows?.length) return '';
-  const head = rows[0].map(h => E.norm(h));
-  const P = S.rules.tipos.rubricas.planilha || {};
-  const find = (names) => head.findIndex(h => names.some(n => h.includes(E.norm(n))));
-  let iE = find(P.colunasEmpregado || []), iR = find(P.colunasRubrica || []), iV = find(P.colunasValor || []);
-  const hasHeader = iE >= 0 || iR >= 0 || iV >= 0;
-  if (!hasHeader) { iE = 0; iR = 1; iV = 2; }
-  const body = hasHeader ? rows.slice(1) : rows;
-  return body.filter(r => r.some(c => String(c).trim())).map(r => `• ${r[iE] ?? ''} — ${r[iR] ?? ''}: ${r[iV] ?? ''}`).join('\n');
+  return E.linhasDaPlanilha(rows, S.rules).map(l => `• ${l.empregado} — ${l.rubrica}: ${l.valor}`).join('\n');
 }
 
 /* =================== Valores combinados =================== */
@@ -1214,7 +1212,7 @@ function renderPreencher() {
     </div>`;
   // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
   viewEl.innerHTML = plat ? `
-    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div>
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div><div id="grade-rub"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
         <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
@@ -1228,6 +1226,7 @@ function renderPreencher() {
     <div id="rascunho"></div>
     <div id="sug-cad"></div>
     <div id="dica-pedido"></div>
+    <div id="grade-rub"></div>
     ${drop}
     ${livre}
     ${arquivos}
@@ -1256,7 +1255,45 @@ function renderPreencher() {
   $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
-  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo);
+  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo); renderGradeRubricas(tipo);
+}
+/* Rubricas (lote 6): as linhas da planilha, do texto ou do mês passado vão para a grade do portal quando o cliente pede
+   ("Lançar na grade"): o nome da rubrica casa com o evento da empresa pelos apelidos das regras; o que não casar fica para ele.
+   A grade real ainda não foi mapeada (a calibrar); o Desfazer volta as células e o envio é sempre pelo botão do portal. */
+function renderGradeRubricas(tipo) {
+  const el = $('#grade-rub'); if (!el) return;
+  const W = w(tipo); const l = W.linhasRubricas || [];
+  if (tipo !== 'rubricas' || !l.length || tipoDef(tipo)?.grade?.ativo === false) { el.innerHTML = ''; return; }
+  const g = W.grade;
+  const pessoas = new Set(l.map(x => E.norm(x.empregado)).filter(Boolean)).size;
+  const res = g?.lendo ? `<p class="muted" style="margin:6px 0 0">Lançando na grade do portal…</p>`
+    : g?.erro ? `<p class="muted" style="margin:6px 0 0">${esc(g.erro)}</p>`
+    : g?.resultado ? `<ul class="tips" style="margin-top:6px"><li>${g.resultado.n} valor(es) lançado(s) na grade. Confira no portal antes de enviar.</li>
+        ${g.semEvento?.length ? `<li>Sem evento da empresa para: ${esc(g.semEvento.join(', '))} — lance na grade ou fale com o escritório.</li>` : ''}
+        ${g.semEmpregado?.length ? `<li>Não achei na grade: ${esc(g.semEmpregado.join(', '))}.</li>` : ''}
+        ${g.resultado.faltaram?.length ? `<li>${g.resultado.faltaram.length} célula(s) não aceitaram o valor.</li>` : ''}</ul>` : '';
+  el.innerHTML = `<div class="note grade-rub">${icon('sheet')}<div style="flex:1;min-width:0"><b>Lançar na grade do portal</b> <small class="muted">— ${l.length} valor(es)${pessoas ? ` de ${pessoas} funcionário(s)` : ''}; os nomes das rubricas são casados com os eventos da empresa.</small>${res}
+    <div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" id="grade-lancar"${g?.lendo ? ' disabled' : ''}>${g?.resultado ? 'Lançar de novo' : 'Lançar na grade'}</button></div></div></div>`;
+  $('#grade-lancar').addEventListener('click', () => lancarNaGrade(tipo));
+}
+async function lancarNaGrade(tipo) {
+  const W = w(tipo);
+  if (!W.linhasRubricas?.length || S.ctx.route?.mode !== 'form' || S.ctx.tipo !== tipo) return;
+  W.grade = { lendo: true }; renderGradeRubricas(tipo);
+  for (let k = 0; k < 150 && S.preenchendo; k++) await esperar(200);   // um preenchimento em andamento termina antes
+  await enviarPendenteAgora(tipo);   // a competência digitada aqui vai antes (o portal pede antes de adicionar os funcionários)
+  let g = null, r = null, plano = null;
+  S.preenchendo = true;
+  try {
+    g = await request({ type: 'lerGrade', adicionar: true }, 20000);
+    if (g?.ok) {
+      plano = E.montarGrade(W.linhasRubricas, g.eventos, g.empregados, S.rules);
+      r = plano.celulas.length ? await request({ type: 'preencherGrade', celulas: plano.celulas }, 30000) : { ok: true, n: 0, faltaram: [] };
+    }
+  } finally { S.preenchendo = false; }
+  W.grade = g?.ok ? { ...plano, resultado: r || { n: 0, faltaram: plano.celulas } }
+    : { erro: `Não consegui lançar na grade: ${g?.motivo || 'o portal não respondeu'}. Os valores continuam na descrição para o escritório.` };
+  renderGradeRubricas(tipo);
 }
 /* Cadastro: "Como na última admissão", padrões da empresa e experiência 45 + 45 — sugestões que o cliente usa ou não.
    Só campos da empresa (config.camposDaEmpresa); só aparece o que ainda está vazio aqui e no portal. */
@@ -1974,6 +2011,7 @@ function aoDesfazer(m) {
   }
   W.portalVisto = null;
   for (const n of m.anexos || []) { const a = W.arquivos.find(x => E.norm(x.nome) === E.norm(n)); if (a) a.anexado = false; }
+  if (m.grade) W.grade = null;   // a grade de rubricas voltou: o botão "Lançar na grade" volta também
   W.pausarAuto = true;
   W.resultados = null;
   if (S.view === 'preencher') render();

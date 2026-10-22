@@ -17,6 +17,9 @@ export function montarPlataforma(A) {
     agenda: { ano: hoje0.getFullYear(), mes: hoje0.getMonth(), filtro: '' }, docAba: 'solicitacoes', enviado: null
   };
   chrome.storage.local.get('lembretes').then(({ lembretes }) => { S.plat.lembretes = Array.isArray(lembretes) ? lembretes : []; }).catch(() => {});
+  // "Nada a lançar este mês" (variáveis da folha): 'empresa|MM/AAAA', só neste computador
+  S.plat.folhaNada = [];
+  chrome.storage.local.get('folhaNada').then(({ folhaNada }) => { S.plat.folhaNada = Array.isArray(folhaNada) ? folhaNada : []; }).catch(() => {});
 
   const MODULOS = [
     ['inicio', 'Hoje', 'home'], ['pendencias', 'Solicitações', 'list'], ['preencher', 'Novo pedido', 'fill'],
@@ -517,6 +520,42 @@ export function montarPlataforma(A) {
     const { empregado, ...resto } = vals;
     await P.novoPedido(i.tipo, { empregado, sugeridos: resto, fonte: i.numero ? `da solicitação nº ${i.numero}` : 'da solicitação no portal', empresa: i.empresa || undefined });
   }
+  /* Variáveis da folha do mês (regras: config.variaveisFolha): "Preparar" abre o Lançamento de Rubricas com o tipo e a
+     competência como sugestão (com a planilha, se foi arrastada no cartão); "Usar o lançamento do mês passado" leva o tipo e as
+     linhas do último lançamento (deste computador ou, lido na hora, do portal), sem a competência antiga; "Nada a lançar este mês"
+     só esconde o aviso daquele mês (guardado neste computador). Quem envia é sempre o cliente. */
+  async function prepararFolha(f, arquivos = null) {
+    await P.novoPedido('rubricas', { sugeridos: { tipoLancamento: f.tipoLancamento, competencia: f.competencia }, fonte: 'sugestão: competência do mês', semResumo: true });
+    if (arquivos?.length && S.ctx.route?.mode === 'form' && S.ctx.tipo === 'rubricas') A.handleFiles(arquivos, 'arrastar');
+  }
+  async function usarMesPassado(f) {
+    const emp = S.ctx.empresa, t = S.rules.tipos.rubricas;
+    const h = (S.historico || []).find(x => x.status === 'enviado' && x.tipo === 'rubricas' && x.empresa === emp);
+    let vals = h ? E.valoresParaRepetir('rubricas', h.valores, S.rules) : {}, linhas = null;
+    let fonte = h ? `do lançamento de ${new Date(h.quando).toLocaleDateString('pt-BR')}` : '';
+    if (!h) {
+      const ult = E.filtrarPorEmpresa(S.plat.sol?.itens || [], '', emp).filter(i => i.tipo === 'rubricas' && !['cancelada', 'prescrita'].includes(i.estado))
+        .sort((a, b) => (b.criado?.getTime() || 0) - (a.criado?.getTime() || 0))[0];
+      if (ult?.id && t) {
+        const r = await request({ type: 'detalheCompleto', lista: t.apiDetalhe || t.apiLista, solicitacao: ult.id }, 20000);   // só na memória
+        if (r?.dados) { vals = E.valoresDoDetalhe('rubricas', r.dados, S.rules); linhas = E.linhasDoLancamento(r.dados); }
+        fonte = ult.numero ? `do lançamento nº ${ult.numero}` : 'do último lançamento no portal';
+      }
+    }
+    const { tabelaRubricas, competencia: _velha, ...resto } = vals;
+    if (!linhas?.length && tabelaRubricas) linhas = E.linhasDoTexto(tabelaRubricas);
+    const texto = tabelaRubricas || (linhas?.length ? E.textoLinhasRubricas(linhas) : '');
+    if (!Object.keys(resto).length && !texto) { toast('Não achei um lançamento anterior desta empresa. Use “Preparar” e arraste a planilha.'); return; }
+    await P.novoPedido('rubricas', { sugeridos: { tipoLancamento: f.tipoLancamento, ...resto, competencia: f.competencia }, fonte, semResumo: true,
+      extras: texto ? { tabelaRubricas: { valor: texto, conf: 0.6, fonte } } : null, linhas });
+    toast('Usei o lançamento do mês passado, com a competência deste mês. Confira os valores antes de enviar.');
+  }
+  async function nadaALancar(f) {
+    S.plat.folhaNada = [...new Set([...(S.plat.folhaNada || []), `${S.ctx.empresa}|${f.competencia}`])].slice(-60);
+    try { await chrome.storage.local.set({ folhaNada: S.plat.folhaNada }); } catch { /* sem armazenamento: vale nesta visita */ }
+    toast(`Combinado: sem variáveis da folha de ${f.competencia}. O aviso volta no mês que vem.`);
+    if (S.view === 'inicio') renderPainel();
+  }
   /** "Programar" férias a vencer: o aviso já com a 1ª data de início que vale (30 dias de antecedência, fora de sexta e véspera de feriado). */
   function programarFerias(nome) {
     const ini = E.primeiroInicioFerias(E.addDays(E.today(), +S.rules.config?.avisoFeriasDias || 30), S.rules);
@@ -603,6 +642,9 @@ export function montarPlataforma(A) {
     const casos = lido ? E.casosCliente(base, R) : [];
     const legais = lido ? E.prazosLegaisCliente(base, hoje, R) : [];
     const equipe = E.equipeVencendo(empregadosAtivos(), base, hoje, R);
+    // variáveis da folha do mês da empresa aberta no portal (some quando o portal já tem o lançamento ou o cliente dispensou)
+    const emp = S.ctx.empresa || '';
+    const folha = lido && R.tipos?.rubricas ? E.variaveisDoMes(hoje, R, E.filtrarPorEmpresa(sol.itens, '', emp), (S.plat.folhaNada || []).filter(k => k.startsWith(`${emp}|`)).map(k => k.slice(emp.length + 1))) : null;
     const acoesEq = [];
     const quandoLido = sol?.quando ? new Date(sol.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -675,6 +717,7 @@ export function montarPlataforma(A) {
       for (const x of avisos.filter(x => x.falta != null && x.falta <= 10)) passo('', 'var(--viz-crit)', `Pedir o cálculo ${x.tipo === 'ferias' ? 'de férias' : 'da rescisão'} · pagamento até ${fmt(x.pagamento)}`, [A.nomeCurto(x.item.empregado), x.enviarAte ? `envie até ${fmt(x.enviarAte)}` : ''].filter(Boolean).join(' · '), () => pedirCalculoDoAviso(x.item));
       for (const p of prio.filter(p => p.motivo === 'respondida').slice(0, 4)) { const i = p.item; passo('', cor(MOT.respondida.cor), E.acaoCliente(i, 'respondida'), [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
       for (const x of legais.filter(x => x.falta <= 5)) passo('', 'var(--viz-crit)', `${x.titulo} até ${fmt(x.alvo)}`, [x.item.empregado, x.ref].filter(Boolean).join(' · '), () => abrirDetalhe(x.item, { aba: 'observar' }));
+      if (folha && folha.falta <= 3) passo('', 'var(--hj-today)', `Enviar as variáveis da folha de ${folha.competencia} até ${fmt(folha.limite)}`, 'Preparar o Lançamento de Rubricas', () => prepararFolha(folha));
       for (const l of lems) passo(' n-lem', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)));
       for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${e.pedir ? 'Fazer agora · ' : ''}${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, e.pedir ? () => fazerAgora(e.pedir) : () => abrirDia(E.iso(e.d))); }
       passosHtml.acoes = acoes;
@@ -703,7 +746,16 @@ export function montarPlataforma(A) {
       const leg = legais.map(x => linha(x.item.empregado || x.item.assunto || nomeTipo(x.item.tipo), `${x.titulo} até ${fmt(x.alvo)} · ${x.ref}${x.retroativa ? ' · pedido depois do início' : ''}`, pillQ(x.alvo), null, () => abrirDetalhe(x.item, { aba: 'observar' })));
       // o que foi preenchido e não enviado nos últimos 7 dias e os rascunhos da empresa
       const term = paraTerminar().map(x => linha(x.titulo, x.sub, `<span class="pill pill-today">${x.quando}</span>`, { rotulo: 'Continuar', cls: 'btn-primary', fn: x.fn }));
+      // variáveis da folha: Preparar, Usar o lançamento do mês passado, Nada a lançar este mês (e soltar a planilha no cartão)
+      const folhaCard = () => {
+        if (!folha) return '';
+        const n = (fn) => { acoesEq.push({ acao: fn }); return acoesEq.length - 1; };
+        return `<section class="pn-card hj-folha" id="eq-folha"><div class="pn-card-head"><h3>Variáveis da folha de ${esc(folha.competencia)}</h3><small>Ainda não enviadas · envie até ${fmt(folha.limite)}</small></div>
+          <div class="pn-card-body eq-body"><div class="pn-li eq-li folha-drop"><div class="main"><b>Horas extras, faltas, comissões… do mês</b><small>Arraste a planilha aqui ou prepare o lançamento (${esc(folha.tipoLancamento)}, competência ${esc(folha.competencia)}, para você conferir).</small></div><div class="eq-acoes">${pillQ(folha.limite)}</div></div>
+          <div class="eq-acoes folha-acoes"><button type="button" class="btn btn-sm btn-primary" data-eq="${n(() => prepararFolha(folha))}" data-folha="preparar">Preparar</button><button type="button" class="btn btn-sm" data-eq="${n(() => usarMesPassado(folha))}" data-folha="passado">Usar o lançamento do mês passado</button><button type="button" class="btn btn-sm btn-ghost" data-eq="${n(() => nadaALancar(folha))}" data-folha="nada">Nada a lançar este mês</button></div></div></section>`;
+      };
       return `<div class="hj-equipe">
+        ${folhaCard()}
         ${term.length ? card('eq-terminar', 'Para terminar', 'Pedidos começados e não enviados (7 dias, neste computador).', term, '') : ''}
         ${card('eq-legais', 'Prazos legais', 'Pagamento dos cálculos em aberto e eSocial das admissões.', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…')}
         ${card('eq-avisos', 'Aviso sem cálculo', 'Férias e rescisões perto do pagamento com só o aviso no portal.', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
@@ -734,6 +786,13 @@ export function montarPlataforma(A) {
     // a rosca leva às Solicitações já filtradas por aquela situação (como no Control Onvio)
     viewEl.querySelectorAll('.an-f[data-motivo]').forEach(b => b.addEventListener('click', () => { Object.assign(S.plat.filtroSol, { motivo: b.dataset.motivo, tipo: '', q: '' }); A.setView('pendencias'); }));
     $('#hj-lembrete').addEventListener('click', () => editarLembrete(null, E.iso(E.today())));
+    // a planilha solta no cartão da folha abre o lançamento já com ela
+    const fd = $('#eq-folha');
+    if (fd && folha) {
+      fd.addEventListener('dragover', (e) => { e.preventDefault(); fd.classList.add('over'); });
+      fd.addEventListener('dragleave', () => fd.classList.remove('over'));
+      fd.addEventListener('drop', (e) => { e.preventDefault(); fd.classList.remove('over'); const fs = [...(e.dataTransfer?.files || [])]; if (fs.length) prepararFolha(folha, fs); });
+    }
     $('#hj-tentar')?.addEventListener('click', () => { S.plat.sol = null; renderPainel(); P.carregarSolicitacoes(true); });
     ligarSeletorEmpresa(viewEl);
     ligarDicas(viewEl);
@@ -1058,13 +1117,16 @@ export function montarPlataforma(A) {
    *  valores: o que o cliente escolheu na outra tela (vale como digitado por ele); sugeridos: dados do aviso, 1ª data que vale…
    *  entram para conferir ("do aviso nº X"), e um documento arrastado depois ainda pode corrigi-los; observacoes: vão para a
    *  descrição (ex.: a linha da simulação); empresa: a do pedido (vários CNPJs no mesmo acesso). Terminando sem falta nada, abre o resumo do "Conferir e enviar". */
-  P.novoPedido = async (tipo, { empregado, valores = {}, sugeridos = {}, fonte = 'sugestão do Assistente', observacoes = '', empresa } = {}) => {
+  P.novoPedido = async (tipo, { empregado, valores = {}, sugeridos = {}, fonte = 'sugestão do Assistente', observacoes = '', empresa, extras = null, linhas = null, semResumo = false } = {}) => {
     A.comecarDoZeroSeAbandonado(tipo);
     const W = A.w(tipo);
     const dados = { ...(empregado ? { empregado } : {}), ...Object.fromEntries(Object.entries(valores).filter(([k, v]) => v != null && v !== '' && S.rules.tipos[tipo]?.campos?.[k])) };
     for (const [k, v] of Object.entries(dados)) { W.valores[k] = { valor: String(v), conf: 1, fonte: 'você' }; W.editados.add(k); W.fonteVerdade[k] = 'plataforma'; }
     A.aplicarSugestoes(tipo, Object.fromEntries(Object.entries(sugeridos || {}).filter(([k]) => !(k in dados))), fonte);
     if (observacoes) W.valores.observacoes = { valor: observacoes, conf: 1, fonte: 'você' };
+    // o que não é campo do portal mas entra no texto (ex.: as linhas das variáveis da folha) e as linhas para a grade
+    for (const [k, v] of Object.entries(extras || {})) if (v?.valor) W.valores[k] = v;
+    if (linhas?.length) W.linhasRubricas = linhas;
     W.rascunhoVisto = true;
     A.gerarTextos(tipo);
     // com funcionário escolhido a empresa já está definida (a lista dele é a da empresa aberta ou a da solicitação de origem)
@@ -1074,7 +1136,7 @@ export function montarPlataforma(A) {
     for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
     if ((Object.keys(dados).length || Object.keys(sugeridos || {}).length) && S.ctx.tipo === tipo) {
       await A.loadEmpregados(tipo); await A.fillPortal(tipo, { daPlataforma: true });
-      await A.abrirResumoSePronto(tipo);
+      if (!semResumo) await A.abrirResumoSePronto(tipo);
     }
   };
 

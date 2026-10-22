@@ -1181,6 +1181,85 @@ export function textoLinhasRubricas(linhas) {
   return (linhas || []).map(l => `• ${l.empregado || 'Funcionário a confirmar'} — ${l.rubrica}: ${v(l)}`).join('\n');
 }
 
+/** O texto das linhas (o que vai na descrição: "• JOAO — Horas extras 50%: 10 horas") de volta em linhas. */
+export function linhasDoTexto(texto) {
+  return String(texto || '').split(/\n/).map(l => l.match(/^\s*[•*-]\s*(.+?)\s+[—–-]\s+(.+?):\s*(.+?)\s*$/)).filter(Boolean)
+    .map(m => ({ empregado: /a confirmar/i.test(m[1]) ? '' : m[1].trim(), rubrica: m[2].trim(), valor: m[3].trim() }));
+}
+
+/* ---------- Grade do Lançamento de Rubricas (lote 6; a grade real ainda não foi mapeada: a calibrar) ---------- */
+/** Planilha (linhas lidas do Excel/CSV) → [{ empregado, rubrica, valor }]: colunas pelos nomes das regras
+ *  (tipos.rubricas.planilha); sem cabeçalho, a ordem Empregado, Rubrica, Valor. */
+export function linhasDaPlanilha(rows, rules) {
+  if (!rows?.length) return [];
+  const head = rows[0].map(h => norm(h));
+  const P = rules?.tipos?.rubricas?.planilha || {};
+  const find = (names) => head.findIndex(h => (names || []).some(n => h.includes(norm(n))));
+  let iE = find(P.colunasEmpregado), iR = find(P.colunasRubrica), iV = find(P.colunasValor);
+  const hasHeader = iE >= 0 || iR >= 0 || iV >= 0;
+  if (!hasHeader) { iE = 0; iR = 1; iV = 2; }
+  return (hasHeader ? rows.slice(1) : rows).filter(r => r.some(c => String(c).trim()))
+    .map(r => ({ empregado: String(r[iE] ?? '').trim(), rubrica: String(r[iR] ?? '').trim(), valor: String(r[iV] ?? '').trim() }));
+}
+const semCodigo = (s) => String(s || '').replace(/^\s*\d+\s*[-–.:]\s*/, '');
+const nomeEvento = (s) => norm(semCodigo(s).replace(/\([^)]*\)/g, ' '));
+/** Grupos de nomes de um mesmo evento: tipos.rubricas.apelidosEventos e o dicionário do texto livre. */
+function gruposDeEventos(rules) {
+  const r = rules?.tipos?.rubricas || {};
+  return [...(r.apelidosEventos?.itens || []).map(g => [g.evento, ...(g.apelidos || [])]), ...(r.dicionarioRubricas?.itens || []).map(g => [g.rubrica, ...(g.palavras || [])])]
+    .map(l => l.map(nomeEvento).filter(Boolean));
+}
+/** Nome da rubrica da planilha ("HE 50", "Comissão") → evento da empresa na grade ("0001 - HORAS EXTRAS 50%"): igual (sem o código
+ *  e sem parênteses), depois pelos apelidos das regras, depois o único bem parecido. Sem par seguro → null (o cliente lança). */
+export function eventoDaRubrica(nome, eventos, rules) {
+  const evs = (eventos || []).map(e => ({ e, n: nomeEvento(e) })).filter(x => x.n);
+  const q = nomeEvento(nome); if (!q || !evs.length) return null;
+  const igual = evs.find(x => x.n === q); if (igual) return igual.e;
+  for (const g of gruposDeEventos(rules).filter(g => g.includes(q))) {
+    const ev = evs.find(x => g.includes(x.n)) || evs.find(x => (' ' + x.n + ' ').includes(' ' + g[0] + ' ') && g[0].length >= 4);
+    if (ev) return ev.e;
+  }
+  const notas = evs.map(x => ({ e: x.e, s: similarity(q, x.n) })).sort((a, b) => b.s - a.s);
+  return notas[0].s >= 0.85 && !(notas[1] && notas[1].s >= notas[0].s - 0.02) ? notas[0].e : null;
+}
+/** Linhas → células da grade: o funcionário da grade (nome igual ou quase) e a coluna do evento. O que não casar fica de fora,
+ *  para o cliente lançar (semEvento, semEmpregado). */
+export function montarGrade(linhas, eventos, empregados, rules) {
+  const celulas = [], semEvento = [], semEmpregado = [];
+  for (const l of linhas || []) {
+    if (!String(l.valor ?? '').trim()) continue;
+    const ev = eventoDaRubrica(l.rubrica, eventos, rules);
+    const emp = bestMatch(l.empregado, empregados, 0.85)?.option || null;
+    if (!ev) { if (!semEvento.includes(l.rubrica)) semEvento.push(l.rubrica); continue; }
+    if (!emp) { if (!semEmpregado.includes(l.empregado || '?')) semEmpregado.push(l.empregado || '?'); continue; }
+    // só o número: "R$ 350,00" → 350,00; "10 horas" → 10 (a coluna já diz se é hora, dia ou valor)
+    celulas.push({ empregado: emp, evento: ev, valor: String(l.valor).replace(/^R\$\s*/, '').replace(/\s*(horas?|dias?|h)$/i, '').trim(), rubrica: l.rubrica });
+  }
+  return { celulas, semEvento, semEmpregado };
+}
+/** Linhas de um lançamento já feito (detalhe do portal, {apiDetalhe}/{id}?expand=all) para "Usar o lançamento do mês passado".
+ *  O formato real não foi visto (empresa de teste sem eventos): procura listas de funcionários com listas de eventos e valores. A calibrar. */
+export function linhasDoLancamento(detalhe) {
+  const out = [];
+  const nomeDe = (o) => texto1(o?.clientEmployeeExpanded?.name, o?.employeeName, o?.clientEmployeeName, o?.employee?.name, o?.name);
+  const eventoDe = (o) => texto1(o?.eventExpanded, o?.rubricExpanded, o?.event, o?.rubric, o?.rubricName, o?.eventName, o?.description);
+  const valorDe = (o) => texto1(o?.value, o?.amount, o?.quantity, o?.reference, o?.hours, o?.days);
+  const visitar = (x, prof) => {
+    if (!x || typeof x !== 'object' || prof > 4) return;
+    if (Array.isArray(x)) {
+      for (const p of x) {
+        const nome = nomeDe(p); const itens = nome && Object.values(p).find(v => Array.isArray(v) && v.some(i => eventoDe(i) && valorDe(i)));
+        if (itens) { for (const i of itens) { const ev = eventoDe(i), v = valorDe(i); if (ev && v) out.push({ empregado: nome, rubrica: semCodigo(ev), valor: v }); } }
+        else visitar(p, prof + 1);
+      }
+      return;
+    }
+    for (const v of Object.values(x)) visitar(v, prof + 1);
+  };
+  visitar(detalhe, 0);
+  return out;
+}
+
 /* ---------- Solicitação Geral: departamento e assunto pelo catálogo (tipos.geral.catalogo) ---------- */
 /** "segunda via da guia do FGTS de setembro" → { departamento: 'Pessoal', assunto: 'Guia do FGTS – 2ª via – competência 09/2026',
  *  descricao (do modelo do item, nunca o texto do cliente), competencia, id }. Ganha o item com mais palavras (as longas valem
@@ -2570,6 +2649,28 @@ export function prazosFixos(regras, ano, mes, cal = makeCalendar(regras?.feriado
   const lim = parseInt(regras?.config?.diaLimiteRubricas, 10);
   if (lim) { let d = new Date(ano, mes, Math.min(lim, new Date(ano, mes + 1, 0).getDate())); if (!cal.isBusiness(d)) d = cal.addBusinessDays(d, -1); out.push({ id: 'rubricas', d, titulo: 'Enviar as variáveis da folha (rubricas)', detalhe: 'Prazo combinado com o escritório.' }); }
   return out.sort((a, b) => a.d - b.d);
+}
+
+/* Variáveis da folha do mês (regras: config.variaveisFolha). Do dia `avisarAPartirDoDia` do mês da competência até o
+   `diaLimite` do mês seguinte (num dia útil: se cair num feriado ou fim de semana, antecipa), o Hoje lembra de enviar o
+   Lançamento de Rubricas. A competência é a do mês anterior até o dia limite; depois, a do mês atual. Some quando o portal
+   já tem um lançamento dessa competência (effectiveDate; sem a competência na lista, vale um lançamento criado desde o início
+   do aviso — a calibrar) ou quando o cliente disse "Nada a lançar este mês" (dispensadas: competências 'MM/AAAA'). */
+export function variaveisDoMes(hoje = today(), regras = {}, itens = [], dispensadas = [], cal = makeCalendar(regras?.feriados)) {
+  const cfg = regras?.config?.variaveisFolha; if (!cfg || cfg.ativo === false) return null;
+  const lim = +cfg.diaLimite || +regras?.config?.diaLimiteRubricas || 3, desde = +cfg.avisarAPartirDoDia || 20;
+  const y = hoje.getFullYear(), m = hoje.getMonth(), d = hoje.getDate();
+  let base;   // primeiro dia do mês da competência
+  if (d <= lim) base = new Date(y, m - 1, 1); else if (d >= desde) base = new Date(y, m, 1); else return null;
+  const competencia = mesAno(base);
+  if ((dispensadas || []).includes(competencia)) return null;
+  const inicio = new Date(base.getFullYear(), base.getMonth(), Math.min(desde, new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate()));
+  let limite = new Date(base.getFullYear(), base.getMonth() + 1, Math.min(lim, new Date(base.getFullYear(), base.getMonth() + 2, 0).getDate()));
+  if (!cal.isBusiness(limite)) limite = diaUtilAntes(limite, cal);
+  const enviado = (itens || []).some(i => i.tipo === 'rubricas' && !['cancelada', 'prescrita'].includes(i.estado)
+    && (i.competencia ? i.competencia === competencia : (cfg.semCompetenciaPelaData !== false && i.criado && i.criado >= inicio)));
+  if (enviado) return null;
+  return { competencia, limite, inicio, falta: diffDays(hoje, limite), tipoLancamento: cfg.tipoLancamento || 'MENSAL' };
 }
 
 /* Situação de um funcionário a partir do que o portal informa (nome, admissão, ativo).

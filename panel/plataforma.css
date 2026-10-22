@@ -453,7 +453,11 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 #eq-avisos { border-top: 3px solid var(--viz-crit); }
 #eq-exp { border-top: 3px solid var(--viz-warn); }
 #eq-ferias { border-top: 3px solid var(--viz-s1); }
-@media (max-width: 760px) { .hj-equipe { grid-template-columns: minmax(0, 1fr); } }
+/* variáveis da folha do mês (lote 6): ocupa duas colunas; a planilha pode ser solta no cartão */
+.hj-folha { grid-column: span 2; border-top: 3px solid var(--blue-deep); }
+.hj-folha.over { outline: 2px dashed var(--blue-deep); outline-offset: 2px; }
+.hj-folha .folha-acoes { margin-left: 0; flex-wrap: wrap; flex: initial; }
+@media (max-width: 760px) { .hj-equipe { grid-template-columns: minmax(0, 1fr); } .hj-folha { grid-column: auto; } }
 /* empresa do item quando há mais de uma na tela */
 .hj-emp { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px; border-radius: 3px; border: 1px solid var(--rule-strong); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-2); }
 /* seletor de empresas (2.5): uma, várias ou todas */

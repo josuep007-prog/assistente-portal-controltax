@@ -1161,4 +1161,45 @@ t('Repetir e histórico deste computador: sem datas, sem dias do atestado e sem 
   assert.deepEqual(Object.keys(E.valoresParaRepetir('cadastroEmpregado', { nome: 'FULANA', cpf: '1', cargo: 'VENDEDOR', dataAdmissao: '01/09/2026' }, rules)), ['cargo']);
 });
 
+t('Variáveis da folha do mês: competência, janela do aviso e quando o cartão some', () => {
+  const cfg = rules.config.variaveisFolha;
+  assert.equal(cfg.revisarComEscritorio, true); assert.equal(cfg.calibrar, true);
+  const v = E.variaveisDoMes(new Date(2026, 9, 22), rules, [], []);
+  assert.equal(v.competencia, '10/2026'); assert.equal(E.fmtDate(v.limite), '03/11/2026'); assert.equal(v.tipoLancamento, 'MENSAL');
+  assert.equal(E.variaveisDoMes(new Date(2026, 10, 2), rules, [], []).competencia, '10/2026', 'até o dia limite: a competência é a do mês anterior');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 10), rules, [], []), null, 'fora da janela do aviso');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'andamento', competencia: '10/2026' }], []), null, 'o portal já tem o lançamento');
+  assert.ok(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'concluida', competencia: '09/2026' }], []), 'lançamento de outra competência não conta');
+  assert.ok(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'cancelada', competencia: '10/2026' }], []), 'cancelado não conta');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'andamento', competencia: '', criado: new Date(2026, 9, 21) }], []), null, 'sem a competência na lista: pela data de criação (a calibrar)');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), rules, [], ['10/2026']), null, '"Nada a lançar este mês"');
+  // dia limite num domingo: antecipa para o dia útil anterior
+  assert.equal(E.fmtDate(E.variaveisDoMes(new Date(2026, 9, 22), { ...rules, config: { ...rules.config, variaveisFolha: { ...cfg, diaLimite: 8 } } }, [], []).limite), '06/11/2026');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), { ...rules, config: { ...rules.config, variaveisFolha: { ...cfg, ativo: false } } }, [], []), null);
+});
+
+t('Rubricas: planilha → linhas, nome da rubrica → evento da empresa pelos apelidos, células da grade', () => {
+  assert.equal(rules.tipos.rubricas.apelidosEventos.revisarComEscritorio, true); assert.equal(rules.tipos.rubricas.grade.calibrar, true);
+  const rows = [['Empregado', 'Rubrica', 'Valor'], ['JOAO DA SILVA', 'HE 50', '10:30'], ['JORGE OLIVEIRA ALVES', 'Faltas (dias)', '1'], ['RONALDO DE SOUZA', 'Comissão', 'R$ 350,00'], ['RONALDO DE SOUZA', 'Bônus de Natal', '100'], ['FULANO QUE NAO EXISTE', 'Faltas', '2']];
+  const l = E.linhasDaPlanilha(rows, rules);
+  assert.equal(l.length, 5); assert.deepEqual(l[0], { empregado: 'JOAO DA SILVA', rubrica: 'HE 50', valor: '10:30' });
+  const ev = ['0001 - HORAS EXTRAS 50%', '0002 - HORAS EXTRAS 100%', '0010 - FALTAS', '0020 - COMISSÕES', '0030 - ADICIONAL NOTURNO'];
+  assert.equal(E.eventoDaRubrica('HE 50', ev, rules), '0001 - HORAS EXTRAS 50%');
+  assert.equal(E.eventoDaRubrica('Horas extras 100%', ev, rules), '0002 - HORAS EXTRAS 100%');
+  assert.equal(E.eventoDaRubrica('HE 100', ev, rules), '0002 - HORAS EXTRAS 100%');
+  assert.equal(E.eventoDaRubrica('Faltas (dias)', ev, rules), '0010 - FALTAS');
+  assert.equal(E.eventoDaRubrica('Comissão', ev, rules), '0020 - COMISSÕES');
+  assert.equal(E.eventoDaRubrica('Adicional noturno', ev, rules), '0030 - ADICIONAL NOTURNO');
+  assert.equal(E.eventoDaRubrica('Bônus de Natal', ev, rules), null, 'sem par seguro: o cliente lança');
+  const g = E.montarGrade(l, ev, ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'], rules);
+  assert.equal(g.celulas.length, 3); assert.deepEqual(g.semEvento, ['Bônus de Natal']); assert.deepEqual(g.semEmpregado, ['FULANO QUE NAO EXISTE']);
+  assert.equal(g.celulas.find(c => c.evento === '0020 - COMISSÕES').valor, '350,00');
+  assert.equal(E.montarGrade([{ empregado: 'JOAO DA SILVA', rubrica: 'Horas extras 50%', valor: '10 horas' }], ev, ['JOAO DA SILVA'], rules).celulas[0].valor, '10');
+  // o lançamento já feito (detalhe do portal; formato a calibrar) e o texto da descrição de volta em linhas
+  const ant = E.linhasDoLancamento({ payrollEntryClientEmployeeExpanded: [{ clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, payrollEntryItems: [{ eventExpanded: { description: '0001 - HORAS EXTRAS 50%' }, value: '08:00' }] }] });
+  assert.deepEqual(ant, [{ empregado: 'JOAO DA SILVA', rubrica: 'HORAS EXTRAS 50%', valor: '08:00' }]);
+  assert.deepEqual(E.linhasDoLancamento(null), []);
+  assert.deepEqual(E.linhasDoTexto('• JOAO DA SILVA — Horas extras 50%: 10:30\n• Funcionário a confirmar — Faltas: 2 dias'), [{ empregado: 'JOAO DA SILVA', rubrica: 'Horas extras 50%', valor: '10:30' }, { empregado: '', rubrica: 'Faltas', valor: '2 dias' }]);
+});
+
 console.log(`\n${n} testes ok`);

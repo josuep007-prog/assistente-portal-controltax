@@ -28,6 +28,16 @@
       "calculo": 5
     },
     "diaLimiteRubricas": null,
+    "variaveisFolha": {
+      "_comentario": "Cartão do Hoje 'Variáveis da folha de MM/AAAA ainda não enviadas' (lote 6). Aparece do dia 'avisarAPartirDoDia' do mês da competência até o 'diaLimite' do mês seguinte (num dia útil; se cair em feriado ou fim de semana, antecipa). A competência é a do mês anterior até o dia limite; depois, a do mês atual. Some quando o portal já tem um Lançamento de Rubricas dessa competência (effectiveDate da lista; sem ela, vale um lançamento criado desde o início do aviso — 'semCompetenciaPelaData', a calibrar no Onvio real) ou quando o cliente clica 'Nada a lançar este mês' (fica guardado neste computador, só para aquele mês). 'Preparar' abre o pedido com o tipo e a competência como sugestão; 'Usar o lançamento do mês passado' leva o tipo e as linhas do último lançamento (deste computador ou do portal), sem a competência antiga.",
+      "revisarComEscritorio": true,
+      "calibrar": true,
+      "ativo": true,
+      "avisarAPartirDoDia": 20,
+      "diaLimite": 3,
+      "tipoLancamento": "MENSAL",
+      "semCompetenciaPelaData": true
+    },
     "intervaloAtualizacaoRegrasMin": 30,
     "experienciaDias": [
       45,
@@ -3074,6 +3084,31 @@
           "referência",
           "referencia"
         ]
+      },
+      "apelidosEventos": {
+        "_comentario": "Nome da rubrica na planilha (ou no texto) → evento da empresa na grade do portal (lote 6). Primeiro o nome igual (sem o código '0001 -' e sem parênteses), depois estes apelidos (e as palavras de dicionarioRubricas), depois o único bem parecido. O que não casar fica para o cliente lançar. Os eventos são de cada empresa: revisar com o escritório.",
+        "revisarComEscritorio": true,
+        "calibrar": true,
+        "itens": [
+          { "evento": "Horas extras 50%", "apelidos": ["HE 50", "HE50", "HE 50%", "hora extra 50", "horas extras 50", "hora extra 50%", "extra 50%", "horas extras", "hora extra", "HE"] },
+          { "evento": "Horas extras 100%", "apelidos": ["HE 100", "HE100", "HE 100%", "hora extra 100", "horas extras 100", "hora extra 100%", "extra 100%"] },
+          { "evento": "Faltas", "apelidos": ["falta", "faltas (dias)", "dias de falta", "faltas injustificadas", "falta injustificada", "faltas no mês"] },
+          { "evento": "Atrasos", "apelidos": ["atraso", "atrasos (horas)", "horas de atraso"] },
+          { "evento": "Adicional noturno", "apelidos": ["ad noturno", "adic noturno", "adicional noturno (horas)", "hora noturna", "horas noturnas"] },
+          { "evento": "Comissões", "apelidos": ["comissão", "comissao", "comissoes", "comissão sobre vendas", "comissões sobre vendas"] },
+          { "evento": "DSR", "apelidos": ["descanso semanal remunerado", "reflexo dsr", "dsr sobre horas extras"] },
+          { "evento": "Gratificação", "apelidos": ["gratificacao", "prêmio", "premio", "bônus", "bonus"] },
+          { "evento": "Vale-transporte", "apelidos": ["vt", "vale transporte", "desconto de vale-transporte", "desconto vt"] },
+          { "evento": "Adiantamento salarial", "apelidos": ["adiantamento", "vale salarial", "adiantamento de salário"] }
+        ]
+      },
+      "grade": {
+        "_comentario": "Grade 'Rubricas' do Lançamento de Rubricas (lote 6). A grade real NÃO foi mapeada (a empresa de teste não tem eventos): o simulador reproduz uma grade plausível — tabela com o funcionário na 1ª coluna e um evento por coluna, um campo por célula — e o Assistente só preenche quando o cliente clica 'Lançar na grade', com Desfazer; o envio é sempre pelo botão do portal. A calibrar no Chrome do Josué numa empresa com eventos (seletores, se a lista é paginada/virtualizada, máscara dos valores).",
+        "calibrar": true,
+        "ativo": true,
+        "tabela": "table[aria-label='Rubricas'], [role=grid][aria-label='Rubricas']",
+        "botaoAdicionarTodos": "Adicionar todos os funcionários",
+        "colunaEmpregado": 0
       },
       "dicas": [
         "Arraste uma planilha (Excel ou CSV) com as colunas Empregado, Rubrica e Valor: eu monto o resumo e confiro os nomes.",

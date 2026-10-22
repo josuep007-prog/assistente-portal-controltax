@@ -189,6 +189,17 @@
           break;
         }
         case 'undo': { const r = await desfazer(); post({ type: 'undoResult', id: m.id, ...r }); break; }
+        // grade do Lançamento de Rubricas (lote 6; a grade real não foi mapeada — a calibrar). Nunca envia.
+        case 'lerGrade': post({ type: 'grade', id: m.id, ...(await comboLock(() => lerGrade(!!m.adicionar))) }); break;
+        case 'preencherGrade': {
+          preenchendoAgora = true;
+          let r; try { r = await comboLock(() => preencherGrade(m.celulas || [])); } finally { preenchendoAgora = false; }
+          if (modo === 'plataforma') iframe?.focus();
+          post({ type: 'gradePreenchida', id: m.id, ...r });
+          sendContext(); avisarDesfazer();
+          if (r.mudou) toast('Grade preenchida pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });
+          break;
+        }
         case 'attach': { const a = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n: a.n, anexos: a }); sendContext(); break; }
         case 'getOptions': {
           const opts = await comboLock(() => comboOptions(m.locator, m.force));
@@ -753,6 +764,55 @@
     return { ok: true, resultados, anexados: anexos?.n || 0, anexos, depois, mudou };
   }
 
+  /* ============ Grade do Lançamento de Rubricas (lote 6) ============ */
+  /* A grade real ainda NÃO foi mapeada (a empresa de teste não tem eventos): o simulador reproduz uma grade plausível — tabela
+     com o funcionário na 1ª coluna e um evento por coluna, um campo por célula. Seletores nas regras (tipos.rubricas.grade),
+     a calibrar no Onvio real. Só escreve nos campos da grade (com Desfazer); quem envia é o cliente, pelo botão do portal. */
+  const cfgGrade = () => ({ tabela: "table[aria-label='Rubricas'], [role=grid][aria-label='Rubricas']", botaoAdicionarTodos: 'Adicionar todos os funcionários', colunaEmpregado: 0, ...(rules?.tipos?.rubricas?.grade || {}) });
+  const acharGrade = () => mainEl().querySelector(cfgGrade().tabela);
+  function lerTabelaGrade(tab) {
+    const ce = +cfgGrade().colunaEmpregado || 0;
+    const titulos = [...tab.querySelectorAll('thead th, [role=columnheader]')].map(th => (th.innerText || '').trim());
+    const linhas = [...tab.querySelectorAll('tbody tr, [role=row]')].filter(r => r.querySelector('input'));
+    const celulas = (r) => [...r.querySelectorAll('td, [role=gridcell], [role=rowheader]')];
+    const empregados = linhas.map(r => (celulas(r)[ce]?.innerText || '').trim());
+    return { titulos, linhas, empregados, celulas, eventos: titulos.filter((_, i) => i !== ce) };
+  }
+  async function lerGrade(adicionar) {
+    const r = routeInfo();
+    if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, motivo: 'abra o Lançamento de Rubricas' };
+    let tab = acharGrade();
+    if ((!tab || !lerTabelaGrade(tab).linhas.length) && adicionar) {
+      const alvo = norm(cfgGrade().botaoAdicionarTodos);
+      const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
+      if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
+      await reveal(b); b.click();
+      for (let i = 0; i < 20 && !(tab = acharGrade()); i++) await sleep(250);
+    }
+    if (!tab) return { ok: false, motivo: 'a grade não apareceu (a competência está preenchida?)' };
+    const g = lerTabelaGrade(tab);
+    return { ok: true, eventos: g.eventos, empregados: g.empregados };
+  }
+  /** celulas: [{ empregado, evento, valor }] com os nomes exatos da grade (o painel casa os nomes antes). */
+  async function preencherGrade(celulas) {
+    const tab = acharGrade(); if (!tab) return { ok: false, n: 0, mudou: 0, faltaram: celulas };
+    await reveal(tab);
+    const g = lerTabelaGrade(tab);
+    const antes = [], faltaram = [];
+    for (const c of celulas) {
+      const i = g.empregados.findIndex(e => norm(e) === norm(c.empregado));
+      const col = g.titulos.findIndex(t => norm(t) === norm(c.evento));
+      const inp = i >= 0 && col >= 0 ? g.celulas(g.linhas[i])[col]?.querySelector('input') : null;
+      if (!inp || inp.disabled || inp.readOnly) { faltaram.push(c); continue; }
+      const v0 = inp.value || '';
+      if (v0 === String(c.valor)) continue;
+      setNative(inp, String(c.valor)); mark(inp); await sleep(30);
+      antes.push({ empregado: c.empregado, evento: c.evento, antes: v0 });
+    }
+    if (antes.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: antes }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
+    return { ok: true, n: celulas.length - faltaram.length, mudou: antes.length, faltaram };
+  }
+
   /* ============ Desfazer o último preenchimento ============ */
   const desfazerPilha = [];
   const avisarDesfazer = () => { const n = desfazerPilha.filter(d => d.path === currentPath()).length; post({ type: 'undoState', n }); };
@@ -805,12 +865,21 @@
         } catch { falhas.push(k); }
       }
       for (const n of d.anexos) { if (await removerAnexo(n)) anexos.push(n); else falhas.push('anexo:' + n); }
+      // grade de rubricas: cada célula volta ao valor de antes
+      const tab = d.grade?.length ? acharGrade() : null;
+      const g = tab ? lerTabelaGrade(tab) : null;
+      for (const c of d.grade || []) {
+        const i = g ? g.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1;
+        const col = g ? g.titulos.findIndex(t => norm(t) === norm(c.evento)) : -1;
+        const inp = i >= 0 && col >= 0 ? g.celulas(g.linhas[i])[col]?.querySelector('input') : null;
+        if (inp) setNative(inp, c.antes); else falhas.push('grade:' + c.evento);
+      }
     });
     sendContext(); avisarDesfazer();
     toast(falhas.length ? `Desfeito em parte: confira ${falhas.length} item(ns) no formulário.` : 'Preenchimento desfeito: o formulário voltou a como estava.', 4000);
     // os valores que voltaram: a plataforma mostra o mesmo que o portal
     const valores = Object.fromEntries(campos.map(k => [k, d.antes[k] || '']));
-    post({ type: 'undone', campos, anexos, falhas, valores });
+    post({ type: 'undone', campos, anexos, falhas, valores, grade: (d.grade || []).length });
     return { ok: !falhas.length, campos, anexos, falhas, valores };
   }
 
