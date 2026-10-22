@@ -177,8 +177,8 @@
     },
     // mesma forma da API do portal (/api/br-payroll-sr/v1/clients/<id>/employees): nome, situação e admissão
     employees: function () {
-      return Promise.resolve(EMP5.map(function (n) { return { name: n, status: 'Ativo', hireDate: admissao(n) }; })
-        .concat(DESLIGADOS.map(function (n) { return { name: n, status: 'Demitido', hireDate: '2021-03-01' }; })));
+      return Promise.resolve(EMP5.map(function (n) { return { name: n, status: 'Ativo', hireDate: admissao(n), cpf: cpfFicticio(n) }; })
+        .concat(DESLIGADOS.map(function (n) { return { name: n, status: 'Demitido', hireDate: '2021-03-01', cpf: cpfFicticio(n) }; })));
     },
     clientId: function () { return 'sim-0001'; },
     // trâmites: {base}/{id}/topics (o id é o GUID do item)
@@ -240,6 +240,14 @@
       var d = h('div', { role: 'dialog', class: 'p-dialog', 'aria-label': 'Aviso do portal' }, '<p><b>Sua sessão vai expirar em 2 minutos.</b> Deseja continuar conectado?</p>');
       var ok = h('button', { type: 'button', class: 'p-btn-dark' }, 'CONTINUAR'); ok.addEventListener('click', function () { d.remove(); }); d.appendChild(ok); document.body.appendChild(d);
     } };
+  // CPF inventado (válido, só dígitos) para cada nome: a lista de empregados da API traz o CPF (nome do campo a calibrar no Onvio real)
+  function cpfFicticio(nome) {
+    var h = 7; for (var i = 0; i < nome.length; i++) h = (h * 31 + nome.charCodeAt(i)) % 99999999;
+    var d = String(900000000 + h % 99999999).slice(0, 9).split('').map(Number);
+    if (d.every(function (x) { return x === d[0]; })) d[8] = (d[0] + 1) % 10;
+    function dv(a, n) { var t = 0; for (var k = 0; k < n; k++) t += a[k] * (n + 1 - k); var r = (t * 10) % 11; return r === 10 ? 0 : r; }
+    d.push(dv(d, 9)); d.push(dv(d, 10)); return d.join('');
+  }
   var DESLIGADOS = ['OTAVIO RANGEL', 'NATALIA BRITO'];
   var FAMILIA = { 'employee-registration': 'cadastro', 'partner-registration': 'cadastro', 'intern-registration': 'cadastro', 'payroll-entries': 'rubricas' };
   var CODIGOS = {
