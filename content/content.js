@@ -178,6 +178,7 @@
         case 'modo': setModo(m.modo); break;
         case 'getContext': sendContext(); break;
         case 'navigate': while (navInterna) await sleep(150); await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
+        case 'trocarEmpresa': { const r = await trocarEmpresa(m.nome); post({ type: 'empresaTrocada', id: m.id, ...r }); sendContext(); break; }
         case 'fill': {
           preenchendoAgora = true;
           let r; try { r = await comboLock(() => fillForm(m.tipo, m.values || {}, unpackFiles(m.files), { ...(m.opts || {}), reqId: m.id })); } finally { preenchendoAgora = false; }
@@ -850,6 +851,45 @@
     if (add) await waitForForm(8000); else await sleep(800);
   }
 
+  /* ============ Trocar de empresa ============ */
+  const mesmoNome = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.includes(y) || y.includes(x)); };
+  async function esperarEmpresa(nome, ms) {
+    for (let t = 0; t < ms; t += 250) { if (mesmoNome(companyName(), nome)) return true; await sleep(250); }
+    return mesmoNome(companyName(), nome);
+  }
+  /** Troca a empresa pelo seletor do próprio portal e só diz "ok" depois de ver o nome novo na tela. Se a troca não
+   *  puder ser confirmada, o painel não preenche nada (para não montar o pedido na empresa errada).
+   *  O seletor do Onvio real ainda não foi mapeado: a busca abaixo é um palpite — **a calibrar no Chrome do Josué**. */
+  async function trocarEmpresa(nome) {
+    if (!norm(nome)) return { ok: false, motivo: 'sem nome de empresa' };
+    if (mesmoNome(companyName(), nome)) return { ok: true, empresa: companyName() };
+    if (plat.trocarEmpresa) {   // simulador
+      const r = await plat.trocarEmpresa(nome);
+      if (!r?.ok) return { ok: false, motivo: 'esta empresa não está neste acesso' };
+      return (await esperarEmpresa(nome, 4000)) ? { ok: true, empresa: companyName() } : { ok: false, motivo: 'o portal não mostrou a empresa nova' };
+    }
+    // 1) o gatilho: o bloco do cabeçalho com o rótulo "EMPRESA" e o nome da empresa aberta
+    const rotulo = [...document.querySelectorAll('body *')].find(e => !e.children.length && /^empresa$/i.test((e.textContent || '').trim()));
+    const gatilho = rotulo?.closest('button,[role=button],[role=combobox],a,bento-combobox,[tabindex]') || rotulo?.parentElement;
+    if (!gatilho) return { ok: false, motivo: 'não achei o seletor de empresas do portal' };
+    gatilho.click();
+    // 2) a lista (pode ter busca): escolhe a opção cujo texto é o da empresa
+    const opcao = async () => {
+      for (let t = 0; t < 3000; t += 250) {
+        const o = [...document.querySelectorAll('[role=option],[role=menuitem],[role=listbox] li,bento-list-row,.bento-list-row')].find(e => mesmoNome(e.innerText, nome));
+        if (o) return o;
+        const busca = [...document.querySelectorAll('[role=dialog] input,[role=listbox] input,bento-combobox input,input[type=search]')].find(i => i.offsetParent && i.type !== 'file' && !i.disabled);
+        if (busca && t === 500) setNative(busca, nome);
+        await sleep(250);
+      }
+      return null;
+    };
+    const o = await opcao();
+    if (!o) { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return { ok: false, motivo: 'a empresa não apareceu na lista do portal' }; }
+    o.click();
+    return (await esperarEmpresa(nome, 12000)) ? { ok: true, empresa: companyName() } : { ok: false, motivo: 'o portal não confirmou a troca de empresa' };
+  }
+
   /* ============ Pendências (lê as listas com a sessão do próprio usuário) ============ */
   async function fetchPendencias(tipos) {
     const out = [];
@@ -976,7 +1016,8 @@
     } catch (e) { return { erro: String(e.message || e), itens: [] }; }
   }
   /** Datas de um aviso (detalhe da solicitação: {lista}/{id}?expand=all). Só os campos de data voltam ao painel; nada é guardado. */
-  const CAMPOS_AVISO = ['vacationStartDate', 'paymentDate', 'adviceDate', 'noticeDate', 'vacationDays', 'resignationDate', 'priorNoticeAdviceDate', 'admissionDate', 'startDate', 'leaveDate', 'effectiveDate'];
+  // bonusDays e priorNoticeDate: para "Pedir o cálculo" com os dados do aviso (a calibrar no Onvio real)
+  const CAMPOS_AVISO = ['vacationStartDate', 'paymentDate', 'adviceDate', 'noticeDate', 'priorNoticeDate', 'vacationDays', 'bonusDays', 'resignationDate', 'priorNoticeAdviceDate', 'admissionDate', 'startDate', 'leaveDate', 'effectiveDate'];
   /** A solicitação completa ({lista}/{id}?expand=all): lida na hora para a aba Dados do detalhe; nada é guardado. */
   async function fetchDetalhe(lista, id) {
     if (!lista || !id) return { erro: 'sem-id' };

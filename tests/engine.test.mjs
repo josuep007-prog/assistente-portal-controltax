@@ -434,7 +434,7 @@ t('Hoje: avisos sem cálculo e equipe vencendo', () => {
   const avR = N({ id: 'r1', genericStatus: 2, created: '2026-10-11', clientEmployeeExpanded: { name: 'MARIA SOUZA' }, adviceDate: '2026-10-12' }, 'avisoRescisao');
   let l = E.avisosSemCalculo([avF, avR], h, rules);
   assert.deepEqual(l.map(x => x.tipo), ['rescisao', 'ferias']);   // a rescisão paga antes (12/10 + 10)
-  assert.equal(E.fmtDate(l[1].pagamento), '01/11/2026');           // 2 dias antes do início
+  assert.equal(E.fmtDate(l[1].pagamento), '30/10/2026');           // 2 dias antes do início (01/11 é domingo: recua para o dia útil, como nos prazos legais)
   assert.ok(l[1].enviarAte < l[1].pagamento);
   // com o cálculo criado, o aviso sai da lista
   const calc = N({ id: 'c1', genericStatus: 2, created: '2026-10-12', clientEmployeeExpanded: { name: 'João da Silva' } }, 'calculoFerias');
@@ -532,6 +532,148 @@ t('Calcular: férias com abono, adiantamento do 13º e faltas', () => {
   assert.ok(g.avisos.some(a => /24 dias/.test(a)));
   perto(linha(C.simularFerias({ salario: 3000, diasGozo: 30, emDobro: true }, T), /^Férias em dobro/), 6000, 'em dobro');
   assert.match(C.textoSimulacao(f, 'JOAO'), /Líquido estimado/);
+});
+
+/* ---------- Lote 4: rescisão, férias e fluxo de pedidos (dados inventados) ---------- */
+t('documento no pedido irmão: aviso de férias assinado → Cálculo de Férias (início, dias e abono só marcado ou com dias)', () => {
+  const base = 'AVISO DE FÉRIAS\nParticipamos que, conforme a lei, V.Sa. gozará suas férias.\nPeríodo de gozo: 03/11/2026 a 02/12/2026\n';
+  let r = E.analyzeText(base + '( X ) Abono pecuniário\nCiente: JOAO DA SILVA', rules, { employees: ['JOAO DA SILVA'], tipoAtual: 'calculoFerias' });
+  assert.equal(r.documento.id, 'avisoFeriasAssinado');
+  assert.equal(r.campos.inicioGozo.valor, '03/11/2026');
+  assert.equal(r.campos.diasGozo.valor, '30');            // pelo período (fim − início + 1)
+  assert.equal(r.campos.abono.valor, 'SIM');              // opção marcada
+  r = E.analyzeText(base + '( ) Abono pecuniário\nCiente', rules, { tipoAtual: 'calculoFerias' });
+  assert.equal(r.campos.abono, undefined);                // impresso sem marca: não vira SIM
+  r = E.analyzeText(base + 'Dias de abono: 0\nCiente', rules, { tipoAtual: 'calculoFerias' });
+  assert.equal(r.campos.abono.valor, 'NÃO');
+  r = E.analyzeText(base + 'Abono pecuniário de 10 dias\n20 (vinte) dias de férias\nCiente', rules, { tipoAtual: 'calculoFerias' });
+  assert.equal(r.campos.abono.valor, 'SIM'); assert.equal(r.campos.diasGozo.valor, '20');
+});
+
+t('documento no pedido irmão: pedido de demissão e aviso do empregador → data e tipo do aviso no Cálculo de Rescisão', () => {
+  const carta = 'PEDIDO DE DEMISSÃO\nEu, JORGE OLIVEIRA ALVES, venho por meio desta pedir demissão a partir de 05/10/2026.\nCumprirei o aviso prévio de 30 dias.';
+  let r = E.analyzeText(carta, rules, { employees: ['JORGE OLIVEIRA ALVES'], tipoAtual: 'calculoRescisao' });
+  assert.equal(r.campos.dataAvisoPrevio.valor, '05/10/2026');   // a chave dataAviso do documento vale no cálculo
+  assert.equal(r.campos.tipoAviso.valor, 'TRABALHADO');
+  assert.equal(r.campos.motivo.valor, 'Pedido de demissão SEM justa causa');
+  r = E.analyzeText('PEDIDO DE DEMISSÃO\nVenho por meio desta pedir demissão. Solicito a dispensa do cumprimento do aviso prévio.\n05/10/2026', rules, { tipoAtual: 'calculoRescisao' });
+  assert.equal(r.campos.tipoAviso.valor, 'AUSÊNCIA/DISPENSA');
+  const emp = 'AVISO PRÉVIO DO EMPREGADOR\nComunicamos que a partir de 01/10/2026 seu contrato será rescindido sem justa causa.\n( ) Aviso prévio trabalhado   (X) Aviso prévio indenizado';
+  r = E.analyzeText(emp, rules, { tipoAtual: 'calculoRescisao' });
+  assert.equal(r.documento.id, 'avisoEmpregador');
+  assert.equal(r.campos.tipoAviso.valor, 'INDENIZADO');   // impresso com as duas opções: vale a marcada
+  assert.equal(r.campos.dataAvisoPrevio.valor, '01/10/2026');
+  // o anexo "Aviso prévio ou pedido de demissão assinado" aceita os dois documentos
+  const chk = E.runChecks('calculoRescisao', { empregado: 'X', dataDemissao: '10/10/2026', motivo: 'Demitido SEM justa causa' }, [{ nome: 'aviso.pdf', documento: 'avisoEmpregador' }], rules, hoje);
+  assert.ok(chk.some(c => c.nivel === 'ok' && /Aviso prévio ou pedido de demissão assinado anexado/.test(c.mensagem)));
+  // regra geral de opções por palavra: a CAT antiga (tipoCatPalavras) continua valendo
+  assert.equal(E.opcaoPorPalavra('Tipo de CAT: trajeto', E.regrasDeOpcoes(rules.documentos.find(d => d.id === 'cat'))[0]), 'Trajeto');
+});
+
+t('motivo da rescisão pelas regras (motivoAuto): experiência, acordo, culpa recíproca, extinção e o tipo de aviso por expressão inteira', () => {
+  const emps = ['JOAO DA SILVA', 'RONALDO DE SOUZA'];
+  const P = (s, tipoAtual = 'calculoRescisao') => E.parseFreeText(s, rules, { employees: emps, tipoAtual, hoje });
+  let r = P('fim do contrato de experiência do João dia 20/10');
+  assert.equal(r.campos.motivo.valor, 'Término de contrato de trabalho por tempo determinado');
+  assert.equal(r.campos.tipoAviso, undefined); assert.equal(r.campos.dataAvisoPrevio, undefined);   // sem aviso prévio
+  assert.equal(P('o João pediu demissão no meio da experiência').campos.motivo.valor, 'Rescisão contrato experiência antecipado pelo empregado');
+  assert.equal(P('vamos demitir o Ronaldo antes do fim da experiência').campos.motivo.valor, 'Rescisão contrato experiência antecipado pelo empregador');
+  r = P('acordo com o João, último dia 20/10');
+  assert.equal(r.campos.motivo, undefined); assert.equal(r.dicas.length, 1);   // acordo: vazio com dica
+  assert.equal(P('culpa recíproca, saída dia 20/10').campos.motivo.valor, 'Culpa recíproca');
+  assert.equal(P('a empresa vai fechar, desligar o João dia 30/10').campos.motivo.valor, 'Extinção da empresa');
+  assert.equal(P('vamos dispensar o João dia 20/10').campos.tipoAviso, undefined);   // "dispensar" sozinho não é tipo de aviso
+  assert.equal(P('demitir o João dia 20/10, aviso dispensado').campos.tipoAviso.valor, 'AUSÊNCIA/DISPENSA');
+  assert.equal(P('demitir o João, aviso indenizado, dia 20/10').campos.tipoAviso.valor, 'INDENIZADO');
+  assert.equal(P('pediu demissão hoje', 'avisoRescisao').campos.avisoDadoPor.valor, 'EMPREGADO');
+  // modalidades do Calcular → motivo; aviso da modalidade → rádio do portal
+  assert.equal(E.motivoRescisao('', rules, { modalidade: 'fimContrato' }).valor, 'Término de contrato de trabalho por tempo determinado');
+  assert.equal(E.motivoRescisao('', rules, { modalidade: 'semJustaCausa' }).valor, 'Demitido SEM justa causa');
+  assert.ok(E.motivoRescisao('', rules, { modalidade: 'acordo' }).nenhum);
+  assert.equal(E.tipoAvisoDaModalidade('naoCumprido', rules), 'AUSÊNCIA/DISPENSA');
+  // documento: "término do contrato de experiência" no aviso do empregador
+  const doc = E.analyzeText('AVISO PRÉVIO DO EMPREGADOR\nComunicamos que o seu contrato de experiência termina em 20/10/2026 e não será renovado.', rules, { tipoAtual: 'calculoRescisao' });
+  assert.equal(doc.campos.motivo.valor, 'Término de contrato de trabalho por tempo determinado');
+  // a simulação vai para as observações sem salário
+  const sim = C.simularRescisao({ modalidade: 'semJustaCausa', aviso: 'indenizado', salario: '3000', admissao: '01/02/2024', desligamento: '15/10/2026', feriasVencidas: '1', adiantamento13: '500' }, rules.config.tabelas);
+  const lin = C.linhaSimulacao({ feriasVencidas: '1', adiantamento13: '500' }, sim);
+  assert.ok(/Dispensa sem justa causa/.test(lin) && /férias vencidas: 1 período/.test(lin) && /13º já adiantado/.test(lin) && !/R\$|3000|3\.000/.test(lin));
+});
+
+t('datas que dá para calcular: pagamento das férias, data do aviso, demissão pelo aviso e expectativa de conclusão', () => {
+  let s = E.sugeridos('avisoFerias', { inicioGozo: '03/11/2026', diasGozo: '30' }, rules, hoje);
+  assert.equal(s.dataPagamento.valor, '30/10/2026');      // 01/11 é domingo: recua para o dia útil anterior
+  assert.equal(s.dataAviso.valor, '09/10/2026');           // hoje
+  assert.ok(s.conclusao?.valor);                           // prazo do pedido (dias úteis do escritório)
+  assert.equal(E.derived('avisoFerias', { inicioGozo: '03/11/2026', diasGozo: '30' }, rules).pagamentoAte, '30/10/2026');   // o mesmo do Hoje
+  s = E.sugeridos('calculoRescisao', { dataAvisoPrevio: '01/10/2026', tipoAviso: 'TRABALHADO', motivo: 'Demitido SEM justa causa' }, rules, hoje);
+  assert.equal(s.dataDemissao.valor, '31/10/2026');        // fim do aviso (Súmula 380)
+  assert.equal(E.sugeridos('calculoRescisao', { dataAvisoPrevio: '01/10/2026', tipoAviso: 'INDENIZADO' }, rules, hoje).dataDemissao.valor, '01/10/2026');
+  assert.equal(E.sugeridos('calculoRescisao', { dataDemissao: '31/10/2026', tipoAviso: 'TRABALHADO' }, rules, hoje).dataAvisoPrevio.valor, '01/10/2026');
+  assert.equal(E.sugeridos('calculoRescisao', { dataDemissao: '31/10/2026' }, rules, hoje).dataAvisoPrevio, undefined);   // sem tipo de aviso, não sugere
+  assert.equal(E.sugeridos('calculoRescisao', { dataAvisoPrevio: '01/10/2026', tipoAviso: 'TRABALHADO', motivo: 'Término de contrato de trabalho por tempo determinado' }, rules, hoje).dataDemissao, undefined);
+  // a mesma conta do aviso trabalhado no Calcular e no formulário
+  assert.equal(E.fmtDate(E.inicioDoAviso(E.parseDate('31/10/2026'), 30)), '01/10/2026');
+  assert.equal(E.fmtDate(E.fimDoAviso(E.parseDate('01/10/2026'), 30)), '31/10/2026');
+  // "Programar" férias: 1ª data de início que vale (dia útil fora dos 2 dias antes de domingo/feriado)
+  assert.equal(E.fmtDate(E.primeiroInicioFerias(E.parseDate('06/11/2026'), rules)), '09/11/2026');   // sexta não pode, fim de semana não é dia útil
+  assert.equal(E.fmtDate(E.primeiroInicioFerias(E.parseDate('10/11/2026'), rules)), '10/11/2026');
+});
+
+t('pedir o cálculo com os dados do aviso e o passo seguinte depois do envio', () => {
+  const h = new Date(2026, 9, 15);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  const avF = N({ id: 'f1', identifier: 77, genericStatus: 2, created: '2026-10-01', clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, vacationStartDate: '2026-11-03', vacationDays: 20, bonusDays: 10 }, 'avisoFerias');
+  const v = E.valoresDoAviso(avF, rules);
+  assert.equal(v.tipo, 'calculoFerias'); assert.equal(v.fonte, 'do aviso nº 77');
+  assert.deepEqual(v.valores, { inicioGozo: '03/11/2026', diasGozo: '20', abono: 'SIM' });
+  const avR = N({ id: 'r1', genericStatus: 2, created: '2026-10-11', clientEmployeeExpanded: { name: 'MARIA SOUZA' }, adviceDate: '2026-10-12' }, 'avisoRescisao');
+  assert.deepEqual(E.valoresDoAviso(avR, rules).valores, { dataAvisoPrevio: '12/10/2026' });
+  assert.equal(E.avisoDoFuncionario([avF, avR], 'João da Silva', 'avisoFerias', h), avF);
+  assert.equal(E.avisoDoFuncionario([avF], 'MARIA SOUZA', 'avisoFerias', h), null);
+  const calc = N({ id: 'c1', genericStatus: 2, created: '2026-10-12', clientEmployeeExpanded: { name: 'JOAO DA SILVA' } }, 'calculoFerias');
+  assert.ok(E.temPedidoDe([calc], 'calculoFerias', 'joão da silva', new Date(2026, 9, 10)));
+  assert.ok(!E.temPedidoDe([calc], 'calculoFerias', 'joão da silva', new Date(2026, 9, 14)));
+  // depois de enviar: aviso de férias → cálculo de férias até (pagamento − prazo do escritório), com os dados do aviso
+  let p = E.proximosPassos('avisoFerias', { empregado: 'JOAO DA SILVA', inicioGozo: '03/11/2026', diasGozo: '20', diasAbono: '10' }, rules);
+  assert.equal(p.length, 1); assert.equal(p[0].tipo, 'calculoFerias');
+  assert.ok(/Cálculo de Férias de JOAO DA SILVA/.test(p[0].titulo));
+  assert.ok(p[0].ate < E.parseDate('30/10/2026'));
+  assert.deepEqual(p[0].valores, { empregado: 'JOAO DA SILVA', inicioGozo: '03/11/2026', diasGozo: '20', abono: 'SIM' });
+  assert.equal(E.proximosPassos('avisoFerias', { empregado: 'X', inicioGozo: '03/11/2026', diasGozo: '30' }, rules)[0].valores.abono, undefined);   // sem dias de abono, sem SIM
+  p = E.proximosPassos('avisoRescisao', { empregado: 'MARIA SOUZA', dataAviso: '12/10/2026', motivo: 'Demitido SEM justa causa' }, rules);
+  assert.deepEqual(p.map(x => x.tipo), ['calculoRescisao', null]);   // e o exame demissional como lembrete
+  assert.equal(p[0].valores.dataAvisoPrevio, '12/10/2026'); assert.equal(p[0].valores.motivo, 'Demitido SEM justa causa');
+  assert.ok(p[1].lembrete && /exame demissional/i.test(p[1].titulo));
+});
+
+t('experiência: três saídas, motivo certo no aviso de rescisão, tempo de casa, modelos e "Gerar pelo modelo"', () => {
+  const s = E.saidasExperiencia('2026-09-01', 45, rules);
+  assert.equal(E.fmtDate(s.fim), '15/10/2026'); assert.ok(s.podeProrrogar); assert.equal(s.diasProrrogacao, 45); assert.equal(E.fmtDate(s.fimProrrogacao), '29/11/2026');
+  assert.ok(!E.saidasExperiencia('2026-09-01', 90, rules).podeProrrogar);
+  assert.ok(rules.config.experienciaSaidas.revisarComEscritorio);
+  // aviso de rescisão dentro da experiência: sugere (não escolhe) o motivo de contrato de experiência
+  let m = E.sugestaoMotivoExperiencia({ dataAviso: '09/10/2026', motivo: 'Demitido SEM justa causa' }, '2026-09-01', rules, hoje);
+  assert.equal(m.valor, 'Rescisão contrato experiência antecipado pelo empregador');
+  m = E.sugestaoMotivoExperiencia({ dataDemissao: '15/10/2026' }, '2026-09-01', rules, hoje);
+  assert.ok(m.noFim); assert.equal(m.valor, 'Término de contrato de trabalho por tempo determinado');
+  assert.equal(E.sugestaoMotivoExperiencia({ avisoDadoPor: 'EMPREGADO' }, '2026-09-01', rules, hoje).valor, 'Rescisão contrato experiência antecipado pelo empregado');
+  assert.equal(E.sugestaoMotivoExperiencia({ dataAviso: '09/10/2026' }, '2024-01-10', rules, hoje), null);   // fora da experiência
+  assert.equal(E.anosCompletos(E.parseDate('10/10/2020'), hoje), 5);
+  // modelo já preenchido pelo pedido (tipo de aviso → frase da carta)
+  const md = rules.modelosDocumento.find(x => x.id === 'pedidoDemissao');
+  const vals = E.valoresDoModelo(md, { empregado: 'JOAO DA SILVA', tipoAviso: 'AUSÊNCIA/DISPENSA' });
+  assert.equal(vals.empregado, 'JOAO DA SILVA'); assert.ok(/dispensa do cumprimento/.test(vals.aviso));
+  // conferência: falta a carta de pedido de demissão → "Gerar pelo modelo"
+  let chk = E.runChecks('avisoRescisao', { empregado: 'X', motivo: 'Pedido de demissão SEM justa causa', avisoDadoPor: 'EMPREGADO', dataAviso: '09/10/2026' }, [], rules, hoje);
+  assert.equal(chk.find(c => c.grupo === 'Anexos').modelo, 'pedidoDemissao');
+  // abono de férias: o requerimento passa a ser pedido (com o modelo); sem abono, não
+  chk = E.runChecks('avisoFerias', { empregado: 'X', inicioGozo: '10/11/2026', diasGozo: '20', diasAbono: '10' }, [], rules, hoje);
+  const req = chk.find(c => /Requerimento de abono/.test(c.mensagem));
+  assert.equal(req.nivel, 'erro'); assert.equal(req.modelo, 'abonoFerias');
+  chk = E.runChecks('avisoFerias', { empregado: 'X', inicioGozo: '10/11/2026', diasGozo: '30', diasAbono: '0' }, [], rules, hoje);
+  assert.equal(chk.find(c => /Requerimento de abono/.test(c.mensagem)).nivel, 'info');
+  assert.equal(E.analyzeText('REQUERIMENTO DE ABONO PECUNIÁRIO DE FÉRIAS\nEu requeiro a conversão de 1/3 das férias do período aquisitivo', rules, {}).documento.id, 'requerimentoAbono');
 });
 
 t('Conversa (Control Onvio): lado de cada trâmite, o escritório pede algo?, anexo citado sem arquivo', () => {
@@ -922,6 +1064,29 @@ t('estagiário e contribuinte: categorias do eSocial/SEFIP pelas regras e tipo p
   const cs = E.activeConditionals(t, { tipoContribuinte: 'Sócio' }); assert.match(cs[0].valores.categoriaEsocial, /^721/); assert.match(cs[0].valores.categoriaSefip, /^11/);
   const ca = E.activeConditionals(t, { tipoContribuinte: 'Autônomo' }); assert.match(ca[0].valores.categoriaEsocial, /^701/); assert.match(ca[0].valores.categoriaSefip, /^13/);
   assert.ok(t.condicionais.every(c => c.revisarComEscritorio));
+});
+
+/* ---- Empresa do pedido (2.7): quais empresas a caixa "Para qual empresa?" oferece ---- */
+
+t('empresas do login: as das solicitações, as já vistas e a aberta no portal, com a do portal primeiro', () => {
+  const itens = [
+    { empresa: 'COMERCIO MODELO LTDA', empresaApelido: 'MODELO', estado: 'aguardando', aguardando: true },
+    { empresa: 'COMERCIO MODELO LTDA', empresaApelido: 'MODELO', estado: 'andamento' },
+    { empresa: 'COMERCIO MODELO LTDA', empresaApelido: 'MODELO', estado: 'concluida' },
+    { empresa: 'OFICINA FICTICIA ME', estado: 'andamento' },
+  ];
+  const l = E.empresasParaEscolha(itens, 'EMPRESA EXEMPLO LTDA', []);
+  assert.deepEqual(l.map(e => e.nome), ['EMPRESA EXEMPLO LTDA', 'COMERCIO MODELO LTDA', 'OFICINA FICTICIA ME'], 'a do portal vem primeiro mesmo sem solicitações');
+  assert.equal(l[0].atual, true);
+  const m = l.find(e => e.nome === 'COMERCIO MODELO LTDA');
+  assert.deepEqual([m.apelido, m.abertas, m.esperam], ['MODELO', 2, 1], 'conta só as abertas e as que esperam o cliente');
+  // a lista das solicitações é relida a cada troca de empresa: as empresas já vistas continuam na caixa
+  assert.equal(E.empresasParaEscolha([], 'OFICINA FICTICIA ME', l.map(({ nome, apelido }) => ({ nome, apelido }))).length, 3);
+  // o nome do cabeçalho do portal pode vir um pouco diferente do da solicitação: não duplica
+  assert.equal(E.empresasParaEscolha(itens, 'oficina ficticia', []).filter(e => /OFICINA/.test(e.nome)).length, 1);
+  // um acesso com uma empresa só não tem o que escolher
+  assert.equal(E.empresasParaEscolha([], 'EMPRESA EXEMPLO LTDA', []).length, 1);
+  assert.equal(E.empresasParaEscolha([{ empresa: 'A LTDA' }, { empresa: 'A LTDA' }], 'A LTDA', []).length, 1);
 });
 
 console.log(`\n${n} testes ok`);

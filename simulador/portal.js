@@ -7,6 +7,12 @@
   var BASE = '/clientcenter/pt/actions';
   var SR = BASE + '/service-request/';
   var EMPRESA = 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA';
+  var EMPRESA_BASE = EMPRESA;
+  // as outras empresas do mesmo login (inventadas), cada uma com os seus funcionários
+  var OUTRA = 'COMERCIO MODELO DE ALIMENTOS LTDA', TERCEIRA = 'OFICINA FICTICIA DE SERVICOS ME';
+  var FUNC_EMPRESA = {}, BASE_FUNC = null;
+  FUNC_EMPRESA[OUTRA] = ['CARLOS EDUARDO PAIVA', 'DEBORA SANTANA', 'ELISA MARTINS', 'FERNANDO GOUVEIA', 'GISELE TAVARES'];
+  FUNC_EMPRESA[TERCEIRA] = ['HUGO BARRETO', 'IRENE COUTINHO', 'JULIO CESAR NETO'];
   // lista longa (como numa empresa real): o portal só desenha ~13 nomes por vez (lista virtualizada)
   var EMP5 = ['ADRIANA MOTA LIMA', 'ALEXANDRE PIRES', 'BEATRIZ CAMPOS', 'BRUNO TEIXEIRA', 'CAMILA ROCHA', 'DANIEL FERREIRA', 'EDUARDO NUNES', 'FABIANA LOPES', 'FRANCISCO DE MOURA', 'GABRIEL MENDES', 'HELENA DUARTE', 'IVONE CARDOSO', 'JOANA FONSECA', 'JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'KARINA BASTOS', 'LUCAS MOREIRA', 'MARCOS VIEIRA', 'PATRICIA GOMES', 'RONALDO DE SOUZA', 'SILVIA RAMOS', 'THIAGO CARVALHO', 'VANESSA PRADO', 'WAGNER SOUSA'];
   var EMP3 = ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'];
@@ -105,11 +111,11 @@
 
   /* ---------- Dados (só neste navegador) ---------- */
   var SKEY = 'ct-sim-portal';
-  var SEED_V = 7;
+  var SEED_V = 8;
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
     var items = {
-      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 30 }],
+      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 20, abono: 10 }],
       'employee-leave': [{ id: 1039, status: 'Em andamento', empregado: 'JOANA FONSECA', assunto: 'Afastamento – JOANA FONSECA – Licença maternidade', tramite: 'Cliente: segue em anexo a certidão de nascimento.', data: d(6) }],
       'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) },
         { id: 1060, status: 'Aguardando o cliente', empregado: '', assunto: 'Informe de rendimentos 2025', tramite: 'Escritório: segue o seu comprovante de rendimentos de 2025. Qualquer dúvida, estamos à disposição.', data: d(2), anexos: ['Informe de rendimentos 2025.pdf'] }]
@@ -128,7 +134,6 @@
       { id: seq++, status: 'Concluída', empregado: 'WAGNER SOUSA', assunto: 'Admissão – WAGNER SOUSA', tramite: 'Escritório: registro concluído.', data: d(86) }];
     items['payroll-entries'] = [{ id: seq++, status: 'Concluída', empregado: '', assunto: 'Variáveis da folha – competência anterior', tramite: 'Escritório: lançado.', data: d(20) }];
     // o mesmo login vê outras duas empresas (inventadas): para escolher uma, várias ou todas na plataforma
-    var OUTRA = 'COMERCIO MODELO DE ALIMENTOS LTDA', TERCEIRA = 'OFICINA FICTICIA DE SERVICOS ME';
     items['general-requests'].push({ id: seq++, status: 'Aguardando o cliente', empregado: '', assunto: 'Alvará de funcionamento 2026', tramite: 'Escritório: envie o alvará renovado, por favor.', data: d(5), empresa: OUTRA, apelido: 'MODELO' },
       { id: seq++, status: 'Em andamento', empregado: '', assunto: 'Certidão negativa de débitos', tramite: 'Cliente: aguardo a certidão.', data: d(3), empresa: OUTRA, apelido: 'MODELO' },
       { id: seq++, status: 'Em andamento', empregado: '', assunto: 'Parcelamento do Simples', tramite: 'Cliente: podem simular o parcelamento?', data: d(1), empresa: TERCEIRA, apelido: 'OFICINA' });
@@ -145,6 +150,19 @@
   window.__ctPlatform = {
     path: function () { return path; },
     navigate: function (p) { go(p); },
+    // trocar de empresa como o portal: o cabeçalho muda, os funcionários são os da empresa nova e a tela volta ao início
+    trocarEmpresa: function (nome) {
+      var base = [EMPRESA_BASE, OUTRA, TERCEIRA];
+      if (base.indexOf(nome) < 0) return Promise.resolve({ ok: false });
+      if (!BASE_FUNC) BASE_FUNC = { e5: EMP5.slice(), e3: EMP3.slice() };
+      var e5 = nome === EMPRESA_BASE ? BASE_FUNC.e5 : FUNC_EMPRESA[nome], e3 = nome === EMPRESA_BASE ? BASE_FUNC.e3 : FUNC_EMPRESA[nome].slice(0, 3);
+      EMP5.splice.apply(EMP5, [0, EMP5.length].concat(e5));
+      EMP3.splice.apply(EMP3, [0, EMP3.length].concat(e3));
+      EMPRESA = nome;
+      document.getElementById('p-empresa').textContent = EMPRESA;
+      go(BASE);
+      return Promise.resolve({ ok: true, empresa: nome });
+    },
     // mesmo formato da API real (mapa do Onvio de 15/10/2026): genericStatus numérico por família, identifier,
     // id GUID, funcionário e responsável em *Expanded; pageIndex começa em 1
     fetchList: function (api, opts) {
@@ -177,6 +195,7 @@
       var it = itemApi(slug, r);
       var dia = function (br, n) { return isoDe(br, n).slice(0, 10) + 'T00:00:00'; };   // datas "só dia", como no Onvio
       if (r.inicio) { it.vacationStartDate = dia(r.inicio, 0); it.paymentDate = dia(r.inicio, 2); it.vacationDays = r.dias || 30; }
+      if (r.abono != null) it.bonusDays = r.abono;   // dias de abono do aviso (para o "Pedir o cálculo")
       if (slug === 'termination-notice') { it.adviceDate = dia(r.data, 0); it.reason = 'ApprenticeContractTermination'; it.grantedBy = 'EMPLOYEE'; }   // como o Onvio manda (em inglês)
       return Promise.resolve(it);
     },
@@ -216,7 +235,7 @@
   function isoDe(br, menosDias) { var m = String(br || '').match(/(\d{2})\/(\d{2})\/(\d{4})/); var d = m ? new Date(+m[3], +m[2] - 1, +m[1], 10, 0) : new Date(); d.setDate(d.getDate() - (menosDias || 0)); return d.toISOString().slice(0, 19); }
   function itemApi(slug, r) {
     var cod = codigoDe(slug, r.status), quando = isoDe(r.data, 0);
-    var it = { id: guidDe(r.id), identifier: r.id, genericStatus: cod, created: isoDe(r.data, 2), subject: r.assunto, clientExpanded: r.empresa ? { code: r.empresa.length, name: r.empresa, nickname: r.apelido || '' } : { code: 1, name: EMPRESA, nickname: 'EXEMPLO' } };
+    var it = { id: guidDe(r.id), identifier: r.id, genericStatus: cod, created: isoDe(r.data, 2), subject: r.assunto, clientExpanded: r.empresa ? { code: r.empresa.length, name: r.empresa, nickname: r.apelido || '' } : { code: 1, name: EMPRESA_BASE, nickname: 'EXEMPLO' } };
     if (FAMILIA[slug] === 'rubricas') it.genericLastUpdated = quando; else it.lastUpdated = quando;
     if (FAMILIA[slug] === 'cadastro') { it.name = r.empregado; it.clientStatus = cod; }
     else if (r.empregado) it.clientEmployeeExpanded = { name: r.empregado };
