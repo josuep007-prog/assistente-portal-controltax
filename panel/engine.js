@@ -172,7 +172,7 @@ export function extractByLabels(text, campos) {
         let v = m[1].trim();
         if (nextLabel) { const cut = (' ' + v).search(nextLabel); if (cut > 0) v = v.slice(0, cut - 1).trim(); }
         v = v.replace(/[;,]$/, '').trim();
-        if (v) { out[key] = { valor: v, fonte: syn, conf: 0.75 }; break; }
+        if (v) { out[key] = { valor: v, fonte: syn, conf: 0.75, linha: l }; break; }
       }
       if (out[key]) break;
     }
@@ -221,8 +221,12 @@ export function analyzeText(text, rules, ctx = {}) {
   const campos = {};
   const put = (k, v, conf, fonte) => { if (v == null || v === '') return; if (!campos[k] || campos[k].conf < conf) campos[k] = { valor: v, conf, fonte }; };
 
-  if (tipo) for (const [k, v] of Object.entries(extractByLabels(text, tipo.campos))) put(k, v.valor, v.conf, v.fonte);
+  const rotulados = tipo ? extractByLabels(text, tipo.campos) : {};
+  for (const [k, v] of Object.entries(rotulados)) put(k, v.valor, v.conf, v.fonte);
   for (const [k, v] of Object.entries(extractGeneric(text))) if (!tipo || tipo.campos[k]) put(k, v.valor, v.conf, v.fonte);
+  // documento pessoal (RG, CNH, CIN, CTPS digital, título): rótulo numa linha, valor na de baixo
+  const pessoal = docRule?.leitor === 'pessoal' && tipo ? lerDocumentoPessoal(text, rules.config?.leitorPessoal, docRule.id) : null;
+  if (pessoal) for (const [k, v] of Object.entries(pessoal.campos)) if (tipo.campos[k]) put(k, v.valor, v.conf, v.fonte);
   // leitor próprio do documento (atestado): lê dias, data, CID, médico e paciente com mais cuidado
   const usaLeitor = docRule ? (docRule.leitor || (docRule.id === 'atestado' ? 'atestado' : null)) === 'atestado' : tipoKey === 'afastamento';
   const leitor = usaLeitor ? lerAtestado(text, ctx.hoje || today()) : null;
@@ -234,27 +238,58 @@ export function analyzeText(text, rules, ctx = {}) {
     if (leitor.medico) put('medico', leitor.medico, 0.7, docRule?.nome || 'documento');
   } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
-  if (docRule?.tipoCatPalavras) {
-    // a CAT imprime todas as opções ("( ) Típico ( ) Trajeto"): só vale a marcada
-    const T = norm(text);
-    const candidatos = Object.entries(docRule.tipoCatPalavras).filter(([, words]) => words.some(w => T.includes(norm(w))));
-    if (candidatos.length === 1) put('tipoCat', candidatos[0][0], 0.6, docRule.nome);
-    else if (candidatos.length > 1) {
-      const marcada = opcaoMarcada(text, candidatos.flatMap(([, words]) => words));
-      const dono = marcada && candidatos.find(([, words]) => words.some(w => norm(w) === norm(marcada)));
-      if (dono) put('tipoCat', dono[0], 0.6, docRule.nome);
+  // opções escolhidas por palavras do documento (documentos[].opcoesPorPalavra; tipoCatPalavras é o formato antigo da CAT)
+  for (const o of regrasDeOpcoes(docRule)) { const v = opcaoPorPalavra(text, o); if (v) put(o.campo, v, 0.6, docRule.nome); }
+  // motivo da rescisão pela tabela das regras (config.motivoAuto): "término do contrato de experiência" no documento
+  const avisosMotivo = [];
+  if (tipo?.campos?.motivo && rules.config?.motivoAuto && docRule) {
+    const m = motivoRescisao(text, rules, { docId: docRule.id, soAuto: true });
+    if (m?.nenhum) { delete campos.motivo; if (m.dica) avisosMotivo.push({ nivel: 'atencao', id: 'motivo', mensagem: m.dica }); }
+    else if (m?.valor) { put('motivo', m.valor, 0.7, docRule.nome); if (m.dadoPor) put('avisoDadoPor', m.dadoPor, 0.7, docRule.nome); }
+  }
+  // campos do pedido irmão: "dataAviso" lido vale como "Data do aviso prévio" no cálculo (campos[].tambem);
+  // dias de abono → abono SIM/NÃO (campos[].porNumero); fim do gozo → dias de gozo
+  if (tipo) {
+    for (const [k, def] of Object.entries(tipo.campos)) {
+      if (!campos[k]) for (const a of def.tambem || []) if (campos[a]) { campos[k] = { ...campos[a] }; break; }
+      const pn = def.porNumero;
+      if (pn && campos[pn.campo]) { const n = parseInt(onlyDigits(campos[pn.campo].valor), 10); if (!isNaN(n)) put(k, n > 0 ? pn.maiorQueZero : pn.zero, 0.65, campos[pn.campo].fonte); }
+    }
+    if (tipo.campos.diasGozo && !campos.diasGozo && campos.inicioGozo && campos.fimGozo) {
+      const a = parseDate(campos.inicioGozo.valor), b = parseDate(campos.fimGozo.valor);
+      if (a && b && b >= a && diffDays(a, b) < 31) put('diasGozo', String(diffDays(a, b) + 1), 0.65, campos.fimGozo.fonte);
     }
   }
-  // comprovante de endereço (ou qualquer documento com endereço) para cadastros
-  if (tipo?.campos?.cep && (doc?.id === 'comprovanteEndereco' || !campos.endereco)) {
-    for (const [k, v] of Object.entries(extractAddress(text))) if (tipo.campos[k]) put(k, v, doc?.id === 'comprovanteEndereco' ? 0.7 : 0.45, 'endereço no documento');
+  // endereço: só de documentos que podem trazê-lo (documentos[].endereco: comprovante e ficha) ou de um texto sem documento;
+  // as linhas que já viraram outros campos (naturalidade, "SSP/ES"…) não entram
+  if (tipo?.campos?.cep) {
+    const ADDR = ['cep', 'endereco', 'numero', 'complemento', 'bairro', 'municipio', 'uf'];
+    if (!docRule || docRule.endereco) {
+      const usadas = new Set(Object.entries(rotulados).filter(([k]) => !ADDR.includes(k)).map(([, v]) => v.linha));
+      const livre = String(text || '').split(/\r?\n/).filter(l => !usadas.has(l.trim())).join('\n');
+      const ender = rotulados.endereco ? separarEndereco(rotulados.endereco.valor) : {};
+      if (ender.endereco) { campos.endereco.valor = ender.endereco; for (const k of ['numero', 'complemento', 'bairro', 'municipio', 'uf']) if (ender[k] && tipo.campos[k] && !rotulados[k]) put(k, ender[k], 0.7, rotulados.endereco.fonte); }
+      for (const [k, v] of Object.entries(extractAddress(livre))) if (tipo.campos[k]) put(k, v, docRule?.id === 'comprovanteEndereco' ? 0.7 : 0.45, 'endereço no documento');
+    } else for (const k of ADDR) if (campos[k] && !rotulados[k]) delete campos[k];
   }
+  for (const k of docRule?.naoPreenche || []) delete campos[k];
   // datas extraídas: normaliza
   for (const [k, c] of Object.entries(campos)) {
     const def = tipo?.campos?.[k];
-    if (def?.tipo === 'data') { const d = parseDate(c.valor); if (d) c.valor = fmtDate(d); else delete campos[k]; }
-    if (def?.tipo === 'numero') { const n = parseInt(onlyDigits(c.valor), 10); if (isNaN(n)) delete campos[k]; else c.valor = String(n); }
+    const junto = (alvo, v) => { if (v && tipo.campos[alvo] && (!campos[alvo] || campos[alvo].conf < c.conf)) campos[alvo] = { valor: v, conf: c.conf, fonte: c.fonte }; };
+    // "Vitória/ES" → município e UF; "1234567 SSP/ES" → RG, órgão e UF; "45 + 45" → experiência e prorrogação (regras: separaUf, separaOrgaoUf, prorrogacaoEm)
+    if (def?.separaOrgaoUf) { const r = separarRg(c.valor); if (r) { c.valor = r.numero; junto(def.separaOrgaoUf[0], r.orgao); junto(def.separaOrgaoUf[1], r.uf); } }
+    if (def?.separaUf) { const u = separarUf(c.valor); if (u) { c.valor = u.antes; junto(def.separaUf, u.uf); } }
+    if (def?.prorrogacaoEm) { const d = diasExperiencia(c.valor); if (d[1] != null) junto(def.prorrogacaoEm, String(d[1])); }
+    if (def?.tipo === 'data') {
+      // "01/11/2026 a 31/10/2027" (vigência do estágio): vale a primeira data
+      const d = parseDate(c.valor) || parseDate(String(c.valor).match(/\d{1,2}\/\d{1,2}\/\d{2,4}/)?.[0]);
+      if (d) c.valor = fmtDate(d); else delete campos[k];
+    }
+    if (def?.tipo === 'numero') { const m = String(c.valor).match(/\d[\d.]*/); const n = m ? parseInt(onlyDigits(m[0]), 10) : NaN; if (isNaN(n)) delete campos[k]; else c.valor = String(n); }
     if (def?.tipo === 'cpf' && c.valor) c.valor = fmtCPF(c.valor);
+    if (def?.tipo === 'radio' && def.seletores?.['Sim'] && def.seletores?.['Não']) { const v = simNao(c.valor) || def.outroTextoVira || null; if (v) c.valor = v; else delete campos[k]; }
+    else if (def?.tipo === 'radio' && def.seletores) { const ops = Object.keys(def.seletores).filter(o => norm(o).startsWith(norm(c.valor)) && norm(c.valor)); if (ops.length === 1) c.valor = ops[0]; }
   }
   // afastamento: o tipo do portal sai do conteúdo do documento e da quantidade de dias
   if (tipo?.campos?.tipoAfastamento && tipo.tipoAfastamentoAuto) {
@@ -277,12 +312,23 @@ export function analyzeText(text, rules, ctx = {}) {
       } else if (m) put('empregado', m.option, m.score, 'nome encontrado no documento');
     }
   }
-  if (tipo?.campos?.nome && !campos.nome) {
-    const m = String(text).match(/(?:nome|paciente|portador|titular)\s*[:\-]?\s*([A-ZÀ-Ú][A-ZÀ-Ú\s]{8,60})(?:\n|\s{2,}|$)/);
+  if (tipo?.campos?.nome && !campos.nome && !(docRule?.naoPreenche || []).includes('nome')) {
+    // na mesma linha do rótulo (o nome da linha de baixo é do leitor de documento pessoal)
+    const m = String(text).match(/(?:nome|paciente|portador|titular)[ \t]*[:\-]?[ \t]*([A-ZÀ-Ú][A-ZÀ-Ú \t]{8,60})(?=\n|\s{2,}|$)/);
     if (m) put('nome', m[1].trim(), 0.5, 'nome em maiúsculas');
   }
-  const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra];
-  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos };
+  // motivo sem aviso prévio (término da experiência, justa causa): o cálculo não leva data nem tipo de aviso
+  if (tipo?.campos?.tipoAviso && campos.motivo && !temAviso({ motivo: campos.motivo.valor }, rules)) { delete campos.tipoAviso; delete campos.dataAvisoPrevio; }
+  // comprovante em nome de outra pessoa (a tela compara com o nome do cadastro) e filiação para confirmar
+  const titular = doc?.id === 'comprovanteEndereco' ? titularComprovante(text) : null;
+  const avComp = avisoComprovante(titular, ctx.nome, rules);
+  if (avComp) avisosExtra.push(avComp);
+  if (pessoal?.filiacao?.length === 2 && tipo?.campos?.mae && campos.mae) {
+    const outro = pessoal.filiacao.find(x => x !== campos.mae.valor) || '';
+    avisosExtra.push({ nivel: 'atencao', id: 'filiacao', mensagem: (rules.mensagens?.filiacaoConfira || 'Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira.').replaceAll('{mae}', campos.mae.valor).replaceAll('{outro}', outro) });
+  }
+  const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra, ...avisosMotivo];
+  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos, titular, filiacao: pessoal?.filiacao || null, layout: pessoal?.layout || null };
 }
 
 /* ---------------- Tipos e campos ---------------- */
@@ -300,6 +346,8 @@ const matchCond = (cond, values) => {
   const v = norm(values[cond.campo]);
   if (cond.contem) return cond.contem.some(c => v.includes(norm(c)));
   if (cond.igual != null) return v === norm(cond.igual);
+  // número maior que (ex.: dias de abono > 0); vem antes de "preenchido", que as versões antigas usam no lugar
+  if (cond.maiorQue != null) { const n = parseFloat(String(values[cond.campo] ?? '').replace(',', '.')); return !isNaN(n) && n > +cond.maiorQue; }
   if (cond.preenchido) return !!v;
   return true;
 };
@@ -307,10 +355,86 @@ const matchCond = (cond, values) => {
 export function activeConditionals(tipo, values) {
   return (tipo.condicionais || []).filter(c => matchCond(c.se, values));
 }
+export const condicaoVale = (cond, values) => matchCond(cond, values || {});
+/** Documentos que servem a um anexo: anexos[].documentos (lista) ou o formato antigo anexos[].documento. */
+export const docsDoAnexo = (a) => [...new Set([...(a?.documentos || []), a?.documento].filter(Boolean))];
+export const anexoAceita = (a, docId) => !!docId && docsDoAnexo(a).includes(docId);
+
+/* ---------------- Cadastros: o que se repete é da empresa, não da pessoa ---------------- */
+/* regras: config.camposDaEmpresa = { tipos, campos, historicoEnviado }; empresas.<trecho>.padroes; config.experienciaSugerida */
+const CAMPOS_EMPRESA_PADRAO = {
+  tipos: ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte'],
+  campos: ['departamento', 'centroCusto', 'sindicato', 'jornada', 'cargaHoraria', 'cargo', 'funcao', 'contratoExperiencia', 'prorrogacao'],
+  historicoEnviado: ['nome', 'dataAdmissao', 'contratoExperiencia', 'prorrogacao']
+};
+const cfgEmpresa = (rules) => ({ ...CAMPOS_EMPRESA_PADRAO, ...(rules?.config?.camposDaEmpresa || {}) });
+/** Campos da empresa do tipo (null quando o tipo não é um cadastro: lá vale o comportamento antigo). */
+export function camposDaEmpresa(tipoKey, rules) {
+  const c = cfgEmpresa(rules);
+  return (c.tipos || []).includes(tipoKey) ? [...(c.campos || [])] : null;
+}
+/** O que pode ir de uma solicitação para outra (repetir, histórico, modelo): nunca assunto, descrição e CID;
+ *  num cadastro, só os campos da empresa — os dados da pessoa anterior ficam de fora. */
+export function valoresReaproveitaveis(tipoKey, valores, rules) {
+  const lista = camposDaEmpresa(tipoKey, rules); const out = {};
+  for (const [k, v] of Object.entries(valores || {})) {
+    if (['assunto', 'descricao', 'cid'].includes(k) || v == null || v === '') continue;
+    if (lista && !lista.includes(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+/** Valores guardados no histórico: um cadastro enviado fica só com o nome, as datas da Agenda e os campos da empresa. */
+export function valoresParaHistorico(tipoKey, valores, status, rules) {
+  const lista = camposDaEmpresa(tipoKey, rules);
+  const v = { ...(valores || {}) }; delete v.cid; delete v.descricao; delete v.observacoes;
+  if (!lista || status !== 'enviado') return v;
+  const manter = new Set([...lista, ...(cfgEmpresa(rules).historicoEnviado || [])]);
+  return Object.fromEntries(Object.entries(v).filter(([k]) => manter.has(k) || k === 'assunto'));
+}
+/** Ajustes da empresa pelo trecho do nome (regras.empresas). */
+export function ajustesDaEmpresa(rules, empresa) {
+  const E1 = norm(empresa);
+  const ent = E1 && Object.entries(rules?.empresas || {}).find(([k]) => k && !k.startsWith('_') && E1.includes(norm(k)));
+  return ent ? ent[1] || {} : null;
+}
+/** Sugestões para um cadastro novo (o cliente confere e escolhe "Usar"): última admissão da empresa,
+ *  padrões da empresa e experiência 45 + 45. Devolve { campo: { valor, conf, fonte } } só de campos da empresa. */
+export function sugestoesCadastro(tipoKey, rules, { empresa = '', historico = [] } = {}) {
+  const lista = camposDaEmpresa(tipoKey, rules); if (!lista) return {};
+  const tipo = resolveTipo(rules, tipoKey); const out = {};
+  const put = (k, v, conf, fonte) => { if (v == null || v === '' || out[k] || !tipo?.campos?.[k] || !lista.includes(k)) return; out[k] = { valor: String(v), conf, fonte }; };
+  const ult = (historico || []).find(h => h.status === 'enviado' && h.tipo === tipoKey && h.empresa === empresa);
+  if (ult) for (const [k, v] of Object.entries(valoresReaproveitaveis(tipoKey, ult.valores, rules))) put(k, v, 0.5, 'como na última admissão');
+  const pad = ajustesDaEmpresa(rules, empresa)?.padroes || {};
+  for (const [k, v] of Object.entries(pad)) if (v && typeof v === 'object') { if (k === tipoKey) for (const [k2, v2] of Object.entries(v)) put(k2, v2, 0.5, 'padrão da empresa'); }
+  for (const [k, v] of Object.entries(pad)) if (typeof v !== 'object') put(k, v, 0.5, 'padrão da empresa');
+  const xp = rules?.config?.experienciaSugerida;
+  if (xp && (xp.tipos || ['cadastroEmpregado']).includes(tipoKey)) {
+    put('contratoExperiencia', xp.contratoExperiencia, 0.4, `sugestão: ${xp.contratoExperiencia} + ${xp.prorrogacao} dias`);
+    put('prorrogacao', xp.prorrogacao, 0.4, `sugestão: ${xp.contratoExperiencia} + ${xp.prorrogacao} dias`);
+  }
+  return out;
+}
 
 /* ---------------- Regras de prazo compartilhadas ---------------- */
 /** Súmula 380 do TST (art. 132 do Código Civil): não conta o dia do aviso, conta o último. */
 export const fimDoAviso = (dataAviso, dias = 30) => addDays(dataAviso, dias);
+/** O inverso, com a mesma conta (regras: config.avisoPrevioContagem): último dia trabalhado → data do aviso.
+ *  É a conta do formulário e do Calcular (antes o Calcular contava o dia do aviso: −29). */
+export const inicioDoAviso = (fim, dias = 30) => addDays(fim, -dias);
+/** Recua para o dia útil anterior (prazo de pagamento que cai no fim de semana ou feriado). */
+export const diaUtilAntes = (d, cal) => { let x = d; for (let i = 0; i < 15 && !cal.isBusiness(x); i++) x = addDays(x, -1); return x; };
+/** Pagamento das férias: config.pagamentoFeriasAntes dias antes do início (CLT 145), no dia útil anterior. */
+export const pagamentoFerias = (inicio, rules, cal = makeCalendar(rules?.feriados)) => inicio ? diaUtilAntes(addDays(inicio, -(rules?.config?.pagamentoFeriasAntes ?? 2)), cal) : null;
+/** Pagamento da rescisão: config.pagamentoRescisaoDias depois do fim do contrato (CLT 477 §6º), no dia útil anterior. */
+export const pagamentoRescisao = (base, rules, cal = makeCalendar(rules?.feriados)) => base ? diaUtilAntes(addDays(base, rules?.config?.pagamentoRescisaoDias ?? 10), cal) : null;
+/** Anos completos de casa numa data. */
+export function anosCompletos(admissao, data) {
+  let a = data.getFullYear() - admissao.getFullYear();
+  if (data.getMonth() < admissao.getMonth() || (data.getMonth() === admissao.getMonth() && data.getDate() < admissao.getDate())) a--;
+  return Math.max(0, a);
+}
 const SEM_AVISO = ['COM JUSTA CAUSA', 'EXPERIENCIA', 'TEMPO DETERMINADO', 'CULPA RECIPROCA'];
 /** Dispensa por justa causa e fim de contrato não geram aviso prévio. */
 export function temAviso(values, rules) {
@@ -337,28 +461,74 @@ export function derived(tipoKey, values, rules) {
   if (ini && dias) {
     out.fimGozo = fmtDate(addDays(ini, dias - 1));
     out.retorno = fmtDate(addDays(ini, dias));
-    out.pagamentoAte = fmtDate(addDays(ini, -2));
-    out.avisoAte = fmtDate(addDays(ini, -30));
+    // mesmos dias e o mesmo recuo para dia útil do Hoje (config.pagamentoFeriasAntes, config.avisoFeriasDias)
+    out.pagamentoAte = fmtDate(pagamentoFerias(ini, rules, cal));
+    out.avisoAte = fmtDate(addDays(ini, -(rules.config?.avisoFeriasDias ?? 30)));
   }
   const afa = parseDate(values.dataAfastamento), diasAfa = +values.dias || 0;
   if (diasAfa) out.diasTexto = diasAfa === 1 ? '1 dia' : `${diasAfa} dias`;
   if (afa && diasAfa) { out.dataRetorno = fmtDate(addDays(afa, diasAfa)); if (diasAfa > 15 && vaiAoInss(values.tipoAfastamento, rules)) out.inicioInss = fmtDate(addDays(afa, 15)); }
   const dem = parseDate(values.dataDemissao);
-  if (dem) out.pagamentoAte = fmtDate(addDays(dem, 10));
+  if (dem) out.pagamentoAte = fmtDate(pagamentoRescisao(dem, rules, cal));
   const anos = +values.anosEmpresa;
   // proporcional (Lei 12.506/2011) é direito do empregado: só quando a empresa demite
   if (!isNaN(anos) && values.anosEmpresa !== '' && values.anosEmpresa != null && temAviso(values, rules)) {
     out.diasAviso = avisoPeloEmpregador(values) ? String(Math.min(90, 30 + 3 * Math.max(0, Math.floor(anos)))) : '30';
   }
-  if (dem || parseDate(values.dataAviso)) {
-    const base = parseDate(values.dataAviso) || dem;
+  const avisoEm = parseDate(values.dataAviso) || parseDate(values.dataAvisoPrevio);
+  if (dem || avisoEm) {
+    const base = avisoEm || dem;
     const d = +out.diasAviso || 30;
     if (base && temAviso(values, rules)) out.fimAviso = fmtDate(fimDoAviso(base, d));
   }
   const tipo = resolveTipo(rules, tipoKey);
   if (tipo?.complexidade) out.diasUteis = String(rules.config?.prazoInternoDiasUteis?.[tipo.complexidade] ?? '');
-  void cal;
   return out;
+}
+
+/* ---------------- Datas que dá para calcular (tipos.*.calculados) ----------------
+   Cada regra: { campo, formula, de?, dias? (número ou "config.chave"), diaUtil?: 'antes', se?, explicacao? }
+   formula: 'hoje' | 'diasAntes' | 'diasDepois' | 'prazoDoPedido' (prazo interno do escritório em dias úteis) |
+   'demissaoPeloAviso' (trabalhado: fim do aviso; indenizado/dispensa: a data do aviso) | 'avisoPelaDemissao' (o inverso).
+   config.expectativaConclusao liga a Expectativa de conclusão em todos os pedidos que têm o campo.
+   Devolve { campo: { valor, explicacao } }; a tela usa só em campo vazio e não mexido pelo cliente. */
+export function sugeridos(tipoKey, values, rules, hoje = today(), cal = makeCalendar(rules?.feriados)) {
+  const tipo = resolveTipo(rules, tipoKey); if (!tipo) return {};
+  const c = rules?.config || {};
+  const num = (x) => (typeof x === 'string' && x.startsWith('config.') ? +c[x.slice(7)] : +x) || 0;
+  const regras = Object.values(tipo.calculados || {}).filter(r => r?.campo && tipo.campos[r.campo]);
+  const ec = c.expectativaConclusao;
+  if (ec && ec.ativo !== false && tipo.campos.conclusao && !regras.some(r => r.campo === 'conclusao')) regras.push({ campo: 'conclusao', formula: 'prazoDoPedido', explicacao: ec.explicacao });
+  const out = {};
+  for (const r of regras) {
+    if (r.se && !matchCond(r.se, values)) continue;
+    const base = parseDate(values[r.de]);
+    const ta = norm(values.tipoAviso || '');
+    let d = null;
+    switch (r.formula) {
+      case 'hoje': d = hoje; break;
+      case 'diasAntes': case 'subtrairDias': if (base) d = addDays(base, -num(r.dias)); break;
+      case 'diasDepois': case 'somarDias': if (base) d = addDays(base, num(r.dias)); break;
+      case 'prazoDoPedido': d = cal.addBusinessDays(hoje, num(r.dias) || c.prazoInternoDiasUteis?.[tipo.complexidade] || 3); break;
+      case 'demissaoPeloAviso': if (base && ta && temAviso(values, rules)) d = ta === 'TRABALHADO' ? fimDoAviso(base, num(r.dias) || 30) : base; break;
+      case 'avisoPelaDemissao': if (base && ta && temAviso(values, rules)) d = ta === 'TRABALHADO' ? inicioDoAviso(base, num(r.dias) || 30) : base; break;
+      default: break;
+    }
+    if (!d) continue;
+    if (r.diaUtil === 'antes') d = diaUtilAntes(d, cal);
+    out[r.campo] = { valor: fmtDate(d), explicacao: r.explicacao || '' };
+  }
+  return out;
+}
+/** 1ª data de início de férias que vale (a partir de `aPartir`): dia útil fora dos 2 dias antes de domingo ou feriado. */
+export function primeiroInicioFerias(aPartir, rules, cal = makeCalendar(rules?.feriados)) {
+  let d = aPartir;
+  for (let i = 0; i < 60; i++, d = addDays(d, 1)) {
+    if (!cal.isBusiness(d)) continue;
+    if ([1, 2].some(n => { const x = addDays(d, n); return x.getDay() === 0 || cal.isHoliday(x); })) continue;
+    return d;
+  }
+  return aPartir;
 }
 
 /* ---------------- Modelos de texto ---------------- */
@@ -440,13 +610,17 @@ export function runChecks(tipoKey, values, anexos, rules, hoje = today(), portal
     if (a.excetoQuando && matchCond(a.excetoQuando, values)) continue;
     // só conta como anexado o que está mesmo no portal: o que está só na lista do
     // Assistente ainda não foi para a solicitação (pendente)
-    const has = (anexos || []).some(f => f.documento === a.documento && !f.pendente);
-    const soNoAssistente = !has && (anexos || []).find(f => f.documento === a.documento && f.pendente);
+    const has = (anexos || []).some(f => anexoAceita(a, f.documento) && !f.pendente);
+    const soNoAssistente = !has && (anexos || []).find(f => anexoAceita(a, f.documento) && f.pendente);
     const temAlgum = (anexos || []).some(f => !f.pendente);
+    // falta a carta e há modelo dela (anexos[].modelo, só quando modeloSe vale): a tela oferece "Gerar pelo modelo"
+    const modelo = a.modelo && (!a.modeloSe || matchCond(a.modeloSe, values)) ? a.modelo : null;
+    const n0 = res.length;
     if (has) add('ok', 'Anexos', `${a.rotulo} anexado`);
     else if (soNoAssistente) add('erro', 'Anexos', (rules?.mensagens?.anexoSoNoAssistente || 'O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.').replace('{arquivo}', soNoAssistente.nome));
     else if (a.obrigatorio) add(temAlgum ? 'atencao' : 'erro', 'Anexos', temAlgum ? `Confira se o anexo inclui: ${a.rotulo}` : `Anexe: ${a.rotulo}`);
     else add('info', 'Anexos', `Se tiver, anexe: ${a.rotulo}`);
+    if (!has && !soNoAssistente && modelo && res[n0]) Object.assign(res[n0], { modelo, anexo: a.id });
   }
 
   // Regras e prazos
@@ -566,6 +740,11 @@ export function suggestTipoByText(text, rules, atual) {
   const T = ' ' + norm(text) + ' ';
   if (T.trim().length < 4) return null;
   const l = pontuarIntencoes(text, rules).filter(x => x.tipo !== atual && x.pontos > 0);
+  // ficha colada ("Nome: … CPF: … Nome da mãe: …") abre o Cadastro mesmo sem a palavra admissão
+  if (!atual && (!l.length || (!CADASTROS.includes(l[0].tipo) && l[0].pontos < 3))) {
+    const n = fichaColada(text, rules);
+    if (n && (!l.length || l[0].pontos < n)) return { tipo: 'cadastroEmpregado', hits: n, pontos: n, ficha: true, intencao: (rules?.intencoes || []).find(i => i.tipo === 'cadastroEmpregado') || null };
+  }
   if (!l.length) return null;
   const best = l[0];
   const empate = l.filter(x => x !== best && Math.abs(x.pontos - best.pontos) < 0.01).map(x => x.tipo);
@@ -600,7 +779,8 @@ const TL_PADRAO = {
   abono: { verbos: ['vender', 'vende', 'abono de'], sim: ['com abono'], nao: ['sem abono'] }, gozoVerbos: ['tirar', 'gozar', 'por'], abonoPadraoDias: 10,
   decimoTerceiro: { palavras: ['13º', '13o', 'decimo terceiro', '13 salario'], nao: ['sem adiantar', 'nao adiantar'] },
   pergunta: ['como', 'posso', 'qual', 'quando'], palavrasVazias: [], apelidos: {},
-  competencia: { passado: ['mes passado'], atual: ['este mes', 'mes atual'], proximo: ['mes que vem'] }, adiantamento: ['adiantamento', 'vale salarial']
+  competencia: { passado: ['mes passado'], atual: ['este mes', 'mes atual'], proximo: ['mes que vem'] }, adiantamento: ['adiantamento', 'vale salarial'],
+  tipoAviso: { 'AUSÊNCIA/DISPENSA': ['aviso dispensado', 'dispensa do aviso', 'dispensa do cumprimento', 'ausencia'], INDENIZADO: ['indenizad*'], TRABALHADO: ['trabalhad*'] }
 };
 const tl = (rules) => ({ ...TL_PADRAO, ...(rules?.config?.textoLivre || {}) });
 
@@ -1034,7 +1214,7 @@ export function parseFreeText(text, rules, ctx = {}) {
     if (m?.option) put('empregado', m.option, m.score); else if (m?.candidatos) candidatosNome = m.candidatos;
     else palpite = palpiteEmpregado(text, ctx.employees, rules);
   }
-  let linhas = [];
+  let linhas = []; const dicas = [];
   switch (tipo) {
     case 'afastamento': {
       put('dataAfastamento', d0);
@@ -1054,27 +1234,30 @@ export function parseFreeText(text, rules, ctx = {}) {
         if (abonoQ?.n) put('diasAbono', abonoQ.n);
         else { const g = dd?.n; put('diasAbono', g && g < 30 && 30 - g <= 10 ? 30 - g : (c.abonoPadraoDias || 10), 0.45); }
       }
-      if (tipo === 'calculoFerias' && (comAbono || semAbono)) put('abono', comAbono ? 'SIM' : 'NÃO');
+      // abono só vira SIM com dias maiores que zero (ou sem número: "vai vender")
+      if (tipo === 'calculoFerias' && (comAbono || semAbono)) put('abono', comAbono && abonoQ?.n !== 0 ? 'SIM' : 'NÃO');
       const dt = c.decimoTerceiro || {};
       if (tipo === 'calculoFerias') { if (temTermo(t, dt.nao)) put('adiantar13', 'NÃO'); else if (temTermo(t, dt.palavras)) put('adiantar13', 'SIM'); }
       break;
     }
     case 'avisoRescisao': case 'calculoRescisao': {
-      let motivo = null, dadoPor = null;
-      for (const r of c.motivosRescisao || []) if (temTermo(t, r.palavras) && !temTermo(t, r.exceto)) { motivo = r.valor; dadoPor = r.dadoPor || null; break; }
-      if (!c.motivosRescisao) {
-        if (/pediu demissao|pedido de demissao|pedir demissao|quer sair|pediu para sair/.test(t)) { motivo = 'Pedido de demissão SEM justa causa'; dadoPor = 'EMPREGADO'; }
-        else if (/\bcom justa causa\b|(?<!sem )\bjusta causa\b/.test(t)) { motivo = 'Demitido COM justa causa'; dadoPor = 'EMPREGADOR'; }
-        else if (/sem justa causa|demit|demissao|dispens|deslig/.test(t)) { motivo = 'Demitido SEM justa causa'; dadoPor = 'EMPREGADOR'; }
-      }
-      if (/experiencia/.test(t)) motivo = dadoPor === 'EMPREGADO' ? 'Rescisão contrato experiência antecipado pelo empregado' : 'Rescisão contrato experiência antecipado pelo empregador';
+      // motivo pela tabela das regras (config.motivoAuto: experiência, acordo, culpa recíproca, extinção…) e, sem ela, pelas palavras do texto livre
+      const m = motivoRescisao(text, rules);
+      let motivo = m?.valor || null; const dadoPor = m?.dadoPor || null;
+      if (m?.dica) dicas.push(m.dica);
+      if (!rules?.config?.motivoAuto && /experiencia/.test(t)) motivo = dadoPor === 'EMPREGADO' ? 'Rescisão contrato experiência antecipado pelo empregado' : 'Rescisão contrato experiência antecipado pelo empregador';
       put('motivo', motivo);
+      const semAviso = !!motivo && !temAviso({ motivo }, rules);
       if (tipo === 'avisoRescisao') { put('avisoDadoPor', dadoPor); put('dataAviso', d0 || fmtDate(hoje), d0 ? 0.6 : 0.4); if (anosQ) put('anosEmpresa', anosQ.n); }
       else {
-        const dem = normais[normais.length > 1 ? 1 : 0];
+        const dem = normais[normais.length > 1 && !semAviso ? 1 : 0];
         put('dataDemissao', dem ? fmtDate(dem) : null);
-        if (normais.length > 1) put('dataAvisoPrevio', fmtDate(normais[0]));
-        if (/indenizad/.test(t)) put('tipoAviso', 'INDENIZADO'); else if (/trabalhad/.test(t)) put('tipoAviso', 'TRABALHADO'); else if (/dispensa|ausencia/.test(t)) put('tipoAviso', 'AUSÊNCIA/DISPENSA');
+        // motivo sem aviso prévio: o cálculo não recebe data nem tipo de aviso
+        if (!semAviso) {
+          if (normais.length > 1) put('dataAvisoPrevio', fmtDate(normais[0]));
+          // expressão inteira (config.textoLivre.tipoAviso): "aviso dispensado" conta, "vamos dispensar" não
+          for (const [valor, ws] of Object.entries(c.tipoAviso || {})) if (!valor.startsWith('_') && Array.isArray(ws) && temTermo(t, ws)) { put('tipoAviso', valor); break; }
+        }
       }
       break;
     }
@@ -1086,8 +1269,8 @@ export function parseFreeText(text, rules, ctx = {}) {
       break;
     }
     case 'cadastroEmpregado': case 'cadastroEstagiario': case 'cadastroContribuinte': {
-      if (d0) put('dataAdmissao', d0);
-      const sal = String(text).match(/R\$\s*([\d.]+,\d{2}|\d+)/); if (sal) put('salario', sal[1]);
+      // ficha colada (mesma leitura dos documentos) e frases soltas: cada data com o seu papel
+      for (const [k, v] of Object.entries(lerCadastroTexto(text, tipo, rules, { hoje, employees: ctx.employees || [] }))) campos[k] = v;
       break;
     }
     default: break;
@@ -1095,7 +1278,138 @@ export function parseFreeText(text, rules, ctx = {}) {
   // "preciso até sexta": vai para a Expectativa de conclusão (nos pedidos que têm esse campo), não para o início
   if (prazo && def?.campos?.conclusao) put('conclusao', fmtDate(prazo.d));
   // o texto do cliente serve só para entender o pedido: não vai literalmente para a descrição
-  return { tipoSugerido: tipo, campos, datas: normais.map(fmtDate), intervalo, prazo: prazo ? fmtDate(prazo.d) : null, palpite, linhas, ...(candidatosNome ? { candidatos: candidatosNome } : {}) };
+  return { tipoSugerido: tipo, campos, datas: normais.map(fmtDate), intervalo, prazo: prazo ? fmtDate(prazo.d) : null, palpite, linhas, dicas, ...(candidatosNome ? { candidatos: candidatosNome } : {}) };
+}
+
+/* ---------- Motivo da rescisão (regras: config.motivoAuto) ----------
+   Lista em ordem de prioridade, no formato do tipoAfastamentoAuto: { palavras?, e? (precisa também de uma destas), exceto?,
+   modalidades? (do Calcular), documentos?, valor | nenhum + dica, dadoPor? }. Sem a tabela (ou sem achar nela), o texto livre
+   usa config.textoLivre.motivosRescisao. modalidade: só pela modalidade; soAuto: só a tabela (documentos). */
+export function motivoRescisao(text, rules, { modalidade = null, docId = null, soAuto = false } = {}) {
+  const t = plain(String(text || '').normalize('NFC'));
+  for (const r of rules?.config?.motivoAuto || []) {
+    const porMod = !!modalidade && (r.modalidades || []).includes(modalidade);
+    const porDoc = !modalidade && !!docId && (r.documentos || []).includes(docId);
+    const porTexto = !modalidade && !!r.palavras?.length && temTermo(t, r.palavras) && (!r.e?.length || temTermo(t, r.e)) && !temTermo(t, r.exceto);
+    if (!porMod && !porDoc && !porTexto) continue;
+    return { valor: r.nenhum ? null : r.valor || null, dadoPor: r.dadoPor || null, dica: r.dica || null, nenhum: !!r.nenhum };
+  }
+  if (modalidade || soAuto) return null;
+  for (const r of tl(rules).motivosRescisao || []) if (temTermo(t, r.palavras) && !temTermo(t, r.exceto)) return { valor: r.valor, dadoPor: r.dadoPor || null, dica: null, nenhum: false };
+  if (!tl(rules).motivosRescisao) {
+    if (/pediu demissao|pedido de demissao|pedir demissao|quer sair|pediu para sair/.test(t)) return { valor: 'Pedido de demissão SEM justa causa', dadoPor: 'EMPREGADO' };
+    if (/\bcom justa causa\b|(?<!sem )\bjusta causa\b/.test(t)) return { valor: 'Demitido COM justa causa', dadoPor: 'EMPREGADOR' };
+    if (/sem justa causa|demit|demissao|dispens|deslig/.test(t)) return { valor: 'Demitido SEM justa causa', dadoPor: 'EMPREGADOR' };
+  }
+  return null;
+}
+/** Tipo de aviso do portal (rádio do Cálculo de Rescisão) para o aviso da modalidade do Calcular (config.tipoAvisoModalidade). */
+export function tipoAvisoDaModalidade(aviso, rules) {
+  const m = { indenizado: 'INDENIZADO', trabalhado: 'TRABALHADO', dispensado: 'AUSÊNCIA/DISPENSA', naoCumprido: 'AUSÊNCIA/DISPENSA', ...(rules?.config?.tipoAvisoModalidade || {}) };
+  return aviso && typeof m[aviso] === 'string' ? m[aviso] : null;
+}
+
+/* ---------- Cadastro pelo texto: ficha colada e frases soltas (config.textoLivre.cadastro) ---------- */
+const CAD_PADRAO = {
+  fichaMinRotulos: 3, admissaoAteDiasAtras: 365,
+  datas: [{ campo: 'nascimento', palavras: ['nascid*', 'nasceu', 'nascimento'] }, { campo: 'dataAdmissao', palavras: ['comec*', 'entra', 'inicio', 'admissao', 'a partir de'] }],
+  salario: ['salario', 'bolsa', 'pro-labore'], experiencia: ['experiencia'], prorrogacao: ['prorrogacao'], cargo: ['cargo'], funcao: ['funcao'],
+  fimDoValor: ['com', 'e', 'cpf', 'dia', 'salario', 'no', 'na', 'em'], admitir: ['admitir', 'contratar']
+};
+export const CADASTROS = ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte'];
+const cadCfg = (rules) => ({ ...CAD_PADRAO, ...(tl(rules).cadastro || {}) });
+/** Ficha colada ("Nome: … CPF: … Nome da mãe: …"): quantos rótulos do cadastro aparecem (0 abaixo do mínimo das regras). */
+export function fichaColada(text, rules, tipoKey = 'cadastroEmpregado') {
+  const def = resolveTipo(rules, tipoKey); if (!def || !/[:\-–]/.test(String(text || ''))) return 0;
+  const n = Object.keys(extractByLabels(text, def.campos)).length;
+  return n >= (cadCfg(rules).fichaMinRotulos || 3) ? n : 0;
+}
+const ARTIGOS_NOME = /^(?:a|o|as|os|um|uma|da|do|de|nova|novo|funcionari[oa]|empregad[oa]|estagiari[oa]|colaborador[a]?|senhor[a]?|sr[a]?|chamad[oa])$/;
+const tituloSeMinusculo = (s) => s === s.toLowerCase() ? s.replace(/(^|\s)(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/\s(D[aeo]s?|E)(?=\s)/g, (m) => m.toLowerCase()) : s;
+/** Cadastro escrito com as próprias palavras: { campo: { valor, conf, fonte } }. O texto nunca vai para a descrição. */
+export function lerCadastroTexto(text, tipoKey, rules, { hoje = today(), employees = [] } = {}) {
+  const c = cadCfg(rules); const def = resolveTipo(rules, tipoKey); if (!def) return {};
+  const src = String(text || '').normalize('NFC'); const t = plain(src);
+  const out = {};
+  const put = (k, v, conf = 0.6, fonte = 'sua descrição') => { if (v == null || v === '' || !def.campos[k] || out[k]) return; out[k] = { valor: String(v), conf, fonte }; };
+  // 1) ficha colada: a mesma leitura de um arquivo
+  if (fichaColada(src, rules, tipoKey)) {
+    const a = analyzeText(src, rules, { tipoAtual: tipoKey, hoje });
+    for (const [k, v] of Object.entries(a.campos)) put(k, v.valor, v.conf, `ficha colada (${v.fonte})`);
+  }
+  const rFim = rxTermos(c.fimDoValor);
+  const ehFim = (pw) => !!rFim && new RegExp(`^${rFim}$`).test(pw);
+  /** Palavras depois de um termo, até pontuação, número ou uma palavra de fim. */
+  const depoisDe = (lista, max = 5) => {
+    const r = rxTermos(lista); if (!r) return null;
+    const m = t.match(new RegExp(`(?<![a-z0-9])${r}(?![a-z0-9])\\s*:?\\s*`)); if (!m) return null;
+    const pal = [];
+    for (const w of src.slice(m.index + m[0].length).split(/\s+/)) {
+      const wc = w.replace(/[.,;:!?)]+$/, ''); const pw = plain(wc);
+      if (!pal.length && /^(?:de|da|do)$/.test(pw)) continue;
+      if (!pw || /[^a-z'´-]/.test(pw) || ehFim(pw)) break;
+      pal.push(wc); if (wc !== w || pal.length >= max) break;
+    }
+    while (pal.length && /^(?:de|da|do|dos|das|e)$/i.test(pal[pal.length - 1])) pal.pop();
+    return pal.join(' ') || null;
+  };
+  // 2) datas: o papel vem da palavra logo antes ("nascida em", "começa", "emissão do RG"); sem palavra, só uma data recente vira admissão
+  const papeis = (c.datas || []).map(d => ({ campo: d.campo, r: rxTermos(d.palavras) })).filter(x => x.r);
+  let fimAnt = 0;
+  for (const x of analisarDatas(src, hoje, { sentido: 'futuro', rules }).lista) {
+    if (x.prazo) { fimAnt = x.fim; continue; }
+    const ini = Math.max(fimAnt, x.idx - 45); const janela = t.slice(ini, x.idx);
+    let melhor = null;
+    for (const p of papeis) for (const m of janela.matchAll(new RegExp(`(?<![a-z0-9])${p.r}(?![a-z0-9])`, 'g'))) { const f = m.index + m[0].length; const meio = janela.slice(f); if (/[,;.]\s/.test(meio + ' ') || meio.trim().split(/\s+/).filter(Boolean).length > 3) continue; if (!melhor || f > melhor.f) melhor = { campo: p.campo, f, i: m.index }; }
+    let d = x.d;
+    if (melhor) {
+      if (melhor.campo === 'nascimento' && d > hoje) d = new Date(d.getFullYear() - 100, d.getMonth(), d.getDate());   // "12/03/95"
+      put(melhor.campo, fmtDate(d), 0.6, `“${src.slice(ini + melhor.i, x.fim).trim()}”`);
+    } else if (diffDays(d, hoje) <= (c.admissaoAteDiasAtras ?? 365)) put('dataAdmissao', fmtDate(d), 0.5);
+    fimAnt = x.fim;
+  }
+  // 3) salário, bolsa ou pró-labore: com ou sem R$
+  const NUM = '(\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,2})?|\\d+(?:,\\d{1,2})?)';
+  const rSal = rxTermos(c.salario);
+  const sal = (rSal && t.match(new RegExp(`(?<![a-z])${rSal}(?![a-z])\\s*(?:de\\s+|:\\s*|=\\s*|sera\\s+|vai ser\\s+)?(?:r\\$\\s*)?${NUM}(?![\\d/])`)))
+    || t.match(new RegExp(`r\\$\\s*${NUM}`)) || t.match(new RegExp(`${NUM}\\s*reais`));
+  if (sal) put('salario', sal[1]);
+  // 4) experiência: "45 + 45", "experiência de 45 dias", "prorrogação de 45"
+  const xp = t.match(/(?<![\d/.,])(\d{1,2})\s*(?:dias?\s*)?(?:\+|mais)\s*(\d{1,2})(?![\d/])/);
+  if (xp && +xp[1] + +xp[2] <= 90) { put('contratoExperiencia', xp[1]); put('prorrogacao', xp[2]); }
+  const nDepois = (lista) => { const r = rxTermos(lista); const m = r && (t.match(new RegExp(`(?<![a-z])${r}(?![a-z])\\s*(?:de\\s+|:\\s*)?(${RX_NUM})\\s*(?:dias)?`)) || t.match(new RegExp(`(${RX_NUM})\\s*dias\\s*(?:de\\s+)?${r}(?![a-z])`))); return m ? numeroPorExtenso(m[1]) : null; };
+  if (!xp) { put('contratoExperiencia', nDepois(c.experiencia)); put('prorrogacao', nDepois(c.prorrogacao)); }
+  // 5) cargo e função
+  put('cargo', depoisDe(c.cargo), 0.55); put('funcao', depoisDe(c.funcao), 0.55);
+  // 6) CPF (o inválido entra para a conferência acusar), PIS e e-mail
+  for (const [k, v] of Object.entries(extractGeneric(src))) if (k !== 'cep') put(k, v.valor, v.conf);
+  const cpfD = t.match(/cpf\s*(?:n[o.]?\s*)?:?\s*(\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d)/);
+  if (cpfD) put('cpf', fmtCPF(cpfD[1]), 0.45);
+  // 7) nome depois de "admitir/contratar" (quando não é alguém da lista)
+  const rAdm = rxTermos(c.admitir);
+  const mAdm = rAdm && def.campos.nome && t.match(new RegExp(`(?<![a-z])${rAdm}(?![a-z])\\s*`));
+  if (mAdm) {
+    const vaz = new Set([...(tl(rules).palavrasVazias || []), ...MESES, ...DIAS_SEMANA].map(plain));
+    // "contratar estagiária Ana", "cadastro de autônomo": a palavra do tipo de cadastro não é nome
+    const doTipo = new Set([...(tl(rules).tipoContribuinte?.opcoes || []).flatMap(o => o.palavras || []), ...(rules?.intencoes || []).filter(i => CADASTROS.includes(i.tipo)).flatMap(i => i.palavras || [])].flatMap(p => plain(p).split(/[^a-z]+/)).filter(x => x.length > 2));
+    const pal = [];
+    for (const w of src.slice(mAdm.index + mAdm[0].length).split(/\s+/)) {
+      const wc = w.replace(/[.,;:!?)]+$/, ''); const pw = plain(wc);
+      if (!pal.length && (ARTIGOS_NOME.test(pw) || doTipo.has(pw))) continue;
+      if (doTipo.has(pw)) break;
+      if (!pw || /[^a-z'´-]/.test(pw)) break;
+      if (pal.length && CONECTORES.has(norm(wc))) { pal.push(wc); continue; }
+      if (vaz.has(pw) || ehFim(pw)) break;
+      pal.push(wc); if (wc !== w || pal.length >= 7) break;
+    }
+    while (pal.length && CONECTORES.has(norm(pal[pal.length - 1]))) pal.pop();
+    const nome = pal.join(' ');
+    const daLista = employees.length && findEmployeeInText(nome, employees, { soPrimeiroNome: false })?.option;
+    if (pal.filter(x => !CONECTORES.has(norm(x))).length >= 2 && !daLista) put('nome', tituloSeMinusculo(nome), 0.55);
+  }
+  // 8) contribuinte: sócio/pró-labore ou autônomo/RPA marcam o Tipo (as categorias vêm das condicionais)
+  for (const o of tl(rules).tipoContribuinte?.opcoes || []) if (temTermo(t, o.palavras)) { put('tipoContribuinte', o.valor); break; }
+  return out;
 }
 
 /* ---------- Vários pedidos numa frase ---------- */
@@ -1347,22 +1661,223 @@ export function avisosDoDocumento(text, docRule, campos = {}) {
   return out;
 }
 
-/** Endereço em contas de consumo e comprovantes. */
+/* ---------- Endereço, UF junto do valor, sim/não e experiência ---------- */
+export const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
+const UF_SET = new Set(UFS);
+/** "Vitória/ES", "São Paulo - SP", "SSP/SP", "Vila Velha ES" → { antes, uf }; sem UF no fim → null. */
+export function separarUf(v) {
+  const s = String(v ?? '').trim().replace(/[.;,]+$/, '');
+  let m = s.match(/^(.*?\S)\s*[\/\-–,]\s*([A-Za-z]{2})$/);
+  if (m && UF_SET.has(m[2].toUpperCase()) && /\p{L}/u.test(m[1])) return { antes: m[1].trim(), uf: m[2].toUpperCase() };
+  m = s.match(/^(.*\S)\s+([A-Z]{2})$/);
+  if (m && UF_SET.has(m[2]) && /\p{L}{2}/u.test(m[1])) return { antes: m[1].trim(), uf: m[2] };
+  return null;
+}
+/** "1234567 SSP/ES", "MG-12.345.678 SSP MG" → { numero, orgao, uf } (RG com o órgão e a UF juntos). */
+export function separarRg(v) {
+  const s = String(v ?? '').trim();
+  const m = s.match(/^(?:[A-Z]{2}[\s\-]?)?([\dXx][\d.\-\/Xx]{3,}[\dXx])\s*[\-\/]?\s*([A-Za-z]{2,8})?(?:\s*[\/\-–]?\s*([A-Za-z]{2}))?$/);
+  if (!m || !m[2]) return null;
+  const orgao = m[2].toUpperCase(); let uf = m[3] ? m[3].toUpperCase() : null;
+  if (uf && !UF_SET.has(uf)) uf = null;
+  return { numero: m[1], orgao, uf };
+}
+/** Rádio Sim/Não: "sim", "x", "não", "nenhum", um número (dependentes: 2 → Sim). */
+export function simNao(v) {
+  const s = norm(v); if (!s) return null;
+  if (/^(SIM|S|X|YES|POSSUI|TEM)\b/.test(s)) return 'Sim';
+  if (/^(NAO|N|NENHUM|NENHUMA|NO|0+)\b/.test(s)) return 'Não';
+  const n = s.match(/^(\d+)/); if (n) return +n[1] > 0 ? 'Sim' : 'Não';
+  return null;
+}
+/** "45 + 45 dias", "45 e 45" → [45, 45]; "90 dias" → [90]. */
+export function diasExperiencia(v) {
+  const s = String(v ?? '');
+  const m = s.match(/(\d{1,3})\s*(?:dias?\s*)?(?:\+|\be\b|mais)\s*(\d{1,3})(?!\d)/i);
+  if (m) return [+m[1], +m[2]];
+  const n = s.match(/\d{1,3}/); return n ? [+n[0]] : [];
+}
+const COMPL = /^(?:AP(?:TO?|ARTAMENTO)?|BL(?:OCO)?|CASA|SALA|LOJA|FUNDOS|LOTE|LT|QUADRA|QD|ANDAR|CONJ(?:UNTO)?|CJ|ED(?:IF[IÍ]CIO)?|TORRE|KM|CHAC(?:ARA)?|SOBRADO)\b/i;
+const RX_LOGRADOURO = /\b(?:RUA|R\.|AVENIDA|AV\.?|TRAVESSA|TV\.?|ALAMEDA|AL\.|ESTRADA|ESTR\.|RODOVIA|ROD\.|PRA[CÇ]A|P[CÇ]\.|LARGO|VIELA|BECO|VILA|QUADRA)\s+/i;
+/** "Rua das Flores, 123, Apto 4 - Centro - Vitória/ES" → { endereco, numero, complemento, bairro, municipio, uf }. */
+export function separarEndereco(linha) {
+  const out = {}; const txt = String(linha || '').replace(/\s+/g, ' ').replace(/\bCEP\s*:?\s*\d{5}-?\d{3}\b/i, '').trim();
+  const m = txt.match(/^(.*?)\s*(?:,\s*|\bn[º°o]?\.?\s*|\bn[úu]mero\s*:?\s*)(\d{1,6}[A-Za-z]?|S\/?N)\b(.*)$/i)
+    || txt.match(/^(.*?[A-Za-zÀ-ú.])\s+(\d{1,6}[A-Za-z]?|S\/?N)\b(.*)$/i);
+  if (!m) return out;
+  out.endereco = m[1].replace(/[,\-–\s]+$/, '').trim(); out.numero = m[2].toUpperCase();
+  const segs = m[3].split(/\s*[,;–]\s*|\s+-\s+|^\s*-\s*/).map(x => x.trim()).filter(x => x && !/^\d{5}-?\d{3}$/.test(x));
+  const livres = [];
+  for (const sg of segs) {
+    if (COMPL.test(sg)) { out.complemento = out.complemento ? `${out.complemento} ${sg}` : sg; continue; }
+    const b = sg.match(/^bairro\s*:?\s*(.+)$/i); if (b) { out.bairro = b[1]; continue; }
+    if (UF_SET.has(sg.toUpperCase()) && sg.length === 2) { out.uf = sg.toUpperCase(); if (livres.length && !out.municipio) out.municipio = livres.pop(); continue; }
+    const u = separarUf(sg); if (u && !out.uf) { out.municipio = u.antes; out.uf = u.uf; continue; }
+    if (/\p{L}/u.test(sg) && !/\d{3,}/.test(sg)) livres.push(sg);
+  }
+  if (livres.length && !out.bairro) out.bairro = livres.shift();
+  if (livres.length && !out.municipio && out.uf) out.municipio = livres.shift();
+  return out;
+}
+/** Endereço em contas de consumo, comprovantes e fichas (as linhas que já viraram outros campos não entram). */
 export function extractAddress(text) {
   const out = {}; const T = String(text || '');
-  const cep = T.match(/\b(\d{5})-?(\d{3})\b/);
+  const cep = T.match(/\b(\d{5})-(\d{3})\b/) || T.match(/\bCEP\s*:?\s*(\d{5})\.?-?(\d{3})\b/i) || T.match(/\b(\d{5})(\d{3})\b/);
   if (cep) out.cep = `${cep[1]}-${cep[2]}`;
-  const log = T.match(/\b((?:RUA|R\.|AVENIDA|AV\.?|TRAVESSA|TV\.?|ALAMEDA|AL\.?|ESTRADA|RODOVIA|PRA[CÇ]A|LARGO|VIELA)\s+[A-ZÀ-Úa-zà-ú0-9 .'-]{3,60}?)\s*,?\s*(?:N[º°o]?\.?\s*)?(\d{1,6}|S\/?N)\b/i);
-  if (log) { out.endereco = log[1].replace(/\s+/g, ' ').trim(); out.numero = log[2].toUpperCase(); }
-  const cid = T.match(/([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú ]{2,40})\s*[-\/]\s*(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/);
-  if (cid) { out.municipio = cid[1].trim(); out.uf = cid[2]; }
+  const linhas = T.split(/\n/);
+  for (const l of linhas) {
+    const i = l.search(RX_LOGRADOURO); if (i < 0) continue;
+    const e = separarEndereco(l.slice(i).split(/\s{3,}/)[0]);
+    if (e.endereco && e.numero) { Object.assign(out, e); break; }
+  }
+  if (!out.bairro) { const b = T.match(/\bbairro\s*:?\s*([A-ZÀ-Úa-zà-ú0-9 .'-]{3,40}?)(?=\s{2,}|\s*[,\n|]|\s+-\s|$)/i); if (b) out.bairro = b[1].trim(); }
+  if (!out.municipio) {
+    const cid = T.match(/([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú ]{2,40})\s*[-\/]\s*(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/);
+    if (cid) { out.municipio = cid[1].trim(); out.uf = cid[2]; }
+  }
   return out;
+}
+/* ---------- Documento pessoal com o rótulo em cima do valor (RG, CNH, CIN, CTPS digital, título) ---------- */
+/* Regras: config.leitorPessoal = { layouts: { id: { palavras, campos, maeLinha, rgIgualCpf, padroesTexto } },
+   porDocumento: { docId: layout }, rotulos: { "campo" | "campoA+campoB": [rótulos] }, tipos: { campo: tipo }, padroes: { campo: regex } }.
+   Campos que começam com "_" (ex.: "_data") são rótulos conhecidos cujo valor não interessa. */
+const LP_TIPOS = { nascimento: 'data', dataRg: 'data', cnhValidade: 'data', rg: 'numero', cnh: 'numero', cpf: 'cpf', titulo: 'numero', zona: 'numero', secao: 'numero', pis: 'numero', orgaoRg: 'sigla', ufRg: 'uf', ufNascimento: 'uf', cnhCategoria: 'categoria', nome: 'nome', mae: 'nome', pai: 'nome', nomeSocial: 'nome', municipioNascimento: 'texto', sexo: 'texto' };
+export function lerDocumentoPessoal(text, cfg = {}, docId = null) {
+  const src = String(text || '').normalize('NFC');
+  const T = ' ' + norm(src) + ' ';
+  let layout = null;
+  for (const [id, l] of Object.entries(cfg?.layouts || {})) if ((l.palavras || []).some(p => norm(p) && T.includes(' ' + norm(p) + ' '))) { layout = id; break; }
+  layout = layout || cfg?.porDocumento?.[docId] || null;
+  const L = cfg?.layouts?.[layout] || {};
+  const permitido = (k) => !L.campos || L.campos.includes(k);
+  const tipos = { ...LP_TIPOS, ...(cfg?.tipos || {}) };
+  const tipoDe = (k) => k.startsWith('_') ? (k.slice(1) || 'texto') : (tipos[k] || 'texto');
+  const pad = cfg?.padroes || {};
+  const rot = [];
+  for (const [k, lst] of Object.entries(cfg?.rotulos || {})) for (const r of [].concat(lst)) { const P = norm(r); if (P) rot.push({ campos: k.split('+'), P }); }
+  rot.sort((a, b) => b.P.length - a.P.length);
+  const linhas = src.split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  const ehCodigo = (x) => /^\d{1,2}[A-D]?$|^[A-Z]$/.test(x);   // números de campo da CNH nova ("4a", "5") e letras soltas
+  /** Rótulos de uma linha que só tem rótulos (null quando a linha tem outra coisa). */
+  const rotulosDe = (l) => {
+    let s = ' ' + norm(l) + ' '; const achados = [];
+    for (const r of rot) {
+      let i;
+      while ((i = s.indexOf(' ' + r.P + ' ')) >= 0) { achados.push({ ...r, i }); s = s.slice(0, i + 1) + '#'.repeat(r.P.length) + s.slice(i + 1 + r.P.length); }
+    }
+    const resto = s.replace(/#+/g, ' ').trim().split(' ').filter(x => x && !ehCodigo(x));
+    return !resto.length && achados.length ? achados.sort((a, b) => a.i - b.i) : null;
+  };
+  /** O valor serve para o campo? (data, número, sigla, UF, categoria, nome, texto + padrão das regras) */
+  const serve = (k, v) => {
+    const tp = tipoDe(k); const x = String(v || '').trim(); if (!x) return false;
+    if (pad[k]) { try { if (!new RegExp(pad[k], 'i').test(x)) return false; } catch { /* regex inválida nas regras */ } }
+    switch (tp) {
+      case 'data': return !!parseDate(x);
+      case 'cpf': return /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(x);
+      case 'numero': return /\d/.test(x) && /^[\d.\-\/ Xx]+$/.test(x);
+      case 'uf': return x.length === 2 && UF_SET.has(x.toUpperCase());
+      case 'sigla': return /^[A-Za-z]{2,8}$/.test(x);
+      case 'categoria': return /^(?:ACC|[A-E]{1,2})$/i.test(x);
+      case 'nome': return !/\d/.test(x) && /\p{L}{2}/u.test(x);
+      default: return /\p{L}/u.test(x);
+    }
+  };
+  /** Casa os pedaços do valor com os campos, pelo tipo e na ordem: primeiro os que têm forma (data, número, sigla), depois os textos. */
+  const casar = (campos, valor) => {
+    const toks = String(valor).split(/[\s,;]+/).filter(x => x && !/^[\-–\/|]+$/.test(x));
+    const pos = {}; const usado = new Set(); let p = 0;
+    for (const k of campos) {
+      const tp = tipoDe(k); if (tp === 'nome' || tp === 'texto') continue;
+      let achou = -1, tam = 1;
+      for (let q = p; q < toks.length && achou < 0; q++) for (const n of [3, 2, 1]) { if (q + n > toks.length) continue; if (serve(k, toks.slice(q, q + n).join(' '))) { achou = q; tam = n; break; } }
+      if (achou >= 0) { pos[k] = [achou, achou + tam]; for (let z = achou; z < achou + tam; z++) usado.add(z); p = achou + tam; }
+    }
+    const res = {};
+    campos.forEach((k, n) => {
+      const tp = tipoDe(k);
+      if (pos[k]) { res[k] = toks.slice(pos[k][0], pos[k][1]).join(' '); return; }
+      if (tp !== 'nome' && tp !== 'texto') return;
+      const antes = campos.slice(0, n).map(x => pos[x]?.[1] ?? -1); const depois = campos.slice(n + 1).map(x => pos[x]?.[0] ?? Infinity);
+      const lo = Math.max(0, ...antes), hi = Math.min(toks.length, ...depois);
+      const pegos = []; for (let z = lo; z < hi; z++) { if (usado.has(z) || /\d/.test(toks[z])) { if (pegos.length) break; continue; } pegos.push(toks[z]); usado.add(z); }
+      if (pegos.length && serve(k, pegos.join(' '))) res[k] = pegos.join(' ');
+    });
+    return res;
+  };
+  const colunas = (l) => [...l.matchAll(/\S+(?: \S+)*/g)].map(m => ({ t: m[0], i: m.index }));
+  /** O rótulo como está no documento (com acento), para mostrar de onde veio o valor. */
+  const rotuloOriginal = (linha, P) => {
+    const ws = linha.trim().split(/\s+/);
+    for (let a = 0; a < ws.length; a++) for (let b = a + 1; b <= ws.length; b++) { const x = norm(ws.slice(a, b).join(' ')); if (x === P) return ws.slice(a, b).join(' '); if (x.length > P.length) break; }
+    return P;
+  };
+  const out = {}; let filiacao = null;
+  const put = (k, v, conf, fonte) => { if (!k || k.startsWith('_') || !permitido(k) || v == null || v === '' || out[k]) return; out[k] = { valor: String(v).replace(/\s+/g, ' ').trim(), conf, fonte }; };
+  for (let i = 0; i < linhas.length; i++) {
+    const labs = rotulosDe(linhas[i]); if (!labs) continue;
+    const rotTxt = linhas[i].trim().replace(/\s{2,}/g, ' · ');
+    // filiação: as duas linhas seguintes (o cliente confirma qual é a mãe)
+    if (labs.length === 1 && labs[0].campos[0] === 'filiacao') {
+      const nomes = [];
+      for (let j = i + 1; j < linhas.length && nomes.length < 2 && !rotulosDe(linhas[j]); j++) { if (!serve('mae', linhas[j]) || linhas[j].trim().split(/\s+/).length < 2) break; nomes.push(linhas[j].trim().replace(/\s+/g, ' ')); }
+      if (nomes.length) {
+        filiacao = nomes;
+        let im = nomes.length === 1 ? 0 : (L.maeLinha || cfg?.maeLinha || 2) - 1;
+        const fem = nomes.map(n => /A$/i.test(norm(n).split(' ')[0]));
+        if (nomes.length === 2 && fem[0] !== fem[1]) im = fem[0] ? 0 : 1;      // primeiro nome terminado em "a" costuma ser o da mãe
+        put('mae', nomes[im], nomes.length === 2 && fem[0] !== fem[1] ? 0.55 : 0.45, `“${rotTxt}: ${nomes.join(' / ')}”`);
+        if (nomes.length === 2) put('pai', nomes[1 - im], 0.45, `“${rotTxt}: ${nomes.join(' / ')}”`);
+      }
+      continue;
+    }
+    const j = i + 1; if (j >= linhas.length || rotulosDe(linhas[j])) continue;
+    const vlin = linhas[j];
+    const segL = colunas(linhas[i]), segV = colunas(vlin);
+    const grupos = labs.map(() => []);
+    if (labs.length > 1 && segL.length === labs.length && segV.length > 1) {
+      // PDF: colunas separadas por espaços — cada pedaço vai para o rótulo mais perto
+      for (const v of segV) { let best = 0; segL.forEach((c, n) => { if (Math.abs(c.i - v.i) < Math.abs(segL[best].i - v.i)) best = n; }); grupos[best].push(v.t); }
+      labs.forEach((lab, n) => { if (!grupos[n].length) return; const r = casar(lab.campos, grupos[n].join(' ')); for (const [k, v] of Object.entries(r)) put(k, v, 0.7, `“${segL[n].t}: ${v}”`); });
+    } else {
+      // foto (OCR junta as colunas): casa pelo tipo, na ordem dos rótulos
+      const r = casar(labs.flatMap(l => l.campos), vlin.trim());
+      for (const [k, v] of Object.entries(r)) put(k, v, labs.length > 1 ? 0.6 : 0.7, `“${rotuloOriginal(linhas[i], (labs.find(l => l.campos.includes(k)) || labs[0]).P)}: ${v}”`);
+    }
+  }
+  // padrões de texto do layout (título: zona e seção sem dois-pontos, inscrição de 12 dígitos)
+  for (const [k, pats] of Object.entries(L.padroesTexto || {})) if (!out[k]) { const v = runPatterns(src, pats); if (v) put(k, v, 0.6, `“${v}” no documento`); }
+  // ajustes finais: datas, CPF, números
+  for (const [k, c] of Object.entries(out)) {
+    const tp = tipoDe(k);
+    if (tp === 'data') { const d = parseDate(c.valor); if (d) c.valor = fmtDate(d); else delete out[k]; }
+    if (tp === 'cpf') { c.valor = fmtCPF(c.valor); if (!validCPF(c.valor)) c.conf = 0.45; }
+    if (['titulo', 'zona', 'secao', 'cnh'].includes(k)) c.valor = onlyDigits(c.valor);
+  }
+  // CIN: o número da identidade é o CPF
+  if (L.rgIgualCpf && out.cpf && !out.rg) out.rg = { valor: onlyDigits(out.cpf.valor), conf: out.cpf.conf, fonte: 'na CIN, o número é o CPF' };
+  return { layout, campos: out, filiacao };
+}
+/** Titular de um comprovante de residência ("Nome:", "Cliente:", "Titular:"). */
+export function titularComprovante(text) {
+  const t = String(text || '').normalize('NFC');
+  for (const m of t.matchAll(/\b(?:nome(?:\s+do\s+(?:cliente|titular))?|cliente|titular|destinat[aá]rio|consumidor)\s*:\s*/gi)) {
+    const n = nomeDepois(t.slice(m.index + m[0].length, m.index + m[0].length + 90));
+    if (n.split(' ').filter(x => !CONECTORES.has(norm(x))).length >= 2) return n;
+  }
+  return null;
+}
+/** Comprovante em nome de outra pessoa: aviso educativo (pode ser de um parente; o escritório pode pedir uma declaração). */
+export function avisoComprovante(titular, nome, rules) {
+  if (!titular || !nome || empregadoPorNome(titular, [nome])?.option || similarity(titular, nome) >= 0.85) return null;
+  const msg = rules?.mensagens?.comprovanteOutraPessoa || 'O comprovante de residência está em nome de {titular}. Tudo bem se for de um parente (pai, mãe, cônjuge): nesse caso o escritório pode pedir uma declaração de residência assinada pelo titular.';
+  return { nivel: 'info', id: 'comprovanteOutraPessoa', mensagem: msg.replace('{titular}', titular).replace('{nome}', nome) };
 }
 /** ASO: resultado, tipo de exame e data. */
 /** Qual opção está marcada num formulário impresso ("( ) Apto (X) Inapto", "[x]", "☒").
  *  ASO e CAT trazem todas as opções escritas: procurar a palavra solta elegia a errada.
  *  Devolve null quando nenhuma ou mais de uma está marcada — aí o cliente confere. */
-export function opcaoMarcada(text, opcoes) {
+export function opcaoMarcada(text, opcoes, { exigeMarca = false } = {}) {
   const t = plain(text);
   const esc = (x) => plain(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
   const lista = (opcoes || []).filter(Boolean);
@@ -1386,10 +1901,29 @@ export function opcaoMarcada(text, opcoes) {
     if (dono) marcadas.add(dono.o);
   }
   if (marcadas.size === 1) return [...marcadas][0];
-  if (marcadas.size > 1) return null;
+  if (marcadas.size > 1 || exigeMarca) return null;
   // sem marca nenhuma: só vale quando o documento traz uma única opção (texto corrido)
   const presentes = [...new Set(ondes.map(x => x.o))];
   return presentes.length === 1 ? presentes[0] : null;
+}
+/** Regras de "opções por palavra" de um documento: documentos[].opcoesPorPalavra = [{ campo, opcoes: { valor: [expressões] },
+ *  soMarcada? }]. O formato antigo da CAT (tipoCatPalavras) continua valendo para o campo tipoCat. */
+export function regrasDeOpcoes(docRule) {
+  const l = [...(docRule?.opcoesPorPalavra || [])];
+  if (docRule?.tipoCatPalavras && !l.some(o => o.campo === 'tipoCat')) l.push({ campo: 'tipoCat', opcoes: docRule.tipoCatPalavras });
+  return l;
+}
+/** Valor de uma opção pelas expressões do documento (sempre a expressão inteira: "dispensar" não casa "dispensa do aviso").
+ *  Formulário impresso com todas as opções: só vale a marcada. soMarcada: só com marca ("( X ) Abono pecuniário"). */
+export function opcaoPorPalavra(text, regra) {
+  const T = ' ' + norm(text) + ' ';
+  const tem = (w) => { const W = norm(w); return !!W && T.includes(' ' + W + ' '); };
+  const cands = Object.entries(regra?.opcoes || {}).filter(([k, ws]) => !k.startsWith('_') && Array.isArray(ws) && ws.some(tem));
+  if (!cands.length) return null;
+  if (cands.length === 1 && !regra.soMarcada) return cands[0][0];
+  const marcada = opcaoMarcada(text, cands.flatMap(([, ws]) => ws.filter(tem)), { exigeMarca: !!regra.soMarcada });
+  const dono = marcada && cands.find(([, ws]) => ws.some(w => norm(w) === norm(marcada)));
+  return dono ? dono[0] : null;
 }
 const ASO_TIPOS = ['admissional', 'demissional', 'periodico', 'retorno ao trabalho', 'mudanca de funcao'];
 export function readASO(text) {
@@ -1531,9 +2065,108 @@ export const empresaDoFiltro = (itens, filtro, empresaAtual) => Array.isArray(fi
 /** Datas de um aviso de férias ou rescisão (campos do Onvio real, mapa do Control Onvio). */
 export function datasDoAviso(it) {
   const d = (v) => parseDate(texto1(v));
-  return { inicioFerias: d(it?.vacationStartDate), pagamento: d(it?.paymentDate), aviso: d(it?.adviceDate || it?.noticeDate), dias: +it?.vacationDays || null,
+  const abono = it?.bonusDays != null && it.bonusDays !== '' && !isNaN(+it.bonusDays) ? +it.bonusDays : null;
+  return { inicioFerias: d(it?.vacationStartDate), pagamento: d(it?.paymentDate), aviso: d(it?.adviceDate || it?.noticeDate || it?.priorNoticeDate), dias: +it?.vacationDays || null,
     desligamento: d(it?.resignationDate), avisoPrevio: d(it?.priorNoticeAdviceDate), admissao: d(it?.admissionDate || it?.startDate),
-    afastamento: d(it?.leaveDate), competencia: d(it?.effectiveDate) };
+    afastamento: d(it?.leaveDate), competencia: d(it?.effectiveDate), abono };
+}
+/* "Pedir o cálculo" de um aviso que já está no portal: os dados do aviso viram sugestão no cálculo ("do aviso nº X"),
+   não valores digitados pelo cliente — um documento arrastado depois ainda pode corrigi-los. O tipo de aviso
+   (trabalhado ou indenizado) continua com o cliente. Rescisão e abono: a calibrar no Onvio real (adviceDate, bonusDays). */
+export function valoresDoAviso(item, rules) {
+  const d = item?.datas || {}; const out = {};
+  const tipo = PAR_CALCULO[item?.tipo] || null;
+  if (item?.tipo === 'avisoFerias') {
+    if (d.inicioFerias) out.inicioGozo = fmtDate(d.inicioFerias);
+    if (d.dias) out.diasGozo = String(d.dias);
+    if (d.abono != null) Object.assign(out, levarValores(['diasAbono→abono'], { diasAbono: String(d.abono) }, rules, 'calculoFerias'));
+  } else if (item?.tipo === 'avisoRescisao') {
+    const a = d.aviso || d.avisoPrevio; if (a) out.dataAvisoPrevio = fmtDate(a);
+  }
+  return { tipo, valores: out, fonte: item?.numero ? `do aviso nº ${item.numero}` : 'do aviso no portal', em: d.aviso || item?.criado || null };
+}
+/** O aviso mais recente desse funcionário no portal (para "Usar os dados do aviso" e o destaque do cálculo no texto livre). */
+export function avisoDoFuncionario(itens, empregado, tipoAviso, hoje = today(), dias = 120) {
+  const q = norm(empregado); if (!q) return null;
+  return (itens || []).filter(i => i.tipo === tipoAviso && norm(i.empregado) === q && !['cancelada', 'prescrita'].includes(i.estado) && (!i.criado || diffDays(i.criado, hoje) <= dias))
+    .sort((a, b) => (b.criado?.getTime() || 0) - (a.criado?.getTime() || 0))[0] || null;
+}
+/** O portal já tem o pedido desse tipo para o funcionário (criado a partir de `desde`, com 1 dia de folga)? */
+export function temPedidoDe(itens, tipo, empregado, desde = null) {
+  const q = norm(empregado);
+  return !!q && (itens || []).some(i => i.tipo === tipo && norm(i.empregado) === q && !['cancelada', 'prescrita'].includes(i.estado) && (!desde || !i.criado || diffDays(desde, i.criado) >= -1));
+}
+/** Valores que vão de um pedido para o seguinte (regras: "campo" ou "de→para"); dias de abono viram o SIM/NÃO do
+ *  campo que tem porNumero (o abono só vira SIM com dias maiores que zero). */
+export function levarValores(levar, values, rules, destino) {
+  const def = resolveTipo(rules, destino); const out = {};
+  for (const s of levar || []) {
+    const [de, para = de] = String(s).split(/\s*(?:→|->)\s*/);
+    const v = values?.[de]; if (v == null || v === '') continue;
+    const c = def?.campos?.[para]; if (!c) continue;
+    if (c.porNumero && c.porNumero.campo === de) { const n = parseInt(onlyDigits(v), 10); if (!isNaN(n)) out[para] = n > 0 ? c.porNumero.maiorQueZero : c.porNumero.zero; continue; }
+    out[para] = String(v);
+  }
+  return out;
+}
+/* ---------- Depois de enviar (regras: tipos.*.depoisDeEnviar) ----------
+   [{ tipo? (o pedido seguinte) ou lembrete, titulo, prazo: { formula: 'pagamentoFerias'|'pagamentoRescisao'|'dias', de, dias?,
+   diasUteisAntes? (chave de config.prazoInternoDiasUteis) }, levar: ['campo', 'de→para'], se? }] → [{ tipo, lembrete, titulo, ate, valores }] */
+export function proximosPassos(tipoKey, values, rules, cal = makeCalendar(rules?.feriados)) {
+  const out = [];
+  for (const p of rules?.tipos?.[tipoKey]?.depoisDeEnviar || []) {
+    if (p.se && !matchCond(p.se, values || {})) continue;
+    if (p.tipo && !rules.tipos[p.tipo]) continue;
+    const pr = p.prazo || {}; const base = parseDate(values?.[pr.de]);
+    let ate = null;
+    if (base) {
+      if (pr.formula === 'pagamentoFerias') ate = pagamentoFerias(base, rules, cal);
+      else if (pr.formula === 'pagamentoRescisao') ate = pagamentoRescisao(base, rules, cal);
+      else ate = addDays(base, +pr.dias || 0);
+      const uteis = pr.diasUteisAntes ? +rules.config?.prazoInternoDiasUteis?.[pr.diasUteisAntes] || 0 : 0;
+      if (uteis) ate = cal.addBusinessDays(ate, -uteis);
+    }
+    const vals = { ...values, empregado: values?.empregado || '' };
+    out.push({ tipo: p.tipo || null, lembrete: !p.tipo, titulo: renderTemplate(p.titulo, vals) || String(p.titulo || '').replace(/\{[^}]*\}/g, '').trim(), ate,
+      valores: p.tipo ? levarValores(p.levar, values, rules, p.tipo) : {}, empregado: values?.empregado || '', dica: p.dica || '' });
+  }
+  return out;
+}
+
+/* ---------- Experiência: tempo de casa, saídas e o motivo certo ---------- */
+const marcosExperiencia = (rules) => (rules?.config?.experienciaDias || [45, 90]).map(Number).filter(Boolean);
+/** As três saídas de uma experiência que vence no marco n: prorrogar (até o total máximo), encerrar no fim ou efetivar. */
+export function saidasExperiencia(admissao, n, rules) {
+  const a = parseDate(admissao); if (!a) return null;
+  const max = Math.max(...marcosExperiencia(rules), 0) || 90;
+  const pode = n < max;
+  return { fim: addDays(a, n - 1), podeProrrogar: pode, diasProrrogacao: pode ? max - n : 0, fimProrrogacao: pode ? addDays(a, max - 1) : null, max };
+}
+/** No Aviso/Cálculo de Rescisão: o funcionário ainda está na experiência na data do aviso (ou da saída)? Então sugere o
+ *  motivo de contrato de experiência (config.experienciaSaidas.motivos) — a tela pergunta, nunca escolhe sozinha. */
+export function sugestaoMotivoExperiencia(values, admissao, rules, hoje = today()) {
+  const adm = parseDate(admissao); if (!adm) return null;
+  const ref = parseDate(values?.dataDemissao) || parseDate(values?.dataAviso) || parseDate(values?.dataAvisoPrevio) || hoje;
+  const marcos = marcosExperiencia(rules); const max = Math.max(...marcos, 0) || 90;
+  const dia = diffDays(adm, ref) + 1;
+  if (dia < 1 || dia > max) return null;
+  const m = norm(values?.motivo || '');
+  if (/EXPERIENCIA|TEMPO DETERMINADO/.test(m)) return null;
+  const mot = { termino: 'Término de contrato de trabalho por tempo determinado', antecipadoEmpregador: 'Rescisão contrato experiência antecipado pelo empregador', antecipadoEmpregado: 'Rescisão contrato experiência antecipado pelo empregado', ...(rules?.config?.experienciaSaidas?.motivos || {}) };
+  const fim = marcos.map(n => addDays(adm, n - 1)).find(f => f >= ref) || addDays(adm, max - 1);
+  const noFim = iso(fim) === iso(ref);
+  const peloEmpregado = norm(values?.avisoDadoPor || '') === 'EMPREGADO' || m.includes('PEDIDO DE DEMISSAO');
+  return { valor: noFim ? mot.termino : peloEmpregado ? mot.antecipadoEmpregado : mot.antecipadoEmpregador, dia, fim, noFim, admissao: adm };
+}
+/** Valores de um modelo para assinar a partir do pedido (modelosDocumento[].campos[].de = chave do contexto; mapa = troca de valor). */
+export function valoresDoModelo(md, ctx = {}) {
+  const out = {};
+  for (const c of md?.campos || []) {
+    let v = ctx[c.de || c.k];
+    if (v != null && c.mapa) v = Object.entries(c.mapa).find(([k]) => norm(k) === norm(v))?.[1] ?? null;
+    if (v != null && v !== '') out[c.k] = String(v);
+  }
+  return out;
 }
 /* Avisos que pedem o cálculo: aviso de férias ou de rescisão criado no portal sem a solicitação de
    cálculo do mesmo funcionário. Férias: pagamento até 2 dias antes do início (CLT 145). Rescisão: até 10 dias
@@ -1555,10 +2188,10 @@ export function avisosSemCalculo(itens, hoje = today(), regras = {}, cal = makeC
     let pagamento = null, estimado = false, inicio = null;
     if (a.tipo === 'avisoFerias') {
       inicio = dt.inicioFerias;
-      pagamento = dt.pagamento || (inicio ? addDays(inicio, -2) : null);
+      pagamento = dt.pagamento || pagamentoFerias(inicio, regras, cal);
     } else {
       const av = dt.aviso || null;
-      if (av) { pagamento = addDays(av, 10); estimado = true; }
+      if (av) { pagamento = pagamentoRescisao(av, regras, cal); estimado = true; }
     }
     if (pagamento) {
       const falta = diffDays(hoje, pagamento);
@@ -1681,14 +2314,13 @@ export function casosCliente(itens, regras) {
    início; estagiário: até config.estagiarioPrazoDias depois). Datas vindas do detalhe ou da lista. */
 export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
   const c = regras?.config || {};
-  const utilAntes = (d) => { let x = d; while (!cal.isBusiness(x)) x = addDays(x, -1); return x; };
   const out = [];
   for (const i of itens || []) {
     if (!['aguardando', 'andamento'].includes(i.estado)) continue;
     const dt = i.datas || {};
     let alvo = null, titulo = '', ref = '';
-    if (i.tipo === 'calculoFerias' && dt.inicioFerias) { alvo = utilAntes(addDays(dt.inicioFerias, -(c.pagamentoFeriasAntes ?? 2))); titulo = 'Pagamento das férias'; ref = `início em ${fmtDate(dt.inicioFerias)}`; }
-    else if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) { const b = dt.desligamento || dt.avisoPrevio; alvo = utilAntes(addDays(b, c.pagamentoRescisaoDias ?? 10)); titulo = 'Pagamento da rescisão'; ref = dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}`; }
+    if (i.tipo === 'calculoFerias' && dt.inicioFerias) { alvo = pagamentoFerias(dt.inicioFerias, regras, cal); titulo = 'Pagamento das férias'; ref = `início em ${fmtDate(dt.inicioFerias)}`; }
+    else if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) { const b = dt.desligamento || dt.avisoPrevio; alvo = pagamentoRescisao(b, regras, cal); titulo = 'Pagamento da rescisão'; ref = dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}`; }
     else if (/^cadastro(Empregado|Estagiario)$/.test(i.tipo) && dt.admissao) {
       const est = i.tipo === 'cadastroEstagiario';
       alvo = est ? addDays(dt.admissao, c.estagiarioPrazoDias ?? 15) : addDays(dt.admissao, -1);
@@ -1708,8 +2340,7 @@ export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = ma
 export function observacoesCliente(item, datas, regras = {}, hoje = today(), cal = makeCalendar(regras?.feriados)) {
   const c = regras?.config || {};
   const d = datas || item?.datas || {};
-  const utilAntes = (x) => { let y = x; while (!cal.isBusiness(y)) y = addDays(y, -1); return y; };
-  const ini = d.inicioFerias, pf = ini ? utilAntes(addDays(ini, -(c.pagamentoFeriasAntes ?? 2))) : null;
+  const ini = d.inicioFerias, pf = pagamentoFerias(ini, regras, cal);
   const vals = { inicio: fmtDate(ini), pagamentoFerias: fmtDate(pf), aviso: fmtDate(d.aviso || d.avisoPrevio), desligamento: fmtDate(d.desligamento),
     admissao: fmtDate(d.admissao), afastamento: fmtDate(d.afastamento), competencia: d.competencia ? fmtDate(d.competencia).slice(3) : '',
     pagamentoFeriasAntes: c.pagamentoFeriasAntes ?? 2, pagamentoRescisaoDias: c.pagamentoRescisaoDias ?? 10, avisoFeriasDias: c.avisoFeriasDias ?? 30,

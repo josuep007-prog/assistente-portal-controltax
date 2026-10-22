@@ -314,7 +314,7 @@ export function montarPlataforma(A) {
 
   /* =================== Entrada, contexto, avisos =================== */
   P.entrou = () => {
-    montarCasca(); atualizarCabecalho(); atualizarSync(); avisoLeitura();
+    montarCasca(); atualizarCabecalho(); atualizarSync(); avisoLeitura(); carregarRascunhos();
     if (!S.rules) return;
     P.carregarSolicitacoes();
     P.carregarEmpregados().then(() => { if (['funcionarios', 'historico', 'inicio'].includes(S.view)) P.render(S.view); });
@@ -367,7 +367,62 @@ export function montarPlataforma(A) {
     $('#leit-portal').addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
     $('#leit-diag').addEventListener('click', () => A.copiarDiagnostico?.());
   }
-  P.aoEnviar = (tipo) => { S.plat.enviado = { tipo, quando: Date.now() }; setTimeout(() => P.carregarSolicitacoes(true), 1500); };
+  P.aoEnviar = (tipo, valores = {}) => {
+    S.plat.enviado = { tipo, quando: Date.now() };
+    // o passo seguinte (regras: tipos.*.depoisDeEnviar), menos o que o lote já vai abrir
+    const lote = S.lote && !S.lote.concluido ? S.lote.pedidos.filter(x => x.status === 'pendente').map(x => x.tipo) : [];
+    const passos = E.proximosPassos(tipo, valores, S.rules).filter(x => !(x.tipo && lote.includes(x.tipo)));
+    S.plat.proximo = passos.length ? { passos, quando: Date.now(), de: tipo } : null;
+    setTimeout(() => P.carregarSolicitacoes(true), 1500);
+    carregarRascunhos();
+  };
+  /* Cartão "Próximo: … até DD/MM" depois do envio, com "Preparar agora" (já com os dados do pedido enviado) e "Me lembrar"
+     (vira lembrete na Agenda com "Fazer agora"). O passo some quando o portal já tem o pedido desse funcionário. */
+  const passosAbertos = () => {
+    const pr = S.plat.proximo; if (!pr || Date.now() - pr.quando > 6 * 3600e3) return [];
+    return pr.passos.filter(x => !x.feito && !(x.tipo && E.temPedidoDe(S.plat.sol?.itens, x.tipo, x.empregado, new Date(pr.quando))));
+  };
+  P.renderProximo = (el) => {
+    if (!el) return;
+    const l = passosAbertos();
+    el.innerHTML = l.map((x, n) => `<div class="note ok proximo" data-prox="${n}">${icon(x.tipo ? 'arrow' : 'clock')}<div style="flex:1;min-width:0"><b>Próximo: ${esc(x.titulo)}${x.ate ? ` até ${fmt(x.ate)}` : ''}</b>${x.dica ? `<br><small class="muted">${esc(x.dica)}</small>` : ''}
+      <div class="actions" style="margin-top:6px">${x.tipo ? `<button type="button" class="btn btn-sm btn-primary" data-prox-fazer="${n}">Preparar agora</button>` : ''}<button type="button" class="btn btn-sm" data-prox-lembrar="${n}">${icon('clock', 'ic-sm')} Me lembrar</button><button type="button" class="btn btn-sm btn-ghost" data-prox-x="${n}">Dispensar</button></div></div></div>`).join('');
+    el.querySelectorAll('[data-prox-fazer]').forEach(b => b.addEventListener('click', () => { const x = l[+b.dataset.proxFazer]; x.feito = true; fazerAgora({ tipo: x.tipo, empregado: x.empregado, valores: x.valores, fonte: 'do pedido enviado' }); }));
+    el.querySelectorAll('[data-prox-lembrar]').forEach(b => b.addEventListener('click', async () => {
+      const x = l[+b.dataset.proxLembrar]; x.feito = true;
+      const d = x.ate && x.ate >= E.today() ? x.ate : E.addDays(E.today(), 1);
+      const lem = { id: Date.now().toString(36), texto: x.titulo, data: E.iso(d), hora: '', rep: 'nao', intervalo: 1, ate: '', obs: x.dica || '', pular: [], ...(x.tipo ? { pedir: { tipo: x.tipo, empregado: x.empregado, valores: x.valores, fonte: 'do pedido enviado' } } : {}) };
+      S.plat.lembretes = [...S.plat.lembretes, lem]; await chrome.storage.local.set({ lembretes: S.plat.lembretes });
+      toast(`Lembrete na Agenda para ${fmt(d)}.`); P.renderProximo(el);
+    }));
+    el.querySelectorAll('[data-prox-x]').forEach(b => b.addEventListener('click', () => { l[+b.dataset.proxX].feito = true; P.renderProximo(el); }));
+  };
+  /** "Fazer agora" de um evento da Agenda, de um lembrete ou do próximo passo: abre o pedido já com os dados. */
+  function fazerAgora(x) {
+    if (!x?.tipo || !S.rules.tipos[x.tipo]) return;
+    const { empregado, ...resto } = x.valores || {};
+    P.novoPedido(x.tipo, { empregado: x.empregado || empregado, sugeridos: resto, fonte: x.fonte || 'do pedido enviado' });
+  }
+  P.fazerAgora = fazerAgora;
+  /* Rascunhos da empresa (guardados 7 dias neste computador): para o cartão "Para terminar" do Hoje. */
+  async function carregarRascunhos() {
+    try {
+      const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
+      const antes = JSON.stringify(S.plat.rascunhos || {});
+      S.plat.rascunhos = rascunhos;
+      if (antes !== JSON.stringify(rascunhos) && S.view === 'inicio' && document.body.classList.contains('plat') && seguroRedesenhar()) P.render('inicio');
+    } catch { /* sem armazenamento */ }
+  }
+  async function continuarRascunho(tipo, r) {
+    const W = A.w(tipo);
+    for (const [k, v] of Object.entries(r.valores || {})) W.valores[k] = v;
+    (r.editados || []).forEach(k => W.editados.add(k));
+    W.rascunhoVisto = true;
+    A.gerarTextos(tipo, true);
+    await A.openTipo(tipo, { manter: true });
+    for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
+    if (S.ctx.tipo === tipo) A.fillPortal(tipo, { silencioso: true });
+  }
 
   P.render = (v) => {
     montarCasca(); marcarModulo(v);
@@ -407,17 +462,18 @@ export function montarPlataforma(A) {
       for (const p of E.prazosFixos(S.rules, m.getFullYear(), m.getMonth(), cal)) if (dentro(p.d)) out.push({ d: p.d, tipo: 'legal', titulo: p.titulo, detalhe: p.detalhe });
     }
     const hist = (S.historico || []).filter(h => h.status === 'enviado' && (!S.ctx.empresa || h.empresa === S.ctx.empresa));
-    for (const p of A.prazosDoHistorico(hist)) if (dentro(p.d)) out.push({ d: p.d, tipo: 'pedido', titulo: p.titulo, detalhe: [p.detalhe, nomeTipo(p.h.tipo)].filter(Boolean).join(' · ') });
+    for (const p of A.prazosDoHistorico(hist)) if (dentro(p.d)) out.push({ d: p.d, tipo: 'pedido', titulo: p.titulo, detalhe: [p.detalhe, nomeTipo(p.h.tipo)].filter(Boolean).join(' · '), pedir: p.pedir || null });
     for (const e of empregadosAtivos()) {
       const s = E.situacaoEmpregado(e, E.today(), S.rules);
       for (const x of s.experiencia) if (dentro(x.fim)) out.push({ d: x.fim, tipo: 'exp', titulo: `Fim da experiência (${x.n} dias)`, detalhe: A.nomeCurto(e.nome) });
     }
-    for (const l of S.plat.lembretes) for (const d of E.ocorrencias(l, de, ate, cal)) out.push({ d, tipo: 'lembrete', titulo: l.texto, detalhe: [l.hora, l.obs].filter(Boolean).join(' · '), lembrete: l });
+    for (const l of S.plat.lembretes) for (const d of E.ocorrencias(l, de, ate, cal)) out.push({ d, tipo: 'lembrete', titulo: l.texto, detalhe: [l.hora, l.obs].filter(Boolean).join(' · '), lembrete: l, pedir: l.pedir && !E.temPedidoDe(S.plat.sol?.itens, l.pedir.tipo, l.pedir.empregado, E.parseDate(l.data) && E.addDays(E.parseDate(l.data), -30)) ? l.pedir : null });
     for (const f of S.rules.feriados || []) { const d = E.parseDate(f); if (dentro(d)) out.push({ d, tipo: 'feriado', titulo: 'Feriado', detalhe: '' }); }
     return out.sort((a, b) => a.d - b.d || a.tipo.localeCompare(b.tipo));
   }
   const ROT_EV = { legal: 'Prazo legal', pedido: 'Da solicitação', exp: 'Experiência', lembrete: 'Lembrete', feriado: 'Feriado' };
-  const linhaEvento = (e) => { const [c, t] = quando(e.d); return `<div class="pn-li" data-ev-iso="${E.iso(e.d)}"><div class="ag-d"><b>${String(e.d.getDate()).padStart(2, '0')}</b><small>${e.d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</small></div><div class="main"><b>${esc(e.titulo)}</b><small>${esc(e.detalhe || ROT_EV[e.tipo])}</small></div><span class="pill pill-${c}">${t}</span></div>`; };
+  // eventos de pedido (e lembretes de um pedido) ganham "Fazer agora": abre o pedido já com os dados
+  const linhaEvento = (e, n) => { const [c, t] = quando(e.d); return `<div class="pn-li" data-ev-iso="${E.iso(e.d)}"><div class="ag-d"><b>${String(e.d.getDate()).padStart(2, '0')}</b><small>${e.d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</small></div><div class="main"><b>${esc(e.titulo)}</b><small>${esc(e.detalhe || ROT_EV[e.tipo])}</small></div>${e.pedir && n != null ? `<button type="button" class="btn btn-sm" data-fazer="${n}">Fazer agora</button>` : ''}<span class="pill pill-${c}">${t}</span></div>`; };
 
   /* =================== HOJE (2.1) =================== */
   /* No formato da tela Hoje do Control Onvio (repositório do escritório), na visão do cliente: rosca "% em dia",
@@ -434,6 +490,87 @@ export function montarPlataforma(A) {
   const empDe = (i) => (i.empregado && !E.norm(i.assunto).includes(E.norm(i.empregado)) ? i.empregado : '');   // sem repetir o nome que já está no assunto
   const saudacao = () => { const h = new Date().getHours(); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
   const lembretesDeHoje = () => { const h = E.today(); const cal = E.makeCalendar(S.rules.feriados); return S.plat.lembretes.filter(l => E.ocorrencias(l, h, h, cal).length); };
+
+  /* ---------- Atalhos que abrem um pedido já com dados (20, 21, 40) ---------- */
+  const admissaoDe = (nome) => A.admissaoDe?.(nome) || E.parseDate((S.plat.emp?.lista || []).find(e => E.norm(e.nome) === E.norm(nome))?.admissao) || null;
+  /** "Pedir o cálculo" de um aviso que está no portal: início, dias e abono (ou a data do aviso) entram como sugestão "do aviso nº X". */
+  async function pedirCalculoDoAviso(i, datas = null) {
+    let item = datas ? { ...i, datas: { ...(i.datas || {}), ...datas } } : i;
+    let vv = E.valoresDoAviso(item, S.rules);
+    if (!Object.keys(vv.valores).length && i.id) {   // datas ainda não lidas: lê o detalhe na hora
+      const r = await request({ type: 'datasAviso', lista: S.rules.tipos[i.tipo]?.apiDetalhe || S.rules.tipos[i.tipo]?.apiLista, solicitacao: i.id }, 15000);
+      if (r?.datas) { item = { ...i, datas: { ...(i.datas || {}), ...Object.fromEntries(Object.entries(E.datasDoAviso(r.datas)).filter(([, v]) => v != null)) } }; vv = E.valoresDoAviso(item, S.rules); }
+    }
+    if (!vv.tipo || !S.rules.tipos[vv.tipo]) return;
+    await P.novoPedido(vv.tipo, { empregado: i.empregado, sugeridos: vv.valores, fonte: vv.fonte });
+    const W = A.w(vv.tipo); W.avisoUsado = true;
+  }
+  /** "Programar" férias a vencer: o aviso já com a 1ª data de início que vale (30 dias de antecedência, fora de sexta e véspera de feriado). */
+  function programarFerias(nome) {
+    const ini = E.primeiroInicioFerias(E.addDays(E.today(), +S.rules.config?.avisoFeriasDias || 30), S.rules);
+    P.novoPedido('avisoFerias', { empregado: nome, sugeridos: { inicioGozo: E.fmtDate(ini) }, fonte: 'sugestão: 1ª data que vale' });
+  }
+  /* Experiência que vence: três saídas (regras: config.experienciaSaidas). Efetivar só dispensa o aviso (fica neste computador). */
+  const chaveExp = (nome, n) => `${S.ctx.empresa}|${E.norm(nome)}|${n}`;
+  const lerEfetivados = () => { try { return JSON.parse(localStorage.getItem('ct.expEfetivados') || '[]'); } catch { return []; } };
+  const expEfetivado = (nome, n) => lerEfetivados().includes(chaveExp(nome, n));
+  const textoCfg = (t, vals) => String(t || '').replace(/\{(\w+)\}/g, (_, k) => vals[k] ?? '');
+  function acoesExperiencia(nome, adm, n) {
+    const cfg = S.rules.config?.experienciaSaidas || {};
+    const sx = adm ? E.saidasExperiencia(E.iso(adm), n, S.rules) : null;
+    const out = [];
+    if (sx?.podeProrrogar && cfg.prorrogar !== false) out.push({ rotulo: cfg.prorrogar?.rotulo || 'Prorrogar', titulo: 'Termo de prorrogação pelo modelo e o pedido ao escritório', fn: () => prorrogarExperiencia(nome, adm, n) });
+    if (S.rules.tipos.calculoRescisao && cfg.encerrar !== false) out.push({ rotulo: cfg.encerrar?.rotulo || 'Encerrar no fim', titulo: cfg.encerrar?.explicacao || '', fn: () => encerrarExperiencia(nome, adm, n) });
+    out.push({ rotulo: cfg.efetivar?.rotulo || 'Efetivar', cls: 'btn-ghost', fn: () => efetivarExperiencia(nome, adm, n) });
+    return out;
+  }
+  function prorrogarExperiencia(nome, adm, n) {
+    const cfg = S.rules.config?.experienciaSaidas?.prorrogar || {};
+    const sx = E.saidasExperiencia(E.iso(adm), n, S.rules); if (!sx) return;
+    const vals = { empregado: nome, dataAdmissao: E.fmtDate(adm), diasProrrogacao: String(sx.diasProrrogacao), fimProrrogacao: E.fmtDate(sx.fimProrrogacao), max: sx.max, fim: E.fmtDate(sx.fim) };
+    const md = (S.rules.modelosDocumento || []).find(m => m.id === (cfg.modelo || 'prorrogacaoExperiencia'));
+    const pedido = cfg.pedido && S.rules.tipos[cfg.pedido] ? cfg.pedido : null;
+    const abrirPedido = () => P.novoPedido(pedido, { valores: Object.fromEntries(Object.entries(cfg.valores || {}).map(([k, v]) => [k, textoCfg(v, vals)])) });
+    if (md) abrirModelo(md, E.valoresDoModelo(md, vals), { nota: textoCfg(cfg.explicacao, vals), acao: pedido ? { rotulo: `${icon('fill', 'ic-sm')} Abrir o pedido ao escritório`, fn: abrirPedido } : null });
+    else if (pedido) abrirPedido();
+  }
+  function encerrarExperiencia(nome, adm, n) {
+    const cfg = S.rules.config?.experienciaSaidas || {};
+    const sx = E.saidasExperiencia(E.iso(adm), n, S.rules); if (!sx) return;
+    const motivo = cfg.motivos?.termino || 'Término de contrato de trabalho por tempo determinado';
+    P.novoPedido(cfg.encerrar?.pedido && S.rules.tipos[cfg.encerrar.pedido] ? cfg.encerrar.pedido : 'calculoRescisao', { empregado: nome, valores: { motivo, dataDemissao: E.fmtDate(sx.fim) } });
+    if (cfg.encerrar?.explicacao) toast(cfg.encerrar.explicacao);
+  }
+  function efetivarExperiencia(nome, adm, n) {
+    const cfg = S.rules.config?.experienciaSaidas?.efetivar || {};
+    const sx = adm ? E.saidasExperiencia(E.iso(adm), n, S.rules) : null;
+    dialogo({ titulo: `Efetivar ${esc(A.nomeCurto(nome))}`,
+      corpo: `<p style="margin:0">${esc(textoCfg(cfg.explicacao || 'Se {empregado} vai continuar, não precisa fazer nada: depois de {fim}, o contrato passa a ser por prazo indeterminado.', { empregado: A.nomeCurto(nome), fim: sx ? E.fmtDate(sx.fim) : 'o fim da experiência' }))}</p>`,
+      acoes: ['|', { rotulo: 'Cancelar' }, { rotulo: 'Entendi, tirar o aviso', cls: 'btn-primary', fn: () => {
+        try { localStorage.setItem('ct.expEfetivados', JSON.stringify([...lerEfetivados(), chaveExp(nome, n)].slice(-200))); } catch { /* sem armazenamento */ }
+        if (S.view === 'inicio') renderPainel();
+      } }] });
+  }
+  P.acoesExperiencia = acoesExperiencia;
+  /** "Para terminar" no Hoje: preenchidas e não enviadas nos últimos 7 dias e os rascunhos da empresa, sem repetir. */
+  function paraTerminar() {
+    const emp = S.ctx.empresa, lim = Date.now() - 7 * 864e5, vistos = new Set(), out = [];
+    const chave = (tipo, quem) => `${tipo}|${E.norm(quem)}`;
+    const quando = (t) => { const d = E.diffDays(new Date(new Date(t).toDateString()), E.today()); return d <= 0 ? 'hoje' : d === 1 ? 'ontem' : `há ${d} dias`; };
+    for (const [k, r] of Object.entries(S.plat.rascunhos || {})) {
+      const [e, tipo] = k.split('|'); if (e !== emp || !S.rules.tipos[tipo] || !r?.quando || r.quando < lim) continue;
+      const quem = r.valores?.empregado?.valor || r.valores?.nome?.valor || '';
+      vistos.add(chave(tipo, quem));
+      out.push({ t: r.quando, titulo: nomeTipo(tipo), sub: [quem && A.nomeCurto(quem), 'rascunho guardado'].filter(Boolean).join(' · '), quando: quando(r.quando), fn: () => continuarRascunho(tipo, r) });
+    }
+    for (const h of S.historico || []) {
+      if (h.status !== 'preenchido' || h.empresa !== emp || h.quando < lim || !S.rules.tipos[h.tipo]) continue;
+      const quem = h.valores?.empregado || h.valores?.nome || '';
+      if (vistos.has(chave(h.tipo, quem))) continue; vistos.add(chave(h.tipo, quem));
+      out.push({ t: h.quando, titulo: h.resumo || nomeTipo(h.tipo), sub: [nomeTipo(h.tipo), 'preenchido e não enviado'].join(' · '), quando: quando(h.quando), fn: () => reaproveitar(h) });
+    }
+    return out.sort((a, b) => b.t - a.t).slice(0, 8);
+  }
 
   function renderPainel() {
     const R = S.rules, sol = S.plat.sol, hoje = E.today();
@@ -465,7 +602,7 @@ export function montarPlataforma(A) {
       <div id="avisos-esc"></div>
       <div id="lote"></div>
       <div id="sugestao"></div>
-      ${enviado}${aviso}
+      ${enviado}${aviso}<div id="proximo"></div>
       <p class="hj-saud"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</p>
       <div class="dp-toolbar hj-barra">
         ${seletorEmpresa()}
@@ -524,33 +661,39 @@ export function montarPlataforma(A) {
       const li = [], acoes = []; let n = 2;
       const passo = (cls, c, titulo, sub, fn, fim = icon('right', 'ic-sm')) => { acoes.push(fn); li.push(`<li style="--i:${n++}"><button type="button" class="hj-step${cls}" data-passo="${acoes.length - 1}" style="--c:${c}"><i></i><span><b>${esc(titulo)}</b><small>${esc(sub)}</small></span>${fim}</button></li>`); };
       for (const p of atencao.slice(0, 8)) { const i = p.item; passo('', cor(MOT[p.motivo].cor), E.acaoCliente(i, p.motivo), [comEmpresa && rotEmpresa(i), i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo), empDe(i)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
-      for (const x of avisos.filter(x => x.falta != null && x.falta <= 10)) passo('', 'var(--viz-crit)', `Pedir o cálculo ${x.tipo === 'ferias' ? 'de férias' : 'da rescisão'} · pagamento até ${fmt(x.pagamento)}`, [A.nomeCurto(x.item.empregado), x.enviarAte ? `envie até ${fmt(x.enviarAte)}` : ''].filter(Boolean).join(' · '), () => P.novoPedido(x.calculo, { empregado: x.item.empregado }));
+      for (const x of avisos.filter(x => x.falta != null && x.falta <= 10)) passo('', 'var(--viz-crit)', `Pedir o cálculo ${x.tipo === 'ferias' ? 'de férias' : 'da rescisão'} · pagamento até ${fmt(x.pagamento)}`, [A.nomeCurto(x.item.empregado), x.enviarAte ? `envie até ${fmt(x.enviarAte)}` : ''].filter(Boolean).join(' · '), () => pedirCalculoDoAviso(x.item));
       for (const p of prio.filter(p => p.motivo === 'respondida').slice(0, 4)) { const i = p.item; passo('', cor(MOT.respondida.cor), E.acaoCliente(i, 'respondida'), [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
       for (const x of legais.filter(x => x.falta <= 5)) passo('', 'var(--viz-crit)', `${x.titulo} até ${fmt(x.alvo)}`, [x.item.empregado, x.ref].filter(Boolean).join(' · '), () => abrirDetalhe(x.item, { aba: 'observar' }));
       for (const l of lems) passo(' n-lem', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)));
-      for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, () => abrirDia(E.iso(e.d))); }
+      for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${e.pedir ? 'Fazer agora · ' : ''}${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, e.pedir ? () => fazerAgora(e.pedir) : () => abrirDia(E.iso(e.d))); }
       passosHtml.acoes = acoes;
       return { html: li.length ? `<ol class="hj-passos-l" id="hj-passos">${li.join('')}</ol>` : `<div class="hj-zen">${icon('check')}<span>${sol ? 'Nada para fazer agora. Tudo em dia!' : 'Lendo o portal…'}</span></div>` };
     }
     // Equipe: experiência vencendo, férias a vencer e avisos sem o cálculo (com o atalho para pedir)
     function equipeHtml() {
+      // acao: { rotulo, fn } ou uma lista delas (a experiência tem três saídas)
       const linha = (titulo, sub, pill, acao, abrir) => {
-        acoesEq.push({ acao: acao?.fn, abrir });
+        const lista = [].concat(acao || []).filter(Boolean);
+        acoesEq.push({ acao: lista[0]?.fn, abrir });
         const n = acoesEq.length - 1;
-        return `<div class="pn-li eq-li"${abrir ? ` data-eq-abrir="${n}"` : ''}><div class="main"><b>${esc(titulo)}</b><small>${esc(sub)}</small></div><div class="eq-acoes">${pill}${acao ? `<button type="button" class="btn btn-sm" data-eq="${n}">${esc(acao.rotulo)}</button>` : ''}</div></div>`;
+        const bts = lista.map((a, k) => { if (k) acoesEq.push({ acao: a.fn }); return `<button type="button" class="btn btn-sm${a.cls ? ' ' + a.cls : ''}" data-eq="${k ? acoesEq.length - 1 : n}"${a.titulo ? ` title="${esc(a.titulo)}"` : ''}>${esc(a.rotulo)}</button>`; }).join('');
+        return `<div class="pn-li eq-li"${abrir ? ` data-eq-abrir="${n}"` : ''}><div class="main"><b>${esc(titulo)}</b><small>${esc(sub)}</small></div><div class="eq-acoes">${pill}${bts}</div></div>`;
       };
       const pillQ = (d) => { if (!d) return '<span class="pill">sem data</span>'; const [c, t] = quando(d); return `<span class="pill pill-${c}">${t}</span>`; };
       const vazio = (txt) => `<div class="pn-vazio">${icon('check', 'ic-sm')} ${esc(txt)}</div>`;
-      const exp = equipe.experiencia.map(x => linha(x.nome, `Fim dos ${x.n} dias em ${fmt(x.fim)} · efetivar, prorrogar ou desligar`, pillQ(x.fim), S.rules.tipos.avisoRescisao ? { rotulo: 'Desligar', fn: () => P.novoPedido('avisoRescisao', { empregado: x.nome }) } : null));
-      const fer = equipe.ferias.map(x => linha(x.nome, `${x.falta < 0 ? 'Prazo para conceder passou em' : 'Conceder até'} ${fmt(x.limite)} · período ${x.aquisitivo}`, pillQ(x.limite), S.rules.tipos.avisoFerias ? { rotulo: 'Programar', fn: () => P.novoPedido('avisoFerias', { empregado: x.nome }) } : null));
+      const exp = equipe.experiencia.filter(x => !expEfetivado(x.nome, x.n)).map(x => linha(x.nome, `Fim dos ${x.n} dias em ${fmt(x.fim)} · prorrogar, encerrar no fim ou efetivar`, pillQ(x.fim), acoesExperiencia(x.nome, admissaoDe(x.nome), x.n)));
+      const fer = equipe.ferias.map(x => linha(x.nome, `${x.falta < 0 ? 'Prazo para conceder passou em' : 'Conceder até'} ${fmt(x.limite)} · período ${x.aquisitivo}`, pillQ(x.limite), S.rules.tipos.avisoFerias ? { rotulo: 'Programar', fn: () => programarFerias(x.nome) } : null));
       const avs = avisos.map(x => linha(x.item.empregado,
         x.tipo === 'ferias'
           ? (x.pagamento ? `Férias${x.inicio ? ` em ${fmt(x.inicio).slice(0, 5)}` : ''} · pedir o cálculo até ${fmt(x.enviarAte).slice(0, 5)} · pagar até ${fmt(x.pagamento).slice(0, 5)}` : 'Aviso de férias sem o cálculo · confira as datas no aviso')
           : (x.pagamento ? `Rescisão · pedir o cálculo até ${fmt(x.enviarAte).slice(0, 5)} · pagar até ${fmt(x.pagamento).slice(0, 5)} (aviso indenizado)` : 'Aviso de rescisão sem o cálculo · confira as datas no aviso'),
-        pillQ(x.enviarAte || x.pagamento), S.rules.tipos[x.calculo] ? { rotulo: 'Pedir o cálculo', fn: () => P.novoPedido(x.calculo, { empregado: x.item.empregado }) } : null, () => abrirDetalhe(x.item)));
+        pillQ(x.enviarAte || x.pagamento), S.rules.tipos[x.calculo] ? { rotulo: 'Pedir o cálculo', fn: () => pedirCalculoDoAviso(x.item) } : null, () => abrirDetalhe(x.item)));
       const card = (id, titulo, sub, linhas, txtVazio) => `<section class="pn-card" id="${id}"><div class="pn-card-head"><h3>${titulo} <span class="eq-n">${linhas.length}</span></h3><small>${esc(sub)}</small></div><div class="pn-card-body eq-body">${linhas.length ? `<div class="eq-lista">${linhas.join('')}</div>` : vazio(txtVazio)}</div></section>`;
       const leg = legais.map(x => linha(x.item.empregado || x.item.assunto || nomeTipo(x.item.tipo), `${x.titulo} até ${fmt(x.alvo)} · ${x.ref}${x.retroativa ? ' · pedido depois do início' : ''}`, pillQ(x.alvo), null, () => abrirDetalhe(x.item, { aba: 'observar' })));
+      // o que foi preenchido e não enviado nos últimos 7 dias e os rascunhos da empresa
+      const term = paraTerminar().map(x => linha(x.titulo, x.sub, `<span class="pill pill-today">${x.quando}</span>`, { rotulo: 'Continuar', cls: 'btn-primary', fn: x.fn }));
       return `<div class="hj-equipe">
+        ${term.length ? card('eq-terminar', 'Para terminar', 'Pedidos começados e não enviados (7 dias, neste computador).', term, '') : ''}
         ${card('eq-legais', 'Prazos legais', 'Pagamento dos cálculos em aberto e eSocial das admissões.', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…')}
         ${card('eq-avisos', 'Aviso sem cálculo', 'Férias e rescisões perto do pagamento com só o aviso no portal.', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
         ${card('eq-exp', 'Experiência vencendo', 'Próximos 30 dias, pela data de admissão.', exp, 'Nenhuma experiência vencendo.')}
@@ -585,6 +728,7 @@ export function montarPlataforma(A) {
     ligarDicas(viewEl);
     if (animar) { viewEl.classList.remove('hj-anim'); void viewEl.offsetWidth; viewEl.classList.add('hj-anim'); setTimeout(() => viewEl.classList.remove('hj-anim'), 1600); animarNumeros(viewEl); }
     iniciarCarrossel($('#hj-tick'));
+    P.renderProximo($('#proximo'));
     marcarRolagem($('#hj-passos'));
     viewEl.querySelectorAll('.eq-lista').forEach(l => { limitarCinco(l); marcarRolagem(l); });   // até 5 itens à vista; o resto rola
 
@@ -775,7 +919,8 @@ export function montarPlataforma(A) {
         <div class="dt-dq" id="dt-dq"></div>
         <div class="dp-tabs dt-tabs" role="tablist">${[['conversa', 'Conversa'], ['dados', 'Dados'], ['observar', 'O que observar']].map(([k, r]) => `<button type="button" role="tab" class="dp-tab" data-dt="${k}">${r}</button>`).join('')}</div>
         <div class="dt-body" id="dt-body"></div>`,
-      acoes: [{ rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) },
+      acoes: [...(['avisoFerias', 'avisoRescisao'].includes(i.tipo) && !['cancelada', 'prescrita'].includes(i.estado) ? [{ rotulo: `${icon('calc', 'ic-sm')} Pedir o cálculo`, cls: 'dt-pedir-calc', fn: () => { pedirCalculoDoAviso(i, st.datas); } }] : []),
+        { rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) },
         { rotulo: `${icon('copy', 'ic-sm')} Copiar observações`, cls: 'btn-ghost dt-copiar', fn: async () => { const o = E.observacoesCliente(i, st.datas, S.rules); try { await navigator.clipboard.writeText(o.map(x => `• ${x.texto}`).join('\n')); toast('Observações copiadas.'); } catch { toast('Não consegui copiar.'); } return false; } },
         '|', { rotulo: 'Fechar' }]
     });
@@ -863,7 +1008,8 @@ export function montarPlataforma(A) {
     for (const it of R.intencoes || []) { const setor = R.tipos[it.tipo]?.setor || 'Outros'; if (!grupos.has(setor)) grupos.set(setor, []); grupos.get(setor).push(it); }
     viewEl.innerHTML = `
       <div id="lote"></div>
-      ${S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3 ? `<div class="note ok">${icon('check')}<div><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada.</b> Quer fazer outra?</div></div>` : ''}
+      ${S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3 ? `<div class="note ok">${icon('check')}<div><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada.</b> ${passosAbertos().length ? 'Veja o próximo passo:' : 'Quer fazer outra?'}</div></div>` : ''}
+      <div id="proximo"></div>
       ${aberto ? `<div class="aviso-linha">${icon('fill')}<span>O pedido de <b>${esc(nomeTipo(S.ctx.tipo))}</b> continua aberto no portal. Escolha outro abaixo ou volte a ele.</span><button type="button" class="btn btn-sm btn-primary" id="pd-continuar">Continuar o pedido ${icon('arrow', 'ic-sm')}</button></div>` : ''}
       <div id="sugestao"></div>
       <div class="pd-escolha">
@@ -891,16 +1037,21 @@ export function montarPlataforma(A) {
     $('#free-txt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } });
     A.bindDrop($('#drop-main'));
     A.renderSugestao(); A.renderLote(); A.renderRepetir(); A.renderModelosInicio();
+    P.renderProximo($('#proximo'));
   }
   /** Botão "Outro tipo" dentro do pedido: volta para a escolha do tipo (o pedido aberto pode ser retomado). */
   P.voltarEscolha = () => { S.plat.escolher = true; P.render('preencher'); };
-  /** Abre um pedido já com o funcionário escolhido (atalho da lista de Funcionários e da busca). */
-  P.novoPedido = async (tipo, { empregado, valores = {}, empresa } = {}) => {
+  /** Abre um pedido já com o funcionário escolhido (atalhos do Hoje, Funcionários, Calcular, Agenda e da busca).
+   *  valores: o que o cliente escolheu na outra tela (vale como digitado por ele); sugeridos: dados do aviso, 1ª data que vale…
+   *  entram para conferir ("do aviso nº X"), e um documento arrastado depois ainda pode corrigi-los; observacoes: vão para a
+   *  descrição (ex.: a linha da simulação); empresa: a do pedido (vários CNPJs no mesmo acesso). Terminando sem falta nada, abre o resumo do "Conferir e enviar". */
+  P.novoPedido = async (tipo, { empregado, valores = {}, sugeridos = {}, fonte = 'sugestão do Assistente', observacoes = '', empresa } = {}) => {
     A.comecarDoZeroSeAbandonado(tipo);
     const W = A.w(tipo);
-    // valores vindos de outra tela (funcionário escolhido, simulação do Calcular): valem como digitados pelo cliente
     const dados = { ...(empregado ? { empregado } : {}), ...Object.fromEntries(Object.entries(valores).filter(([k, v]) => v != null && v !== '' && S.rules.tipos[tipo]?.campos?.[k])) };
     for (const [k, v] of Object.entries(dados)) { W.valores[k] = { valor: String(v), conf: 1, fonte: 'você' }; W.editados.add(k); W.fonteVerdade[k] = 'plataforma'; }
+    A.aplicarSugestoes(tipo, Object.fromEntries(Object.entries(sugeridos || {}).filter(([k]) => !(k in dados))), fonte);
+    if (observacoes) W.valores.observacoes = { valor: observacoes, conf: 1, fonte: 'você' };
     W.rascunhoVisto = true;
     A.gerarTextos(tipo);
     // com funcionário escolhido a empresa já está definida (a lista dele é a da empresa aberta ou a da solicitação de origem)
@@ -908,7 +1059,10 @@ export function montarPlataforma(A) {
     if (alvo && !(await P.escolherEmpresa({ tipo, empresa: alvo, conservarEmpregado: !!empregado }))) return;
     await A.openTipo(tipo, { manter: true, semEmpresa: !!alvo });
     for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
-    if (Object.keys(dados).length && S.ctx.tipo === tipo) { await A.loadEmpregados(tipo); await A.fillPortal(tipo, { daPlataforma: true }); }
+    if ((Object.keys(dados).length || Object.keys(sugeridos || {}).length) && S.ctx.tipo === tipo) {
+      await A.loadEmpregados(tipo); await A.fillPortal(tipo, { daPlataforma: true });
+      await A.abrirResumoSePronto(tipo);
+    }
   };
 
   /* =================== EMPRESA DO PEDIDO ===================
@@ -1074,10 +1228,14 @@ export function montarPlataforma(A) {
     const dele = (i) => E.norm(i.empregado) === E.norm(nome) || (!i.empregado && E.norm(i.assunto).includes(E.norm(nome)));
     const pillQ = (d) => { const [c, t] = quando(d); return `<span class="pill pill-${c}">${t}</span>`; };
     const st0 = { historico: false, dados: null, dadosErro: false };
+    // experiência que vence (próximos 30 dias): as mesmas três saídas do Hoje
+    const expVence = e.ativo !== false && st.admissao ? st.experiencia.find(k => k.falta >= 0 && k.falta <= 30) : null;
+    const acoesExp = expVence ? acoesExperiencia(nome, st.admissao, expVence.n) : [];
     const dlg = dialogo({
       titulo: `${esc(nome)} ${e.ativo === false ? '<span class="pill pill-muted">desligado</span>' : '<span class="pill pill-ok">ativo</span>'}`, largo: true,
       corpo: `<div class="dt-meta">${[['Admissão', fmt(st.admissao)], ['Tempo de casa', st.tempoCasa || '—'], ['Período aquisitivo', st.ferias?.aquisitivo || '—'], ['Conceder férias até', st.ferias ? `${fmt(st.ferias.limite)} (estimativa)` : '—']].map(([k, v]) => `<span><small>${esc(k)}</small><b>${esc(v)}</b></span>`).join('')}</div>
         ${st.experiencia.length && e.ativo !== false ? `<div class="fu-exp">${st.experiencia.map(k => `<span class="dq"><small>Fim dos ${k.n} dias</small><b>${fmt(k.fim)}</b>${k.falta >= -2 ? pillQ(k.fim) : ''}</span>`).join('')}</div>` : ''}
+        ${expVence ? `<div class="fu-exp-acoes"><small class="muted">A experiência termina em ${fmt(expVence.fim)}:</small>${acoesExp.map((a, n) => `<button type="button" class="btn btn-sm${a.cls ? ' ' + a.cls : ''}" data-fu-exp="${n}"${a.titulo ? ` title="${esc(a.titulo)}"` : ''}>${esc(a.rotulo)}</button>`).join('')}</div>` : ''}
         <div class="fu-acoes">${e.ativo !== false ? ACOES_EMP.filter(([t]) => S.rules.tipos[t]).map(([t, r, ic]) => `<button type="button" class="btn btn-sm" data-fu-pedir="${t}">${icon(ic, 'ic-sm')} ${r}</button>`).join('') + `<button type="button" class="btn btn-sm btn-ghost" data-fu-sim="rescisao">${icon('calc', 'ic-sm')} Simular rescisão</button><button type="button" class="btn btn-sm btn-ghost" data-fu-sim="ferias">${icon('calc', 'ic-sm')} Simular férias</button>` : ''}</div>
         <h4 class="dlg-sec" id="fu-tit-sol"></h4>
         <div id="fu-sol" class="fu-sol"></div>
@@ -1100,7 +1258,8 @@ export function montarPlataforma(A) {
     };
     desenharSol();
     if (!S.plat.sol) P.carregarSolicitacoes().then(() => el.isConnected && desenharSol());
-    el.querySelectorAll('[data-fu-pedir]').forEach(b => b.addEventListener('click', () => { dlg.fechar(); P.novoPedido(b.dataset.fuPedir, { empregado: nome }); }));
+    el.querySelectorAll('[data-fu-pedir]').forEach(b => b.addEventListener('click', () => { dlg.fechar(); if (b.dataset.fuPedir === 'avisoFerias' && st.ferias && st.ferias.falta <= 60) programarFerias(nome); else P.novoPedido(b.dataset.fuPedir, { empregado: nome }); }));
+    el.querySelectorAll('[data-fu-exp]').forEach(b => b.addEventListener('click', () => { dlg.fechar(); setTimeout(() => acoesExp[+b.dataset.fuExp]?.fn(), 0); }));
     el.querySelectorAll('[data-fu-sim]').forEach(b => b.addEventListener('click', () => {
       dlg.fechar(); prepararSimulacao(b.dataset.fuSim, { quem: nome, admissao: st.admissao ? E.fmtDate(st.admissao) : '' });
       S.ferramenta = b.dataset.fuSim === 'rescisao' ? 'simRescisao' : 'simFerias'; A.setView('ferramentas');
@@ -1146,23 +1305,26 @@ export function montarPlataforma(A) {
         </aside>
       </div>`;
     const prox = eventosEntre(E.today(), E.addDays(E.today(), 30)).filter(e => e.tipo !== 'feriado' && (!G.filtro || e.tipo === G.filtro));
-    $('#ag-prox').innerHTML = prox.slice(0, 12).map(linhaEvento).join('') || `<div class="pn-vazio">${icon('calendar', 'ic-sm')} Nada nos próximos 30 dias.</div>`;
-    $('#ag-prox').querySelectorAll('[data-ev-iso]').forEach(b => b.addEventListener('click', () => abrirDia(b.dataset.evIso)));
+    $('#ag-prox').innerHTML = prox.slice(0, 12).map((e, n) => linhaEvento(e, n)).join('') || `<div class="pn-vazio">${icon('calendar', 'ic-sm')} Nada nos próximos 30 dias.</div>`;
+    $('#ag-prox').querySelectorAll('[data-ev-iso]').forEach(b => b.addEventListener('click', (ev) => { if (!ev.target.closest('[data-fazer]')) abrirDia(b.dataset.evIso); }));
+    $('#ag-prox').querySelectorAll('[data-fazer]').forEach(b => b.addEventListener('click', () => fazerAgora(prox[+b.dataset.fazer]?.pedir)));
     const hist = S.historico || [];
     $('#ag-hist').innerHTML = hist.length ? hist.slice(0, 40).map((h, n) => `<button type="button" class="pn-li" data-hist="${n}"><div class="main"><b>${esc(h.resumo)}</b><small>${esc(nomeTipo(h.tipo))} · ${new Date(h.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</small></div><span class="pill pill-${h.status === 'enviado' ? 'ok' : 'soon'}">${esc(h.status)}</span></button>`).join('') : '<div class="pn-vazio">As solicitações que você fizer com o Assistente aparecem aqui.</div>';
     viewEl.querySelectorAll('[data-dia]').forEach(b => b.addEventListener('click', () => abrirDia(b.dataset.dia)));
     viewEl.querySelectorAll('[data-cont]').forEach(b => b.addEventListener('click', () => reaproveitar(inacabados[+b.dataset.cont])));
-    viewEl.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => reaproveitar(hist[+b.dataset.hist])));
+    viewEl.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => reaproveitar(hist[+b.dataset.hist], true)));
     $('#ag-prev').addEventListener('click', () => { const d = new Date(G.ano, G.mes - 1, 1); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
     $('#ag-next').addEventListener('click', () => { const d = new Date(G.ano, G.mes + 1, 1); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
     $('#ag-hoje').addEventListener('click', () => { const d = E.today(); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
     $('#ag-filtro').addEventListener('change', (e) => { G.filtro = e.target.value; renderAgenda(); });
     $('#ag-novo').addEventListener('click', () => editarLembrete(null, E.iso(E.today())));
   }
-  async function reaproveitar(h) {
+  async function reaproveitar(h, outroPedido = false) {
     if (!h) return;
     const W = A.w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores || {})) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    // outro pedido a partir do histórico: num cadastro, só os campos da empresa (nada da pessoa anterior)
+    const vals = outroPedido ? E.valoresReaproveitaveis(h.tipo, h.valores, S.rules) : h.valores || {};
+    for (const [k, v] of Object.entries(vals)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     W.rascunhoVisto = true;
     A.gerarTextos(h.tipo, true);
     await A.openTipo(h.tipo, { manter: true });
@@ -1172,10 +1334,11 @@ export function montarPlataforma(A) {
     const evs = eventosEntre(d, d);
     const dlg = dialogo({
       titulo: cap(d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })),
-      corpo: evs.length ? evs.map((e, n) => `<div class="pn-li"${e.lembrete ? ` data-lb="${n}" style="cursor:pointer"` : ' style="cursor:default"'}><span class="ag-ev ev-${e.tipo}" style="width:10px;padding:8px 0"></span><div class="main"><b>${esc(e.titulo)}</b><small>${esc(e.detalhe || ROT_EV[e.tipo])}</small></div><span class="pill">${ROT_EV[e.tipo]}</span></div>`).join('') : '<p class="muted" style="margin:0">Nada marcado neste dia.</p>',
+      corpo: evs.length ? evs.map((e, n) => `<div class="pn-li"${e.lembrete ? ` data-lb="${n}" style="cursor:pointer"` : ' style="cursor:default"'}><span class="ag-ev ev-${e.tipo}" style="width:10px;padding:8px 0"></span><div class="main"><b>${esc(e.titulo)}</b><small>${esc(e.detalhe || ROT_EV[e.tipo])}</small></div>${e.pedir ? `<button type="button" class="btn btn-sm btn-primary" data-dia-fazer="${n}">Fazer agora</button>` : ''}<span class="pill">${ROT_EV[e.tipo]}</span></div>`).join('') : '<p class="muted" style="margin:0">Nada marcado neste dia.</p>',
       acoes: [{ rotulo: `${icon('plus', 'ic-sm')} Lembrete neste dia`, cls: 'btn-primary', fn: () => { setTimeout(() => editarLembrete(null, isoDia), 0); } }, '|', { rotulo: 'Fechar' }]
     });
-    dlg.el.querySelectorAll('[data-lb]').forEach(b => b.addEventListener('click', () => { dlg.fechar(); editarLembrete(evs[+b.dataset.lb].lembrete, isoDia); }));
+    dlg.el.querySelectorAll('[data-lb]').forEach(b => b.addEventListener('click', (ev) => { if (ev.target.closest('[data-dia-fazer]')) return; dlg.fechar(); editarLembrete(evs[+b.dataset.lb].lembrete, isoDia); }));
+    dlg.el.querySelectorAll('[data-dia-fazer]').forEach(b => b.addEventListener('click', () => { dlg.fechar(); fazerAgora(evs[+b.dataset.diaFazer].pedir); }));
   }
   function editarLembrete(l, diaIso) {
     const novo = !l;
@@ -1383,11 +1546,12 @@ export function montarPlataforma(A) {
   function docsModelos(el) {
     const M = S.rules.modelosDocumento || [];
     el.innerHTML = `<div class="pn-grid">${M.map((md, n) => `<section class="pn-card"><div class="pn-card-head"><h3>${esc(md.titulo)}</h3></div><div class="pn-card-body mdl-card"><p>${esc(md.descricao || '')}</p>${md.revisarComEscritorio ? '<span class="pill pill-today" style="justify-self:start">Modelo sugerido — confirme com o escritório</span>' : ''}<button type="button" class="btn btn-primary btn-sm" data-mdl="${n}" style="justify-self:start">${icon('fill', 'ic-sm')} Preencher</button></div></section>`).join('') || '<p class="muted">Nenhum modelo cadastrado pelo escritório.</p>'}</div>`;
-    el.querySelectorAll('[data-mdl]').forEach(b => b.addEventListener('click', () => abrirModelo(M[+b.dataset.mdl])));
+    el.querySelectorAll('[data-mdl]').forEach(b => b.addEventListener('click', () => abrirModelo(M[+b.dataset.mdl], { empresa: S.ctx.empresa })));
   }
   const textoModelo = (md, vals) => (md.texto || []).map(l => String(l).replace(/\{(\w+)(?:\|([^}]*))?\}/g, (_, k, fb) => (vals[k] != null && String(vals[k]).trim() !== '' ? String(vals[k]) : (fb ?? '')))).join('\n');
-  function abrirModelo(md) {
-    const vals = {};
+  /** Modelo para assinar. iniciais: valores do pedido (funcionário, datas, admissão…); opts.nota: explicação; opts.acao: botão extra. */
+  function abrirModelo(md, iniciais = {}, opts = {}) {
+    const vals = { ...iniciais };
     const nomes = empregadosAtivos().map(e => e.nome);
     const campo = (c) => {
       const id = `md-${c.k}`;
@@ -1397,17 +1561,21 @@ export function montarPlataforma(A) {
     const base = () => ({ ...vals, empresa: S.ctx.empresa, hoje: E.today().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) });
     const dlg = dialogo({
       titulo: esc(md.titulo), largo: true,
-      corpo: `<div class="mdl-grid"><div style="display:grid;gap:10px;align-content:start">${(md.campos || []).map(campo).join('')}<datalist id="md-emps">${nomes.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      corpo: `${opts.nota ? `<div class="note" style="margin:0 0 10px">${icon('info')}<div>${esc(opts.nota)}</div></div>` : ''}<div class="mdl-grid"><div style="display:grid;gap:10px;align-content:start">${(md.campos || []).map(campo).join('')}<datalist id="md-emps">${nomes.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
         ${md.revisarComEscritorio ? `<div class="note warn" style="margin:0">${icon('alert')}<div>Modelo sugerido. Confirme o texto com o seu analista antes de usar.</div></div>` : ''}</div>
         <div class="mdl-prev" id="md-prev"></div></div>`,
       acoes: [{ rotulo: `${icon('copy', 'ic-sm')} Copiar texto`, fn: async () => { try { await navigator.clipboard.writeText(textoModelo(md, base())); toast('Texto copiado.'); } catch { toast('Não consegui copiar. Selecione o texto e use Ctrl+C.'); } return false; } },
+        ...(opts.acao ? [{ rotulo: opts.acao.rotulo, fn: () => { setTimeout(() => opts.acao.fn(), 0); } }] : []),
         '|', { rotulo: 'Fechar' },
         { rotulo: `${icon('print', 'ic-sm')} Imprimir ou salvar em PDF`, cls: 'btn-primary', fn: () => { imprimir(textoModelo(md, base())); return false; } }]
     });
+    // já preenchido com o que o pedido tem
+    dlg.el.querySelectorAll('[data-k]').forEach(i => { const v = vals[i.dataset.k]; if (v == null || v === '') return; if (i.tagName === 'SELECT') { const o = [...i.options].find(x => E.norm(x.value) === E.norm(v)); if (o) i.value = o.value; } else i.value = v; });
     const prev = () => { dlg.el.querySelector('#md-prev').textContent = textoModelo(md, base()); };
     dlg.el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('input', () => { if (i.dataset.t === 'data') A.maskInput(i); vals[i.dataset.k] = i.value; prev(); }));
     prev();
   }
+  P.abrirModelo = abrirModelo;
   function imprimir(texto) {
     const area = $('#print-area'); area.innerHTML = `<pre>${esc(texto)}</pre>`;
     document.body.classList.add('imprimindo');

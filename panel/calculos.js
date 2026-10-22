@@ -1,7 +1,7 @@
 /* Simulações de férias e rescisão (módulo Calcular). Puro e testável em Node: nada de tela aqui.
  * Valores de apoio pela CLT; o cálculo oficial é do escritório. Tabelas de INSS e IRRF ficam nas regras
  * (config.tabelas), para o escritório corrigir sem nova versão da extensão. */
-import { parseDate, addDays, diffDays, fmtDate } from './engine.js';
+import { parseDate, addDays, diffDays, fmtDate, anosCompletos, inicioDoAviso } from './engine.js';
 
 export const r2 = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
 export const brl = (x) => Number(x || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -45,12 +45,8 @@ export function irrf(rendimento, inssDesc, dependentes, T, { redutor = true } = 
 
 /* ---------- datas ---------- */
 const ultimoDiaDoMes = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-/** Anos completos de casa numa data. */
-export function anosCompletos(admissao, data) {
-  let a = data.getFullYear() - admissao.getFullYear();
-  if (data.getMonth() < admissao.getMonth() || (data.getMonth() === admissao.getMonth() && data.getDate() < admissao.getDate())) a--;
-  return Math.max(0, a);
-}
+/* anosCompletos fica no motor (o formulário usa a mesma conta do tempo de casa) */
+export { anosCompletos };
 /** Dias de aviso prévio proporcional (Lei 12.506/2011): 30 + 3 por ano completo, até 90. */
 export const diasAvisoProporcional = (admissao, dataAviso) => Math.min(90, 30 + 3 * anosCompletos(admissao, dataAviso));
 /** Avos de 13º no ano de `fim`: mês com 15 dias ou mais de trabalho conta 1/12. */
@@ -153,7 +149,8 @@ export function simularRescisao(p, T) {
   // aviso prévio
   let diasIndenizados = 0;
   const empregadoNoAviso = p.modalidade === 'pedidoDemissao' || (p.clausulaAssecuratoria && MODALIDADES[p.modalidade]?.art480);
-  const diasProp = diasAvisoProporcional(adm, tipoAviso === 'trabalhado' ? addDays(fim, -29) : fim);
+  // aviso trabalhado: a data do aviso é a mesma conta do formulário (Súmula 380: o dia do aviso não conta; config.avisoPrevioContagem)
+  const diasProp = diasAvisoProporcional(adm, tipoAviso === 'trabalhado' ? inicioDoAviso(fim, 30) : fim);
   const meioAviso = M.metadeAviso || M.metade;   // acordo e culpa recíproca: metade do aviso (o período inteiro projeta)
   if (tipoAviso === 'indenizado') {
     diasIndenizados = diasProp;
@@ -246,4 +243,23 @@ export function textoSimulacao(r, quem = '') {
   if (r.datas?.pagarAte) linhas.push(`Pagar até: ${fmtDate(r.datas.pagarAte)}`);
   linhas.push('', 'Simulação de apoio. O cálculo oficial é feito pelo escritório.');
   return linhas.join('\n');
+}
+
+/** Uma linha da simulação para as observações do pedido (sem salário nem valores): modalidade, aviso, férias vencidas, 13º. */
+export function linhaSimulacao(p, r) {
+  if (!r || r.erro) return '';
+  const partes = [];
+  if (r.tipo === 'rescisao') {
+    partes.push(r.rotulo);
+    if (r.tipoAviso) partes.push(`aviso ${ROTULO_AVISO[r.tipoAviso].toLowerCase()} (${r.diasAviso} dias)`);
+    const v = +p.feriasVencidas || 0, dob = +p.feriasEmDobro || 0;
+    if (v) partes.push(`férias vencidas: ${v} ${v === 1 ? 'período' : 'períodos'}${dob ? ` (${dob} fora do prazo)` : ''}`);
+    if (numeroBR(p.adiantamento13)) partes.push('13º já adiantado');
+  } else {
+    if (+p.diasAbono) partes.push(`abono de ${+p.diasAbono} dias`);
+    if (p.adiantar13) partes.push('adiantar a 1ª parcela do 13º');
+    if (+p.faltas > 5) partes.push(`${+p.faltas} faltas no período aquisitivo`);
+    if (p.emDobro) partes.push('férias fora do prazo de concessão');
+  }
+  return partes.length ? `Simulação no Assistente: ${partes.join(' · ')}` : '';
 }

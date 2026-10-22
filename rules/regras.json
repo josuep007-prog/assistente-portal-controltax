@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.18-1",
+  "versao": "2026.10.22-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -214,6 +214,96 @@
         "categoriaEsocial"
       ]
     },
+    "leitorPessoal": {
+      "_comentario": "Leitor de RG, CNH, CIN, CTPS digital, título e comprovante de CPF (documentos[].leitor = 'pessoal'): uma linha só de rótulos tem o valor na linha de baixo. Em PDF as colunas vêm separadas por espaços; em foto, cada valor é casado pelo tipo (tipos) na ordem dos rótulos. 'campoA+campoB' desmembra um rótulo composto; campos que começam com '_' são rótulos conhecidos cujo valor não interessa ('_data' = uma data). layouts: palavras que identificam o documento (na ordem), campos que ele pode preencher, maeLinha (qual linha da filiação é a mãe, 1 ou 2; o primeiro nome terminado em 'a' decide quando só um termina), rgIgualCpf (CIN) e padroesTexto (título: zona e seção sem dois-pontos). Calibrado com exemplos inventados; a calibrar com documentos reais (sem guardá-los).",
+      "layouts": {
+        "cin": { "palavras": ["carteira de identidade nacional"], "rgIgualCpf": true, "maeLinha": 1, "campos": ["nome", "nomeSocial", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "cpf", "rg", "dataRg", "orgaoRg", "ufRg", "sexo"] },
+        "cnh": { "palavras": ["carteira nacional de habilitação", "habilitação", "detran", "cat. hab.", "renach"], "maeLinha": 2, "campos": ["nome", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "rg", "orgaoRg", "ufRg", "cpf", "cnh", "cnhValidade", "cnhCategoria"] },
+        "ctps": { "palavras": ["carteira de trabalho digital", "ctps digital", "nome civil"], "campos": ["nome", "nomeSocial", "cpf", "nascimento", "sexo", "mae", "pai", "pis"] },
+        "titulo": { "palavras": ["justiça eleitoral", "título eleitoral", "título de eleitor"], "campos": ["nome", "nascimento", "mae", "pai", "titulo", "zona", "secao"], "padroesTexto": { "titulo": ["\\b(\\d{4}\\s?\\d{4}\\s?\\d{4})\\b"], "zona": ["\\bzona\\s*:?\\s*(\\d{1,4})\\b"], "secao": ["\\bse[çc][ãa]o\\s*:?\\s*(\\d{1,4})\\b"] } },
+        "cpf": { "palavras": ["cadastro de pessoas físicas", "situação cadastral"], "campos": ["nome", "cpf", "nascimento"] },
+        "rg": { "palavras": ["registro geral", "carteira de identidade", "secretaria de segurança", "secretaria da segurança"], "maeLinha": 2, "campos": ["nome", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "rg", "dataRg", "orgaoRg", "ufRg", "cpf", "pis"] }
+      },
+      "porDocumento": { "identidade": "rg", "ctps": "ctps", "titulo": "titulo", "cpf": "cpf" },
+      "rotulos": {
+        "nome": ["nome", "nome civil", "nome e sobrenome", "nome do eleitor", "nome do titular"],
+        "nomeSocial": ["nome social"],
+        "filiacao": ["filiação", "filiação mãe pai", "filiação pai mãe"],
+        "mae": ["mãe", "nome da mãe"],
+        "pai": ["pai", "nome do pai"],
+        "nascimento": ["data de nascimento", "data nascimento", "nascimento", "data de nasc", "nasc"],
+        "municipioNascimento": ["naturalidade", "local de nascimento", "local nascimento"],
+        "rg": ["registro geral", "rg", "nº do rg", "número do rg", "doc identidade"],
+        "dataRg": ["data de expedição", "expedição", "data expedição"],
+        "orgaoRg": ["órgão expedidor", "órgão emissor", "org emissor"],
+        "cpf": ["cpf", "nº do cpf", "número do cpf", "número de inscrição no cpf"],
+        "cnh": ["nº registro", "n registro", "registro", "nº do registro"],
+        "cnhValidade": ["validade"],
+        "cnhCategoria": ["cat. hab.", "cat hab", "categoria"],
+        "rg+orgaoRg+ufRg": ["doc. identidade/órg. emissor/uf", "doc. identidade / órg. emissor / uf", "doc identidade org emissor uf"],
+        "nascimento+municipioNascimento+ufNascimento": ["data, local e uf de nascimento", "data local e uf de nascimento"],
+        "titulo": ["inscrição", "nº de inscrição", "número de inscrição", "nº inscrição"],
+        "zona": ["zona"],
+        "secao": ["seção"],
+        "pis": ["pis/pasep", "pis", "nis", "nit"],
+        "sexo": ["sexo"],
+        "_data": ["1ª habilitação", "primeira habilitação", "data emissão", "data de emissão", "data da emissão", "data de domicílio eleitoral"],
+        "_texto": ["permissão", "acc", "observações", "nacionalidade", "município/uf", "município", "uf", "doc. origem", "doc origem", "local", "assinatura do titular", "assinatura do portador", "assinatura"],
+        "_numero": ["nº renach", "renach", "espelho", "código de segurança"]
+      },
+      "tipos": { "nascimento": "data", "dataRg": "data", "cnhValidade": "data", "rg": "numero", "cnh": "numero", "cpf": "cpf", "titulo": "numero", "zona": "numero", "secao": "numero", "pis": "numero", "orgaoRg": "sigla", "ufRg": "uf", "ufNascimento": "uf", "cnhCategoria": "categoria", "nome": "nome", "nomeSocial": "nome", "mae": "nome", "pai": "nome", "municipioNascimento": "texto", "sexo": "texto" },
+      "padroes": {
+        "rg": "^(?:\\d{1,2}\\.?\\d{3}\\.?\\d{3}(?:-?[\\dXx])?|\\d{5,14}(?:-?[\\dXx])?)$",
+        "cnh": "^\\d{9,11}$",
+        "cnhCategoria": "^(?:ACC|A|B|C|D|E|AB|AC|AD|AE)$",
+        "titulo": "^\\d{4}\\s?\\d{4}\\s?\\d{4}$",
+        "zona": "^\\d{1,4}$",
+        "secao": "^\\d{1,4}$",
+        "orgaoRg": "^(?:SSP|SESP|SDS|PC|IFP|DETRAN|DIC|IGP|SJS|SEJUSP|PM|MAER|MEX|MMA|POF|DPF|SPTC|IIRGD|CGPI|SSPDS|ITEP|IML|SEDS|SJTC|CNH|OAB|CRM|CREA|[A-Z]{3,6})$"
+      }
+    },
+    "camposDaEmpresa": {
+      "_comentario": "Nos cadastros, 'Repetir a última solicitação', o clique no histórico, 'Salvar como modelo' e 'Como na última admissão' levam só estes campos (escolhas da empresa). Nada de nome, CPF, mãe, endereço, banco, sexo, raça/cor, estado civil, naturalidade, deficiência ou dependentes. Um cadastro enviado fica no histórico só com os campos de 'historicoEnviado' (o que a Agenda usa) e estes. Padrões por empresa: empresas.<trecho do nome>.padroes = { campo: valor } (ou { tipo: { campo: valor } }), sugeridos para conferir.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado",
+        "cadastroEstagiario",
+        "cadastroContribuinte"
+      ],
+      "campos": [
+        "departamento",
+        "centroCusto",
+        "sindicato",
+        "jornada",
+        "cargaHoraria",
+        "cargo",
+        "funcao",
+        "contratoExperiencia",
+        "prorrogacao",
+        "servico",
+        "categoria",
+        "vinculo",
+        "categoriaEsocial",
+        "categoriaSefip",
+        "tipoContribuinte",
+        "agenteIntegracao"
+      ],
+      "historicoEnviado": [
+        "nome",
+        "dataAdmissao",
+        "contratoExperiencia",
+        "prorrogacao"
+      ]
+    },
+    "experienciaSugerida": {
+      "_comentario": "Sugestão (confiança baixa, o cliente confere) para o contrato de experiência de um cadastro novo com os campos vazios.",
+      "revisarComEscritorio": true,
+      "tipos": [
+        "cadastroEmpregado"
+      ],
+      "contratoExperiencia": 45,
+      "prorrogacao": 45
+    },
     "dicasAvisoPortal": [
       { "padrao": "sem permiss|n[aã]o est[aá] habilitad", "dica": "Este tipo de solicitação não está liberado para esta empresa no portal. Fale com o escritório para habilitar; enquanto isso, use outro tipo ou a Solicitação Geral." },
       { "padrao": "sess[aã]o.*(expir|encerr)|fa[cç]a login|entre novamente", "dica": "A sessão do portal está acabando ou acabou. Clique em Ver no portal e entre de novo; a plataforma volta a ler sozinha." }
@@ -221,6 +311,274 @@
     "pagamentoFeriasAntes": 2,
     "pagamentoRescisaoDias": 10,
     "avisoFeriasDias": 30,
+    "avisoPrevioContagem": {
+      "revisarComEscritorio": true,
+      "_comentario": "Uma conta só para o aviso trabalhado, no formulário e no Calcular: o dia do aviso não conta e o último conta (Súmula 380 do TST). Aviso dado em 01/10 com 30 dias termina em 31/10; último dia 31/10 → aviso em 01/10. Antes o Calcular contava o dia do aviso (−29).",
+      "diasTrabalhados": 30
+    },
+    "expectativaConclusao": {
+      "ativo": true,
+      "revisarComEscritorio": true,
+      "calibrar": true,
+      "explicacao": "Prazo interno do escritório para este tipo de pedido (config.prazoInternoDiasUteis), em dias úteis a partir de hoje.",
+      "_comentario": "Sugere a Expectativa de conclusão (só em campo vazio e não mexido). A calibrar no Onvio real: se o portal já traz uma data nesse campo."
+    },
+    "tipoAvisoModalidade": {
+      "revisarComEscritorio": true,
+      "_comentario": "Aviso da modalidade do Calcular → rádio 'Aviso prévio' do Cálculo de Rescisão. Decisão do escritório: o que marcar quando o empregado não cumpre o aviso.",
+      "indenizado": "INDENIZADO",
+      "trabalhado": "TRABALHADO",
+      "dispensado": "AUSÊNCIA/DISPENSA",
+      "naoCumprido": "AUSÊNCIA/DISPENSA"
+    },
+    "motivoAuto": [
+      {
+        "_comentario": "Motivo da rescisão (lista do portal) pelo jeito de dizer, pelo documento e pela modalidade do Calcular, em ordem de prioridade. palavras: alguma destas; e: e também alguma destas; exceto: nenhuma destas; nenhum: não escolhe (o cliente confere com a dica). A calibrar no Onvio real: os textos da lista de motivos, se existe opção de acordo e qual vale no término da experiência.",
+        "calibrar": true,
+        "revisarComEscritorio": true,
+        "palavras": [
+          "experiência",
+          "contrato de experiência",
+          "período de experiência"
+        ],
+        "e": [
+          "fim",
+          "término",
+          "termino",
+          "termina*",
+          "acab*",
+          "venc*",
+          "encerr*",
+          "não vai ser efetivad*",
+          "não vou efetivar",
+          "não vamos efetivar",
+          "não efetivar",
+          "não renov*",
+          "não vai renovar"
+        ],
+        "exceto": [
+          "antecip*",
+          "antes do fim",
+          "antes do término",
+          "antes de terminar",
+          "antes de acabar",
+          "pediu demissão",
+          "pedido de demissão",
+          "pediu para sair",
+          "quer sair",
+          "pediu as contas"
+        ],
+        "modalidades": [
+          "fimContrato"
+        ],
+        "valor": "Término de contrato de trabalho por tempo determinado",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "experiência",
+          "contrato de experiência",
+          "período de experiência"
+        ],
+        "e": [
+          "pediu demissão",
+          "pedido de demissão",
+          "pedir demissão",
+          "pediu para sair",
+          "quer sair",
+          "pediu as contas",
+          "pedir as contas",
+          "pediu a conta"
+        ],
+        "modalidades": [
+          "antecipadaEmpregado"
+        ],
+        "valor": "Rescisão contrato experiência antecipado pelo empregado",
+        "dadoPor": "EMPREGADO"
+      },
+      {
+        "palavras": [
+          "experiência",
+          "contrato de experiência",
+          "período de experiência"
+        ],
+        "e": [
+          "demit*",
+          "demissão",
+          "dispens*",
+          "deslig*",
+          "mandar embora",
+          "mandei embora",
+          "mandou embora",
+          "antecip*",
+          "antes do fim",
+          "antes do término",
+          "sem justa causa"
+        ],
+        "modalidades": [
+          "antecipadaEmpregador"
+        ],
+        "valor": "Rescisão contrato experiência antecipado pelo empregador",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "tempo determinado",
+          "prazo determinado",
+          "contrato temporário",
+          "contrato a prazo",
+          "contrato por prazo"
+        ],
+        "e": [
+          "pediu demissão",
+          "pedido de demissão",
+          "pediu para sair",
+          "quer sair",
+          "pediu as contas"
+        ],
+        "valor": "Antecipado pelo empregado (tempo determinado)",
+        "dadoPor": "EMPREGADO"
+      },
+      {
+        "palavras": [
+          "tempo determinado",
+          "prazo determinado",
+          "contrato temporário",
+          "contrato a prazo",
+          "contrato por prazo"
+        ],
+        "e": [
+          "antecip*",
+          "antes do fim",
+          "antes do término",
+          "demit*",
+          "dispens*",
+          "deslig*",
+          "mandar embora"
+        ],
+        "exceto": [
+          "no fim",
+          "no término"
+        ],
+        "valor": "Antecipado pelo empregador (tempo determinado)",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "tempo determinado",
+          "prazo determinado",
+          "contrato temporário",
+          "contrato a prazo",
+          "contrato por prazo"
+        ],
+        "valor": "Término de contrato de trabalho por tempo determinado",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "acordo",
+          "comum acordo",
+          "484-a",
+          "484 a",
+          "demissão consensual",
+          "rescisão consensual",
+          "distrato"
+        ],
+        "exceto": [
+          "acordo coletivo",
+          "convenção coletiva",
+          "acordo de compensação"
+        ],
+        "modalidades": [
+          "acordo"
+        ],
+        "nenhum": true,
+        "dica": "Acordo entre empregado e empresa (art. 484-A): a lista de motivos do portal não tem essa opção. Deixei o motivo vazio — escolha com o seu analista e explique o acordo na descrição."
+      },
+      {
+        "palavras": [
+          "culpa recíproca"
+        ],
+        "modalidades": [
+          "culpaReciproca"
+        ],
+        "valor": "Culpa recíproca",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "palavras": [
+          "extinção da empresa",
+          "fechamento da empresa",
+          "encerramento da empresa",
+          "fechar a empresa",
+          "empresa vai fechar",
+          "empresa fechou",
+          "encerrar as atividades",
+          "encerramento das atividades",
+          "fim das atividades"
+        ],
+        "valor": "Extinção da empresa",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "modalidades": [
+          "semJustaCausa"
+        ],
+        "valor": "Demitido SEM justa causa",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "modalidades": [
+          "pedidoDemissao"
+        ],
+        "valor": "Pedido de demissão SEM justa causa",
+        "dadoPor": "EMPREGADO"
+      },
+      {
+        "modalidades": [
+          "justaCausa"
+        ],
+        "valor": "Demitido COM justa causa",
+        "dadoPor": "EMPREGADOR"
+      },
+      {
+        "modalidades": [
+          "rescisaoIndireta",
+          "falecimento"
+        ],
+        "nenhum": true,
+        "dica": "Esta modalidade não tem um motivo certo na lista do portal. Deixei o motivo vazio — escolha com o seu analista."
+      }
+    ],
+    "experienciaSaidas": {
+      "revisarComEscritorio": true,
+      "_comentario": "As três saídas da experiência que vence (Hoje e ficha do funcionário). Decisão do escritório: qual pedido usar para prorrogar e para encerrar. motivos: o motivo da lista do portal para cada caso (a calibrar no Onvio real).",
+      "motivos": {
+        "termino": "Término de contrato de trabalho por tempo determinado",
+        "antecipadoEmpregador": "Rescisão contrato experiência antecipado pelo empregador",
+        "antecipadoEmpregado": "Rescisão contrato experiência antecipado pelo empregado"
+      },
+      "prorrogar": {
+        "rotulo": "Prorrogar",
+        "explicacao": "Imprima o termo de prorrogação, colha as assinaturas antes do fim do 1º período e mande ao escritório. O total da experiência não pode passar de {max} dias.",
+        "modelo": "prorrogacaoExperiencia",
+        "pedido": "geral",
+        "valores": {
+          "departamento": "PESSOAL",
+          "assunto": "Prorrogação do contrato de experiência – {empregado}",
+          "descricao": "Prorrogação do contrato de experiência de {empregado} (admissão em {dataAdmissao}) por mais {diasProrrogacao} dias, até {fimProrrogacao}. Segue o termo assinado."
+        }
+      },
+      "encerrar": {
+        "rotulo": "Encerrar no fim",
+        "explicacao": "No fim do contrato de experiência não há aviso prévio: peça o Cálculo de Rescisão com o último dia da experiência.",
+        "pedido": "calculoRescisao"
+      },
+      "efetivar": {
+        "rotulo": "Efetivar",
+        "explicacao": "Se {empregado} vai continuar, não precisa fazer nada: depois de {fim}, o contrato passa a ser por prazo indeterminado. Se quiser, avise o escritório para atualizar o cadastro."
+      }
+    },
     "estagiarioPrazoDias": 15,
     "pedidoAoCliente": [
       "aguardamos",
@@ -306,6 +664,32 @@
     "textoLivre": {
       "descricao": "Palavras que o Assistente usa para entender o texto livre (Início, Novo pedido e Ctrl+K). Com ou sem acento, tanto faz; um * no fim casa o começo da palavra (demit* = demitido, demitir…).",
       "sentidoDatas": "futuro",
+      "cadastro": {
+        "_comentario": "Cadastros pelo texto. Ficha colada ('Nome: … CPF: … Nome da mãe: …') com pelo menos fichaMinRotulos rótulos usa a mesma leitura dos documentos e abre o Cadastro mesmo sem a palavra admissão. Nas frases soltas, cada data ganha papel pela palavra antes dela (datas[]); sem palavra, só vira admissão se não for de mais de admissaoAteDiasAtras dias atrás. fimDoValor: palavras que encerram um cargo ou nome.",
+        "fichaMinRotulos": 3,
+        "admissaoAteDiasAtras": 365,
+        "datas": [
+          { "campo": "nascimento", "palavras": ["nascid*", "nasceu", "nascimento", "nasc", "aniversário", "data de nascimento"] },
+          { "campo": "dataRg", "palavras": ["emissão do rg", "emissão da identidade", "rg emitido em", "identidade emitida em", "expedição", "expedid*", "data de emissão"] },
+          { "campo": "cnhValidade", "palavras": ["validade da cnh", "cnh vence", "cnh válida até", "vencimento da cnh"] },
+          { "campo": "dataAdmissao", "palavras": ["começa", "começar", "começará", "comec*", "entra", "entrar", "entrará", "inicia", "iniciar", "início", "admissão", "admitid*", "admitir", "contratad*", "contratar", "a partir de", "a partir do dia", "primeiro dia", "vigência", "início do estágio"] }
+        ],
+        "salario": ["salário", "salario de", "bolsa", "bolsa-auxílio", "bolsa auxílio", "pró-labore", "prolabore", "pro labore", "remuneração", "vai ganhar", "ganhando", "recebendo", "vai receber"],
+        "experiencia": ["contrato de experiência", "período de experiência", "experiência"],
+        "prorrogacao": ["prorrogação", "prorroga", "prorrogar", "prorrogável"],
+        "cargo": ["para o cargo de", "no cargo de", "cargo de", "cargo", "contratado como", "contratada como", "admitido como", "admitida como", "vai trabalhar como", "para trabalhar como", "vai ser"],
+        "funcao": ["para a função de", "na função de", "função de", "função"],
+        "fimDoValor": ["com", "e", "salário", "salario", "cpf", "rg", "dia", "a partir", "começa", "comeca", "entra", "no", "na", "ganhando", "recebendo", "experiência", "experiencia", "nascid*", "em", "admissão", "admissao", "pis", "mãe", "mae", "jornada", "carga", "bolsa", "pró-labore", "que", "para", "pra", "função", "funcao", "cargo", "nome", "data"],
+        "admitir": ["admitir", "admitimos", "admitindo", "contratar", "contratamos", "contratei", "contratando", "contratação de", "contratação da", "contratação do", "admissão de", "admissão da", "admissão do", "registrar", "cadastrar", "cadastro de", "cadastro da", "cadastro do", "novo funcionário", "nova funcionária", "novo empregado", "nova empregada", "novo estagiário", "nova estagiária"]
+      },
+      "tipoContribuinte": {
+        "_comentario": "No cadastro de contribuinte, estas palavras marcam o Tipo; as categorias do eSocial e da SEFIP vêm das condicionais do tipo.",
+        "revisarComEscritorio": true,
+        "opcoes": [
+          { "valor": "Sócio", "palavras": ["sócio", "sócia", "pró-labore", "prolabore", "pro labore", "diretor", "administrador"] },
+          { "valor": "Autônomo", "palavras": ["autônomo", "autônoma", "rpa", "recibo de pagamento autônomo", "prestador de serviço", "prestadora de serviço", "freelancer"] }
+        ]
+      },
       "naoEhDiaDaSemana": [
         "via",
         "parcela",
@@ -443,6 +827,35 @@
           "sem 13º",
           "não quer adiantar",
           "sem adiantamento do 13"
+        ]
+      },
+      "tipoAviso": {
+        "_comentario": "Tipo de aviso do Cálculo de Rescisão pelo texto livre, sempre pela expressão inteira: 'aviso dispensado' conta, 'vamos dispensar' sozinho não. A primeira que casar vale.",
+        "AUSÊNCIA/DISPENSA": [
+          "aviso dispensado",
+          "dispensado do aviso",
+          "dispensa do aviso",
+          "dispensa do cumprimento",
+          "dispensar o aviso",
+          "dispensar do aviso",
+          "sem cumprir o aviso",
+          "não vai cumprir o aviso",
+          "não cumprirá o aviso",
+          "ausência"
+        ],
+        "INDENIZADO": [
+          "indenizad*",
+          "aviso pago",
+          "vamos pagar o aviso"
+        ],
+        "TRABALHADO": [
+          "trabalhad*",
+          "cumprir o aviso",
+          "vai cumprir o aviso",
+          "cumprirá o aviso",
+          "cumprindo o aviso",
+          "trabalhando o aviso",
+          "vai trabalhar o aviso"
         ]
       },
       "motivosRescisao": [
@@ -1009,11 +1422,7 @@
       "avisoFerias": [
         "As férias começam em {inicio}. O aviso precisa ser entregue ao empregado com pelo menos {avisoFeriasDias} dias de antecedência (CLT, art. 135).",
         "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, CLT, art. 145). Para isso, peça o Cálculo de Férias com antecedência.",
-        "Se o empregado for vender 1/3 das férias (abono pecuniário) ou adiantar a 1ª parcela do 13º, informe na solicitação.",
-        "verbas",
-        "acerto",
-        "calcular rescisão",
-        "cálculo da rescisão"
+        "Se o empregado for vender 1/3 das férias (abono pecuniário) ou adiantar a 1ª parcela do 13º, informe na solicitação."
       ],
       "calculoFerias": [
         "O pagamento das férias deve ser feito até {pagamentoFerias} (no mínimo {pagamentoFeriasAntes} dias antes do início, em {inicio}; CLT, art. 145).",
@@ -1838,23 +2247,65 @@
           "rotulo": "Expectativa de conclusão"
         }
       },
-      "anexos": [],
+      "anexos": [
+        {
+          "id": "requerimentoAbono",
+          "rotulo": "Requerimento de abono pecuniário assinado",
+          "documento": "requerimentoAbono",
+          "modelo": "abonoFerias",
+          "obrigatorio": false
+        }
+      ],
+      "condicionais": [
+        {
+          "_comentario": "Abono pecuniário: o requerimento assinado do funcionário vai junto (decisão do escritório).",
+          "revisarComEscritorio": true,
+          "se": {
+            "campo": "diasAbono",
+            "preenchido": true,
+            "maiorQue": 0
+          },
+          "anexos": [
+            "requerimentoAbono"
+          ]
+        }
+      ],
       "calculados": {
-        "fimGozo": {
-          "formula": "somarDias",
+        "_comentario": "Datas que dá para calcular: só entram em campo vazio e não mexido pelo cliente, como 'calculado — confira', e mudam quando a data de início muda.",
+        "dataPagamento": {
+          "campo": "dataPagamento",
+          "formula": "diasAntes",
           "de": "inicioGozo",
-          "dias": "diasGozo",
-          "menos": 1
+          "dias": "config.pagamentoFeriasAntes",
+          "diaUtil": "antes",
+          "explicacao": "Até 2 dias antes do início das férias (CLT, art. 145), no dia útil anterior."
         },
-        "dataPagamentoSugerida": {
-          "formula": "subtrairDias",
-          "de": "inicioGozo",
-          "dias": 2
-        },
-        "dataAvisoSugerida": {
-          "formula": "hoje"
+        "dataAviso": {
+          "campo": "dataAviso",
+          "formula": "hoje",
+          "revisarComEscritorio": true,
+          "explicacao": "A data em que o aviso é entregue ao funcionário (hoje)."
         }
       },
+      "depoisDeEnviar": [
+        {
+          "tipo": "calculoFerias",
+          "titulo": "Enviar o Cálculo de Férias de {empregado}",
+          "prazo": {
+            "formula": "pagamentoFerias",
+            "de": "inicioGozo",
+            "diasUteisAntes": "calculo"
+          },
+          "levar": [
+            "empregado",
+            "inicioGozo",
+            "diasGozo",
+            "diasAbono→abono"
+          ],
+          "dica": "O pagamento das férias sai até 2 dias antes do início; o escritório precisa do pedido antes disso.",
+          "revisarComEscritorio": true
+        }
+      ],
       "verificacoes": [
         {
           "tipo": "antecedenciaMinima",
@@ -1964,6 +2415,11 @@
           "seletores": {
             "NÃO": "#radioBasic-bonus0",
             "SIM": "#radioBasic-bonus1"
+          },
+          "porNumero": {
+            "campo": "diasAbono",
+            "maiorQueZero": "SIM",
+            "zero": "NÃO"
           }
         },
         "adiantar13": {
@@ -1998,6 +2454,26 @@
           "rotulo": "Aviso de férias assinado",
           "documento": "avisoFeriasAssinado",
           "obrigatorio": false
+        },
+        {
+          "id": "requerimentoAbono",
+          "rotulo": "Requerimento de abono pecuniário assinado",
+          "documento": "requerimentoAbono",
+          "modelo": "abonoFerias",
+          "obrigatorio": false
+        }
+      ],
+      "condicionais": [
+        {
+          "_comentario": "Abono pecuniário: o requerimento assinado do funcionário vai junto (decisão do escritório).",
+          "revisarComEscritorio": true,
+          "se": {
+            "campo": "abono",
+            "igual": "SIM"
+          },
+          "anexos": [
+            "requerimentoAbono"
+          ]
         }
       ],
       "verificacoes": [
@@ -2133,11 +2609,44 @@
           }
         }
       ],
+      "depoisDeEnviar": [
+        {
+          "tipo": "calculoRescisao",
+          "titulo": "Enviar o Cálculo de Rescisão de {empregado}",
+          "prazo": {
+            "formula": "pagamentoRescisao",
+            "de": "dataAviso",
+            "diasUteisAntes": "calculo"
+          },
+          "levar": [
+            "empregado",
+            "motivo",
+            "dataAviso→dataAvisoPrevio"
+          ],
+          "dica": "As verbas são pagas em até 10 dias do fim do contrato (com aviso indenizado, conta da data do aviso).",
+          "revisarComEscritorio": true
+        },
+        {
+          "titulo": "Agendar o exame demissional (ASO) de {empregado}",
+          "prazo": {
+            "formula": "dias",
+            "de": "dataAviso",
+            "dias": 10
+          },
+          "se": {
+            "campo": "motivo",
+            "preenchido": true
+          },
+          "revisarComEscritorio": true,
+          "dica": "O exame demissional é feito até 10 dias depois do fim do contrato (NR-7), quando exigido."
+        }
+      ],
       "anexos": [
         {
           "id": "cartaPedido",
           "rotulo": "Carta de pedido de demissão assinada",
           "documento": "pedidoDemissao",
+          "modelo": "pedidoDemissao",
           "obrigatorio": false
         }
       ],
@@ -2216,7 +2725,10 @@
         "dataAvisoPrevio": {
           "fc": "priorNoticeDate",
           "tipo": "data",
-          "rotulo": "Data do aviso prévio"
+          "rotulo": "Data do aviso prévio",
+          "tambem": [
+            "dataAviso"
+          ]
         },
         "tipoAviso": {
           "tipo": "radio",
@@ -2245,11 +2757,38 @@
           "rotulo": "Expectativa de conclusão"
         }
       },
+      "calculados": {
+        "_comentario": "Data de demissão pelo aviso (trabalhado: o fim do aviso; indenizado ou dispensa: a data do aviso) e o inverso, quando o tipo de aviso está escolhido. Só em campo vazio e não mexido.",
+        "dataDemissao": {
+          "campo": "dataDemissao",
+          "formula": "demissaoPeloAviso",
+          "de": "dataAvisoPrevio",
+          "explicacao": "Pelo aviso: trabalhado termina 30 dias depois da data do aviso; indenizado sai na data do aviso."
+        },
+        "dataAvisoPrevio": {
+          "campo": "dataAvisoPrevio",
+          "formula": "avisoPelaDemissao",
+          "de": "dataDemissao",
+          "explicacao": "Pela data de demissão: trabalhado começou 30 dias antes; indenizado é a própria data."
+        }
+      },
       "anexos": [
         {
           "id": "avisoAssinado",
           "rotulo": "Aviso prévio ou pedido de demissão assinado",
           "documento": "pedidoDemissao",
+          "documentos": [
+            "pedidoDemissao",
+            "avisoEmpregador"
+          ],
+          "modelo": "pedidoDemissao",
+          "modeloSe": {
+            "campo": "motivo",
+            "contem": [
+              "Pedido de demissão",
+              "antecipado pelo empregado"
+            ]
+          },
           "obrigatorio": false
         },
         {
@@ -2590,6 +3129,10 @@
             "Não": "#radioBasic-firstJob0",
             "Sim": "#radioBasic-firstJob1"
           },
+          "sinonimos": [
+            "primeiro emprego",
+            "1º emprego"
+          ],
           "grupo": "Geral"
         },
         "categoria": {
@@ -2643,16 +3186,20 @@
           "rotulo": "Contrato de experiência (dias)",
           "sinonimos": [
             "contrato de experiência",
-            "experiência"
+            "experiência",
+            "período de experiência",
+            "prazo de experiência"
           ],
-          "grupo": "Geral"
+          "grupo": "Geral",
+          "prorrogacaoEm": "prorrogacao"
         },
         "prorrogacao": {
           "fc": "extensionDays",
           "tipo": "numero",
           "rotulo": "Dias de prorrogação",
           "sinonimos": [
-            "prorrogação"
+            "prorrogação",
+            "dias de prorrogação"
           ],
           "grupo": "Geral"
         },
@@ -2849,7 +3396,8 @@
             "município",
             "cidade"
           ],
-          "grupo": "Pessoal"
+          "grupo": "Pessoal",
+          "separaUf": "uf"
         },
         "email": {
           "fc": "primaryEmailAddress",
@@ -2906,7 +3454,9 @@
           "rotulo": "UF de nascimento",
           "obrigatorio": true,
           "sinonimos": [
-            "naturalidade UF"
+            "naturalidade UF",
+            "UF de nascimento",
+            "estado de nascimento"
           ],
           "grupo": "Pessoal"
         },
@@ -2918,9 +3468,12 @@
           "sinonimos": [
             "naturalidade",
             "município de nascimento",
-            "local de nascimento"
+            "local de nascimento",
+            "natural de",
+            "cidade de nascimento"
           ],
-          "grupo": "Pessoal"
+          "grupo": "Pessoal",
+          "separaUf": "ufNascimento"
         },
         "sexo": {
           "tipo": "radio",
@@ -3005,6 +3558,13 @@
             "Não": "#radioBasic-hasDependents0",
             "Sim": "#radioBasic-hasDependents1"
           },
+          "sinonimos": [
+            "possui dependentes",
+            "nº de dependentes",
+            "número de dependentes",
+            "quantidade de dependentes",
+            "dependentes"
+          ],
           "grupo": "Pessoal"
         },
         "deficiencia": {
@@ -3014,7 +3574,15 @@
             "Não": "#radioBasic-isDisabledPerson0",
             "Sim": "#radioBasic-isDisabledPerson1"
           },
-          "grupo": "Pessoal"
+          "sinonimos": [
+            "pessoa com deficiência",
+            "portador de deficiência",
+            "deficiência",
+            "PCD",
+            "PNE"
+          ],
+          "grupo": "Pessoal",
+          "outroTextoVira": "Sim"
         },
         "rg": {
           "fc": "identityCard",
@@ -3026,7 +3594,8 @@
             "registro geral",
             "carteira de identidade"
           ],
-          "grupo": "Documentos"
+          "grupo": "Documentos",
+          "separaOrgaoUf": ["orgaoRg", "ufRg"]
         },
         "orgaoRg": {
           "fc": "issuingAgency",
@@ -3035,14 +3604,22 @@
           "sinonimos": [
             "órgão expedidor",
             "órgão emissor",
-            "expedidor"
+            "expedidor",
+            "org. emissor",
+            "órgão"
           ],
-          "grupo": "Documentos"
+          "grupo": "Documentos",
+          "separaUf": "ufRg"
         },
         "ufRg": {
           "fc": "identityState",
           "tipo": "combo",
           "rotulo": "UF do RG",
+          "sinonimos": [
+            "UF do RG",
+            "UF da identidade",
+            "UF de expedição"
+          ],
           "grupo": "Documentos"
         },
         "dataRg": {
@@ -3261,10 +3838,49 @@
       "botaoEnviar": "SALVAR E ENVIAR",
       "herdaCamposDe": "cadastroEmpregado",
       "campos": {
+        "nome": {
+          "fc": "name",
+          "tipo": "texto",
+          "rotulo": "Nome",
+          "obrigatorio": true,
+          "sinonimos": [
+            "nome completo",
+            "nome do empregado",
+            "nome do funcionário",
+            "nome",
+            "estagiário",
+            "estagiária",
+            "estagiário(a)",
+            "nome do estagiário",
+            "nome do(a) estagiário(a)"
+          ],
+          "grupo": "Geral"
+        },
+        "dataAdmissao": {
+          "fc": "admissionDate",
+          "tipo": "data",
+          "rotulo": "Data de admissão",
+          "obrigatorio": true,
+          "sinonimos": [
+            "data de admissão",
+            "admissão",
+            "início",
+            "início do estágio",
+            "data de início do estágio",
+            "vigência",
+            "período de vigência",
+            "início da vigência",
+            "vigência do estágio"
+          ],
+          "grupo": "Geral"
+        },
         "categoriaEsocial": {
           "fc": "eSocialCategory",
           "tipo": "combo",
-          "rotulo": "Categoria eSocial"
+          "rotulo": "Categoria eSocial",
+          "padrao": "901 - Estagiário",
+          "revisarComEscritorio": true,
+          "calibrar": true
         },
         "instituicaoEnsino": {
           "fc": "educationalInstitutionExpanded",
@@ -3313,7 +3929,8 @@
           "rotulo": "Nível",
           "sinonimos": [
             "nível",
-            "curso"
+            "nível de escolaridade",
+            "nível do curso"
           ]
         },
         "salario": {
@@ -3435,6 +4052,19 @@
           ]
         }
       },
+      "condicionais": [
+        {
+          "_comentario": "Categorias do eSocial e da SEFIP pelo tipo de contribuinte (o texto exato das opções: calibrar no Onvio real).",
+          "revisarComEscritorio": true,
+          "se": { "campo": "tipoContribuinte", "contem": ["sócio", "socio", "diretor"] },
+          "valores": { "categoriaEsocial": "721 - Contribuinte individual - Diretor não empregado", "categoriaSefip": "11 - Contribuinte individual - Diretor" }
+        },
+        {
+          "revisarComEscritorio": true,
+          "se": { "campo": "tipoContribuinte", "contem": ["autônomo", "autonomo", "rpa"] },
+          "valores": { "categoriaEsocial": "701 - Contribuinte individual - Autônomo", "categoriaSefip": "13 - Contribuinte individual - Autônomo" }
+        }
+      ],
       "anexos": [
         {
           "id": "identidade",
@@ -3651,6 +4281,34 @@
           ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
+      "opcoesPorPalavra": [
+        {
+          "campo": "tipoAviso",
+          "_comentario": "Tipo de aviso do Cálculo de Rescisão pelo que o documento diz (expressão inteira; com as opções impressas, só a marcada).",
+          "opcoes": {
+            "TRABALHADO": [
+              "cumprirei o aviso",
+              "cumprirei o aviso prévio",
+              "cumprir o aviso prévio",
+              "aviso prévio trabalhado",
+              "aviso trabalhado",
+              "deverá cumprir o aviso"
+            ],
+            "AUSÊNCIA/DISPENSA": [
+              "dispensa do cumprimento",
+              "dispensa do cumprimento do aviso prévio",
+              "dispensa do aviso",
+              "aviso dispensado",
+              "dispensado do cumprimento"
+            ],
+            "INDENIZADO": [
+              "aviso prévio indenizado",
+              "aviso indenizado",
+              "indenizado"
+            ]
+          }
+        }
+      ],
       "valores": {
         "motivo": "Pedido de demissão SEM justa causa",
         "avisoDadoPor": "EMPREGADO"
@@ -3680,6 +4338,34 @@
           ",\\s*(\\d{1,2} de [a-zç]+ de \\d{4})"
         ]
       },
+      "opcoesPorPalavra": [
+        {
+          "campo": "tipoAviso",
+          "_comentario": "Tipo de aviso do Cálculo de Rescisão pelo que o documento diz (expressão inteira; com as opções impressas, só a marcada).",
+          "opcoes": {
+            "TRABALHADO": [
+              "cumprirei o aviso",
+              "cumprirei o aviso prévio",
+              "cumprir o aviso prévio",
+              "aviso prévio trabalhado",
+              "aviso trabalhado",
+              "deverá cumprir o aviso"
+            ],
+            "AUSÊNCIA/DISPENSA": [
+              "dispensa do cumprimento",
+              "dispensa do cumprimento do aviso prévio",
+              "dispensa do aviso",
+              "aviso dispensado",
+              "dispensado do cumprimento"
+            ],
+            "INDENIZADO": [
+              "aviso prévio indenizado",
+              "aviso indenizado",
+              "indenizado"
+            ]
+          }
+        }
+      ],
       "valores": {
         "motivo": "Demitido SEM justa causa",
         "avisoDadoPor": "EMPREGADOR"
@@ -3737,9 +4423,13 @@
         "doc. identidade",
         "secretaria de segurança",
         "detran",
-        "renach"
+        "renach",
+        "carteira de identidade nacional",
+        "data, local e uf de nascimento",
+        "cat. hab."
       ],
-      "minPalavras": 1
+      "minPalavras": 1,
+      "leitor": "pessoal"
     },
     {
       "id": "cpf",
@@ -3751,7 +4441,8 @@
         "comprovante de inscrição",
         "situação cadastral"
       ],
-      "minPalavras": 2
+      "minPalavras": 2,
+      "leitor": "pessoal"
     },
     {
       "id": "comprovanteEndereco",
@@ -3770,7 +4461,12 @@
         "telefone",
         "internet"
       ],
-      "minPalavras": 2
+      "minPalavras": 2,
+      "endereco": true,
+      "naoPreenche": [
+        "nome"
+      ],
+      "_comentario": "endereco: este documento pode preencher o endereço (só o comprovante e a ficha). naoPreenche: o titular pode ser um parente — o nome do cadastro não vem daqui."
     },
     {
       "id": "ctps",
@@ -3782,7 +4478,8 @@
         "contratos de trabalho",
         "carteira de trabalho digital"
       ],
-      "minPalavras": 1
+      "minPalavras": 1,
+      "leitor": "pessoal"
     },
     {
       "id": "fichaAdmissao",
@@ -3803,7 +4500,8 @@
         "ficha de admissão",
         "ficha de registro",
         "ficha cadastral"
-      ]
+      ],
+      "endereco": true
     },
     {
       "id": "tce",
@@ -3877,6 +4575,65 @@
       "minPalavras": 2,
       "forte": [
         "aviso de férias"
+      ],
+      "extrair": {
+        "inicioGozo": [
+          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(?:de\\s*|a\\s*partir\\s*de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "(?:in[íi]cio\\s*(?:do\\s*gozo|das\\s*f[ée]rias)|gozar[áa]?\\s*(?:suas\\s*|as\\s*)?f[ée]rias\\s*(?:a\\s*partir\\s*de|de|no\\s*per[íi]odo\\s*de))\\s*:?\\s*(?:de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})"
+        ],
+        "fimGozo": [
+          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(?:de\\s*)?\\d{1,2}/\\d{1,2}/\\d{2,4}\\s*(?:a|at[ée]|-)\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "(?:t[ée]rmino|fim)\\s*(?:do\\s*gozo|das\\s*f[ée]rias)\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})"
+        ],
+        "diasGozo": [
+          "(?<![\\d/])(\\d{1,2})\\s*(?:\\([a-zà-ú ]+\\)\\s*)?dias\\s*(?:de\\s*)?(?:gozo|f[ée]rias)",
+          "dias\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(\\d{1,2})"
+        ],
+        "diasAbono": [
+          "(?<![\\d/])(\\d{1,2})\\s*(?:\\([a-zà-ú ]+\\)\\s*)?dias\\s*(?:de\\s*)?abono",
+          "abono\\s*(?:pecuni[áa]rio)?\\s*(?:de\\s*)?:?\\s*(\\d{1,2})\\s*dias",
+          "dias\\s*de\\s*abono(?:\\s*pecuni[áa]rio)?\\s*:?\\s*(\\d{1,2})"
+        ]
+      },
+      "opcoesPorPalavra": [
+        {
+          "campo": "abono",
+          "_comentario": "Abono só com a opção marcada ou com dias de abono maiores que zero (campos.abono.porNumero).",
+          "soMarcada": true,
+          "opcoes": {
+            "SIM": [
+              "abono pecuniário",
+              "converter 1/3",
+              "conversão de 1/3"
+            ],
+            "NÃO": [
+              "sem abono"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "requerimentoAbono",
+      "nome": "Requerimento de abono pecuniário",
+      "tipoSolicitacao": "avisoFerias",
+      "revisarComEscritorio": true,
+      "palavras": [
+        "abono pecuniário",
+        "requeiro",
+        "conversão de 1/3",
+        "um terço",
+        "período aquisitivo",
+        "art. 143"
+      ],
+      "minPalavras": 2,
+      "forte": [
+        "requerimento de abono pecuniário",
+        "requeiro a conversão"
+      ],
+      "negativas": [
+        "recibo de férias",
+        "aviso de férias"
       ]
     },
     {
@@ -3902,12 +4659,14 @@
         "zona",
         "seção",
         "eleitor",
-        "tribunal superior eleitoral"
+        "tribunal superior eleitoral",
+        "título eleitoral"
       ],
       "forte": [
         "justiça eleitoral"
       ],
-      "minPalavras": 2
+      "minPalavras": 2,
+      "leitor": "pessoal"
     },
     {
       "id": "trct",
@@ -3967,6 +4726,8 @@
     }
   ],
   "mensagens": {
+    "comprovanteOutraPessoa": "O comprovante de residência está em nome de {titular}. Tudo bem se for de um parente (pai, mãe, cônjuge): nesse caso o escritório pode pedir uma declaração de residência assinada pelo titular.",
+    "filiacaoConfira": "Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira (e troque no campo Nome da mãe, se for o outro).",
     "envioOk": "Tudo certo! Pode enviar.",
     "envioComPendencias": "Antes de enviar, veja os pontos abaixo. Você pode corrigir agora ou enviar assim mesmo.",
     "abaErrada": "Isso parece ser um pedido de {tipo}. Usando a solicitação específica, as informações chegam completas e o atendimento é mais rápido.",
@@ -4282,6 +5043,11 @@
           "k": "aviso",
           "rotulo": "Aviso prévio",
           "tipo": "opcoes",
+          "de": "tipoAviso",
+          "mapa": {
+            "TRABALHADO": "Cumprirei o aviso prévio de 30 dias.",
+            "AUSÊNCIA/DISPENSA": "Solicito a dispensa do cumprimento do aviso prévio, ciente de que ele poderá ser descontado."
+          },
           "opcoes": [
             "Cumprirei o aviso prévio de 30 dias.",
             "Solicito a dispensa do cumprimento do aviso prévio, ciente de que ele poderá ser descontado."

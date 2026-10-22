@@ -300,6 +300,8 @@ details.more > summary::-webkit-details-marker { display: none; }
 .free-a { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .free.mini { display: flex; gap: 6px; padding: 0; }
 .free.mini .input { flex: 1; min-width: 0; }
+.free.mini textarea.input { resize: vertical; min-height: 34px; max-height: 220px; font: inherit; line-height: 1.35; }
+.free.mini { align-items: flex-start; }
 .stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .stepper li { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--ink-3); text-align: center; position: relative; }
 .stepper .dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--rule-strong); background: var(--surface); font: 600 11px var(--f-head); }

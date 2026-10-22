@@ -192,6 +192,8 @@ function semDadosDaEmpresa(W, troca) {
   if (!troca?.conservarEmpregado) { delete W.valores.empregado; W.editados.delete('empregado'); delete W.fonteVerdade?.empregado; }
   W.ultimoPreenchido = {}; W.portalVisto = null; W.desfeitos = null; W.resultados = null;
   for (const a of W.arquivos || []) a.anexado = false;   // o formulário da empresa nova está vazio: anexa de novo
+  // com o foco num campo o formulário da plataforma não é redesenhado: o funcionário antigo ficaria na tela
+  if (document.activeElement?.closest?.('#fields')) document.activeElement.blur();
 }
 
 /* A página continua com o script antigo quando a extensão é atualizada sem recarregar o portal:
@@ -334,6 +336,7 @@ function renderInicio() {
       <p class="lead">${esc(R.escritorio?.saudacao || '')}</p>
     </div>
     <div id="lote"></div>
+    <div id="proximo"></div>
     <div id="experiencia"></div>
     <div id="ctx-banner"></div>
     <div class="free card">
@@ -374,7 +377,7 @@ function renderInicio() {
   renderContextBanner();
   renderSugestao();
   renderModelosInicio();
-  renderLote();
+  renderLote(); P?.renderProximo($('#proximo'));
   renderAvisosInicio(); renderExperiencia(); renderRepetir();
 }
 
@@ -424,11 +427,15 @@ async function entenderTexto(texto, { origem = 'inicio', mesmoAssim = false } = 
   }
   const escolha = origem === 'inicio' && E.escolhaPara(texto, S.rules, sug);
   if (escolha) {
-    const sugerido = E.destaqueEscolha(texto, escolha);
-    const base = sugerido || escolha.tipos[0];
+    let sugerido = E.destaqueEscolha(texto, escolha);
+    let base = sugerido || escolha.tipos[0];
     const empregados = await empregadosPara(base);
-    const r = E.parseFreeText(texto, S.rules, { employees: empregados, tipoAtual: base });
-    S.sugestao = { texto, tipoAberto, escolha, sugerido, empregados, palpite: r.palpite, candidatos: r.candidatos, linhas: r.linhas, ajustes: {}, analise: { tipoSugerido: base, campos: r.campos, documento: { nome: 'seu pedido' } } };
+    let r = E.parseFreeText(texto, S.rules, { employees: empregados, tipoAtual: base });
+    // o aviso desse funcionário já está no portal: o cartão destaca o Cálculo
+    const tAviso = escolha.tipos.find(x => Object.values(PAR_AVISO).includes(x)), tCalc = escolha.tipos.find(x => PAR_AVISO[x]);
+    const avisoNoPortal = tAviso && tCalc && r.campos.empregado ? E.avisoDoFuncionario(S.plat?.sol?.itens, r.campos.empregado.valor, tAviso) : null;
+    if (avisoNoPortal && sugerido !== tCalc) { sugerido = tCalc; base = tCalc; r = E.parseFreeText(texto, S.rules, { employees: empregados, tipoAtual: base }); }
+    S.sugestao = { texto, tipoAberto, escolha, sugerido, empregados, avisoNoPortal, dicas: r.dicas, palpite: r.palpite, candidatos: r.candidatos, linhas: r.linhas, ajustes: {}, analise: { tipoSugerido: base, campos: r.campos, documento: { nome: 'seu pedido' } } };
     mostrarSugestao();
     return;
   }
@@ -440,12 +447,13 @@ async function entenderTexto(texto, { origem = 'inicio', mesmoAssim = false } = 
     anotarCandidatos(tipoAberto, texto, r.campos);
     $('#free-sug') && ($('#free-sug').innerHTML = '');
     aplicarCampos(tipoAberto, r.campos, 'sua descrição');
+    if (r.dicas?.length) toast(r.dicas.join(' '));
     return;
   }
   const destino = detectado || tipoAberto || 'geral';  // sem tipo claro: propõe a aberta, mas só preenche se o cliente confirmar
   const empregados = await empregadosPara(destino);
   const r = E.parseFreeText(texto, S.rules, { employees: empregados, tipoAtual: destino });
-  S.sugestao = { texto, tipoAberto, empregados, palpite: r.palpite, candidatos: r.candidatos, linhas: r.linhas, ajustes: {}, analise: { tipoSugerido: destino, campos: r.campos, documento: { nome: 'seu pedido' } } };
+  S.sugestao = { texto, tipoAberto, empregados, dicas: r.dicas, palpite: r.palpite, candidatos: r.candidatos, linhas: r.linhas, ajustes: {}, analise: { tipoSugerido: destino, campos: r.campos, documento: { nome: 'seu pedido' } } };
   if (origem === 'preencher' && $('#free-sug')) renderSugestaoTexto($('#free-sug'), S.sugestao);
   else mostrarSugestao();
 }
@@ -657,6 +665,26 @@ async function abrirPedido(i) {
   await fillPortal(p.tipo, { silencioso: true });
   L.navegando = false;
   renderLote();
+  if (await abrirResumoSePronto(p.tipo)) { p.resumo = true; renderLote(); }
+}
+
+/** Pedido preparado pelo Assistente (atalhos do Hoje, Funcionários, Calcular e o lote) que terminou sem falha, sem
+ *  obrigatório faltando e com os anexos no portal: abre o resumo do "Conferir e enviar". Quem envia é o cliente. */
+async function abrirResumoSePronto(tipo) {
+  if (S.ctx.route?.mode !== 'form' || S.ctx.tipo !== tipo) return false;
+  const W = w(tipo);
+  if (!W.resultados || W.resultados.resultados?.some(x => !x.ok)) return false;
+  if (W.arquivos.some(a => !a.removido && !a.outroTipo && a.status !== 'erro' && !(a.anexado || a.jaAnexado))) return false;
+  await esperar(500);   // o portal manda a tela de novo depois do preenchimento
+  if (S.ctx.route?.mode !== 'form' || S.ctx.tipo !== tipo) return false;
+  // obrigatórios pelo que está no portal (o que só está aqui ainda não vale)
+  const vals = valoresParaChecar(tipo);
+  for (const [k, c] of Object.entries(tipoDef(tipo).campos)) if (!c.somenteAssistente && campoPortal(k).existe) vals[k] = campoPortal(k).valor || '';
+  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(S.ctx.form) }), ...naoAceitosPeloPortal(tipo, S.ctx.form)];
+  if (list.some(i => i.nivel === 'erro' || i.grupo === 'Portal') || (S.ctx.form?.erros || []).length) return false;
+  S.resumoAuto = true;
+  send({ type: 'requestSubmit' });
+  return true;
 }
 
 async function proximoPedido() {
@@ -709,7 +737,7 @@ function renderLote() {
     ${L.concluido ? `<div class="actions"><button class="btn btn-sm" id="lote-ok">Fechar</button></div>`
       : L.pausado ? `<div class="note warn" style="margin-top:8px">${icon('alert')}<div>A solicitação ${L.idx + 1} foi fechada sem enviar.</div></div>
         <div class="actions"><button class="btn btn-primary btn-sm" id="lote-reabrir">Abrir de novo</button><button class="btn btn-sm" id="lote-pular">Pular</button><button class="btn btn-ghost btn-sm" id="lote-parar">Parar</button></div>`
-      : atual ? `<p class="muted" style="margin:8px 0 0;font-size:12px">${L.navegando ? 'Abrindo e preenchendo…' : `Confira os dados e clique em ${esc(tipoDef(atual.tipo)?.botaoEnviar || 'ADICIONAR')} no portal (ou em “Conferir e enviar”). Quando o portal salvar, eu abro a próxima.`}</p>
+      : atual ? `<p class="muted" style="margin:8px 0 0;font-size:12px">${L.navegando ? 'Abrindo e preenchendo…' : atual.resumo ? 'Preenchi tudo e abri o resumo: confira e clique em “Enviar ao escritório”. Quando o portal salvar, eu abro a próxima.' : `Confira os dados e clique em ${esc(tipoDef(atual.tipo)?.botaoEnviar || 'ADICIONAR')} no portal (ou em “Conferir e enviar”). Quando o portal salvar, eu abro a próxima.`}</p>
         <div class="actions"><button class="btn btn-sm" id="lote-pular" ${L.navegando ? 'disabled' : ''}>Pular esta</button><button class="btn btn-ghost btn-sm" id="lote-parar">Parar</button></div>` : ''}
   </div>`;
   $('#lote-ok')?.addEventListener('click', () => { S.lote = null; renderLote(); });
@@ -887,7 +915,8 @@ function renderSugestaoTexto(el, s) {
     el.innerHTML = `<div class="card">
       <div class="card-h">${icon('spark')}<h3>${esc(s.escolha.titulo || 'Qual pedido?')}</h3><button class="icon-btn" id="sug-x" aria-label="Descartar">${icon('x', 'ic-sm')}</button></div>
       <div class="card-b">
-        ${kvSugestao(s, nomeCampo)}${perguntaEmpregado(s)}${linhasHtml(s)}
+        ${kvSugestao(s, nomeCampo)}${perguntaEmpregado(s)}${linhasHtml(s)}${dicasHtml(s)}
+        ${s.avisoNoPortal ? `<p class="muted aviso-portal" style="margin:0 0 8px;font-size:12.5px">${icon('info', 'ic-sm')} O aviso de ${esc(nomeCurto(s.avisoNoPortal.empregado))}${s.avisoNoPortal.numero ? ` (nº ${esc(s.avisoNoPortal.numero)})` : ''} já está no portal: destaquei o cálculo, que leva os dados do aviso.</p>` : ''}
         <p style="margin:0 0 8px">${esc(s.escolha.pergunta || 'Qual solicitação você quer abrir?')}</p>
         <div class="escolha">${s.escolha.tipos.map(x => `<button type="button" class="opc${x === s.sugerido ? ' sug' : ''}" data-escolha="${esc(x)}">
           <b>${esc(s.escolha.rotulos?.[x] || S.rules.tipos[x]?.nome)}${x === s.tipoAberto ? ' <small class="chip">aberta</small>' : ''}</b><small>${esc(s.escolha.ajuda?.[x] || '')}</small></button>`).join('')}
@@ -911,7 +940,7 @@ function renderSugestaoTexto(el, s) {
     <div class="card-b">
       <p style="margin:0 0 8px">Solicitação: <b>${esc(t?.nome || 'Solicitação Geral')}</b></p>
       ${tem ? `${kvSugestao(s, nomeCampo)}${linhasHtml(s)}<p class="muted" style="margin:-4px 0 10px;font-size:11.5px">Clique num valor para trocar, ou no x para descartar.</p>` : '<p class="muted" style="margin:0 0 10px">Não encontrei dados para preencher no texto. Abra a solicitação e complete os campos.</p>'}
-      ${t?.campos?.empregado ? perguntaEmpregado(s) : ''}
+      ${t?.campos?.empregado ? perguntaEmpregado(s) : ''}${dicasHtml(s)}
       ${aviso(tipo).replace('margin:10px 0 0', 'margin:0 0 10px')}
       <div class="actions"><button class="btn btn-primary" id="sug-go">${s.tipoAberto === tipo ? 'Preencher em' : 'Abrir'} ${esc(t?.nome || 'Solicitação Geral')} ${icon('arrow', 'ic-sm')}</button>
         ${s.tipoAberto && s.tipoAberto !== tipo ? `<button class="btn" id="sug-aqui">Usar em ${esc(S.rules.tipos[s.tipoAberto]?.nome)}</button>` : ''}</div>
@@ -926,6 +955,8 @@ function renderSugestaoTexto(el, s) {
   ligarKv(el, s, nomeCampo, (k) => t?.campos?.[k] || null, redesenhar); ligarPerguntaEmpregado(el, s, redesenhar);
 }
 const comAjustes = (campos, ajustes) => camposComAjustes({ analise: { campos }, ajustes });
+/** Dicas do texto livre que pedem atenção (ex.: acordo, que não tem motivo na lista do portal). */
+const dicasHtml = (s) => (s.dicas || []).map(d => `<div class="note warn" style="margin:0 0 10px">${icon('alert')}<div>${esc(d)}</div></div>`).join('');
 
 async function abrirDoTexto(el, s, destino) {
   if (!(await empresaDoPedido(destino))) return;     // desistiu da empresa: o texto entendido continua na tela
@@ -938,6 +969,8 @@ async function abrirDoTexto(el, s, destino) {
   // o que o cliente trocou, descartou ou corrigiu no cartão vale mais que a leitura do texto
   const campos = comAjustes(r.campos, s.ajustes);
   anotarCandidatos(destino, s.texto, campos);
+  // cálculo de um aviso que já está no portal: os dados do aviso entram como sugestão (o texto vale mais)
+  if (s.avisoNoPortal && PAR_AVISO[destino] === s.avisoNoPortal.tipo) { const vv = E.valoresDoAviso(s.avisoNoPortal, S.rules); aplicarSugestoes(destino, vv.valores, vv.fonte); w(destino).avisoUsado = true; }
   aplicarCampos(destino, campos, 'sua descrição');
 }
 
@@ -1034,8 +1067,59 @@ function documentoPrincipal(tipo) {
   return tipoDef(tipo)?.nomeCurto || (tipo === 'afastamento' ? 'Afastamento' : tipoDef(tipo)?.nome || '');
 }
 
+/* Datas que dá para calcular (E.sugeridos, regras: tipos.*.calculados): só em campo vazio e não mexido pelo cliente,
+   como "calculado — confira"; mudam junto quando a data de base muda (o calculado nunca serve de base). */
+const FONTE_CALC = 'calculado — confira';
+function aplicarCalculados(tipo) {
+  const W = w(tipo); const pv = portalValores(tipo);
+  const base = valoresParaChecar(tipo);
+  for (const [k, v] of Object.entries(W.valores)) if (v?.calculado && (pv[k] == null || pv[k] === v.valor || pv[k] === W.ultimoPreenchido?.[k])) delete base[k];
+  const sug = E.sugeridos(tipo, base, S.rules);
+  for (const [k, cur] of Object.entries(W.valores)) if (cur?.calculado && !sug[k]) delete W.valores[k];
+  for (const [k, sg] of Object.entries(sug)) {
+    if (W.editados.has(k)) continue;
+    const cur = W.valores[k];
+    if (cur?.valor && !cur.calculado) continue;
+    if (pv[k] && pv[k] !== W.ultimoPreenchido?.[k] && pv[k] !== cur?.valor) continue;   // o cliente escreveu direto no portal
+    W.valores[k] = { valor: sg.valor, conf: 0.6, fonte: FONTE_CALC, calculado: true, explicacao: sg.explicacao };
+  }
+}
+/* Tempo de casa no Aviso de Rescisão: pela admissão que o portal mostra na lista de funcionários (a linha
+   "Tempo de casa… aviso prévio de N dias" volta à descrição). O que o cliente disse ou digitou vale mais. */
+const admissoes = new Map();   // empresa → Map(nome normalizado → admissão) — só na memória desta aba
+function guardarAdmissoes(empresa, detalhes) {
+  if (!empresa || !detalhes?.length) return;
+  const m = admissoes.get(empresa) || new Map();
+  for (const d of detalhes) { const a = E.parseDate(d.admissao); if (d.nome && a) m.set(E.norm(d.nome), a); }
+  admissoes.set(empresa, m);
+}
+let pedindoAdmissoes = '';
+function admissaoDe(nome) {
+  if (!nome) return null;
+  const q = E.norm(nome);
+  const daLista = (S.plat?.emp?.lista || []).find(e => E.norm(e.nome) === q);
+  const a = (daLista && E.parseDate(daLista.admissao)) || admissoes.get(S.ctx.empresa)?.get(q) || null;
+  if (!a && !admissoes.has(S.ctx.empresa) && S.ctx.empresa && pedindoAdmissoes !== S.ctx.empresa && S.port) {
+    pedindoAdmissoes = S.ctx.empresa;
+    request({ type: 'employees' }, 8000).then(r => { if (r?.detalhes?.length) { guardarEquipe(S.ctx.empresa, r.detalhes); if (S.view === 'preencher' && S.ctx.tipo) { gerarTextos(S.ctx.tipo); updateChecks(); } } else admissoes.set(S.ctx.empresa, new Map()); });
+  }
+  return a;
+}
+function aplicarTempoDeCasa(tipo) {
+  const W = w(tipo); const t = tipoDef(tipo);
+  if (!t?.campos?.anosEmpresa || W.editados.has('anosEmpresa')) return;
+  const cur = W.valores.anosEmpresa;
+  if (cur?.valor && !cur.porAdmissao) return;
+  const v = valoresParaChecar(tipo);
+  const adm = admissaoDe(v.empregado);
+  if (!adm) { if (cur?.porAdmissao) delete W.valores.anosEmpresa; return; }
+  const ref = E.parseDate(v.dataAviso) || E.today();
+  W.valores.anosEmpresa = { valor: String(E.anosCompletos(adm, ref)), conf: 0.9, fonte: `admissão em ${E.fmtDate(adm)} (portal)`, porAdmissao: true };
+}
+
 function gerarTextos(tipo, force = false) {
   const W = w(tipo); const t = tipoDef(tipo);
+  aplicarCalculados(tipo); aplicarTempoDeCasa(tipo);
   const vals = { ...valoresParaChecar(tipo), ...E.derived(tipo, valoresParaChecar(tipo), S.rules) };
   if (!cidAtivo()) delete vals.cid;
   vals.anexosNomes = anexosAtuais(tipo).map(a => a.nome).join(', ');
@@ -1054,11 +1138,11 @@ function gerarTextos(tipo, force = false) {
 function renderPreencher() {
   const { route, tipo } = S.ctx;
   if (standalone || route.mode !== 'form' || !tipo) {
-    viewEl.innerHTML = `<div id="lote"></div>
+    viewEl.innerHTML = `<div id="lote"></div><div id="proximo"></div>
       <div class="empty">${icon('fill', 'ic-lg')}<p><b>Nenhuma solicitação aberta</b></p><p>Escolha no Início o que você precisa fazer, escreva com suas palavras ou arraste um documento — eu abro a solicitação certa.</p>
       <button class="btn btn-primary" id="go-home">Ir para o Início</button></div>`;
     $('#go-home').addEventListener('click', () => setView('inicio'));
-    renderLote();
+    renderLote(); P?.renderProximo($('#proximo'));
     return;
   }
   const t = tipoDef(tipo);
@@ -1084,7 +1168,7 @@ function renderPreencher() {
   const drop = `<div class="drop compact" id="drop-form" role="button" tabindex="0">${icon('upload', 'ic-lg')}<div><b>Arraste documentos aqui</b><small>Ou cole um print (Ctrl+V). Eu leio, preencho e anexo.</small></div></div>`;
   const livre = `<div class="free mini">
       <label for="free-form" class="sr">Escreva o pedido com suas palavras</label>
-      <input id="free-form" class="input" placeholder="Ou escreva: ex. ${esc(exemploTexto(tipo))}" autocomplete="off">
+      <textarea id="free-form" class="input" rows="2" placeholder="Ou escreva (ou cole a ficha do funcionário): ex. ${esc(exemploTexto(tipo))}" autocomplete="off" title="Enter envia; Shift+Enter quebra a linha"></textarea>
       <button class="btn btn-sm" id="free-form-go">Preencher</button>
     </div>
     <div id="free-sug"></div>`;
@@ -1104,7 +1188,7 @@ function renderPreencher() {
     </div>`;
   // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
   viewEl.innerHTML = plat ? `
-    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div>
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
         <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
@@ -1116,6 +1200,8 @@ function renderPreencher() {
     ${cab}
     <div id="modo-seguro"></div>
     <div id="rascunho"></div>
+    <div id="sug-cad"></div>
+    <div id="dica-pedido"></div>
     ${drop}
     ${livre}
     ${arquivos}
@@ -1140,13 +1226,37 @@ function renderPreencher() {
   $('#btn-clear').addEventListener('click', () => { S.work[tipo] = null; w(tipo).rascunhoVisto = true; apagarRascunho(tipo); loadEmpregados(tipo); render(); });
   const ff = () => { const v = $('#free-form').value.trim(); if (v) { entenderTexto(v, { origem: 'preencher' }); } };
   $('#free-form-go').addEventListener('click', ff);
-  $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ff(); } });
+  // Enter envia; Shift+Enter quebra a linha (uma ficha colada chega com as linhas intactas)
+  $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
-  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer();
+  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo);
+}
+/* Cadastro: "Como na última admissão", padrões da empresa e experiência 45 + 45 — sugestões que o cliente usa ou não.
+   Só campos da empresa (config.camposDaEmpresa); só aparece o que ainda está vazio aqui e no portal. */
+function renderSugestoesCadastro(tipo) {
+  const el = $('#sug-cad'); if (!el) return;
+  const W = w(tipo); const pv = portalValores(tipo);
+  const sug = Object.entries(E.sugestoesCadastro(tipo, S.rules, { empresa: S.ctx.empresa, historico: S.historico }))
+    .filter(([k]) => !W.valores[k]?.valor && !pv[k] && !W.editados.has(k) && !(W.sugestoesDispensadas || []).includes(k) && (S.ctx.form?.campos?.[k]?.existe !== false));
+  if (!sug.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="note sug-cad">${icon('info')}<div style="flex:1;min-width:0"><b>Sugestões para este cadastro</b> <small class="muted">— escolhas da empresa, para você conferir. Os dados da pessoa não são copiados.</small>
+    <div class="list" style="margin-top:6px">${sug.map(([k, c]) => `<div class="li"><div class="main"><b>${esc(rotuloDe(tipo, k))}: ${esc(c.valor)}</b><small>${esc(c.fonte.charAt(0).toUpperCase() + c.fonte.slice(1))}</small></div><button type="button" class="btn btn-sm" data-sug="${esc(k)}">Usar</button></div>`).join('')}</div>
+    <div class="actions" style="margin-top:6px">${sug.length > 1 ? '<button type="button" class="btn btn-primary btn-sm" id="sug-todas">Usar todas</button>' : ''}<button type="button" class="btn btn-ghost btn-sm" id="sug-nao">Agora não</button></div></div></div>`;
+  const usar = async (keys) => {
+    const mapa = Object.fromEntries(sug);
+    for (const k of keys) { W.valores[k] = { ...mapa[k] }; if (S.modo === 'plataforma') W.fonteVerdade[k] = 'plataforma'; }
+    gerarTextos(tipo);
+    renderSugestoesCadastro(tipo);
+    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) await fillPortal(tipo, { so: keys, daPlataforma: S.modo === 'plataforma' });
+    if (S.view === 'preencher') { renderFieldsOnly(); updateChecks(); }
+  };
+  el.querySelectorAll('[data-sug]').forEach(b => b.addEventListener('click', () => usar([b.dataset.sug])));
+  $('#sug-todas')?.addEventListener('click', () => usar(sug.map(([k]) => k)));
+  $('#sug-nao').addEventListener('click', () => { W.sugestoesDispensadas = sug.map(([k]) => k); el.innerHTML = ''; });
 }
 function exemploTexto(tipo) {
-  return tipoDef(tipo)?.exemploTexto || ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
+  return tipoDef(tipo)?.exemploTexto || ({ afastamento: 'atestado de 20 dias a partir de ontem', avisoFerias: 'férias dia 10/11 por 30 dias', calculoFerias: 'férias a partir de 03/11, 30 dias, adiantar 13º', avisoRescisao: 'pediu demissão hoje', calculoRescisao: 'último dia 20/10, aviso indenizado', cadastroEmpregado: 'admitir a Maria Souza, começa 03/11, salário 2500, experiência 45+45', rubricas: 'horas extras de outubro', geral: 'preciso da segunda via da guia do FGTS' }[tipo]) || 'descreva o pedido';
 }
 
 /* Etapas: documento/descrição → dados → conferência → envio */
@@ -1172,9 +1282,10 @@ function renderDocChecklist() {
   const W = w(S.ctx.tipo);
   const inapto = W.arquivos.find(a => a.aso?.resultado === 'INAPTO' && !a.removido);
   el.innerHTML = `<div class="card pad doclist"><b class="dl-t">Documentos para enviar</b>
-    ${anexos.map(a => { const ok = atuais.some(x => x.documento === a.documento); return `<div class="dl-i ${ok ? 'ok' : ''}"><span class="st">${icon(ok ? 'check' : 'minus', 'ic-sm')}</span><span>${esc(a.rotulo)}${a.obrigatorio ? '' : ' <small class="muted">(se houver)</small>'}</span></div>`; }).join('')}
+    ${anexos.map(a => { const ok = atuais.some(x => E.anexoAceita(a, x.documento)); const md = !ok && a.modelo && (!a.modeloSe || E.condicaoVale(a.modeloSe, valoresParaChecar(S.ctx.tipo))) ? botaoModelo(a.modelo) : ''; return `<div class="dl-i ${ok ? 'ok' : ''}"><span class="st">${icon(ok ? 'check' : 'minus', 'ic-sm')}</span><span>${esc(a.rotulo)}${a.obrigatorio ? '' : ' <small class="muted">(se houver)</small>'}</span>${md}</div>`; }).join('')}
     ${inapto ? `<div class="note err" style="margin-top:8px">${icon('alert')}<div>O ASO anexado está como <b>INAPTO</b>. Fale com o seu analista antes de seguir com a admissão.</div></div>` : ''}
   </div>`;
+  ligarModelos(el, S.ctx.tipo);
 }
 
 function renderFilesOnly() {
@@ -1381,6 +1492,7 @@ function renderFormularioProprio(el, tipo) {
       ${erro ? `<small class="portal-erro">${esc((M.portalAcusa || 'O portal acusa: {mensagem}').replace('{mensagem}', erro.mensagem))}</small>` : ''}
       ${p.disabled ? '<small class="hint">O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).</small>' : ''}
       ${baixa ? '<small class="hint">Leitura com dúvida: confira.</small>' : ''}
+      ${cur?.calculado && !daqui && !W.editados.has(k) && cur.explicacao ? `<small class="hint calc-hint">Calculado pelo Assistente: ${esc(cur.explicacao)} Confira.</small>` : ''}
       ${apx ? `<small class="aprox">${esc(msgAproximada(apx))}</small>` : ''}
       ${sug ? `<div class="cands"><small>Você quis dizer:</small>${sug.map(s => `<button type="button" class="btn btn-sm" data-sug-k="${esc(k)}" data-sug-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : ''}
       ${k === 'empregado' && W.candidatos?.length && !p.valor ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
@@ -1469,6 +1581,9 @@ function avisosExtras(tipo, vals) {
   const docs = W.arquivos.filter(a => !a.removido && !a.outroTipo && a.status === 'ok');
   for (const a of docs) {
     for (const av of a.analise?.avisos || []) out.push({ nivel: av.nivel, grupo: 'Documento', mensagem: docs.length > 1 ? `${a.nome}: ${av.mensagem}` : av.mensagem });
+    // comprovante em nome de outra pessoa (pode ser de um parente): compara com o nome do cadastro
+    const avc = a.analise?.titular && !(a.analise.avisos || []).some(x => x.id === 'comprovanteOutraPessoa') ? E.avisoComprovante(a.analise.titular, vals.nome, S.rules) : null;
+    if (avc) out.push({ nivel: avc.nivel, grupo: 'Documento', mensagem: avc.mensagem });
     if (a.metodo === 'ocr' && a.confianca != null && a.confianca < 60) out.push({ nivel: 'info', grupo: 'Documento', mensagem: `A leitura de “${a.nome}” foi difícil (letra à mão ou foto). Confira os campos — os duvidosos ficam em amarelo.` });
   }
   const dup = duplicado(tipo, vals);
@@ -1530,14 +1645,90 @@ function updateChecks() {
   const ico = { ok: 'check', erro: 'x', atencao: 'alert', info: 'info' };
   const order = { erro: 0, atencao: 1, info: 2, ok: 3 };
   el.innerHTML = Object.entries(groups).map(([g, items]) => `<div class="grp">${esc(g)}</div>` + items.sort((a, b) => order[a.nivel] - order[b.nivel]).map(i => `
-    <button type="button" class="chk ${i.nivel}" ${i.campo ? `data-campo="${esc(i.campo)}"` : ''}><span class="st">${icon(ico[i.nivel], 'ic-sm')}</span><span>${esc(i.mensagem)}</span></button>`).join('')).join('') || '<p class="muted">Sem verificações para esta solicitação.</p>';
+    <button type="button" class="chk ${i.nivel}" ${i.campo ? `data-campo="${esc(i.campo)}"` : ''}><span class="st">${icon(ico[i.nivel], 'ic-sm')}</span><span>${esc(i.mensagem)}</span></button>${i.modelo ? botaoModelo(i.modelo) : ''}`).join('')).join('') || '<p class="muted">Sem verificações para esta solicitação.</p>';
+  ligarModelos(el, tipo);
   el.querySelectorAll('[data-campo]').forEach(b => b.addEventListener('click', () => {
     const def = tipoDef(tipo).campos[b.dataset.campo];
     if (def && !def.somenteAssistente) send({ type: 'highlight', locator: def });
     $(`#f-${b.dataset.campo}`)?.focus();
   }));
   const dot = $('#dot-preencher'); if (dot) { dot.hidden = !c.erro; dot.textContent = c.erro || ''; }
-  renderStepper(list); renderDocChecklist();
+  renderStepper(list); renderDocChecklist(); renderDicaPedido(tipo);
+}
+/* "Gerar pelo modelo" (anexos[].modelo): o modelo da carta já preenchido com o funcionário, as datas, a empresa e a admissão. */
+const botaoModelo = (id) => (S.rules.modelosDocumento || []).some(m => m.id === id) ? `<button type="button" class="btn btn-sm btn-ghost chk-modelo" data-modelo="${esc(id)}">${icon('fill', 'ic-sm')} Gerar pelo modelo</button>` : '';
+function ligarModelos(root, tipo) { root.querySelectorAll('[data-modelo]').forEach(b => b.addEventListener('click', () => gerarPeloModelo(b.dataset.modelo, tipo))); }
+function contextoModelo(tipo) {
+  const v = tipo ? valoresParaChecar(tipo) : {};
+  const adm = admissaoDe(v.empregado);
+  const sit = adm ? E.situacaoEmpregado({ nome: v.empregado, admissao: E.iso(adm) }, E.today(), S.rules) : null;
+  return { ...v, empresa: S.ctx.empresa, admissao: adm ? E.fmtDate(adm) : '', dataAdmissao: adm ? E.fmtDate(adm) : '', periodoAquisitivo: sit?.ferias?.aquisitivo || '' };
+}
+function gerarPeloModelo(id, tipo, extra = {}) {
+  const md = (S.rules.modelosDocumento || []).find(m => m.id === id); if (!md || !P?.abrirModelo) return;
+  P.abrirModelo(md, E.valoresDoModelo(md, { ...contextoModelo(tipo), ...extra }));
+}
+
+/* Dicas do pedido aberto: o funcionário ainda está na experiência (motivo certo, sem escolher sozinho) e o aviso
+   desse funcionário que já está no portal ("Usar os dados do aviso de dd/mm"). */
+const PAR_AVISO = { calculoFerias: 'avisoFerias', calculoRescisao: 'avisoRescisao' };
+const lendoDatasAviso = new Set();
+function renderDicaPedido(tipo) {
+  const el = $('#dica-pedido'); if (!el || !tipo) return;
+  const W = w(tipo); const t = tipoDef(tipo); const v = valoresParaChecar(tipo);
+  const partes = [];
+  // rescisão de quem ainda está na experiência
+  if (t?.campos?.motivo && /Rescisao$/.test(tipo) && v.empregado && !W.expNao) {
+    const sug = E.sugestaoMotivoExperiencia(v, admissaoDe(v.empregado), S.rules);
+    if (sug) partes.push({ k: `exp|${sug.valor}`, html: `<div class="note warn">${icon('info')}<div><b>${esc(nomeCurto(v.empregado))} foi admitido(a) em ${E.fmtDate(sug.admissao)} — está no ${sug.dia}º dia, dentro do prazo de experiência.</b> É contrato de experiência? Se for, o motivo certo é <b>“${esc(sug.valor)}”</b>: ${sug.noFim ? 'no fim da experiência não há aviso prévio' : 'na saída antes do fim da experiência não há aviso prévio (vale a indenização dos arts. 479 e 480 da CLT)'}.
+      <div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" id="dp-exp-sim" data-motivo="${esc(sug.valor)}">Sim, usar este motivo</button><button type="button" class="btn btn-sm btn-ghost" id="dp-exp-nao">Não é experiência</button></div></div></div>` });
+  }
+  // cálculo: o aviso desse funcionário já está no portal
+  const tAviso = PAR_AVISO[tipo];
+  const av = tAviso && v.empregado && !W.avisoUsado ? E.avisoDoFuncionario(S.plat?.sol?.itens, v.empregado, tAviso) : null;
+  if (av) {
+    const vv = E.valoresDoAviso(av, S.rules);
+    const novos = Object.entries(vv.valores).filter(([k, x]) => t.campos[k] && !W.editados.has(k) && E.norm(v[k] || '') !== E.norm(x));
+    if (!Object.keys(vv.valores).length && !av.datasLidas && !lendoDatasAviso.has(av.id)) {
+      lendoDatasAviso.add(av.id);
+      request({ type: 'datasAviso', lista: S.rules.tipos[av.tipo]?.apiDetalhe || S.rules.tipos[av.tipo]?.apiLista, solicitacao: av.id }, 15000).then(r => {
+        av.datasLidas = true;
+        if (r?.datas) { const d = E.datasDoAviso(r.datas); av.datas = Object.fromEntries(Object.entries({ ...(av.datas || {}), ...d }).map(([k, x]) => [k, x ?? av.datas?.[k] ?? null])); }
+        if (S.ctx.tipo === tipo) renderDicaPedido(tipo);
+      });
+    }
+    const quando = vv.em ? E.fmtDate(vv.em).slice(0, 5) : '';
+    if (novos.length) partes.push({ k: `av|${av.id}|${novos.map(x => x.join('=')).join(',')}`, html: `<div class="note">${icon('info')}<div>O aviso ${tAviso === 'avisoFerias' ? 'de férias' : 'de rescisão'} de <b>${esc(nomeCurto(v.empregado))}</b>${av.numero ? ` (nº ${esc(av.numero)})` : ''} já está no portal: ${esc(novos.map(([k, x]) => `${rotuloDe(tipo, k)} ${x}`).join(' · '))}.
+      <div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" id="dp-aviso">Usar os dados do aviso${quando ? ` de ${quando}` : ''}</button><button type="button" class="btn btn-sm btn-ghost" id="dp-aviso-nao">Agora não</button></div></div></div>` });
+  }
+  const chave = partes.map(x => x.k).join('#');
+  if (el.dataset.chave === chave) return;
+  el.dataset.chave = chave;
+  el.innerHTML = partes.map(x => x.html).join('');
+  $('#dp-exp-sim')?.addEventListener('click', (e) => {
+    W.valores.motivo = { valor: e.currentTarget.dataset.motivo, conf: 1, fonte: 'você' }; W.editados.add('motivo'); W.fonteVerdade.motivo = 'plataforma';
+    W.expNao = true; gerarTextos(tipo); render();
+    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: ['motivo'] });
+  });
+  $('#dp-exp-nao')?.addEventListener('click', () => { W.expNao = true; renderDicaPedido(tipo); });
+  $('#dp-aviso')?.addEventListener('click', () => {
+    W.avisoUsado = true; const vv = E.valoresDoAviso(av, S.rules);
+    aplicarSugestoes(tipo, vv.valores, vv.fonte, { trocar: true });
+    gerarTextos(tipo); render();
+    if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: Object.keys(vv.valores) });
+  });
+  $('#dp-aviso-nao')?.addEventListener('click', () => { W.avisoUsado = true; renderDicaPedido(tipo); });
+}
+/** Valores sugeridos por outra tela (dados do aviso, 1ª data de férias): entram para conferir, não como digitados pelo cliente —
+ *  um documento arrastado depois ainda pode corrigi-los. Não passam por cima do que o cliente digitou. */
+function aplicarSugestoes(tipo, valores, fonte, { trocar = false } = {}) {
+  const W = w(tipo); const t = tipoDef(tipo);
+  for (const [k, x] of Object.entries(valores || {})) {
+    if (!t?.campos?.[k] || x == null || x === '' || W.editados.has(k)) continue;
+    const cur = W.valores[k];
+    if (cur?.valor && !cur.calculado && !cur.sugestao && !trocar) continue;
+    W.valores[k] = { valor: String(x), conf: 0.6, fonte, sugestao: true };
+  }
 }
 
 /** Listas em que o Assistente escolhe sozinho quando o portal tem uma opção só (regras: config.escolherUnicaOpcao). */
@@ -1568,7 +1759,7 @@ async function fillPortal(tipo, { silencioso = false, daPlataforma = false, so =
   for (const [k, v] of Object.entries(W.valores)) {
     const def = campoDef(tipo, k);
     if (!def || def.somenteAssistente || !v?.valor) continue;
-    if (parcial && !so.includes(k) && !TEXTOS.includes(k)) continue;
+    if (parcial && !so.includes(k) && !TEXTOS.includes(k) && !(v.calculado && noPortal(k) !== v.valor)) continue;
     // o que o cliente escreveu direto no portal fica como está
     if (noPortal(k) && noPortal(k) !== (W.ultimoPreenchido?.[k] ?? null) && noPortal(k) !== v.valor && W.fonteVerdade?.[k] !== 'plataforma') continue;
     // ajuste de um campo: o texto gerado só vai se mudou e se o portal ainda está com o texto do Assistente
@@ -1766,10 +1957,13 @@ function onSubmitAttempt(m) {
   S.ctx.form = m.form; S.ctx.tipo = m.tipo;
   const tipo = m.tipo;
   const pediu = S.pedirResumo; S.pedirResumo = false;
-  if (!tipo) { send({ type: 'confirmSubmit' }); return; }
+  // pedido preparado pelo Assistente: o resumo abre sozinho só se não falta nada (o envio continua sendo o clique do cliente)
+  const auto = S.resumoAuto; S.resumoAuto = false;
+  if (!tipo) { if (!auto) send({ type: 'confirmSubmit' }); return; }
   const vals = valoresParaChecar(tipo);
   const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals), ...naoAceitosPeloPortal(tipo, m.form)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
-  if (!list.length && !pediu) { S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); return; }
+  if (auto && list.some(i => i.nivel === 'erro' || i.grupo === 'Portal')) return;
+  if (!list.length && !pediu && !auto) { S.ultimoEnvio = { tipo, quando: Date.now(), valores: vals }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
   const t = tipoDef(tipo);
   const principais = Object.entries(t.campos).filter(([k, c]) => vals[k] && !['assunto', 'descricao', 'observacoes'].includes(k) && !c.sensivel).slice(0, 8);
@@ -1778,18 +1972,19 @@ function onSubmitAttempt(m) {
   modal.hidden = false;
   modal.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mh">
     <h3 id="mh">${list.length ? 'Antes de enviar' : 'Tudo pronto para enviar'}</h3>
-    <p class="muted" style="margin:0 0 10px">${esc(list.length ? (S.rules.mensagens?.envioComPendencias || '') : 'Confira o resumo. O envio é feito pelo próprio portal.')}</p>
+    <p class="muted" style="margin:0 0 10px">${esc(auto && !list.length ? 'Preparei o pedido. Confira o resumo e, se estiver certo, envie: o envio é feito pelo próprio portal.' : list.length ? (S.rules.mensagens?.envioComPendencias || '') : 'Confira o resumo. O envio é feito pelo próprio portal.')}</p>
     <div class="resumo card pad"><b>${esc(vals.assunto || t.nome)}</b>
       <dl class="kv" style="margin-top:6px">${(P?.empresasDoLogin?.().length || 0) > 1 ? `<dt>Empresa</dt><dd>${esc(S.ctx.empresa)}</dd>` : ''}${principais.map(([k, c]) => `<dt>${esc(c.rotulo)}</dt><dd>${esc(vals[k])}</dd>`).join('')}
       <dt>Anexos</dt><dd>${anexos.length ? esc(anexos.map(a => a.nome).join(', ')) : 'nenhum'}</dd></dl></div>
-    ${list.length ? `<div class="checks" style="margin-top:10px">${list.map(i => `<div class="chk ${i.nivel}"><span class="st">${icon(i.nivel === 'erro' ? 'x' : 'alert', 'ic-sm')}</span><span>${esc(i.mensagem)}</span></div>`).join('')}</div>` : ''}
+    ${list.length ? `<div class="checks" style="margin-top:10px">${list.map(i => `<div class="chk ${i.nivel}"><span class="st">${icon(i.nivel === 'erro' ? 'x' : 'alert', 'ic-sm')}</span><span>${esc(i.mensagem)}</span></div>${i.modelo ? botaoModelo(i.modelo) : ''}`).join('')}</div>` : ''}
     <div class="actions" style="margin-top:14px">
       ${list.length ? '<button class="btn btn-primary" id="m-fix">Corrigir agora</button>' : '<button class="btn btn-primary" id="m-send">Enviar ao escritório</button><button class="btn" id="m-fix">Voltar</button>'}
       ${list.length && !bloqueia ? '<button class="btn" id="m-send">Enviar assim mesmo</button>' : ''}
     </div></div>`;
   const close = () => { modal.hidden = true; modal.innerHTML = ''; };
   $('#m-fix').addEventListener('click', () => { close(); setView('preencher'); });
-  $('#m-send')?.addEventListener('click', () => { close(); S.ultimoEnvio = { tipo, quando: Date.now() }; send({ type: 'confirmSubmit' }); });
+  $('#m-send')?.addEventListener('click', () => { close(); S.ultimoEnvio = { tipo, quando: Date.now(), valores: vals }; send({ type: 'confirmSubmit' }); });
+  modal.querySelectorAll('[data-modelo]').forEach(b => b.addEventListener('click', () => { close(); gerarPeloModelo(b.dataset.modelo, tipo); }));
   ($('#m-send') && !list.length ? $('#m-send') : $('#m-fix')).focus();
 }
 /** Plataforma: o cliente escreveu um valor aqui que o portal não ficou com ele (ex.: opção que não existe na lista). */
@@ -1815,13 +2010,16 @@ async function copiarResumo(tipo) {
 }
 
 /* =================== Modelos =================== */
-const PESSOAIS = new Set(['empregado', 'nome', 'nomeSocial', 'cpf', 'pis', 'rg', 'orgaoRg', 'ufRg', 'dataRg', 'titulo', 'zona', 'secao', 'reservista', 'cnh', 'cnhCategoria', 'cnhValidade', 'mae', 'pai', 'conjuge', 'nascimento', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cid', 'medico', 'numeroCat', 'agencia', 'conta', 'digitoConta', 'assunto', 'descricao', 'ctpsNumero', 'ctpsSerie']);
+const PESSOAIS = new Set(['empregado', 'nome', 'nomeSocial', 'cpf', 'pis', 'rg', 'orgaoRg', 'ufRg', 'dataRg', 'titulo', 'zona', 'secao', 'reservista', 'cnh', 'cnhCategoria', 'cnhValidade', 'mae', 'pai', 'conjuge', 'nascimento', 'email', 'telefone', 'cep', 'endereco', 'numero', 'complemento', 'bairro', 'municipio', 'uf', 'cid', 'medico', 'numeroCat', 'agencia', 'conta', 'digitoConta', 'assunto', 'descricao', 'ctpsNumero', 'ctpsSerie', 'ctpsUf',
+  'sexo', 'racaCor', 'estadoCivil', 'grauInstrucao', 'nacionalidade', 'paisNascimento', 'ufNascimento', 'municipioNascimento', 'deficiencia', 'possuiDependentes', 'banco', 'tipoConta', 'formaPagamento', 'tipoEndereco', 'matricula', 'instituicaoEnsino', 'inss']);
 async function salvarModeloUI(tipo) {
   const t = tipoDef(tipo); const v = valoresAssistente(tipo);
-  const valores = Object.fromEntries(Object.entries({ ...v, ...portalValores(tipo) }).filter(([k]) => !k.startsWith('extra:')).filter(([k]) => !PESSOAIS.has(k) && t.campos[k]?.tipo !== 'data' && t.campos[k]?.tipo !== 'competencia' || k === 'observacoes' || k === 'tabelaRubricas'));
+  // cadastro: só os campos da empresa (lista nas regras); outros pedidos: tudo menos dados pessoais e datas
+  const daEmpresa = E.camposDaEmpresa(tipo, S.rules);
+  const valores = Object.fromEntries(Object.entries({ ...v, ...portalValores(tipo) }).filter(([k]) => !k.startsWith('extra:')).filter(([k]) => daEmpresa ? daEmpresa.includes(k) : (!PESSOAIS.has(k) && t.campos[k]?.tipo !== 'data' && t.campos[k]?.tipo !== 'competencia' || k === 'observacoes' || k === 'tabelaRubricas')));
   const m = $('#modal'); m.hidden = false;
   m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mm"><h3 id="mm">Salvar como modelo</h3>
-    <p class="muted" style="margin:0 0 10px">Guarda o que se repete (tipo, textos, rubricas), sem dados pessoais nem datas. Fica só neste computador.</p>
+    <p class="muted" style="margin:0 0 10px">${daEmpresa ? 'Guarda só as escolhas da empresa (cargo, departamento, jornada…), sem os dados da pessoa.' : 'Guarda o que se repete (tipo, textos, rubricas), sem dados pessoais nem datas.'} Fica só neste computador.</p>
     <div class="field"><label for="m-nome">Nome do modelo</label><input class="input" id="m-nome" value="${esc(t.nome)}"></div>
     <p class="muted" style="font-size:12px">${Object.keys(valores).length ? 'Inclui: ' + esc(Object.keys(valores).map(k => t.campos[k]?.rotulo || (k === 'observacoes' ? 'Observações' : k === 'tabelaRubricas' ? 'Tabela de rubricas' : k)).join(', ')) : 'Nenhum dado reaproveitável ainda — o modelo vai abrir a solicitação vazia.'}</p>
     <div class="actions"><button class="btn btn-primary" id="m-save">Salvar</button><button class="btn" id="m-cancel">Cancelar</button></div></div>`;
@@ -1846,7 +2044,8 @@ async function renderModelosInicio() {
     const md = modelos.find(x => x.id === b.dataset.use); if (!md) return;
     if (!(await empresaDoPedido(md.tipo))) return;
     const W = w(md.tipo);
-    for (const [k, v] of Object.entries(md.valores)) W.valores[k] = { valor: v, conf: 1, fonte: 'modelo' };
+    // modelos antigos de cadastro podem ter dados da pessoa: só os campos da empresa voltam
+    for (const [k, v] of Object.entries(E.camposDaEmpresa(md.tipo, S.rules) ? E.valoresReaproveitaveis(md.tipo, md.valores, S.rules) : md.valores)) W.valores[k] = { valor: v, conf: 1, fonte: 'modelo' };
     gerarTextos(md.tipo, true);
     await openTipo(md.tipo, { manter: true, semEmpresa: true });
     if (S.prefs.preencherAoLer) setTimeout(() => fillPortal(md.tipo, { silencioso: true }), 900);
@@ -1876,17 +2075,20 @@ function onEnvioNaoConcluido(m = {}) {
 
 async function onFormClosed(m = {}) {
   let enviadoTipo = null;
+  // o formulário fechou com o resumo do "Conferir e enviar" aberto: o resumo já não vale
+  const md = $('#modal'); if (!md.hidden && md.querySelector('#mh')) { md.hidden = true; md.innerHTML = ''; }
   // saiu do formulário sem enviar: o que ficou guardado não se mistura com o próximo documento ou pedido
   const slugSaiu = String(m.from || '').match(/service-request\/([a-z-]+)/)?.[1];
   const tipoSaiu = slugSaiu && E.tipoBySlug(S.rules, slugSaiu);
   if (tipoSaiu && S.work[tipoSaiu] && S.ultimoEnvio?.tipo !== tipoSaiu) S.work[tipoSaiu].abandonado = true;
   if (S.ultimoEnvio && Date.now() - S.ultimoEnvio.quando < 60000) {
     const tipo = S.ultimoEnvio.tipo; enviadoTipo = tipo;
+    const enviados = { ...valoresAssistente(tipo), ...(S.ultimoEnvio.valores || {}) };
     await salvarHistorico(tipo, 'enviado');
     await apagarRascunho(tipo);
     S.work[tipo] = null; S.ultimoEnvio = null;
     if (!S.lote) toast('Solicitação enviada. Os próximos prazos estão na Agenda.');
-    P?.aoEnviar(tipo);
+    P?.aoEnviar(tipo, enviados);
     if (S.view === 'preencher') render();
   }
   loteAoFecharFormulario(enviadoTipo);
@@ -1911,7 +2113,7 @@ const RASCUNHO_DIAS = 7;
 const chaveRascunho = (tipo) => `${S.ctx.empresa}|${tipo}`;
 /** O que vale guardar de um formulário (sem CID e sem os textos gerados). */
 function rascunhoDe(W) {
-  const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
+  const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && !v.calculado && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
   if (!Object.keys(valores).length) return null;
   return { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
 }
@@ -1990,6 +2192,7 @@ function renderAvisosInicio() {
 
 /* ---------- Contratos de experiência (data de admissão da lista de empregados do portal) ---------- */
 async function guardarEquipe(empresa, detalhes) {
+  guardarAdmissoes(empresa, detalhes);
   const recentes = detalhes.filter(d => { const a = E.parseDate(d.admissao); return d.ativo !== false && a && E.diffDays(a, E.today()) <= 120; }).map(d => ({ nome: d.nome, admissao: d.admissao }));
   S.equipe.set(empresa, recentes);
   const { equipe = {} } = await chrome.storage.local.get('equipe');
@@ -2030,16 +2233,20 @@ function renderRepetir() {
   el.innerHTML = `<button class="li repetir" type="button" id="rep-go">${icon('refresh')}<div class="main"><b>Repetir a última solicitação</b><small>${esc(h.resumo)} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div>${icon('arrow', 'ic-sm')}</button>`;
   $('#rep-go').addEventListener('click', async () => {
     if (!(await empresaDoPedido(h.tipo, { sugerida: h.empresa }))) return;
+    // cadastro: só as escolhas da empresa (cargo, departamento…); os dados da pessoa anterior ficam de fora,
+    // inclusive o que tinha ficado guardado de um cadastro começado
+    const cadastro = !!E.camposDaEmpresa(h.tipo, S.rules);
+    if (cadastro && S.work[h.tipo]) { const { empregados, opcoes } = S.work[h.tipo]; S.work[h.tipo] = null; Object.assign(w(h.tipo), { empregados, opcoes }); }
     const t = tipoDef(h.tipo); const W = w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores || {})) {
-      if (['assunto', 'descricao', 'cid', 'dias'].includes(k) || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
+    for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) {
+      if (k === 'dias' || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
       W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };
     }
     W.rascunhoVisto = true;
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true, semEmpresa: true });
     if (S.prefs.preencherAoLer) setTimeout(() => fillPortal(h.tipo, { silencioso: true }), 900);
-    toast('Repeti os dados da última solicitação, menos as datas. Confira e complete.');
+    toast(cadastro ? 'Repeti só as escolhas da empresa (cargo, departamento, jornada…). Os dados da pessoa ficam de fora: complete com os do novo funcionário.' : 'Repeti os dados da última solicitação, menos as datas. Confira e complete.');
   });
 }
 
@@ -2123,11 +2330,12 @@ async function salvarHistorico(tipo, status) {
   const prev = status === 'enviado'
     ? historico.findIndex(h => h.chave === chave && h.status === 'preenchido')
     : historico.findIndex(h => h.chave === chave && h.status === 'preenchido' && Date.now() - h.quando < 6 * 3600e3);
-  const item = { chave, quando: Date.now(), empresa: S.ctx.empresa, tipo, status, resumo: valores.assunto || S.rules.tipos[tipo]?.nome, valores, anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
-  // a descrição pode trazer o CID; nada disso é usado para reaproveitar o pedido
-  delete item.valores.cid; delete item.valores.descricao; delete item.valores.observacoes;
+  // a descrição pode trazer o CID; um cadastro enviado fica só com o nome, as datas da Agenda e os campos da empresa
+  const item = { chave, quando: Date.now(), empresa: S.ctx.empresa, tipo, status, resumo: valores.assunto || S.rules.tipos[tipo]?.nome, valores: E.valoresParaHistorico(tipo, valores, status, S.rules), anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
   if (prev >= 0) historico.splice(prev, 1);
   historico.unshift(item);
+  // cadastro começado e não enviado: depois do prazo do rascunho, os dados da pessoa saem do histórico
+  for (const h of historico) if (h.status !== 'enviado' && Date.now() - h.quando > RASCUNHO_DIAS * 864e5 && E.camposDaEmpresa(h.tipo, S.rules)) h.valores = E.valoresParaHistorico(h.tipo, h.valores, 'enviado', S.rules);
   S.historico = historico.slice(0, 200);
   await chrome.storage.local.set({ historico: S.historico });
 }
@@ -2135,21 +2343,27 @@ async function salvarHistorico(tipo, status) {
 function prazosDoHistorico(historico) {
   const cal = E.makeCalendar(S.rules.feriados); const hoje = E.today(); const out = [];
   const dd = (x) => E.parseDate(x);
-  const add = (d, titulo, h, detalhe) => { if (d && E.diffDays(hoje, d) >= -7 && E.diffDays(hoje, d) <= 120) out.push({ d, titulo, h, detalhe }); };
-  const precisa = S.rules.config?.prazoInternoDiasUteis?.calculo || 5;
+  const add = (d, titulo, h, detalhe, pedir = null) => { if (d && E.diffDays(hoje, d) >= -7 && E.diffDays(hoje, d) <= 120) out.push({ d, titulo, h, detalhe, pedir }); };
   for (const h of historico) {
     const v = h.valores || {}; const quem = v.empregado || v.nome || '';
+    // o passo seguinte de cada pedido (regras: tipos.*.depoisDeEnviar), com "Fazer agora"; some quando o portal (ou este
+    // computador) já tem o pedido desse funcionário
+    for (const p of E.proximosPassos(h.tipo, v, S.rules, cal)) {
+      if (!p.ate) continue;
+      if (p.tipo && (E.temPedidoDe(S.plat?.sol?.itens, p.tipo, p.empregado, new Date(h.quando))
+        || historico.some(x => x.status === 'enviado' && x.tipo === p.tipo && E.norm(x.valores?.empregado) === E.norm(p.empregado) && x.quando >= h.quando))) continue;
+      add(p.ate, p.titulo, h, p.tipo ? '' : quem, p.tipo ? { tipo: p.tipo, empregado: p.empregado, valores: p.valores, fonte: 'do pedido enviado' } : null);
+    }
     switch (h.tipo) {
-      case 'avisoFerias': { const i = dd(v.inicioGozo); if (!i) break; const pag = E.addDays(i, -2);
-        add(cal.addBusinessDays(pag, -precisa), 'Enviar o Cálculo de Férias', h, quem);
-        add(pag, 'Pagamento das férias (limite)', h, quem); add(i, 'Início das férias', h, quem);
+      case 'avisoFerias': { const i = dd(v.inicioGozo); if (!i) break;
+        add(E.pagamentoFerias(i, S.rules, cal), 'Pagamento das férias (limite)', h, quem); add(i, 'Início das férias', h, quem);
         if (+v.diasGozo) add(E.addDays(i, +v.diasGozo), 'Retorno das férias', h, quem); break; }
-      case 'calculoFerias': { const i = dd(v.inicioGozo); if (!i) break; add(E.addDays(i, -2), 'Pagamento das férias (limite)', h, quem); if (+v.diasGozo) add(E.addDays(i, +v.diasGozo), 'Retorno das férias', h, quem); break; }
+      case 'calculoFerias': { const i = dd(v.inicioGozo); if (!i) break; add(E.pagamentoFerias(i, S.rules, cal), 'Pagamento das férias (limite)', h, quem); if (+v.diasGozo) add(E.addDays(i, +v.diasGozo), 'Retorno das férias', h, quem); break; }
       case 'afastamento': { const i = dd(v.dataAfastamento); if (!i || !+v.dias) break; add(E.addDays(i, +v.dias), 'Retorno do afastamento', h, quem); if (+v.dias > 15 && E.vaiAoInss(v.tipoAfastamento, S.rules)) add(E.addDays(i, 15), 'Encaminhamento ao INSS (16º dia)', h, quem); break; }
       case 'avisoRescisao': { const i = dd(v.dataAviso); if (!i || !E.temAviso(v, S.rules)) break;
         const dias = +v.diasAviso || 30;
         add(E.fimDoAviso(i, dias), `Fim do aviso, se trabalhado (${dias} dias)`, h, quem); break; }
-      case 'calculoRescisao': { const i = dd(v.dataDemissao); if (!i) break; add(E.addDays(i, 10), 'Pagamento das verbas rescisórias (limite)', h, quem); break; }
+      case 'calculoRescisao': { const i = dd(v.dataDemissao); if (!i) break; add(E.pagamentoRescisao(i, S.rules, cal), 'Pagamento das verbas rescisórias (limite)', h, quem); break; }
       case 'cadastroEmpregado': { const i = dd(v.dataAdmissao); const e1 = +v.contratoExperiencia; if (!i || !e1) break;
         add(E.addDays(i, e1 - 1), 'Fim do 1º período de experiência', h, quem);
         if (+v.prorrogacao) add(E.addDays(i, e1 + +v.prorrogacao - 1), 'Fim da prorrogação da experiência', h, quem); break; }
@@ -2170,7 +2384,7 @@ async function renderHistorico() {
     ${prazos.length ? `<div class="agenda">${prazos.map(p => { const [c, txt] = quando(p.d); return `
       <div class="ag-i"><div class="ag-d"><b>${String(p.d.getDate()).padStart(2, '0')}</b><small>${p.d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}</small></div>
         <div class="main"><b>${esc(p.titulo)}</b><small>${esc(p.detalhe || '')}${p.detalhe ? ' · ' : ''}${esc(S.rules.tipos[p.h.tipo]?.nome || '')}</small></div>
-        <span class="chip ${c}">${txt}</span></div>`; }).join('')}</div>` : `<div class="empty" style="padding:16px">${icon('calc', 'ic-lg')}<p>Sem prazos por enquanto. Eles aparecem quando você preenche férias, afastamentos, rescisões ou admissões.</p></div>`}
+        ${p.pedir ? `<button type="button" class="btn btn-sm" data-fazer="${prazos.indexOf(p)}">Fazer agora</button>` : ''}<span class="chip ${c}">${txt}</span></div>`; }).join('')}</div>` : `<div class="empty" style="padding:16px">${icon('calc', 'ic-lg')}<p>Sem prazos por enquanto. Eles aparecem quando você preenche férias, afastamentos, rescisões ou admissões.</p></div>`}
     ${inacabados.length ? `<h2 class="sec">Começou e não enviou</h2>
     <p class="muted" style="margin:0 0 8px;font-size:12px">Preenchidas no portal, mas o envio não foi confirmado. Clique para continuar.</p>
     <div class="list">${inacabados.map(h => `
@@ -2184,11 +2398,12 @@ async function renderHistorico() {
         <span class="chip ${h.status === 'enviado' ? 'ok' : 'info'}">${h.status}</span>
       </button>`).join('')}</div>
     <div class="actions" style="margin-top:12px"><button class="btn btn-ghost" id="h-clear">${icon('trash', 'ic-sm')} Limpar histórico</button></div>` : '<p class="muted">As solicitações que você preencher com o Assistente aparecem aqui.</p>'}`;
+  viewEl.querySelectorAll('[data-fazer]').forEach(b => b.addEventListener('click', () => { const x = prazos[+b.dataset.fazer]?.pedir; if (x) P.novoPedido(x.tipo, { empregado: x.empregado, sugeridos: x.valores, fonte: x.fonte }); }));
   viewEl.querySelectorAll('[data-cont]').forEach(b => b.addEventListener('click', async () => {
     const h = historico[+b.dataset.cont];
     if (!(await empresaDoPedido(h.tipo, { sugerida: h.empresa }))) return;
     const W = w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true, semEmpresa: true });
   }));
@@ -2401,7 +2616,8 @@ const P = montarPlataforma({
   S, $, esc, icon, request, send, toast, viewEl, debounce, ICONS,
   setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
   renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
-  prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado, copiarDiagnostico
+  prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado, copiarDiagnostico,
+  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar
 });
 
 /* =================== Início =================== */

@@ -111,11 +111,11 @@
 
   /* ---------- Dados (só neste navegador) ---------- */
   var SKEY = 'ct-sim-portal';
-  var SEED_V = 7;
+  var SEED_V = 8;
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
     var items = {
-      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 30 }],
+      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 20, abono: 10 }],
       'employee-leave': [{ id: 1039, status: 'Em andamento', empregado: 'JOANA FONSECA', assunto: 'Afastamento – JOANA FONSECA – Licença maternidade', tramite: 'Cliente: segue em anexo a certidão de nascimento.', data: d(6) }],
       'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) },
         { id: 1060, status: 'Aguardando o cliente', empregado: '', assunto: 'Informe de rendimentos 2025', tramite: 'Escritório: segue o seu comprovante de rendimentos de 2025. Qualquer dúvida, estamos à disposição.', data: d(2), anexos: ['Informe de rendimentos 2025.pdf'] }]
@@ -195,6 +195,7 @@
       var it = itemApi(slug, r);
       var dia = function (br, n) { return isoDe(br, n).slice(0, 10) + 'T00:00:00'; };   // datas "só dia", como no Onvio
       if (r.inicio) { it.vacationStartDate = dia(r.inicio, 0); it.paymentDate = dia(r.inicio, 2); it.vacationDays = r.dias || 30; }
+      if (r.abono != null) it.bonusDays = r.abono;   // dias de abono do aviso (para o "Pedir o cálculo")
       if (slug === 'termination-notice') { it.adviceDate = dia(r.data, 0); it.reason = 'ApprenticeContractTermination'; it.grantedBy = 'EMPLOYEE'; }   // como o Onvio manda (em inglês)
       return Promise.resolve(it);
     },

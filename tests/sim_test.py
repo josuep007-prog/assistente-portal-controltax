@@ -513,12 +513,216 @@ async def teste_mecanica(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_lote4(b):
+    """Rescisão, férias e fluxo de pedidos: dados do aviso no cálculo, datas calculadas, próximo passo, experiência."""
+    import datetime
+    print('\n[lote 4] rescisão, férias e fluxo de pedidos')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900}, permissions=['clipboard-read', 'clipboard-write'])
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    total = lambda: pg.evaluate("Promise.all(['prior-notice-vacations','vacation-calculations'].map(a => window.__ctPlatform.fetchList(a).then(r => r.json()).then(j => j.totalItems))).then(l => l[0] + l[1])")
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    def portal_com(**kv):
+        async def f():
+            v = await portal(); return all(v.get(k) == x for k, x in kv.items())
+        return f
+    async def fechar_portal():
+        await pn.evaluate("document.querySelector('#modal .dlg-x')?.click(); const m = document.querySelector('#modal'); if (m && m.querySelector('#mh')) { m.hidden = true; m.innerHTML = ''; }")
+        await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave')"); await pg.wait_for_timeout(1500)
+    br = lambda d: d.strftime('%d/%m/%Y')
+    hoje = datetime.date.today()
+    await espera(lambda: pn.evaluate("(document.querySelector('#eq-avisos')?.innerText || '').includes('Férias em')"), 20)
+    # 20: "Pedir o cálculo" do aviso de férias (Equipe) → Cálculo de Férias com início, dias e abono do aviso
+    await pn.locator('#eq-avisos .eq-li', has_text='RONALDO DE SOUZA').locator('[data-eq]').click()
+    inicio = br(hoje + datetime.timedelta(days=20))
+    ok = await espera(portal_com(selectedEmployee='RONALDO DE SOUZA', initialDate=inicio, vacationDays='20'), 25)
+    check(ok, f'"Pedir o cálculo" do aviso: Cálculo de Férias com início {inicio}, 20 dias e o funcionário')
+    async def abono_sim(): return await pg.evaluate("document.querySelector('#radioBasic-bonus1')?.checked") is True
+    check(await espera(abono_sim, 10), 'abono do aviso (10 dias) marca SIM no cálculo')
+    src = await pn.locator('[data-campo="inicioGozo"] .src').inner_text() if await pn.locator('[data-campo="inicioGozo"] .src').count() else ''
+    check('do aviso nº 1041' in src, f'valor do aviso entra como sugestão "do aviso nº 1041" ({src})')
+    # 25: abono → requerimento assinado pedido na conferência, com "Gerar pelo modelo" já preenchido
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#checks [data-modelo=abonoFerias]')"), 10)
+    check(ok, 'conferência: falta o requerimento de abono → "Gerar pelo modelo"')
+    if ok:
+        await pn.click('#checks [data-modelo=abonoFerias]'); await pg.wait_for_timeout(500)
+        prev = await pn.locator('#md-prev').inner_text()
+        check('RONALDO DE SOUZA' in prev and 'EMPRESA EXEMPLO' in prev, 'modelo do requerimento já vem com o funcionário e a empresa')
+        await pn.click('#modal .dlg-x')
+    await fechar_portal()
+    # 6 + 33: Calcular → "Pedir o cálculo" leva o motivo e abre o resumo sozinho (nada é enviado)
+    await pn.click('#rail [data-mod="ferramentas"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(500)
+    for k, v in [('sim-quem', 'RONALDO DE SOUZA'), ('sim-desligamento', '15102026'), ('sim-salario', '3.000,00')]:
+        await pn.fill('#' + k, v); await pn.dispatch_event('#' + k, 'input')
+    await pn.select_option('#sim-feriasVencidas', '1'); await pg.wait_for_timeout(300)
+    antes = await total()
+    await pn.click('#sim-pedir')
+    ok = await espera(portal_com(employee='RONALDO DE SOUZA', resignationDate='15/10/2026', terminationReason='Demitido SEM justa causa', priorNoticeDate='15/10/2026'), 25)
+    check(ok, 'Calcular → Cálculo de Rescisão com o motivo da modalidade')
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#modal:not([hidden]) #mh')"), 15)
+    check(ok, 'pedido preparado sem nada faltando abre o resumo do "Conferir e enviar" sozinho')
+    desc = (await portal()).get('description', '') or await pg.evaluate("document.querySelector('main textarea')?.value || ''")
+    check('férias vencidas: 1 período' in desc and 'R$' not in desc, 'uma linha da simulação nas observações, sem valores')
+    check(await total() == antes, 'nada enviado sem o clique do cliente')
+    if await pn.locator('#m-fix').count(): await pn.click('#m-fix')
+    await fechar_portal()
+    # 33: o que ficou pela metade aparece no Hoje
+    await pn.click('#rail [data-mod="inicio"]'); await pg.mouse.move(1200, 600)
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#eq-terminar')?.innerText || '').includes('Continuar')"), 10)
+    check(ok, 'Hoje: cartão "Para terminar" com o que foi preenchido e não enviado')
+    # 40: experiência vencendo com três saídas
+    lin = pn.locator('#eq-exp .eq-li', has_text='VANESSA PRADO')
+    bts = await lin.locator('[data-eq]').all_inner_texts()
+    check(bts == ['Prorrogar', 'Encerrar no fim', 'Efetivar'], f'experiência vencendo: Prorrogar, Encerrar no fim e Efetivar ({bts})')
+    await lin.locator('[data-eq]', has_text='Prorrogar').click(); await pg.wait_for_timeout(500)
+    prev = await pn.locator('#md-prev').inner_text() if await pn.locator('#md-prev').count() else ''
+    check('VANESSA PRADO' in prev and 'por mais 45 dias' in prev, 'Prorrogar: termo pelo modelo com funcionário, admissão e 45 dias')
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
+    lin = pn.locator('#eq-exp .eq-li', has_text='VANESSA PRADO')
+    await lin.locator('[data-eq]', has_text='Efetivar').click(); await pg.wait_for_timeout(400)
+    await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#eq-exp .eq-li', has_text='VANESSA PRADO').count() == 0, 'Efetivar: dispensa o aviso da experiência')
+    # 21: "Programar" férias a vencer → aviso com a 1ª data que vale, pagamento e data do aviso calculados
+    await pn.locator('#eq-ferias .eq-li').first.locator('[data-eq]').click()
+    async def programado():
+        v = await portal(); return bool(v.get('vacationStartDate')) and bool(v.get('paymentDate')) and v.get('noticeDate') == br(hoje)
+    ok = await espera(programado, 25)
+    v = await portal()
+    check(ok, f"Programar: início sugerido, pagamento e data do aviso calculados ({v.get('vacationStartDate')}, {v.get('paymentDate')}, {v.get('noticeDate')})")
+    check('calculado' in (await pn.locator('[data-campo="dataPagamento"]').inner_text()).lower(), 'data calculada marcada "calculado — confira"')
+    await fechar_portal()
+    # 26: aviso de rescisão de quem está na experiência → pergunta o motivo certo
+    await pn.click('#rail [data-mod="funcionarios"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(800)
+    row = pn.locator('#emp-list .dp-row', has_text='VANESSA PRADO')
+    await row.locator('summary').click(); await row.locator('[data-tipo="avisoRescisao"]').click()
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#dica-pedido')?.innerText || '').includes('prazo de experiência')"), 20)
+    check(ok and await pn.locator('#dp-exp-sim').count() == 1, 'Aviso de Rescisão na experiência: pergunta e sugere o motivo (sem escolher sozinho)')
+    check(await pn.locator('#modal:not([hidden]) #mh').count() == 0, 'funcionário que o portal não aceitou: o resumo não abre sozinho')
+    await pg.wait_for_timeout(6000)   # deixa o preenchimento terminar antes de sair do formulário
+    await fechar_portal()
+    # 37: envia um aviso de férias → "Próximo: Enviar o Cálculo de Férias… até" com "Preparar agora"
+    await pn.click('#rail [data-mod="funcionarios"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(600)
+    row = pn.locator('#emp-list .dp-row', has_text='JOAO DA SILVA')
+    await row.locator('summary').click(); await row.locator('[data-tipo="avisoFerias"]').click()
+    await espera(portal_com(selectedEmployee='JOAO DA SILVA'), 20)
+    ini = hoje + datetime.timedelta(days=26)
+    while ini.weekday() > 3: ini += datetime.timedelta(days=1)
+    for k, val in [('f-inicioGozo', ini.strftime('%d%m%Y')), ('f-diasGozo', '20')]:
+        await pn.fill('#' + k, val); await pn.dispatch_event('#' + k, 'input'); await pn.dispatch_event('#' + k, 'change')
+    ok = await espera(portal_com(vacationStartDate=br(ini), vacationDays='20'), 15)
+    async def com_pagamento(): return bool((await portal()).get('paymentDate'))
+    await espera(com_pagamento, 10)
+    pag = (await portal()).get('paymentDate')
+    if not pag: print('    portal:', await portal(), '| modal:', (await pn.evaluate("document.querySelector('#modal').hidden ? '' : document.querySelector('#modal').innerText"))[:300])
+    check(ok and bool(pag), f'pagamento das férias calculado ao digitar o início ({pag})')
+    antes = await total()
+    await pn.click('#btn-send'); await pg.wait_for_timeout(1500)
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    async def mais_um(): return await total() == antes + 1
+    ok = await espera(mais_um, 15)
+    check(ok, 'aviso de férias enviado pelo botão do portal')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#proximo')?.innerText || '').includes('Próximo: Enviar o Cálculo de Férias')"), 15)
+    check(ok, 'depois do envio: "Próximo: Enviar o Cálculo de Férias … até DD/MM"')
+    await pn.click('#proximo [data-prox-fazer]')
+    ok = await espera(portal_com(selectedEmployee='JOAO DA SILVA', initialDate=br(ini), vacationDays='20'), 25)
+    check(ok, '"Preparar agora" abre o Cálculo de Férias com os dados do aviso enviado')
+    await fechar_portal()
+    # 20: texto livre destaca o Cálculo quando o aviso desse funcionário já está no portal
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.fill('#free-txt', 'férias do Ronaldo'); await pn.click('#free-go'); await pg.wait_for_timeout(1500)
+    check(await pn.locator('#sugestao .opc.sug[data-escolha="calculoFerias"]').count() == 1 and await pn.locator('#sugestao .aviso-portal').count() == 1, 'texto livre: aviso já no portal → destaca o Cálculo')
+    # 37: Agenda com "Fazer agora" no passo que veio do aviso enviado
+    await pn.click('#rail [data-mod="historico"]'); await pg.wait_for_timeout(800)
+    check(await pn.locator('#ag-prox [data-fazer]').count() >= 1 and 'Enviar o Cálculo de Férias' in await pn.locator('#ag-prox').inner_text(), 'Agenda: "Enviar o Cálculo de Férias" com "Fazer agora"')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
+async def teste_cadastro(b):
+    """Lote 3: cadastro sem os dados da pessoa anterior, sugestões da empresa e ficha colada no campo de várias linhas."""
+    print('\n[cadastro] repetir sem dados pessoais, sugestões e ficha colada')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/?modo=painel'); await pg.wait_for_timeout(2500)
+    painel = lambda: next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    def tem(**kv):
+        async def f():
+            v = await portal(); return all(v.get(k) == x for k, x in kv.items())
+        return f
+    pn = painel()
+    await pg.evaluate("window.__ctSim.hooks()?.openPanel()"); await pg.wait_for_timeout(600)
+    empresa = (await pn.inner_text('#empresa')).strip()
+    # um cadastro enviado por uma versão antiga, com os dados da pessoa (dados inventados)
+    h = {'chave': 'x', 'quando': 1, 'empresa': empresa, 'tipo': 'cadastroEmpregado', 'status': 'enviado', 'resumo': 'Cadastro de teste', 'anexos': [],
+         'valores': {'nome': 'PESSOA ANTERIOR DE TESTE', 'cpf': '529.982.247-25', 'mae': 'MAE ANTERIOR', 'cep': '01310-100', 'sexo': 'Feminino', 'cargo': 'VENDEDOR', 'dataAdmissao': '01/10/2026'}}
+    await pn.evaluate("h => chrome.storage.local.set({ historico: [h] })", h)
+    await pg.reload(); await pg.wait_for_timeout(2500)
+    await pg.evaluate("window.__ctSim.hooks()?.openPanel()"); await pg.wait_for_timeout(800)
+    pn = painel()
+    await pn.click('.tab[data-view="inicio"]'); await pg.wait_for_timeout(600)
+    await pn.click('#rep-go')
+    ok = await espera(tem(jobPositionExpanded='VENDEDOR'), 25)
+    v = await portal()
+    check(ok and not v.get('name') and not v.get('nationalIdentity') and not v.get('motherName') and not v.get('zipCode'), f"repetir um cadastro leva só o cargo, sem nome, CPF, mãe e CEP ({ {k: x for k, x in v.items() if x} })")
+    pn = painel()
+    sug = await pn.inner_text('#sug-cad') if await pn.locator('#sug-cad').count() else ''
+    check('Sugestões para este cadastro' in sug and '45' in sug and '529.982' not in sug, 'sugestões do cadastro: experiência 45 + 45, sem dados pessoais')
+    if await pn.locator('#sug-todas').count(): await pn.click('#sug-todas')
+    elif await pn.locator('[data-sug]').count(): await pn.click('[data-sug]')
+    ok = await espera(tem(daysExperience='45', extensionDays='45'), 20)
+    check(ok, 'usar as sugestões: experiência e prorrogação vão ao portal')
+    # campo de texto de várias linhas: Shift+Enter quebra a linha, Enter envia
+    check(await pn.evaluate("document.querySelector('#free-form')?.tagName") == 'TEXTAREA', 'campo de texto do Preencher tem várias linhas')
+    await pn.click('#free-form'); await pn.type('#free-form', 'linha 1'); await pn.press('#free-form', 'Shift+Enter'); await pn.type('#free-form', 'linha 2')
+    check(await pn.evaluate("document.querySelector('#free-form').value") == 'linha 1\nlinha 2', 'Shift+Enter quebra a linha sem enviar')
+    await pn.fill('#free-form', 'Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste\nData de nascimento: 12/03/1995')
+    await pn.press('#free-form', 'Enter')
+    ok = await espera(tem(name='Fulana de Teste', motherName='Mãe de Teste'), 25)
+    v = await portal()
+    check(ok, f"ficha colada preenche nome e mãe ({v.get('name')}, {v.get('motherName')})")
+    check('Nome:' not in (v.get('comments') or '') and 'Nome:' not in (v.get('description') or ''), 'o texto colado não vai para observações/descrição')
+    await pg.click('main button:has-text("CANCELAR")'); await pg.wait_for_timeout(800)   # o cadastro é um assistente de etapas
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_lote4(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
     if os.environ.get('SIM_SO') == 'mec':   # SIM_SO=mec roda só a mecânica do preenchimento
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_mecanica(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_cadastro(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == '20':   # SIM_SO=20 roda só a parte da plataforma (2.0)
@@ -750,6 +954,8 @@ async def main():
             lote_txt = await pn.locator('#lote').inner_text()
             check(v.get('vacationStartDate') == '10/11/2026' and v.get('vacationDays') == '20' and '1 de 2' in lote_txt, 'vários pedidos: o lote abre o 1º preenchido e deixa o 2º na fila')
             await pn.click('#lote-parar'); await pg.wait_for_timeout(300)
+            # pedido do lote preparado sem pendência abre o resumo do "Conferir e enviar" (2.8): volta sem enviar
+            if await pn.locator('#modal').is_visible() and await pn.locator('#modal #m-fix').count(): await pn.click('#modal #m-fix'); await pg.wait_for_timeout(300)
 
             # lista longa virtualizada: nomes do começo (A) e do meio (I) da lista
             print('\n[lista longa] funcionário fora das primeiras linhas da lista')
@@ -876,6 +1082,8 @@ async def main():
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await teste_plataforma(b)
         await teste_mecanica(b)
+        await teste_cadastro(b)
+        await teste_lote4(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 

@@ -434,7 +434,7 @@ t('Hoje: avisos sem cálculo e equipe vencendo', () => {
   const avR = N({ id: 'r1', genericStatus: 2, created: '2026-10-11', clientEmployeeExpanded: { name: 'MARIA SOUZA' }, adviceDate: '2026-10-12' }, 'avisoRescisao');
   let l = E.avisosSemCalculo([avF, avR], h, rules);
   assert.deepEqual(l.map(x => x.tipo), ['rescisao', 'ferias']);   // a rescisão paga antes (12/10 + 10)
-  assert.equal(E.fmtDate(l[1].pagamento), '01/11/2026');           // 2 dias antes do início
+  assert.equal(E.fmtDate(l[1].pagamento), '30/10/2026');           // 2 dias antes do início (01/11 é domingo: recua para o dia útil, como nos prazos legais)
   assert.ok(l[1].enviarAte < l[1].pagamento);
   // com o cálculo criado, o aviso sai da lista
   const calc = N({ id: 'c1', genericStatus: 2, created: '2026-10-12', clientEmployeeExpanded: { name: 'João da Silva' } }, 'calculoFerias');
@@ -532,6 +532,148 @@ t('Calcular: férias com abono, adiantamento do 13º e faltas', () => {
   assert.ok(g.avisos.some(a => /24 dias/.test(a)));
   perto(linha(C.simularFerias({ salario: 3000, diasGozo: 30, emDobro: true }, T), /^Férias em dobro/), 6000, 'em dobro');
   assert.match(C.textoSimulacao(f, 'JOAO'), /Líquido estimado/);
+});
+
+/* ---------- Lote 4: rescisão, férias e fluxo de pedidos (dados inventados) ---------- */
+t('documento no pedido irmão: aviso de férias assinado → Cálculo de Férias (início, dias e abono só marcado ou com dias)', () => {
+  const base = 'AVISO DE FÉRIAS\nParticipamos que, conforme a lei, V.Sa. gozará suas férias.\nPeríodo de gozo: 03/11/2026 a 02/12/2026\n';
+  let r = E.analyzeText(base + '( X ) Abono pecuniário\nCiente: JOAO DA SILVA', rules, { employees: ['JOAO DA SILVA'], tipoAtual: 'calculoFerias' });
+  assert.equal(r.documento.id, 'avisoFeriasAssinado');
+  assert.equal(r.campos.inicioGozo.valor, '03/11/2026');
+  assert.equal(r.campos.diasGozo.valor, '30');            // pelo período (fim − início + 1)
+  assert.equal(r.campos.abono.valor, 'SIM');              // opção marcada
+  r = E.analyzeText(base + '( ) Abono pecuniário\nCiente', rules, { tipoAtual: 'calculoFerias' });
+  assert.equal(r.campos.abono, undefined);                // impresso sem marca: não vira SIM
+  r = E.analyzeText(base + 'Dias de abono: 0\nCiente', rules, { tipoAtual: 'calculoFerias' });
+  assert.equal(r.campos.abono.valor, 'NÃO');
+  r = E.analyzeText(base + 'Abono pecuniário de 10 dias\n20 (vinte) dias de férias\nCiente', rules, { tipoAtual: 'calculoFerias' });
+  assert.equal(r.campos.abono.valor, 'SIM'); assert.equal(r.campos.diasGozo.valor, '20');
+});
+
+t('documento no pedido irmão: pedido de demissão e aviso do empregador → data e tipo do aviso no Cálculo de Rescisão', () => {
+  const carta = 'PEDIDO DE DEMISSÃO\nEu, JORGE OLIVEIRA ALVES, venho por meio desta pedir demissão a partir de 05/10/2026.\nCumprirei o aviso prévio de 30 dias.';
+  let r = E.analyzeText(carta, rules, { employees: ['JORGE OLIVEIRA ALVES'], tipoAtual: 'calculoRescisao' });
+  assert.equal(r.campos.dataAvisoPrevio.valor, '05/10/2026');   // a chave dataAviso do documento vale no cálculo
+  assert.equal(r.campos.tipoAviso.valor, 'TRABALHADO');
+  assert.equal(r.campos.motivo.valor, 'Pedido de demissão SEM justa causa');
+  r = E.analyzeText('PEDIDO DE DEMISSÃO\nVenho por meio desta pedir demissão. Solicito a dispensa do cumprimento do aviso prévio.\n05/10/2026', rules, { tipoAtual: 'calculoRescisao' });
+  assert.equal(r.campos.tipoAviso.valor, 'AUSÊNCIA/DISPENSA');
+  const emp = 'AVISO PRÉVIO DO EMPREGADOR\nComunicamos que a partir de 01/10/2026 seu contrato será rescindido sem justa causa.\n( ) Aviso prévio trabalhado   (X) Aviso prévio indenizado';
+  r = E.analyzeText(emp, rules, { tipoAtual: 'calculoRescisao' });
+  assert.equal(r.documento.id, 'avisoEmpregador');
+  assert.equal(r.campos.tipoAviso.valor, 'INDENIZADO');   // impresso com as duas opções: vale a marcada
+  assert.equal(r.campos.dataAvisoPrevio.valor, '01/10/2026');
+  // o anexo "Aviso prévio ou pedido de demissão assinado" aceita os dois documentos
+  const chk = E.runChecks('calculoRescisao', { empregado: 'X', dataDemissao: '10/10/2026', motivo: 'Demitido SEM justa causa' }, [{ nome: 'aviso.pdf', documento: 'avisoEmpregador' }], rules, hoje);
+  assert.ok(chk.some(c => c.nivel === 'ok' && /Aviso prévio ou pedido de demissão assinado anexado/.test(c.mensagem)));
+  // regra geral de opções por palavra: a CAT antiga (tipoCatPalavras) continua valendo
+  assert.equal(E.opcaoPorPalavra('Tipo de CAT: trajeto', E.regrasDeOpcoes(rules.documentos.find(d => d.id === 'cat'))[0]), 'Trajeto');
+});
+
+t('motivo da rescisão pelas regras (motivoAuto): experiência, acordo, culpa recíproca, extinção e o tipo de aviso por expressão inteira', () => {
+  const emps = ['JOAO DA SILVA', 'RONALDO DE SOUZA'];
+  const P = (s, tipoAtual = 'calculoRescisao') => E.parseFreeText(s, rules, { employees: emps, tipoAtual, hoje });
+  let r = P('fim do contrato de experiência do João dia 20/10');
+  assert.equal(r.campos.motivo.valor, 'Término de contrato de trabalho por tempo determinado');
+  assert.equal(r.campos.tipoAviso, undefined); assert.equal(r.campos.dataAvisoPrevio, undefined);   // sem aviso prévio
+  assert.equal(P('o João pediu demissão no meio da experiência').campos.motivo.valor, 'Rescisão contrato experiência antecipado pelo empregado');
+  assert.equal(P('vamos demitir o Ronaldo antes do fim da experiência').campos.motivo.valor, 'Rescisão contrato experiência antecipado pelo empregador');
+  r = P('acordo com o João, último dia 20/10');
+  assert.equal(r.campos.motivo, undefined); assert.equal(r.dicas.length, 1);   // acordo: vazio com dica
+  assert.equal(P('culpa recíproca, saída dia 20/10').campos.motivo.valor, 'Culpa recíproca');
+  assert.equal(P('a empresa vai fechar, desligar o João dia 30/10').campos.motivo.valor, 'Extinção da empresa');
+  assert.equal(P('vamos dispensar o João dia 20/10').campos.tipoAviso, undefined);   // "dispensar" sozinho não é tipo de aviso
+  assert.equal(P('demitir o João dia 20/10, aviso dispensado').campos.tipoAviso.valor, 'AUSÊNCIA/DISPENSA');
+  assert.equal(P('demitir o João, aviso indenizado, dia 20/10').campos.tipoAviso.valor, 'INDENIZADO');
+  assert.equal(P('pediu demissão hoje', 'avisoRescisao').campos.avisoDadoPor.valor, 'EMPREGADO');
+  // modalidades do Calcular → motivo; aviso da modalidade → rádio do portal
+  assert.equal(E.motivoRescisao('', rules, { modalidade: 'fimContrato' }).valor, 'Término de contrato de trabalho por tempo determinado');
+  assert.equal(E.motivoRescisao('', rules, { modalidade: 'semJustaCausa' }).valor, 'Demitido SEM justa causa');
+  assert.ok(E.motivoRescisao('', rules, { modalidade: 'acordo' }).nenhum);
+  assert.equal(E.tipoAvisoDaModalidade('naoCumprido', rules), 'AUSÊNCIA/DISPENSA');
+  // documento: "término do contrato de experiência" no aviso do empregador
+  const doc = E.analyzeText('AVISO PRÉVIO DO EMPREGADOR\nComunicamos que o seu contrato de experiência termina em 20/10/2026 e não será renovado.', rules, { tipoAtual: 'calculoRescisao' });
+  assert.equal(doc.campos.motivo.valor, 'Término de contrato de trabalho por tempo determinado');
+  // a simulação vai para as observações sem salário
+  const sim = C.simularRescisao({ modalidade: 'semJustaCausa', aviso: 'indenizado', salario: '3000', admissao: '01/02/2024', desligamento: '15/10/2026', feriasVencidas: '1', adiantamento13: '500' }, rules.config.tabelas);
+  const lin = C.linhaSimulacao({ feriasVencidas: '1', adiantamento13: '500' }, sim);
+  assert.ok(/Dispensa sem justa causa/.test(lin) && /férias vencidas: 1 período/.test(lin) && /13º já adiantado/.test(lin) && !/R\$|3000|3\.000/.test(lin));
+});
+
+t('datas que dá para calcular: pagamento das férias, data do aviso, demissão pelo aviso e expectativa de conclusão', () => {
+  let s = E.sugeridos('avisoFerias', { inicioGozo: '03/11/2026', diasGozo: '30' }, rules, hoje);
+  assert.equal(s.dataPagamento.valor, '30/10/2026');      // 01/11 é domingo: recua para o dia útil anterior
+  assert.equal(s.dataAviso.valor, '09/10/2026');           // hoje
+  assert.ok(s.conclusao?.valor);                           // prazo do pedido (dias úteis do escritório)
+  assert.equal(E.derived('avisoFerias', { inicioGozo: '03/11/2026', diasGozo: '30' }, rules).pagamentoAte, '30/10/2026');   // o mesmo do Hoje
+  s = E.sugeridos('calculoRescisao', { dataAvisoPrevio: '01/10/2026', tipoAviso: 'TRABALHADO', motivo: 'Demitido SEM justa causa' }, rules, hoje);
+  assert.equal(s.dataDemissao.valor, '31/10/2026');        // fim do aviso (Súmula 380)
+  assert.equal(E.sugeridos('calculoRescisao', { dataAvisoPrevio: '01/10/2026', tipoAviso: 'INDENIZADO' }, rules, hoje).dataDemissao.valor, '01/10/2026');
+  assert.equal(E.sugeridos('calculoRescisao', { dataDemissao: '31/10/2026', tipoAviso: 'TRABALHADO' }, rules, hoje).dataAvisoPrevio.valor, '01/10/2026');
+  assert.equal(E.sugeridos('calculoRescisao', { dataDemissao: '31/10/2026' }, rules, hoje).dataAvisoPrevio, undefined);   // sem tipo de aviso, não sugere
+  assert.equal(E.sugeridos('calculoRescisao', { dataAvisoPrevio: '01/10/2026', tipoAviso: 'TRABALHADO', motivo: 'Término de contrato de trabalho por tempo determinado' }, rules, hoje).dataDemissao, undefined);
+  // a mesma conta do aviso trabalhado no Calcular e no formulário
+  assert.equal(E.fmtDate(E.inicioDoAviso(E.parseDate('31/10/2026'), 30)), '01/10/2026');
+  assert.equal(E.fmtDate(E.fimDoAviso(E.parseDate('01/10/2026'), 30)), '31/10/2026');
+  // "Programar" férias: 1ª data de início que vale (dia útil fora dos 2 dias antes de domingo/feriado)
+  assert.equal(E.fmtDate(E.primeiroInicioFerias(E.parseDate('06/11/2026'), rules)), '09/11/2026');   // sexta não pode, fim de semana não é dia útil
+  assert.equal(E.fmtDate(E.primeiroInicioFerias(E.parseDate('10/11/2026'), rules)), '10/11/2026');
+});
+
+t('pedir o cálculo com os dados do aviso e o passo seguinte depois do envio', () => {
+  const h = new Date(2026, 9, 15);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  const avF = N({ id: 'f1', identifier: 77, genericStatus: 2, created: '2026-10-01', clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, vacationStartDate: '2026-11-03', vacationDays: 20, bonusDays: 10 }, 'avisoFerias');
+  const v = E.valoresDoAviso(avF, rules);
+  assert.equal(v.tipo, 'calculoFerias'); assert.equal(v.fonte, 'do aviso nº 77');
+  assert.deepEqual(v.valores, { inicioGozo: '03/11/2026', diasGozo: '20', abono: 'SIM' });
+  const avR = N({ id: 'r1', genericStatus: 2, created: '2026-10-11', clientEmployeeExpanded: { name: 'MARIA SOUZA' }, adviceDate: '2026-10-12' }, 'avisoRescisao');
+  assert.deepEqual(E.valoresDoAviso(avR, rules).valores, { dataAvisoPrevio: '12/10/2026' });
+  assert.equal(E.avisoDoFuncionario([avF, avR], 'João da Silva', 'avisoFerias', h), avF);
+  assert.equal(E.avisoDoFuncionario([avF], 'MARIA SOUZA', 'avisoFerias', h), null);
+  const calc = N({ id: 'c1', genericStatus: 2, created: '2026-10-12', clientEmployeeExpanded: { name: 'JOAO DA SILVA' } }, 'calculoFerias');
+  assert.ok(E.temPedidoDe([calc], 'calculoFerias', 'joão da silva', new Date(2026, 9, 10)));
+  assert.ok(!E.temPedidoDe([calc], 'calculoFerias', 'joão da silva', new Date(2026, 9, 14)));
+  // depois de enviar: aviso de férias → cálculo de férias até (pagamento − prazo do escritório), com os dados do aviso
+  let p = E.proximosPassos('avisoFerias', { empregado: 'JOAO DA SILVA', inicioGozo: '03/11/2026', diasGozo: '20', diasAbono: '10' }, rules);
+  assert.equal(p.length, 1); assert.equal(p[0].tipo, 'calculoFerias');
+  assert.ok(/Cálculo de Férias de JOAO DA SILVA/.test(p[0].titulo));
+  assert.ok(p[0].ate < E.parseDate('30/10/2026'));
+  assert.deepEqual(p[0].valores, { empregado: 'JOAO DA SILVA', inicioGozo: '03/11/2026', diasGozo: '20', abono: 'SIM' });
+  assert.equal(E.proximosPassos('avisoFerias', { empregado: 'X', inicioGozo: '03/11/2026', diasGozo: '30' }, rules)[0].valores.abono, undefined);   // sem dias de abono, sem SIM
+  p = E.proximosPassos('avisoRescisao', { empregado: 'MARIA SOUZA', dataAviso: '12/10/2026', motivo: 'Demitido SEM justa causa' }, rules);
+  assert.deepEqual(p.map(x => x.tipo), ['calculoRescisao', null]);   // e o exame demissional como lembrete
+  assert.equal(p[0].valores.dataAvisoPrevio, '12/10/2026'); assert.equal(p[0].valores.motivo, 'Demitido SEM justa causa');
+  assert.ok(p[1].lembrete && /exame demissional/i.test(p[1].titulo));
+});
+
+t('experiência: três saídas, motivo certo no aviso de rescisão, tempo de casa, modelos e "Gerar pelo modelo"', () => {
+  const s = E.saidasExperiencia('2026-09-01', 45, rules);
+  assert.equal(E.fmtDate(s.fim), '15/10/2026'); assert.ok(s.podeProrrogar); assert.equal(s.diasProrrogacao, 45); assert.equal(E.fmtDate(s.fimProrrogacao), '29/11/2026');
+  assert.ok(!E.saidasExperiencia('2026-09-01', 90, rules).podeProrrogar);
+  assert.ok(rules.config.experienciaSaidas.revisarComEscritorio);
+  // aviso de rescisão dentro da experiência: sugere (não escolhe) o motivo de contrato de experiência
+  let m = E.sugestaoMotivoExperiencia({ dataAviso: '09/10/2026', motivo: 'Demitido SEM justa causa' }, '2026-09-01', rules, hoje);
+  assert.equal(m.valor, 'Rescisão contrato experiência antecipado pelo empregador');
+  m = E.sugestaoMotivoExperiencia({ dataDemissao: '15/10/2026' }, '2026-09-01', rules, hoje);
+  assert.ok(m.noFim); assert.equal(m.valor, 'Término de contrato de trabalho por tempo determinado');
+  assert.equal(E.sugestaoMotivoExperiencia({ avisoDadoPor: 'EMPREGADO' }, '2026-09-01', rules, hoje).valor, 'Rescisão contrato experiência antecipado pelo empregado');
+  assert.equal(E.sugestaoMotivoExperiencia({ dataAviso: '09/10/2026' }, '2024-01-10', rules, hoje), null);   // fora da experiência
+  assert.equal(E.anosCompletos(E.parseDate('10/10/2020'), hoje), 5);
+  // modelo já preenchido pelo pedido (tipo de aviso → frase da carta)
+  const md = rules.modelosDocumento.find(x => x.id === 'pedidoDemissao');
+  const vals = E.valoresDoModelo(md, { empregado: 'JOAO DA SILVA', tipoAviso: 'AUSÊNCIA/DISPENSA' });
+  assert.equal(vals.empregado, 'JOAO DA SILVA'); assert.ok(/dispensa do cumprimento/.test(vals.aviso));
+  // conferência: falta a carta de pedido de demissão → "Gerar pelo modelo"
+  let chk = E.runChecks('avisoRescisao', { empregado: 'X', motivo: 'Pedido de demissão SEM justa causa', avisoDadoPor: 'EMPREGADO', dataAviso: '09/10/2026' }, [], rules, hoje);
+  assert.equal(chk.find(c => c.grupo === 'Anexos').modelo, 'pedidoDemissao');
+  // abono de férias: o requerimento passa a ser pedido (com o modelo); sem abono, não
+  chk = E.runChecks('avisoFerias', { empregado: 'X', inicioGozo: '10/11/2026', diasGozo: '20', diasAbono: '10' }, [], rules, hoje);
+  const req = chk.find(c => /Requerimento de abono/.test(c.mensagem));
+  assert.equal(req.nivel, 'erro'); assert.equal(req.modelo, 'abonoFerias');
+  chk = E.runChecks('avisoFerias', { empregado: 'X', inicioGozo: '10/11/2026', diasGozo: '30', diasAbono: '0' }, [], rules, hoje);
+  assert.equal(chk.find(c => /Requerimento de abono/.test(c.mensagem)).nivel, 'info');
+  assert.equal(E.analyzeText('REQUERIMENTO DE ABONO PECUNIÁRIO DE FÉRIAS\nEu requeiro a conversão de 1/3 das férias do período aquisitivo', rules, {}).documento.id, 'requerimentoAbono');
 });
 
 t('Conversa (Control Onvio): lado de cada trâmite, o escritório pede algo?, anexo citado sem arquivo', () => {
@@ -790,6 +932,138 @@ t('regras: apelidos de opções, campos novos do cadastro e única opção', () 
   const u = rules.config.escolherUnicaOpcao;
   assert.equal(u.revisarComEscritorio, true); assert.ok(u.campos.includes('centroCusto') && u.campos.includes('sindicato'));
   for (const k of u.campos) assert.equal(E.resolveTipo(rules, 'cadastroEstagiario').campos[k]?.tipo, 'combo', k);
+});
+
+/* ---------- Lote 3: cadastro e documentos pessoais ---------- */
+t('cadastro: repetir, histórico e modelo levam só os campos da empresa', () => {
+  const pessoa = { nome: 'FULANA DE TESTE', cpf: '529.982.247-25', mae: 'MAE DE TESTE', cep: '29000-000', endereco: 'Rua Inventada', banco: '001 - Banco do Brasil', sexo: 'Feminino', racaCor: 'Parda', estadoCivil: 'Solteiro', municipioNascimento: 'Vitória', deficiencia: 'Não', possuiDependentes: 'Sim', agencia: '1234', dataAdmissao: '03/11/2026',
+    cargo: 'VENDEDOR', departamento: 'COMERCIAL', jornada: '44 HORAS', contratoExperiencia: '45', prorrogacao: '45', sindicato: 'SINDICATO X', assunto: 'Admissão', descricao: 'texto' };
+  const r = E.valoresReaproveitaveis('cadastroEmpregado', pessoa, rules);
+  assert.deepEqual(Object.keys(r).sort(), ['cargo', 'contratoExperiencia', 'departamento', 'jornada', 'prorrogacao', 'sindicato']);
+  // outros pedidos: como antes (menos assunto, descrição e CID)
+  assert.deepEqual(E.valoresReaproveitaveis('avisoFerias', { empregado: 'JOAO', inicioGozo: '10/11/2026', assunto: 'x', cid: 'M54' }, rules), { empregado: 'JOAO', inicioGozo: '10/11/2026' });
+  // histórico de um cadastro enviado: nome, datas da Agenda e campos da empresa
+  const h = E.valoresParaHistorico('cadastroEmpregado', pessoa, 'enviado', rules);
+  for (const k of ['cpf', 'mae', 'cep', 'endereco', 'banco', 'sexo', 'racaCor', 'agencia', 'descricao']) assert.equal(h[k], undefined, k);
+  assert.equal(h.nome, 'FULANA DE TESTE'); assert.equal(h.dataAdmissao, '03/11/2026'); assert.equal(h.cargo, 'VENDEDOR');
+  // começado e não enviado: guarda tudo (para continuar), menos CID/descrição
+  assert.equal(E.valoresParaHistorico('cadastroEmpregado', pessoa, 'preenchido', rules).cpf, '529.982.247-25');
+  assert.equal(rules.config.camposDaEmpresa.revisarComEscritorio, true);
+});
+
+t('cadastro: sugestões da última admissão, padrões da empresa e 45 + 45 (confiança baixa)', () => {
+  const R = { ...rules, empresas: { 'EXEMPLO': { padroes: { departamento: 'ADMINISTRATIVO', cadastroEmpregado: { jornada: '44 HORAS' }, avisoFerias: { diasGozo: '30' } } } } };
+  const historico = [{ status: 'enviado', tipo: 'cadastroEmpregado', empresa: 'EMPRESA EXEMPLO LTDA', valores: { nome: 'OUTRA PESSOA', cpf: '529.982.247-25', cargo: 'VENDEDOR', sindicato: 'SIND' } }];
+  const s = E.sugestoesCadastro('cadastroEmpregado', R, { empresa: 'EMPRESA EXEMPLO LTDA', historico });
+  assert.equal(s.cargo.valor, 'VENDEDOR'); assert.equal(s.cargo.fonte, 'como na última admissão');
+  assert.equal(s.departamento.valor, 'ADMINISTRATIVO'); assert.equal(s.jornada.valor, '44 HORAS'); assert.equal(s.diasGozo, undefined);
+  assert.equal(s.contratoExperiencia.valor, '45'); assert.equal(s.prorrogacao.valor, '45'); assert.ok(s.contratoExperiencia.conf < 0.6);
+  assert.equal(s.nome, undefined); assert.equal(s.cpf, undefined);
+  // outra empresa: sem a última admissão nem os padrões
+  const o = E.sugestoesCadastro('cadastroEmpregado', R, { empresa: 'OUTRA LTDA', historico });
+  assert.equal(o.cargo, undefined); assert.equal(o.departamento, undefined);
+  assert.deepEqual(E.sugestoesCadastro('afastamento', R, { empresa: 'EMPRESA EXEMPLO LTDA', historico }), {});
+});
+
+t('ficha e TCE: 45 + 45, naturalidade e SSP/UF, sim/não, endereço separado, vigência e curso', () => {
+  const ficha = 'FICHA DE ADMISSÃO\nNome completo: Fulana de Teste\nCPF: 529.982.247-25   Data de nascimento: 12/03/1995\nNaturalidade: São Paulo - SP\nRG: 1234567   Órgão expedidor: SSP/SP\nNome da mãe: Mãe de Teste\nEndereço: Rua das Flores, 123, Apto 45 - Jardim América\nCEP: 29000-000   Cidade: Vitória/ES\nContrato de experiência: 45 + 45 dias\nPrimeiro emprego: sim   PCD: não   Dependentes: 2';
+  const v = Object.fromEntries(Object.entries(E.analyzeText(ficha, rules, { tipoAtual: 'cadastroEmpregado' }).campos).map(([k, c]) => [k, c.valor]));
+  assert.equal(v.contratoExperiencia, '45'); assert.equal(v.prorrogacao, '45');
+  assert.equal(v.municipioNascimento, 'São Paulo'); assert.equal(v.ufNascimento, 'SP');
+  assert.equal(v.orgaoRg, 'SSP'); assert.equal(v.ufRg, 'SP');
+  assert.equal(v.endereco, 'Rua das Flores'); assert.equal(v.numero, '123'); assert.equal(v.complemento, 'Apto 45'); assert.equal(v.bairro, 'Jardim América');
+  assert.equal(v.municipio, 'Vitória'); assert.equal(v.uf, 'ES');
+  assert.equal(v.primeiroEmprego, 'Sim'); assert.equal(v.deficiencia, 'Não'); assert.equal(v.possuiDependentes, 'Sim');
+  // a conferência não acusa mais "no máximo 90"
+  assert.ok(!E.runChecks('cadastroEmpregado', v, [], rules).some(x => /90/.test(x.mensagem) && x.nivel === 'erro'));
+  const tce = E.analyzeText('TERMO DE COMPROMISSO DE ESTÁGIO\nEstagiário(a): Beltrano de Teste\nCurso: Administração\nNível: Superior\nVigência: 01/11/2026 a 31/10/2027\nBolsa auxílio: R$ 1.200,00', rules, { tipoAtual: 'cadastroEstagiario' }).campos;
+  assert.equal(tce.nome.valor, 'Beltrano de Teste'); assert.equal(tce.dataAdmissao.valor, '01/11/2026'); assert.equal(tce.nivel.valor, 'Superior');
+  assert.ok(!(rules.tipos.cadastroEstagiario.campos.nivel.sinonimos || []).includes('curso'));
+  assert.deepEqual(E.separarUf('Vitória/ES'), { antes: 'Vitória', uf: 'ES' }); assert.equal(E.separarUf('São Paulo'), null);
+  assert.deepEqual(E.diasExperiencia('45 + 45 dias'), [45, 45]); assert.equal(E.simNao('nenhum'), 'Não'); assert.equal(E.simNao('3'), 'Sim');
+});
+
+t('endereço só do comprovante e da ficha; comprovante em nome de outra pessoa gera aviso educativo', () => {
+  const rg = E.analyzeText('CARTEIRA DE IDENTIDADE\nREGISTRO GERAL\n12345678\nNATURALIDADE\nVITÓRIA - ES\nÓrgão expedidor: SSP/ES', rules, { tipoAtual: 'cadastroEmpregado' }).campos;
+  for (const k of ['cep', 'municipio', 'uf', 'endereco']) assert.equal(rg[k], undefined, k);
+  assert.equal(rg.municipioNascimento.valor, 'VITÓRIA'); assert.equal(rg.ufNascimento.valor, 'ES'); assert.equal(rg.ufRg.valor, 'ES');
+  const conta = 'CONTA DE ENERGIA - FATURA\nNome: JOSE DE TESTE SOUZA\nRUA DAS PALMEIRAS, 45, CASA 2 - CENTRO\nVILA VELHA - ES  CEP 29100-200\nVencimento: 10/11/2026  Consumo kWh 150';
+  const c = E.analyzeText(conta, rules, { tipoAtual: 'cadastroEmpregado', nome: 'Fulana de Teste' });
+  assert.equal(c.documento.id, 'comprovanteEndereco'); assert.equal(c.campos.nome, undefined);
+  assert.equal(c.campos.endereco.valor, 'RUA DAS PALMEIRAS'); assert.equal(c.campos.numero.valor, '45'); assert.equal(c.campos.complemento.valor, 'CASA 2'); assert.equal(c.campos.bairro.valor, 'CENTRO'); assert.equal(c.campos.municipio.valor, 'VILA VELHA'); assert.equal(c.campos.cep.valor, '29100-200');
+  assert.equal(c.titular, 'JOSE DE TESTE SOUZA'); assert.ok(c.avisos.some(a => a.id === 'comprovanteOutraPessoa' && /declaração/.test(a.mensagem)));
+  assert.equal(E.avisoComprovante('FULANA DE TESTE', 'Fulana de Teste', rules), null);
+});
+
+/* RG, CNH, CIN, CTPS digital e título com o rótulo em cima do valor (dados inventados, no layout desses documentos) */
+const RG_PDF = 'CARTEIRA DE IDENTIDADE\nREGISTRO GERAL           DATA DE EXPEDIÇÃO\n12.345.678-9             10/05/2015\nNOME\nFULANA DE TESTE SILVA\nFILIAÇÃO\nJOSÉ DE TESTE SILVA\nMARIA DE TESTE SILVA\nNATURALIDADE             DATA DE NASCIMENTO\nVITÓRIA - ES             12/03/1995\nDOC. ORIGEM\nC.NASC. LV 12 FL 34\nCPF\n529.982.247-25';
+const valores = (txt) => { const r = E.analyzeText(txt, rules, { tipoAtual: 'cadastroEmpregado' }); return { r, v: Object.fromEntries(Object.entries(r.campos).map(([k, c]) => [k, c.valor])) }; };
+t('leitor de documento pessoal: RG em PDF (colunas) e como sai do OCR (sem os espaços)', () => {
+  const ocr = RG_PDF.replace(/ {2,}/g, ' ').replace('VITÓRIA - ES', 'SÃO PAULO SP');
+  for (const [txt, cidade, uf] of [[RG_PDF, 'VITÓRIA', 'ES'], [ocr, 'SÃO PAULO', 'SP']]) {
+    const { r, v } = valores(txt);
+    assert.equal(r.documento.id, 'identidade'); assert.equal(r.layout, 'rg');
+    assert.equal(v.nome, 'FULANA DE TESTE SILVA'); assert.equal(v.rg, '12.345.678-9'); assert.equal(v.dataRg, '10/05/2015');
+    assert.equal(v.nascimento, '12/03/1995'); assert.equal(v.municipioNascimento, cidade); assert.equal(v.ufNascimento, uf); assert.equal(v.cpf, '529.982.247-25');
+    // filiação: as duas linhas; a mãe fica para confirmar
+    assert.deepEqual(r.filiacao, ['JOSÉ DE TESTE SILVA', 'MARIA DE TESTE SILVA']); assert.equal(v.mae, 'MARIA DE TESTE SILVA'); assert.ok(r.campos.mae.conf < 0.6);
+    assert.ok(r.avisos.some(a => a.id === 'filiacao'));
+    assert.match(r.campos.nome.fonte, /NOME/); assert.match(r.campos.dataRg.fonte, /EXPEDIÇÃO/);
+    for (const k of ['cep', 'municipio', 'uf']) assert.equal(v[k], undefined, k);
+  }
+});
+t('leitor de documento pessoal: CNH antiga e nova (campos compostos), CIN, CTPS digital e título', () => {
+  const { r: cnh, v: c } = valores('CARTEIRA NACIONAL DE HABILITAÇÃO\nNOME\nCICLANO DE TESTE PEREIRA\nDOC. IDENTIDADE/ÓRG. EMISSOR/UF\n1234567 SSP ES\nCPF DATA NASCIMENTO\n111.444.777-35 20/07/1988\nFILIAÇÃO\nPEDRO DE TESTE PEREIRA\nANA DE TESTE PEREIRA\nPERMISSÃO ACC CAT. HAB.\nAB\nNº REGISTRO VALIDADE 1ª HABILITAÇÃO\n01234567890 15/08/2030 20/01/2010');
+  assert.equal(cnh.layout, 'cnh');
+  assert.deepEqual([c.rg, c.orgaoRg, c.ufRg], ['1234567', 'SSP', 'ES']);
+  assert.deepEqual([c.cpf, c.nascimento, c.cnhCategoria, c.cnh, c.cnhValidade, c.mae], ['111.444.777-35', '20/07/1988', 'AB', '01234567890', '15/08/2030', 'ANA DE TESTE PEREIRA']);
+  assert.equal(c.dataRg, undefined);   // 1ª habilitação não é a emissão do RG
+  const { v: n } = valores('CARTEIRA NACIONAL DE HABILITAÇÃO\n2 e 1 NOME E SOBRENOME\nCICLANO DE TESTE PEREIRA\n4a DATA, LOCAL E UF DE NASCIMENTO\n20/07/1988, VILA VELHA, ES\n5 Nº REGISTRO 9 CAT. HAB.\n01234567890 B\n4b VALIDADE\n15/08/2030');
+  assert.deepEqual([n.nome, n.nascimento, n.municipioNascimento, n.ufNascimento, n.cnh, n.cnhCategoria, n.cnhValidade], ['CICLANO DE TESTE PEREIRA', '20/07/1988', 'VILA VELHA', 'ES', '01234567890', 'B', '15/08/2030']);
+  const { r: cin, v: i } = valores('CARTEIRA DE IDENTIDADE NACIONAL\nNOME\nBELTRANA DE TESTE COSTA\nDATA DE NASCIMENTO SEXO\n05/11/1999 F\nFILIAÇÃO\nJOANA DE TESTE COSTA\nCARLOS DE TESTE COSTA\nNATURALIDADE\nCARIACICA/ES\nCPF\n529.982.247-25');
+  assert.equal(cin.layout, 'cin'); assert.equal(i.rg, '52998224725'); assert.equal(i.mae, 'JOANA DE TESTE COSTA'); assert.equal(i.sexo, 'Feminino'); assert.equal(i.municipioNascimento, 'CARIACICA');
+  const { v: ct } = valores('Carteira de Trabalho Digital\nNome Civil\nBELTRANA DE TESTE COSTA\nCPF\n529.982.247-25\nData de Nascimento\n05/11/1999\nNacionalidade\nBrasileira');
+  assert.equal(ct.nome, 'BELTRANA DE TESTE COSTA'); assert.equal(ct.nascimento, '05/11/1999');
+  const { r: tit, v: ti } = valores('JUSTIÇA ELEITORAL\nTÍTULO ELEITORAL\nNOME DO ELEITOR\nFULANA DE TESTE SILVA\nINSCRIÇÃO ZONA SEÇÃO\n1234 5678 9012 0123 0456\nMUNICÍPIO/UF\nVITÓRIA/ES\nDATA DE EMISSÃO\n10/05/2015');
+  assert.equal(tit.documento.id, 'titulo'); assert.deepEqual([ti.titulo, ti.zona, ti.secao, ti.municipioNascimento, ti.dataRg], ['123456789012', '0123', '0456', undefined, undefined]);
+  const { v: t2 } = valores('JUSTIÇA ELEITORAL - TÍTULO DE ELEITOR\nINSCRIÇÃO 1234 5678 9012 ZONA 123 SEÇÃO 0456');
+  assert.deepEqual([t2.titulo, t2.zona, t2.secao], ['123456789012', '123', '0456']);
+});
+
+t('cadastro pelo texto: ficha colada sem "admissão" e frases soltas (data pelo papel, salário sem R$, 45+45, cargo, CPF, nome)', () => {
+  const P = (x, emp = []) => E.parseFreeText(x, rules, { hoje, employees: emp });
+  const ficha = P('Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste\nData de nascimento: 12/03/1995\nNaturalidade: Vitória/ES');
+  assert.equal(ficha.tipoSugerido, 'cadastroEmpregado');
+  assert.equal(ficha.campos.mae.valor, 'Mãe de Teste'); assert.equal(ficha.campos.nascimento.valor, '12/03/1995'); assert.equal(ficha.campos.ufNascimento.valor, 'ES');
+  assert.equal(ficha.campos.municipio, undefined);   // a naturalidade não vira endereço
+  assert.equal(E.suggestTipoByText('Nome: Fulana de Teste\nCPF: 529.982.247-25\nNome da mãe: Mãe de Teste', rules, null).tipo, 'cadastroEmpregado');
+  const f = P('vamos admitir a Fulana de Teste, CPF 529.982.247-25, nascida em 12/03/1995, começa dia 03/11, salário 2500, experiência 45+45, cargo vendedora');
+  const v = Object.fromEntries(Object.entries(f.campos).map(([k, c]) => [k, c.valor]));
+  assert.deepEqual(v, { nome: 'Fulana de Teste', cpf: '529.982.247-25', nascimento: '12/03/1995', dataAdmissao: '03/11/2026', salario: '2500', contratoExperiencia: '45', prorrogacao: '45', cargo: 'vendedora' });
+  assert.match(f.campos.nascimento.fonte, /nascida em 12\/03\/1995/);
+  // sem palavra antes, uma data antiga não vira admissão; "nasceu em 12/03/95" é 1995
+  const g = P('contratar o pedro de teste, 12/03/1995, entra 10/11/2026 com salário de R$ 1.800,00');
+  assert.equal(g.campos.dataAdmissao.valor, '10/11/2026'); assert.equal(g.campos.nascimento, undefined); assert.equal(g.campos.nome.valor, 'Pedro de Teste');
+  assert.equal(P('admitir a joana de teste, nasceu em 12/03/95').campos.nascimento.valor, '12/03/1995');
+  // CPF digitado inválido entra para a conferência acusar; funcionário da lista não vira nome
+  assert.equal(P('admitir a Fulana de Teste, CPF 111.111.111-12').campos.cpf.valor, '111.111.111-12');
+  assert.equal(P('vamos admitir a Maria Souza', ['MARIA SOUZA']).campos.nome, undefined);
+  // o texto nunca vai para a descrição
+  assert.equal(f.campos.descricao, undefined); assert.equal(f.campos.observacoes, undefined);
+});
+
+t('estagiário e contribuinte: categorias do eSocial/SEFIP pelas regras e tipo pelo texto', () => {
+  const est = E.resolveTipo(rules, 'cadastroEstagiario').campos.categoriaEsocial;
+  assert.match(est.padrao, /Estagi/); assert.equal(est.revisarComEscritorio, true);
+  const P = (x) => E.parseFreeText(x, rules, { hoje });
+  const s = P('novo sócio com pró-labore de 5000 a partir de 01/11');
+  assert.equal(s.tipoSugerido, 'cadastroContribuinte'); assert.equal(s.campos.tipoContribuinte.valor, 'Sócio'); assert.equal(s.campos.salario.valor, '5000');
+  const a = P('cadastro de autônomo RPA, CPF 529.982.247-25');
+  assert.equal(a.campos.tipoContribuinte.valor, 'Autônomo'); assert.equal(a.campos.nome, undefined);
+  const t = rules.tipos.cadastroContribuinte;
+  const cs = E.activeConditionals(t, { tipoContribuinte: 'Sócio' }); assert.match(cs[0].valores.categoriaEsocial, /^721/); assert.match(cs[0].valores.categoriaSefip, /^11/);
+  const ca = E.activeConditionals(t, { tipoContribuinte: 'Autônomo' }); assert.match(ca[0].valores.categoriaEsocial, /^701/); assert.match(ca[0].valores.categoriaSefip, /^13/);
+  assert.ok(t.condicionais.every(c => c.revisarComEscritorio));
 });
 
 /* ---- Empresa do pedido (2.7): quais empresas a caixa "Para qual empresa?" oferece ---- */

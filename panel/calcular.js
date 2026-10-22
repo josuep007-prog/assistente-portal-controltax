@@ -98,12 +98,19 @@ export function renderSimulacao(el, qual, ctx) {
   });
   const pedir = (r) => {
     const quem = V.quem && emps.some(e => e.nome === V.quem) ? V.quem : '';
+    // uma linha da simulação vai nas observações (sem salário nem valores)
+    const observacoes = C.linhaSimulacao(V, r);
     if (qual === 'ferias') {
-      ctx.pedir('calculoFerias', { empregado: quem, valores: { inicioGozo: V.inicio, diasGozo: V.diasGozo, abono: +V.diasAbono ? 'SIM' : 'NÃO', adiantar13: V.adiantar13 ? 'SIM' : 'NÃO' } });
+      ctx.pedir('calculoFerias', { empregado: quem, observacoes, valores: { inicioGozo: V.inicio, diasGozo: V.diasGozo, abono: +V.diasAbono ? 'SIM' : 'NÃO', adiantar13: V.adiantar13 ? 'SIM' : 'NÃO' } });
     } else {
       const fim = E.parseDate(V.desligamento);
-      const avisoEm = r.tipoAviso === 'trabalhado' && fim ? E.fmtDate(E.addDays(fim, -29)) : V.desligamento;
-      ctx.pedir('calculoRescisao', { empregado: quem, valores: { dataDemissao: V.desligamento, ...(r.tipoAviso ? { dataAvisoPrevio: avisoEm } : {}), tipoAviso: r.tipoAviso === 'trabalhado' ? 'TRABALHADO' : r.tipoAviso === 'indenizado' ? 'INDENIZADO' : 'AUSÊNCIA/DISPENSA' } });
+      // a mesma conta do aviso trabalhado do formulário (config.avisoPrevioContagem)
+      const avisoEm = r.tipoAviso === 'trabalhado' && fim ? E.fmtDate(E.inicioDoAviso(fim, 30)) : V.desligamento;
+      // a modalidade leva o motivo do portal (config.motivoAuto); sem um motivo certo (acordo), fica vazio com a dica
+      const mot = E.motivoRescisao('', S.rules, { modalidade: V.modalidade });
+      if (mot?.dica) ctx.toast(mot.dica);
+      const tipoAviso = E.tipoAvisoDaModalidade(r.tipoAviso, S.rules);
+      ctx.pedir('calculoRescisao', { empregado: quem, observacoes, valores: { dataDemissao: V.desligamento, ...(mot?.valor ? { motivo: mot.valor } : {}), ...(r.tipoAviso ? { dataAvisoPrevio: avisoEm } : {}), ...(tipoAviso ? { tipoAviso } : {}) } });
     }
   };
   el.querySelectorAll('[data-k]').forEach(i => {
