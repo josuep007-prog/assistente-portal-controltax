@@ -1159,6 +1159,9 @@ export function montarPlataforma(A) {
       A.gerarTextos(tipo);
       // o cliente pode ter saído do formulário enquanto isso: preencher sem formulário abriria um pedido sozinho
       if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) await A.fillPortal(tipo, { daPlataforma: true });
+      // o foco pode ter voltado ao campo do funcionário (e com foco num campo o formulário não é redesenhado): redesenha
+      if (document.activeElement?.closest?.('#fields')) document.activeElement.blur();
+      if (S.ctx.tipo === tipo) A.renderFieldsOnly();
       toast(`Pedido movido para ${apelidoDe(alvo)}. Escolha o funcionário desta empresa.`);
     } finally { document.body.classList.remove('trocando-empresa'); }
   };

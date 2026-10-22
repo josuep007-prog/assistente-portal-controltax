@@ -17,6 +17,13 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.9 — o leitor não preenche errado
+
+- **Com dúvida, não preenche:** valor lido com confiança abaixo de `config.leitor` (0,6) aparece como "Li no documento… [Usar]" e não vai ao portal, nem ao assunto ou à descrição. Foto com OCR ruim vira só sugestões (abaixo de 75) ou pede outra foto (abaixo de 45).
+- **Endereço por blocos** (`config.leitorEndereco`): o bloco do titular ganha; o da empresa emissora, clínica ou empregadora perde. **CPF** só junto do rótulo. **Funcionário** acima de 0,85 só com o nome inteiro. **Sinônimos** genéricos só nos documentos certos (`campos.*.sinonimosSoEm`). **Formato** conferido antes de enviar (`valoresAceitos`).
+- **Uma pessoa por pedido:** cada valor guarda o arquivo de origem; documento de outra pessoa não se mistura.
+- Medir: `python tools/gerar-corpus-leitor.py <pasta>` e `python tools/auditar-leitor.py <pasta> [--cache]`.
+
 ## Novidades da 2.8 — preencher mais sozinho (parte 2)
 
 - **Cadastro:** `config.camposDaEmpresa` (Repetir/histórico/modelos sem dados pessoais), sugestões da última admissão e `empresas.<trecho>.padroes`, `config.experienciaSugerida`, ficha colada e `config.textoLivre.cadastro`, leitor de documento pessoal (`config.leitorPessoal`, `leitor: "pessoal"`), categorias do estagiário/contribuinte (revisar com o escritório).

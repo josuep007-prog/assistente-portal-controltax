@@ -2689,7 +2689,7 @@ const P = montarPlataforma({
   setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
   renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
   prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado, copiarDiagnostico,
-  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar
+  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar, renderFieldsOnly
 });
 
 /* =================== Início =================== */
