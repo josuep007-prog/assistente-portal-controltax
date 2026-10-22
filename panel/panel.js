@@ -558,7 +558,7 @@ async function handleVarios(files, origem) {
     const W = w(tipoForm);
     for (const it of itens) {
       juntarArquivos(W, [it]);
-      if (it.texto) it.analise = E.analyzeText(it.texto, S.rules, { employees: W.empregados, tipoAtual: tipoForm });
+      if (it.texto) it.analise = analisarItem(it, tipoForm, W.empregados);
       applyAnalysis(tipoForm, it, { preencher: false });
     }
     if (S.view !== 'preencher') setView('preencher'); else render();
@@ -625,7 +625,7 @@ async function abrirPedido(i) {
   for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo); k++) await esperar(200);
   await loadEmpregados(p.tipo);
   for (const it of p.itens) {
-    if (it.texto) it.analise = E.analyzeText(it.texto, S.rules, { employees: W.empregados, tipoAtual: p.tipo });
+    if (it.texto) it.analise = analisarItem(it, p.tipo, W.empregados);
     applyAnalysis(p.tipo, it, { preencher: false });
   }
   // pedido que veio do texto livre (vários pedidos numa frase, ou aviso e cálculo): os campos entendidos
@@ -707,7 +707,7 @@ async function processItem(item, tipoAtual) {
     item.texto = r.texto; item.metodo = r.metodo; item.tabela = r.tabela; item.confianca = r.confianca ?? null; item.rotacao = r.rotacao || 0;
     if (tipoAtual && !w(tipoAtual).empregados.length) await loadEmpregados(tipoAtual);
     const empregados = tipoAtual ? w(tipoAtual).empregados : [];
-    item.analise = E.analyzeText(r.texto || item.nome, S.rules, { employees: empregados, tipoAtual });
+    item.analise = analisarItem(item, tipoAtual, empregados);
     if (r.tabela && (tipoAtual === 'rubricas' || !tipoAtual)) {
       item.analise.tipoSugerido = tipoAtual || 'rubricas';
       item.analise.documento = { id: 'planilha', nome: 'Planilha de lançamentos' };
@@ -763,7 +763,7 @@ function renderSugestao() {
     // Reanalisa com a lista de funcionários desta tela
     setTimeout(async () => {
       await loadEmpregados(tipo);
-      for (const x of todos) { if (x.texto) x.analise = E.analyzeText(x.texto, S.rules, { employees: w(tipo).empregados, tipoAtual: tipo }); applyAnalysis(tipo, x, { preencher: false }); }
+      for (const x of todos) { if (x.texto) x.analise = analisarItem(x, tipo, w(tipo).empregados); applyAnalysis(tipo, x, { preencher: false }); }
       if (S.prefs.preencherAoLer) fillPortal(tipo, { silencioso: true });
     }, 900);
   });
@@ -917,6 +917,30 @@ async function abrirDoTexto(el, s, destino) {
   aplicarCampos(destino, campos, 'sua descrição');
 }
 
+/* P1 — precisão acima de tudo: valor lido de documento abaixo do limiar das regras (config.leitor.confiancaMinimaPortal)
+   é só sugestão: não vai ao portal, não entra no assunto/descrição nem conta como preenchido até o cliente tocar em "Usar". */
+const ehSugestao = (v) => !!(v && v.origem && !v.confirmado && v.valor != null && v.valor !== '' && (v.conf ?? 1) < E.limiarPortal(S.rules));
+/** Lê o texto de um arquivo com o tipo e os funcionários (e a qualidade do OCR: leitura fraca vira sugestão). */
+const analisarItem = (item, tipo, empregados = []) => E.analyzeText(item.texto || item.nome || '', S.rules, { employees: empregados, tipoAtual: tipo, metodo: item.metodo, confiancaOcr: item.confianca });
+/** Usar uma sugestão do documento: vira valor confirmado (vai ao portal e entra no texto). */
+async function usarSugestao(tipo, k) {
+  const W = w(tipo); const v = W.valores[k]; if (!v?.valor) return;
+  W.valores[k] = { ...v, conf: Math.max(v.conf ?? 0, 0.9), confirmado: true };
+  if (S.modo === 'plataforma' && !campoDef(tipo, k)?.somenteAssistente) (W.fonteVerdade || (W.fonteVerdade = {}))[k] = 'plataforma';
+  gerarTextos(tipo);
+  if (S.view === 'preencher') { renderFieldsOnly(); updateChecks(); }
+  if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) {
+    if (campoDef(tipo, k)?.somenteAssistente) atualizarTextoNoPortal(tipo);
+    else await fillPortal(tipo, { so: [k], daPlataforma: S.modo === 'plataforma' });
+  }
+}
+/** Linha "Li no documento: … [Usar]" de um campo com sugestão (formato inválido: só o aviso, sem Usar). */
+function htmlSugestao(k, v) {
+  const M = S.rules.mensagens || {};
+  if (v.confira === 'formato') return `<div class="sug-doc"><small>Li no documento “${esc(v.valor)}”, mas não parece válido — confira e escreva no campo.</small></div>`;
+  return `<div class="sug-doc"><small title="${esc(v.fonte || '')}">${esc(M.sugestaoLeitura || 'Li no documento, mas com dúvida — confira e toque em Usar.')} <b>${esc(v.valor)}</b></small><button type="button" class="btn btn-sm" data-usar-k="${esc(k)}">Usar</button></div>`;
+}
+
 /* Documentos neutros (servem a vários pedidos) e famílias de pedidos compatíveis */
 const DOCS_NEUTROS = ['certidao', 'aso', 'identidade', 'cpf', 'comprovanteEndereco', 'ctps', 'seguro', 'bancario'];
 const FAMILIAS = [['avisoFerias', 'calculoFerias'], ['avisoRescisao', 'calculoRescisao'], ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte']];
@@ -932,14 +956,17 @@ function applyAnalysis(tipo, item, opts = {}) {
   if (item.removido) return;   // o cliente tirou o arquivo da lista enquanto a leitura corria
   const W = w(tipo); const t = tipoDef(tipo);
   item.outroTipo = docDeOutroTipo(item, tipo);
-  const campos = item.outroTipo ? {} : (item.analise?.campos || {});
+  // P5 — um documento, uma pessoa: documento de outra pessoa (nome/CPF diferente) não se mistura neste pedido
+  item.outraPessoa = item.outroTipo ? null : outraPessoaNoPedido(W, item);
+  const campos = item.outroTipo || item.outraPessoa ? {} : (item.analise?.campos || {});
   for (const [k, c] of Object.entries(campos)) {
     if (!t.campos[k] || W.editados.has(k)) continue;
     const cur = W.valores[k];
-    if (!cur || (cur.conf ?? 0) <= c.conf) W.valores[k] = { valor: c.valor, conf: c.conf, fonte: c.fonte };
+    // cada valor guarda o arquivo de onde veio (origem); o que já foi confirmado pelo cliente não é trocado por uma leitura
+    if (!cur || (!cur.confirmado && (cur.conf ?? 0) <= c.conf)) W.valores[k] = { valor: c.valor, conf: c.conf, fonte: c.fonte, origem: item.id, origemNome: item.nome, ...(c.confira ? { confira: c.confira } : {}) };
   }
   // nome lido no documento e homônimos (o cliente escolhe)
-  if (!item.outroTipo && t.campos.empregado) {
+  if (!item.outroTipo && !item.outraPessoa && t.campos.empregado) {
     if (item.analise?.paciente) W.pacienteLido = item.analise.paciente;
     if (item.analise?.candidatos?.length && !W.valores.empregado?.valor) W.candidatos = item.analise.candidatos;
   }
@@ -953,7 +980,21 @@ function applyAnalysis(tipo, item, opts = {}) {
   // sugere outro tipo
   gerarTextos(tipo);
   if (S.view === 'preencher') render();
-  if (opts.preencher !== false && S.prefs.preencherAoLer && !item.outroTipo && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo && item.status !== 'lendo') fillPortal(tipo, { silencioso: true });
+  if (opts.preencher !== false && S.prefs.preencherAoLer && !item.outroTipo && !item.outraPessoa && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo && item.status !== 'lendo') fillPortal(tipo, { silencioso: true });
+}
+/** A pessoa deste documento é outra que a do pedido (lida de outro arquivo ou escrita pelo cliente)? Devolve o nome dela, ou null. */
+function outraPessoaNoPedido(W, item) {
+  const p = item.analise?.pessoa; if (!p) return null;
+  const doPedido = E.pessoaDaAnalise({ campos: Object.fromEntries(Object.entries(W.valores).filter(([, v]) => v?.origem !== item.id && !ehSugestao(v)).map(([k, v]) => [k, { ...v, conf: v.conf ?? 1 }])) });
+  return E.mesmaPessoa(doPedido, p) === false ? (p.nome || E.fmtCPF(p.cpf)) : null;
+}
+/** "Usar este no lugar": tira os valores lidos dos outros arquivos e usa os deste (o que o cliente escreveu fica). */
+function usarDocumentoNoLugar(tipo, item) {
+  const W = w(tipo);
+  for (const [k, v] of Object.entries(W.valores)) if (v?.origem && v.origem !== item.id && !W.editados.has(k)) delete W.valores[k];
+  for (const a of W.arquivos) if (a !== item && a.analise?.pessoa && E.mesmaPessoa(a.analise.pessoa, item.analise?.pessoa) === false) a.removido = true;
+  item.outraPessoa = null;
+  applyAnalysis(tipo, item);
 }
 
 function tabelaRubricasTexto(rows) {
@@ -977,7 +1018,7 @@ function portalValores(tipo) {
 }
 function valoresAssistente(tipo) {
   const W = w(tipo); const out = {};
-  for (const [k, v] of Object.entries(W.valores)) if (v?.valor != null && v.valor !== '') out[k] = v.valor;
+  for (const [k, v] of Object.entries(W.valores)) if (v?.valor != null && v.valor !== '' && !ehSugestao(v)) out[k] = v.valor;
   return out;
 }
 /** Para conferir: o que está no portal vale mais (o cliente pode ter mudado lá). */
@@ -1192,7 +1233,7 @@ function renderFilesOnly() {
       const W2 = w(destino); W2.arquivos.push(outro); W.arquivos = W.arquivos.filter(a => a !== outro);
       outro.outroTipo = null;
       await openTipo(destino, { manter: true });
-      setTimeout(async () => { await loadEmpregados(destino); outro.analise = E.analyzeText(outro.texto || '', S.rules, { employees: w(destino).empregados, tipoAtual: destino }); applyAnalysis(destino, outro); }, 900);
+      setTimeout(async () => { await loadEmpregados(destino); outro.analise = analisarItem(outro, destino, w(destino).empregados); applyAnalysis(destino, outro); }, 900);
     });
   }
 }
