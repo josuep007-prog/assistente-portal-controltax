@@ -976,7 +976,8 @@
     } catch (e) { return { erro: String(e.message || e), itens: [] }; }
   }
   /** Datas de um aviso (detalhe da solicitação: {lista}/{id}?expand=all). Só os campos de data voltam ao painel; nada é guardado. */
-  const CAMPOS_AVISO = ['vacationStartDate', 'paymentDate', 'adviceDate', 'noticeDate', 'vacationDays', 'resignationDate', 'priorNoticeAdviceDate', 'admissionDate', 'startDate', 'leaveDate', 'effectiveDate'];
+  // bonusDays e priorNoticeDate: para "Pedir o cálculo" com os dados do aviso (a calibrar no Onvio real)
+  const CAMPOS_AVISO = ['vacationStartDate', 'paymentDate', 'adviceDate', 'noticeDate', 'priorNoticeDate', 'vacationDays', 'bonusDays', 'resignationDate', 'priorNoticeAdviceDate', 'admissionDate', 'startDate', 'leaveDate', 'effectiveDate'];
   /** A solicitação completa ({lista}/{id}?expand=all): lida na hora para a aba Dados do detalhe; nada é guardado. */
   async function fetchDetalhe(lista, id) {
     if (!lista || !id) return { erro: 'sem-id' };

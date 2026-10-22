@@ -238,15 +238,26 @@ export function analyzeText(text, rules, ctx = {}) {
     if (leitor.medico) put('medico', leitor.medico, 0.7, docRule?.nome || 'documento');
   } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
-  if (docRule?.tipoCatPalavras) {
-    // a CAT imprime todas as opções ("( ) Típico ( ) Trajeto"): só vale a marcada
-    const T = norm(text);
-    const candidatos = Object.entries(docRule.tipoCatPalavras).filter(([, words]) => words.some(w => T.includes(norm(w))));
-    if (candidatos.length === 1) put('tipoCat', candidatos[0][0], 0.6, docRule.nome);
-    else if (candidatos.length > 1) {
-      const marcada = opcaoMarcada(text, candidatos.flatMap(([, words]) => words));
-      const dono = marcada && candidatos.find(([, words]) => words.some(w => norm(w) === norm(marcada)));
-      if (dono) put('tipoCat', dono[0], 0.6, docRule.nome);
+  // opções escolhidas por palavras do documento (documentos[].opcoesPorPalavra; tipoCatPalavras é o formato antigo da CAT)
+  for (const o of regrasDeOpcoes(docRule)) { const v = opcaoPorPalavra(text, o); if (v) put(o.campo, v, 0.6, docRule.nome); }
+  // motivo da rescisão pela tabela das regras (config.motivoAuto): "término do contrato de experiência" no documento
+  const avisosMotivo = [];
+  if (tipo?.campos?.motivo && rules.config?.motivoAuto && docRule) {
+    const m = motivoRescisao(text, rules, { docId: docRule.id, soAuto: true });
+    if (m?.nenhum) { delete campos.motivo; if (m.dica) avisosMotivo.push({ nivel: 'atencao', id: 'motivo', mensagem: m.dica }); }
+    else if (m?.valor) { put('motivo', m.valor, 0.7, docRule.nome); if (m.dadoPor) put('avisoDadoPor', m.dadoPor, 0.7, docRule.nome); }
+  }
+  // campos do pedido irmão: "dataAviso" lido vale como "Data do aviso prévio" no cálculo (campos[].tambem);
+  // dias de abono → abono SIM/NÃO (campos[].porNumero); fim do gozo → dias de gozo
+  if (tipo) {
+    for (const [k, def] of Object.entries(tipo.campos)) {
+      if (!campos[k]) for (const a of def.tambem || []) if (campos[a]) { campos[k] = { ...campos[a] }; break; }
+      const pn = def.porNumero;
+      if (pn && campos[pn.campo]) { const n = parseInt(onlyDigits(campos[pn.campo].valor), 10); if (!isNaN(n)) put(k, n > 0 ? pn.maiorQueZero : pn.zero, 0.65, campos[pn.campo].fonte); }
+    }
+    if (tipo.campos.diasGozo && !campos.diasGozo && campos.inicioGozo && campos.fimGozo) {
+      const a = parseDate(campos.inicioGozo.valor), b = parseDate(campos.fimGozo.valor);
+      if (a && b && b >= a && diffDays(a, b) < 31) put('diasGozo', String(diffDays(a, b) + 1), 0.65, campos.fimGozo.fonte);
     }
   }
   // endereço: só de documentos que podem trazê-lo (documentos[].endereco: comprovante e ficha) ou de um texto sem documento;
@@ -306,6 +317,8 @@ export function analyzeText(text, rules, ctx = {}) {
     const m = String(text).match(/(?:nome|paciente|portador|titular)[ \t]*[:\-]?[ \t]*([A-ZÀ-Ú][A-ZÀ-Ú \t]{8,60})(?=\n|\s{2,}|$)/);
     if (m) put('nome', m[1].trim(), 0.5, 'nome em maiúsculas');
   }
+  // motivo sem aviso prévio (término da experiência, justa causa): o cálculo não leva data nem tipo de aviso
+  if (tipo?.campos?.tipoAviso && campos.motivo && !temAviso({ motivo: campos.motivo.valor }, rules)) { delete campos.tipoAviso; delete campos.dataAvisoPrevio; }
   // comprovante em nome de outra pessoa (a tela compara com o nome do cadastro) e filiação para confirmar
   const titular = doc?.id === 'comprovanteEndereco' ? titularComprovante(text) : null;
   const avComp = avisoComprovante(titular, ctx.nome, rules);
@@ -314,7 +327,7 @@ export function analyzeText(text, rules, ctx = {}) {
     const outro = pessoal.filiacao.find(x => x !== campos.mae.valor) || '';
     avisosExtra.push({ nivel: 'atencao', id: 'filiacao', mensagem: (rules.mensagens?.filiacaoConfira || 'Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira.').replaceAll('{mae}', campos.mae.valor).replaceAll('{outro}', outro) });
   }
-  const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra];
+  const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra, ...avisosMotivo];
   return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos, titular, filiacao: pessoal?.filiacao || null, layout: pessoal?.layout || null };
 }
 
@@ -333,6 +346,8 @@ const matchCond = (cond, values) => {
   const v = norm(values[cond.campo]);
   if (cond.contem) return cond.contem.some(c => v.includes(norm(c)));
   if (cond.igual != null) return v === norm(cond.igual);
+  // número maior que (ex.: dias de abono > 0); vem antes de "preenchido", que as versões antigas usam no lugar
+  if (cond.maiorQue != null) { const n = parseFloat(String(values[cond.campo] ?? '').replace(',', '.')); return !isNaN(n) && n > +cond.maiorQue; }
   if (cond.preenchido) return !!v;
   return true;
 };
@@ -340,6 +355,10 @@ const matchCond = (cond, values) => {
 export function activeConditionals(tipo, values) {
   return (tipo.condicionais || []).filter(c => matchCond(c.se, values));
 }
+export const condicaoVale = (cond, values) => matchCond(cond, values || {});
+/** Documentos que servem a um anexo: anexos[].documentos (lista) ou o formato antigo anexos[].documento. */
+export const docsDoAnexo = (a) => [...new Set([...(a?.documentos || []), a?.documento].filter(Boolean))];
+export const anexoAceita = (a, docId) => !!docId && docsDoAnexo(a).includes(docId);
 
 /* ---------------- Cadastros: o que se repete é da empresa, não da pessoa ---------------- */
 /* regras: config.camposDaEmpresa = { tipos, campos, historicoEnviado }; empresas.<trecho>.padroes; config.experienciaSugerida */
@@ -401,6 +420,21 @@ export function sugestoesCadastro(tipoKey, rules, { empresa = '', historico = []
 /* ---------------- Regras de prazo compartilhadas ---------------- */
 /** Súmula 380 do TST (art. 132 do Código Civil): não conta o dia do aviso, conta o último. */
 export const fimDoAviso = (dataAviso, dias = 30) => addDays(dataAviso, dias);
+/** O inverso, com a mesma conta (regras: config.avisoPrevioContagem): último dia trabalhado → data do aviso.
+ *  É a conta do formulário e do Calcular (antes o Calcular contava o dia do aviso: −29). */
+export const inicioDoAviso = (fim, dias = 30) => addDays(fim, -dias);
+/** Recua para o dia útil anterior (prazo de pagamento que cai no fim de semana ou feriado). */
+export const diaUtilAntes = (d, cal) => { let x = d; for (let i = 0; i < 15 && !cal.isBusiness(x); i++) x = addDays(x, -1); return x; };
+/** Pagamento das férias: config.pagamentoFeriasAntes dias antes do início (CLT 145), no dia útil anterior. */
+export const pagamentoFerias = (inicio, rules, cal = makeCalendar(rules?.feriados)) => inicio ? diaUtilAntes(addDays(inicio, -(rules?.config?.pagamentoFeriasAntes ?? 2)), cal) : null;
+/** Pagamento da rescisão: config.pagamentoRescisaoDias depois do fim do contrato (CLT 477 §6º), no dia útil anterior. */
+export const pagamentoRescisao = (base, rules, cal = makeCalendar(rules?.feriados)) => base ? diaUtilAntes(addDays(base, rules?.config?.pagamentoRescisaoDias ?? 10), cal) : null;
+/** Anos completos de casa numa data. */
+export function anosCompletos(admissao, data) {
+  let a = data.getFullYear() - admissao.getFullYear();
+  if (data.getMonth() < admissao.getMonth() || (data.getMonth() === admissao.getMonth() && data.getDate() < admissao.getDate())) a--;
+  return Math.max(0, a);
+}
 const SEM_AVISO = ['COM JUSTA CAUSA', 'EXPERIENCIA', 'TEMPO DETERMINADO', 'CULPA RECIPROCA'];
 /** Dispensa por justa causa e fim de contrato não geram aviso prévio. */
 export function temAviso(values, rules) {
@@ -427,28 +461,74 @@ export function derived(tipoKey, values, rules) {
   if (ini && dias) {
     out.fimGozo = fmtDate(addDays(ini, dias - 1));
     out.retorno = fmtDate(addDays(ini, dias));
-    out.pagamentoAte = fmtDate(addDays(ini, -2));
-    out.avisoAte = fmtDate(addDays(ini, -30));
+    // mesmos dias e o mesmo recuo para dia útil do Hoje (config.pagamentoFeriasAntes, config.avisoFeriasDias)
+    out.pagamentoAte = fmtDate(pagamentoFerias(ini, rules, cal));
+    out.avisoAte = fmtDate(addDays(ini, -(rules.config?.avisoFeriasDias ?? 30)));
   }
   const afa = parseDate(values.dataAfastamento), diasAfa = +values.dias || 0;
   if (diasAfa) out.diasTexto = diasAfa === 1 ? '1 dia' : `${diasAfa} dias`;
   if (afa && diasAfa) { out.dataRetorno = fmtDate(addDays(afa, diasAfa)); if (diasAfa > 15 && vaiAoInss(values.tipoAfastamento, rules)) out.inicioInss = fmtDate(addDays(afa, 15)); }
   const dem = parseDate(values.dataDemissao);
-  if (dem) out.pagamentoAte = fmtDate(addDays(dem, 10));
+  if (dem) out.pagamentoAte = fmtDate(pagamentoRescisao(dem, rules, cal));
   const anos = +values.anosEmpresa;
   // proporcional (Lei 12.506/2011) é direito do empregado: só quando a empresa demite
   if (!isNaN(anos) && values.anosEmpresa !== '' && values.anosEmpresa != null && temAviso(values, rules)) {
     out.diasAviso = avisoPeloEmpregador(values) ? String(Math.min(90, 30 + 3 * Math.max(0, Math.floor(anos)))) : '30';
   }
-  if (dem || parseDate(values.dataAviso)) {
-    const base = parseDate(values.dataAviso) || dem;
+  const avisoEm = parseDate(values.dataAviso) || parseDate(values.dataAvisoPrevio);
+  if (dem || avisoEm) {
+    const base = avisoEm || dem;
     const d = +out.diasAviso || 30;
     if (base && temAviso(values, rules)) out.fimAviso = fmtDate(fimDoAviso(base, d));
   }
   const tipo = resolveTipo(rules, tipoKey);
   if (tipo?.complexidade) out.diasUteis = String(rules.config?.prazoInternoDiasUteis?.[tipo.complexidade] ?? '');
-  void cal;
   return out;
+}
+
+/* ---------------- Datas que dá para calcular (tipos.*.calculados) ----------------
+   Cada regra: { campo, formula, de?, dias? (número ou "config.chave"), diaUtil?: 'antes', se?, explicacao? }
+   formula: 'hoje' | 'diasAntes' | 'diasDepois' | 'prazoDoPedido' (prazo interno do escritório em dias úteis) |
+   'demissaoPeloAviso' (trabalhado: fim do aviso; indenizado/dispensa: a data do aviso) | 'avisoPelaDemissao' (o inverso).
+   config.expectativaConclusao liga a Expectativa de conclusão em todos os pedidos que têm o campo.
+   Devolve { campo: { valor, explicacao } }; a tela usa só em campo vazio e não mexido pelo cliente. */
+export function sugeridos(tipoKey, values, rules, hoje = today(), cal = makeCalendar(rules?.feriados)) {
+  const tipo = resolveTipo(rules, tipoKey); if (!tipo) return {};
+  const c = rules?.config || {};
+  const num = (x) => (typeof x === 'string' && x.startsWith('config.') ? +c[x.slice(7)] : +x) || 0;
+  const regras = Object.values(tipo.calculados || {}).filter(r => r?.campo && tipo.campos[r.campo]);
+  const ec = c.expectativaConclusao;
+  if (ec && ec.ativo !== false && tipo.campos.conclusao && !regras.some(r => r.campo === 'conclusao')) regras.push({ campo: 'conclusao', formula: 'prazoDoPedido', explicacao: ec.explicacao });
+  const out = {};
+  for (const r of regras) {
+    if (r.se && !matchCond(r.se, values)) continue;
+    const base = parseDate(values[r.de]);
+    const ta = norm(values.tipoAviso || '');
+    let d = null;
+    switch (r.formula) {
+      case 'hoje': d = hoje; break;
+      case 'diasAntes': case 'subtrairDias': if (base) d = addDays(base, -num(r.dias)); break;
+      case 'diasDepois': case 'somarDias': if (base) d = addDays(base, num(r.dias)); break;
+      case 'prazoDoPedido': d = cal.addBusinessDays(hoje, num(r.dias) || c.prazoInternoDiasUteis?.[tipo.complexidade] || 3); break;
+      case 'demissaoPeloAviso': if (base && ta && temAviso(values, rules)) d = ta === 'TRABALHADO' ? fimDoAviso(base, num(r.dias) || 30) : base; break;
+      case 'avisoPelaDemissao': if (base && ta && temAviso(values, rules)) d = ta === 'TRABALHADO' ? inicioDoAviso(base, num(r.dias) || 30) : base; break;
+      default: break;
+    }
+    if (!d) continue;
+    if (r.diaUtil === 'antes') d = diaUtilAntes(d, cal);
+    out[r.campo] = { valor: fmtDate(d), explicacao: r.explicacao || '' };
+  }
+  return out;
+}
+/** 1ª data de início de férias que vale (a partir de `aPartir`): dia útil fora dos 2 dias antes de domingo ou feriado. */
+export function primeiroInicioFerias(aPartir, rules, cal = makeCalendar(rules?.feriados)) {
+  let d = aPartir;
+  for (let i = 0; i < 60; i++, d = addDays(d, 1)) {
+    if (!cal.isBusiness(d)) continue;
+    if ([1, 2].some(n => { const x = addDays(d, n); return x.getDay() === 0 || cal.isHoliday(x); })) continue;
+    return d;
+  }
+  return aPartir;
 }
 
 /* ---------------- Modelos de texto ---------------- */
@@ -530,13 +610,17 @@ export function runChecks(tipoKey, values, anexos, rules, hoje = today(), portal
     if (a.excetoQuando && matchCond(a.excetoQuando, values)) continue;
     // só conta como anexado o que está mesmo no portal: o que está só na lista do
     // Assistente ainda não foi para a solicitação (pendente)
-    const has = (anexos || []).some(f => f.documento === a.documento && !f.pendente);
-    const soNoAssistente = !has && (anexos || []).find(f => f.documento === a.documento && f.pendente);
+    const has = (anexos || []).some(f => anexoAceita(a, f.documento) && !f.pendente);
+    const soNoAssistente = !has && (anexos || []).find(f => anexoAceita(a, f.documento) && f.pendente);
     const temAlgum = (anexos || []).some(f => !f.pendente);
+    // falta a carta e há modelo dela (anexos[].modelo, só quando modeloSe vale): a tela oferece "Gerar pelo modelo"
+    const modelo = a.modelo && (!a.modeloSe || matchCond(a.modeloSe, values)) ? a.modelo : null;
+    const n0 = res.length;
     if (has) add('ok', 'Anexos', `${a.rotulo} anexado`);
     else if (soNoAssistente) add('erro', 'Anexos', (rules?.mensagens?.anexoSoNoAssistente || 'O arquivo “{arquivo}” ainda não foi anexado no portal. Clique em “Preencher no portal” ou anexe-o direto na solicitação.').replace('{arquivo}', soNoAssistente.nome));
     else if (a.obrigatorio) add(temAlgum ? 'atencao' : 'erro', 'Anexos', temAlgum ? `Confira se o anexo inclui: ${a.rotulo}` : `Anexe: ${a.rotulo}`);
     else add('info', 'Anexos', `Se tiver, anexe: ${a.rotulo}`);
+    if (!has && !soNoAssistente && modelo && res[n0]) Object.assign(res[n0], { modelo, anexo: a.id });
   }
 
   // Regras e prazos
@@ -695,7 +779,8 @@ const TL_PADRAO = {
   abono: { verbos: ['vender', 'vende', 'abono de'], sim: ['com abono'], nao: ['sem abono'] }, gozoVerbos: ['tirar', 'gozar', 'por'], abonoPadraoDias: 10,
   decimoTerceiro: { palavras: ['13º', '13o', 'decimo terceiro', '13 salario'], nao: ['sem adiantar', 'nao adiantar'] },
   pergunta: ['como', 'posso', 'qual', 'quando'], palavrasVazias: [], apelidos: {},
-  competencia: { passado: ['mes passado'], atual: ['este mes', 'mes atual'], proximo: ['mes que vem'] }, adiantamento: ['adiantamento', 'vale salarial']
+  competencia: { passado: ['mes passado'], atual: ['este mes', 'mes atual'], proximo: ['mes que vem'] }, adiantamento: ['adiantamento', 'vale salarial'],
+  tipoAviso: { 'AUSÊNCIA/DISPENSA': ['aviso dispensado', 'dispensa do aviso', 'dispensa do cumprimento', 'ausencia'], INDENIZADO: ['indenizad*'], TRABALHADO: ['trabalhad*'] }
 };
 const tl = (rules) => ({ ...TL_PADRAO, ...(rules?.config?.textoLivre || {}) });
 
@@ -1129,7 +1214,7 @@ export function parseFreeText(text, rules, ctx = {}) {
     if (m?.option) put('empregado', m.option, m.score); else if (m?.candidatos) candidatosNome = m.candidatos;
     else palpite = palpiteEmpregado(text, ctx.employees, rules);
   }
-  let linhas = [];
+  let linhas = []; const dicas = [];
   switch (tipo) {
     case 'afastamento': {
       put('dataAfastamento', d0);
@@ -1149,27 +1234,30 @@ export function parseFreeText(text, rules, ctx = {}) {
         if (abonoQ?.n) put('diasAbono', abonoQ.n);
         else { const g = dd?.n; put('diasAbono', g && g < 30 && 30 - g <= 10 ? 30 - g : (c.abonoPadraoDias || 10), 0.45); }
       }
-      if (tipo === 'calculoFerias' && (comAbono || semAbono)) put('abono', comAbono ? 'SIM' : 'NÃO');
+      // abono só vira SIM com dias maiores que zero (ou sem número: "vai vender")
+      if (tipo === 'calculoFerias' && (comAbono || semAbono)) put('abono', comAbono && abonoQ?.n !== 0 ? 'SIM' : 'NÃO');
       const dt = c.decimoTerceiro || {};
       if (tipo === 'calculoFerias') { if (temTermo(t, dt.nao)) put('adiantar13', 'NÃO'); else if (temTermo(t, dt.palavras)) put('adiantar13', 'SIM'); }
       break;
     }
     case 'avisoRescisao': case 'calculoRescisao': {
-      let motivo = null, dadoPor = null;
-      for (const r of c.motivosRescisao || []) if (temTermo(t, r.palavras) && !temTermo(t, r.exceto)) { motivo = r.valor; dadoPor = r.dadoPor || null; break; }
-      if (!c.motivosRescisao) {
-        if (/pediu demissao|pedido de demissao|pedir demissao|quer sair|pediu para sair/.test(t)) { motivo = 'Pedido de demissão SEM justa causa'; dadoPor = 'EMPREGADO'; }
-        else if (/\bcom justa causa\b|(?<!sem )\bjusta causa\b/.test(t)) { motivo = 'Demitido COM justa causa'; dadoPor = 'EMPREGADOR'; }
-        else if (/sem justa causa|demit|demissao|dispens|deslig/.test(t)) { motivo = 'Demitido SEM justa causa'; dadoPor = 'EMPREGADOR'; }
-      }
-      if (/experiencia/.test(t)) motivo = dadoPor === 'EMPREGADO' ? 'Rescisão contrato experiência antecipado pelo empregado' : 'Rescisão contrato experiência antecipado pelo empregador';
+      // motivo pela tabela das regras (config.motivoAuto: experiência, acordo, culpa recíproca, extinção…) e, sem ela, pelas palavras do texto livre
+      const m = motivoRescisao(text, rules);
+      let motivo = m?.valor || null; const dadoPor = m?.dadoPor || null;
+      if (m?.dica) dicas.push(m.dica);
+      if (!rules?.config?.motivoAuto && /experiencia/.test(t)) motivo = dadoPor === 'EMPREGADO' ? 'Rescisão contrato experiência antecipado pelo empregado' : 'Rescisão contrato experiência antecipado pelo empregador';
       put('motivo', motivo);
+      const semAviso = !!motivo && !temAviso({ motivo }, rules);
       if (tipo === 'avisoRescisao') { put('avisoDadoPor', dadoPor); put('dataAviso', d0 || fmtDate(hoje), d0 ? 0.6 : 0.4); if (anosQ) put('anosEmpresa', anosQ.n); }
       else {
-        const dem = normais[normais.length > 1 ? 1 : 0];
+        const dem = normais[normais.length > 1 && !semAviso ? 1 : 0];
         put('dataDemissao', dem ? fmtDate(dem) : null);
-        if (normais.length > 1) put('dataAvisoPrevio', fmtDate(normais[0]));
-        if (/indenizad/.test(t)) put('tipoAviso', 'INDENIZADO'); else if (/trabalhad/.test(t)) put('tipoAviso', 'TRABALHADO'); else if (/dispensa|ausencia/.test(t)) put('tipoAviso', 'AUSÊNCIA/DISPENSA');
+        // motivo sem aviso prévio: o cálculo não recebe data nem tipo de aviso
+        if (!semAviso) {
+          if (normais.length > 1) put('dataAvisoPrevio', fmtDate(normais[0]));
+          // expressão inteira (config.textoLivre.tipoAviso): "aviso dispensado" conta, "vamos dispensar" não
+          for (const [valor, ws] of Object.entries(c.tipoAviso || {})) if (!valor.startsWith('_') && Array.isArray(ws) && temTermo(t, ws)) { put('tipoAviso', valor); break; }
+        }
       }
       break;
     }
@@ -1190,7 +1278,35 @@ export function parseFreeText(text, rules, ctx = {}) {
   // "preciso até sexta": vai para a Expectativa de conclusão (nos pedidos que têm esse campo), não para o início
   if (prazo && def?.campos?.conclusao) put('conclusao', fmtDate(prazo.d));
   // o texto do cliente serve só para entender o pedido: não vai literalmente para a descrição
-  return { tipoSugerido: tipo, campos, datas: normais.map(fmtDate), intervalo, prazo: prazo ? fmtDate(prazo.d) : null, palpite, linhas, ...(candidatosNome ? { candidatos: candidatosNome } : {}) };
+  return { tipoSugerido: tipo, campos, datas: normais.map(fmtDate), intervalo, prazo: prazo ? fmtDate(prazo.d) : null, palpite, linhas, dicas, ...(candidatosNome ? { candidatos: candidatosNome } : {}) };
+}
+
+/* ---------- Motivo da rescisão (regras: config.motivoAuto) ----------
+   Lista em ordem de prioridade, no formato do tipoAfastamentoAuto: { palavras?, e? (precisa também de uma destas), exceto?,
+   modalidades? (do Calcular), documentos?, valor | nenhum + dica, dadoPor? }. Sem a tabela (ou sem achar nela), o texto livre
+   usa config.textoLivre.motivosRescisao. modalidade: só pela modalidade; soAuto: só a tabela (documentos). */
+export function motivoRescisao(text, rules, { modalidade = null, docId = null, soAuto = false } = {}) {
+  const t = plain(String(text || '').normalize('NFC'));
+  for (const r of rules?.config?.motivoAuto || []) {
+    const porMod = !!modalidade && (r.modalidades || []).includes(modalidade);
+    const porDoc = !modalidade && !!docId && (r.documentos || []).includes(docId);
+    const porTexto = !modalidade && !!r.palavras?.length && temTermo(t, r.palavras) && (!r.e?.length || temTermo(t, r.e)) && !temTermo(t, r.exceto);
+    if (!porMod && !porDoc && !porTexto) continue;
+    return { valor: r.nenhum ? null : r.valor || null, dadoPor: r.dadoPor || null, dica: r.dica || null, nenhum: !!r.nenhum };
+  }
+  if (modalidade || soAuto) return null;
+  for (const r of tl(rules).motivosRescisao || []) if (temTermo(t, r.palavras) && !temTermo(t, r.exceto)) return { valor: r.valor, dadoPor: r.dadoPor || null, dica: null, nenhum: false };
+  if (!tl(rules).motivosRescisao) {
+    if (/pediu demissao|pedido de demissao|pedir demissao|quer sair|pediu para sair/.test(t)) return { valor: 'Pedido de demissão SEM justa causa', dadoPor: 'EMPREGADO' };
+    if (/\bcom justa causa\b|(?<!sem )\bjusta causa\b/.test(t)) return { valor: 'Demitido COM justa causa', dadoPor: 'EMPREGADOR' };
+    if (/sem justa causa|demit|demissao|dispens|deslig/.test(t)) return { valor: 'Demitido SEM justa causa', dadoPor: 'EMPREGADOR' };
+  }
+  return null;
+}
+/** Tipo de aviso do portal (rádio do Cálculo de Rescisão) para o aviso da modalidade do Calcular (config.tipoAvisoModalidade). */
+export function tipoAvisoDaModalidade(aviso, rules) {
+  const m = { indenizado: 'INDENIZADO', trabalhado: 'TRABALHADO', dispensado: 'AUSÊNCIA/DISPENSA', naoCumprido: 'AUSÊNCIA/DISPENSA', ...(rules?.config?.tipoAvisoModalidade || {}) };
+  return aviso && typeof m[aviso] === 'string' ? m[aviso] : null;
 }
 
 /* ---------- Cadastro pelo texto: ficha colada e frases soltas (config.textoLivre.cadastro) ---------- */
@@ -1761,7 +1877,7 @@ export function avisoComprovante(titular, nome, rules) {
 /** Qual opção está marcada num formulário impresso ("( ) Apto (X) Inapto", "[x]", "☒").
  *  ASO e CAT trazem todas as opções escritas: procurar a palavra solta elegia a errada.
  *  Devolve null quando nenhuma ou mais de uma está marcada — aí o cliente confere. */
-export function opcaoMarcada(text, opcoes) {
+export function opcaoMarcada(text, opcoes, { exigeMarca = false } = {}) {
   const t = plain(text);
   const esc = (x) => plain(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
   const lista = (opcoes || []).filter(Boolean);
@@ -1785,10 +1901,29 @@ export function opcaoMarcada(text, opcoes) {
     if (dono) marcadas.add(dono.o);
   }
   if (marcadas.size === 1) return [...marcadas][0];
-  if (marcadas.size > 1) return null;
+  if (marcadas.size > 1 || exigeMarca) return null;
   // sem marca nenhuma: só vale quando o documento traz uma única opção (texto corrido)
   const presentes = [...new Set(ondes.map(x => x.o))];
   return presentes.length === 1 ? presentes[0] : null;
+}
+/** Regras de "opções por palavra" de um documento: documentos[].opcoesPorPalavra = [{ campo, opcoes: { valor: [expressões] },
+ *  soMarcada? }]. O formato antigo da CAT (tipoCatPalavras) continua valendo para o campo tipoCat. */
+export function regrasDeOpcoes(docRule) {
+  const l = [...(docRule?.opcoesPorPalavra || [])];
+  if (docRule?.tipoCatPalavras && !l.some(o => o.campo === 'tipoCat')) l.push({ campo: 'tipoCat', opcoes: docRule.tipoCatPalavras });
+  return l;
+}
+/** Valor de uma opção pelas expressões do documento (sempre a expressão inteira: "dispensar" não casa "dispensa do aviso").
+ *  Formulário impresso com todas as opções: só vale a marcada. soMarcada: só com marca ("( X ) Abono pecuniário"). */
+export function opcaoPorPalavra(text, regra) {
+  const T = ' ' + norm(text) + ' ';
+  const tem = (w) => { const W = norm(w); return !!W && T.includes(' ' + W + ' '); };
+  const cands = Object.entries(regra?.opcoes || {}).filter(([k, ws]) => !k.startsWith('_') && Array.isArray(ws) && ws.some(tem));
+  if (!cands.length) return null;
+  if (cands.length === 1 && !regra.soMarcada) return cands[0][0];
+  const marcada = opcaoMarcada(text, cands.flatMap(([, ws]) => ws.filter(tem)), { exigeMarca: !!regra.soMarcada });
+  const dono = marcada && cands.find(([, ws]) => ws.some(w => norm(w) === norm(marcada)));
+  return dono ? dono[0] : null;
 }
 const ASO_TIPOS = ['admissional', 'demissional', 'periodico', 'retorno ao trabalho', 'mudanca de funcao'];
 export function readASO(text) {
@@ -1906,9 +2041,108 @@ export const empresaDoFiltro = (itens, filtro, empresaAtual) => Array.isArray(fi
 /** Datas de um aviso de férias ou rescisão (campos do Onvio real, mapa do Control Onvio). */
 export function datasDoAviso(it) {
   const d = (v) => parseDate(texto1(v));
-  return { inicioFerias: d(it?.vacationStartDate), pagamento: d(it?.paymentDate), aviso: d(it?.adviceDate || it?.noticeDate), dias: +it?.vacationDays || null,
+  const abono = it?.bonusDays != null && it.bonusDays !== '' && !isNaN(+it.bonusDays) ? +it.bonusDays : null;
+  return { inicioFerias: d(it?.vacationStartDate), pagamento: d(it?.paymentDate), aviso: d(it?.adviceDate || it?.noticeDate || it?.priorNoticeDate), dias: +it?.vacationDays || null,
     desligamento: d(it?.resignationDate), avisoPrevio: d(it?.priorNoticeAdviceDate), admissao: d(it?.admissionDate || it?.startDate),
-    afastamento: d(it?.leaveDate), competencia: d(it?.effectiveDate) };
+    afastamento: d(it?.leaveDate), competencia: d(it?.effectiveDate), abono };
+}
+/* "Pedir o cálculo" de um aviso que já está no portal: os dados do aviso viram sugestão no cálculo ("do aviso nº X"),
+   não valores digitados pelo cliente — um documento arrastado depois ainda pode corrigi-los. O tipo de aviso
+   (trabalhado ou indenizado) continua com o cliente. Rescisão e abono: a calibrar no Onvio real (adviceDate, bonusDays). */
+export function valoresDoAviso(item, rules) {
+  const d = item?.datas || {}; const out = {};
+  const tipo = PAR_CALCULO[item?.tipo] || null;
+  if (item?.tipo === 'avisoFerias') {
+    if (d.inicioFerias) out.inicioGozo = fmtDate(d.inicioFerias);
+    if (d.dias) out.diasGozo = String(d.dias);
+    if (d.abono != null) Object.assign(out, levarValores(['diasAbono→abono'], { diasAbono: String(d.abono) }, rules, 'calculoFerias'));
+  } else if (item?.tipo === 'avisoRescisao') {
+    const a = d.aviso || d.avisoPrevio; if (a) out.dataAvisoPrevio = fmtDate(a);
+  }
+  return { tipo, valores: out, fonte: item?.numero ? `do aviso nº ${item.numero}` : 'do aviso no portal', em: d.aviso || item?.criado || null };
+}
+/** O aviso mais recente desse funcionário no portal (para "Usar os dados do aviso" e o destaque do cálculo no texto livre). */
+export function avisoDoFuncionario(itens, empregado, tipoAviso, hoje = today(), dias = 120) {
+  const q = norm(empregado); if (!q) return null;
+  return (itens || []).filter(i => i.tipo === tipoAviso && norm(i.empregado) === q && !['cancelada', 'prescrita'].includes(i.estado) && (!i.criado || diffDays(i.criado, hoje) <= dias))
+    .sort((a, b) => (b.criado?.getTime() || 0) - (a.criado?.getTime() || 0))[0] || null;
+}
+/** O portal já tem o pedido desse tipo para o funcionário (criado a partir de `desde`, com 1 dia de folga)? */
+export function temPedidoDe(itens, tipo, empregado, desde = null) {
+  const q = norm(empregado);
+  return !!q && (itens || []).some(i => i.tipo === tipo && norm(i.empregado) === q && !['cancelada', 'prescrita'].includes(i.estado) && (!desde || !i.criado || diffDays(desde, i.criado) >= -1));
+}
+/** Valores que vão de um pedido para o seguinte (regras: "campo" ou "de→para"); dias de abono viram o SIM/NÃO do
+ *  campo que tem porNumero (o abono só vira SIM com dias maiores que zero). */
+export function levarValores(levar, values, rules, destino) {
+  const def = resolveTipo(rules, destino); const out = {};
+  for (const s of levar || []) {
+    const [de, para = de] = String(s).split(/\s*(?:→|->)\s*/);
+    const v = values?.[de]; if (v == null || v === '') continue;
+    const c = def?.campos?.[para]; if (!c) continue;
+    if (c.porNumero && c.porNumero.campo === de) { const n = parseInt(onlyDigits(v), 10); if (!isNaN(n)) out[para] = n > 0 ? c.porNumero.maiorQueZero : c.porNumero.zero; continue; }
+    out[para] = String(v);
+  }
+  return out;
+}
+/* ---------- Depois de enviar (regras: tipos.*.depoisDeEnviar) ----------
+   [{ tipo? (o pedido seguinte) ou lembrete, titulo, prazo: { formula: 'pagamentoFerias'|'pagamentoRescisao'|'dias', de, dias?,
+   diasUteisAntes? (chave de config.prazoInternoDiasUteis) }, levar: ['campo', 'de→para'], se? }] → [{ tipo, lembrete, titulo, ate, valores }] */
+export function proximosPassos(tipoKey, values, rules, cal = makeCalendar(rules?.feriados)) {
+  const out = [];
+  for (const p of rules?.tipos?.[tipoKey]?.depoisDeEnviar || []) {
+    if (p.se && !matchCond(p.se, values || {})) continue;
+    if (p.tipo && !rules.tipos[p.tipo]) continue;
+    const pr = p.prazo || {}; const base = parseDate(values?.[pr.de]);
+    let ate = null;
+    if (base) {
+      if (pr.formula === 'pagamentoFerias') ate = pagamentoFerias(base, rules, cal);
+      else if (pr.formula === 'pagamentoRescisao') ate = pagamentoRescisao(base, rules, cal);
+      else ate = addDays(base, +pr.dias || 0);
+      const uteis = pr.diasUteisAntes ? +rules.config?.prazoInternoDiasUteis?.[pr.diasUteisAntes] || 0 : 0;
+      if (uteis) ate = cal.addBusinessDays(ate, -uteis);
+    }
+    const vals = { ...values, empregado: values?.empregado || '' };
+    out.push({ tipo: p.tipo || null, lembrete: !p.tipo, titulo: renderTemplate(p.titulo, vals) || String(p.titulo || '').replace(/\{[^}]*\}/g, '').trim(), ate,
+      valores: p.tipo ? levarValores(p.levar, values, rules, p.tipo) : {}, empregado: values?.empregado || '', dica: p.dica || '' });
+  }
+  return out;
+}
+
+/* ---------- Experiência: tempo de casa, saídas e o motivo certo ---------- */
+const marcosExperiencia = (rules) => (rules?.config?.experienciaDias || [45, 90]).map(Number).filter(Boolean);
+/** As três saídas de uma experiência que vence no marco n: prorrogar (até o total máximo), encerrar no fim ou efetivar. */
+export function saidasExperiencia(admissao, n, rules) {
+  const a = parseDate(admissao); if (!a) return null;
+  const max = Math.max(...marcosExperiencia(rules), 0) || 90;
+  const pode = n < max;
+  return { fim: addDays(a, n - 1), podeProrrogar: pode, diasProrrogacao: pode ? max - n : 0, fimProrrogacao: pode ? addDays(a, max - 1) : null, max };
+}
+/** No Aviso/Cálculo de Rescisão: o funcionário ainda está na experiência na data do aviso (ou da saída)? Então sugere o
+ *  motivo de contrato de experiência (config.experienciaSaidas.motivos) — a tela pergunta, nunca escolhe sozinha. */
+export function sugestaoMotivoExperiencia(values, admissao, rules, hoje = today()) {
+  const adm = parseDate(admissao); if (!adm) return null;
+  const ref = parseDate(values?.dataDemissao) || parseDate(values?.dataAviso) || parseDate(values?.dataAvisoPrevio) || hoje;
+  const marcos = marcosExperiencia(rules); const max = Math.max(...marcos, 0) || 90;
+  const dia = diffDays(adm, ref) + 1;
+  if (dia < 1 || dia > max) return null;
+  const m = norm(values?.motivo || '');
+  if (/EXPERIENCIA|TEMPO DETERMINADO/.test(m)) return null;
+  const mot = { termino: 'Término de contrato de trabalho por tempo determinado', antecipadoEmpregador: 'Rescisão contrato experiência antecipado pelo empregador', antecipadoEmpregado: 'Rescisão contrato experiência antecipado pelo empregado', ...(rules?.config?.experienciaSaidas?.motivos || {}) };
+  const fim = marcos.map(n => addDays(adm, n - 1)).find(f => f >= ref) || addDays(adm, max - 1);
+  const noFim = iso(fim) === iso(ref);
+  const peloEmpregado = norm(values?.avisoDadoPor || '') === 'EMPREGADO' || m.includes('PEDIDO DE DEMISSAO');
+  return { valor: noFim ? mot.termino : peloEmpregado ? mot.antecipadoEmpregado : mot.antecipadoEmpregador, dia, fim, noFim, admissao: adm };
+}
+/** Valores de um modelo para assinar a partir do pedido (modelosDocumento[].campos[].de = chave do contexto; mapa = troca de valor). */
+export function valoresDoModelo(md, ctx = {}) {
+  const out = {};
+  for (const c of md?.campos || []) {
+    let v = ctx[c.de || c.k];
+    if (v != null && c.mapa) v = Object.entries(c.mapa).find(([k]) => norm(k) === norm(v))?.[1] ?? null;
+    if (v != null && v !== '') out[c.k] = String(v);
+  }
+  return out;
 }
 /* Avisos que pedem o cálculo: aviso de férias ou de rescisão criado no portal sem a solicitação de
    cálculo do mesmo funcionário. Férias: pagamento até 2 dias antes do início (CLT 145). Rescisão: até 10 dias
@@ -1930,10 +2164,10 @@ export function avisosSemCalculo(itens, hoje = today(), regras = {}, cal = makeC
     let pagamento = null, estimado = false, inicio = null;
     if (a.tipo === 'avisoFerias') {
       inicio = dt.inicioFerias;
-      pagamento = dt.pagamento || (inicio ? addDays(inicio, -2) : null);
+      pagamento = dt.pagamento || pagamentoFerias(inicio, regras, cal);
     } else {
       const av = dt.aviso || null;
-      if (av) { pagamento = addDays(av, 10); estimado = true; }
+      if (av) { pagamento = pagamentoRescisao(av, regras, cal); estimado = true; }
     }
     if (pagamento) {
       const falta = diffDays(hoje, pagamento);
@@ -2056,14 +2290,13 @@ export function casosCliente(itens, regras) {
    início; estagiário: até config.estagiarioPrazoDias depois). Datas vindas do detalhe ou da lista. */
 export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
   const c = regras?.config || {};
-  const utilAntes = (d) => { let x = d; while (!cal.isBusiness(x)) x = addDays(x, -1); return x; };
   const out = [];
   for (const i of itens || []) {
     if (!['aguardando', 'andamento'].includes(i.estado)) continue;
     const dt = i.datas || {};
     let alvo = null, titulo = '', ref = '';
-    if (i.tipo === 'calculoFerias' && dt.inicioFerias) { alvo = utilAntes(addDays(dt.inicioFerias, -(c.pagamentoFeriasAntes ?? 2))); titulo = 'Pagamento das férias'; ref = `início em ${fmtDate(dt.inicioFerias)}`; }
-    else if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) { const b = dt.desligamento || dt.avisoPrevio; alvo = utilAntes(addDays(b, c.pagamentoRescisaoDias ?? 10)); titulo = 'Pagamento da rescisão'; ref = dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}`; }
+    if (i.tipo === 'calculoFerias' && dt.inicioFerias) { alvo = pagamentoFerias(dt.inicioFerias, regras, cal); titulo = 'Pagamento das férias'; ref = `início em ${fmtDate(dt.inicioFerias)}`; }
+    else if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) { const b = dt.desligamento || dt.avisoPrevio; alvo = pagamentoRescisao(b, regras, cal); titulo = 'Pagamento da rescisão'; ref = dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}`; }
     else if (/^cadastro(Empregado|Estagiario)$/.test(i.tipo) && dt.admissao) {
       const est = i.tipo === 'cadastroEstagiario';
       alvo = est ? addDays(dt.admissao, c.estagiarioPrazoDias ?? 15) : addDays(dt.admissao, -1);
@@ -2083,8 +2316,7 @@ export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = ma
 export function observacoesCliente(item, datas, regras = {}, hoje = today(), cal = makeCalendar(regras?.feriados)) {
   const c = regras?.config || {};
   const d = datas || item?.datas || {};
-  const utilAntes = (x) => { let y = x; while (!cal.isBusiness(y)) y = addDays(y, -1); return y; };
-  const ini = d.inicioFerias, pf = ini ? utilAntes(addDays(ini, -(c.pagamentoFeriasAntes ?? 2))) : null;
+  const ini = d.inicioFerias, pf = pagamentoFerias(ini, regras, cal);
   const vals = { inicio: fmtDate(ini), pagamentoFerias: fmtDate(pf), aviso: fmtDate(d.aviso || d.avisoPrevio), desligamento: fmtDate(d.desligamento),
     admissao: fmtDate(d.admissao), afastamento: fmtDate(d.afastamento), competencia: d.competencia ? fmtDate(d.competencia).slice(3) : '',
     pagamentoFeriasAntes: c.pagamentoFeriasAntes ?? 2, pagamentoRescisaoDias: c.pagamentoRescisaoDias ?? 10, avisoFeriasDias: c.avisoFeriasDias ?? 30,
