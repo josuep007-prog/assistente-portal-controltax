@@ -17,6 +17,12 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.7 — preencher mais sozinho (parte 2)
+
+- **Cadastro:** `config.camposDaEmpresa` (Repetir/histórico/modelos sem dados pessoais), sugestões da última admissão e `empresas.<trecho>.padroes`, `config.experienciaSugerida`, ficha colada e `config.textoLivre.cadastro`, leitor de documento pessoal (`config.leitorPessoal`, `leitor: "pessoal"`), categorias do estagiário/contribuinte (revisar com o escritório).
+- **Rescisão e férias:** `opcoesPorPalavra` nos documentos, `config.motivoAuto`, `calculados` por tipo (`E.sugeridos`), `depoisDeEnviar`, `anexos[].modelo` ("Gerar pelo modelo"), `config.experienciaSaidas`, `config.avisoPrevioContagem` (Súmula 380), resumo automático e "Para terminar".
+- **Leitor:** `tools/gerar-corpus-leitor.py` (documentos fictícios) e `tools/auditar-leitor.py` (placar campo a campo).
+
 ## Novidades da 2.6 — preencher mais sozinho (parte 1)
 
 - **Texto livre** (`config.textoLivre`, `intencoes[].radicais/pesos/excluir`, `tipos.*.sentidoDatas`, `config.textoLivre.escolhas`): datas no sentido de cada pedido, intervalos, "preciso até" → expectativa, números por extenso, abono/13º pela palavra vizinha, erros de digitação, palpite de funcionário (pergunta), correção, cartão editável, folha por linhas (`tipos.rubricas.dicionarioRubricas`, revisar com o escritório), vários pedidos numa frase (`E.dividirPedidos`), dúvidas primeiro e "Entender:" no Ctrl+K.
