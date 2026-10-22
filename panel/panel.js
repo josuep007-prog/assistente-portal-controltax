@@ -652,8 +652,12 @@ async function abrirResumoSePronto(tipo) {
   if (!W.resultados || W.resultados.resultados?.some(x => !x.ok)) return false;
   if (W.arquivos.some(a => !a.removido && !a.outroTipo && a.status !== 'erro' && !(a.anexado || a.jaAnexado))) return false;
   await esperar(500);   // o portal manda a tela de novo depois do preenchimento
-  const list = E.runChecks(tipo, valoresParaChecar(tipo), anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(S.ctx.form) });
-  if (list.some(i => i.nivel === 'erro') || (S.ctx.form?.erros || []).length) return false;
+  if (S.ctx.route?.mode !== 'form' || S.ctx.tipo !== tipo) return false;
+  // obrigatórios pelo que está no portal (o que só está aqui ainda não vale)
+  const vals = valoresParaChecar(tipo);
+  for (const [k, c] of Object.entries(tipoDef(tipo).campos)) if (!c.somenteAssistente && campoPortal(k).existe) vals[k] = campoPortal(k).valor || '';
+  const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(S.ctx.form) }), ...naoAceitosPeloPortal(tipo, S.ctx.form)];
+  if (list.some(i => i.nivel === 'erro' || i.grupo === 'Portal') || (S.ctx.form?.erros || []).length) return false;
   S.resumoAuto = true;
   send({ type: 'requestSubmit' });
   return true;
@@ -1898,7 +1902,7 @@ function onSubmitAttempt(m) {
   if (!tipo) { if (!auto) send({ type: 'confirmSubmit' }); return; }
   const vals = valoresParaChecar(tipo);
   const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals), ...naoAceitosPeloPortal(tipo, m.form)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
-  if (auto && list.some(i => i.nivel === 'erro')) return;
+  if (auto && list.some(i => i.nivel === 'erro' || i.grupo === 'Portal')) return;
   if (!list.length && !pediu && !auto) { S.ultimoEnvio = { tipo, quando: Date.now(), valores: vals }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
   const t = tipoDef(tipo);
