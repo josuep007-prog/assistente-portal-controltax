@@ -295,6 +295,10 @@
         "prorrogacao"
       ]
     },
+    "pedirDeNovo": {
+      "_comentario": "Botão 'Pedir de novo' no detalhe de uma solicitação do portal (lote 6): abre o mesmo tipo com os valores do detalhe ({lista}/{id}?expand=all). Cada campo diz onde está no detalhe em campos.*.api (um caminho com pontos ou uma lista de caminhos; o primeiro com valor vale) e apiValores traduz os códigos do Onvio. Nunca vão datas, competência, assunto, descrição, observações nem CID, médico e CRM; nos cadastros, só os campos de camposDaEmpresa. Código técnico sem tradução fica de fora (o cliente escolhe na lista). O 'Histórico deste computador' segue a regra do Repetir (sem datas); 'Começou e não enviou' leva tudo.",
+      "calibrar": true
+    },
     "experienciaSugerida": {
       "_comentario": "Sugestão (confiança baixa, o cliente confere) para o contrato de experiência de um cadastro novo com os campos vazios.",
       "revisarComEscritorio": true,
@@ -1799,6 +1803,7 @@
       "complexidade": "simples",
       "campos": {
         "departamento": {
+          "api": ["departmentExpanded.name", "departmentExpanded.description", "department.name", "department"],
           "fc": "department",
           "tipo": "combo",
           "rotulo": "Departamento",
@@ -1881,6 +1886,7 @@
       "complexidade": "simples",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "selectedEmployee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -1888,6 +1894,7 @@
           "fonte": "empregado"
         },
         "tipoAfastamento": {
+          "api": ["employeeLeaveTypeExpanded.description", "employeeLeaveTypeExpanded.name", "leaveTypeExpanded.description", "selectedLeaveType.description", "leaveType"],
           "fc": "selectedLeaveType",
           "tipo": "combo",
           "rotulo": "Tipo de afastamento",
@@ -2213,6 +2220,7 @@
       "complexidade": "simples",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "selectedEmployee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2232,6 +2240,7 @@
           ]
         },
         "diasGozo": {
+          "api": ["vacationDays"],
           "fc": "vacationDays",
           "tipo": "numero",
           "rotulo": "Dias de gozo",
@@ -2243,6 +2252,7 @@
           ]
         },
         "diasAbono": {
+          "api": ["bonusDays"],
           "fc": "bonusDays",
           "tipo": "numero",
           "rotulo": "Dias de abono",
@@ -2415,6 +2425,7 @@
       "complexidade": "calculo",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "selectedEmployee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2433,6 +2444,7 @@
           ]
         },
         "diasGozo": {
+          "api": ["vacationDays"],
           "fc": "vacationDays",
           "tipo": "numero",
           "rotulo": "Dias de gozo",
@@ -2443,6 +2455,8 @@
           ]
         },
         "abono": {
+          "api": ["payBonusDays", "bonus"],
+          "apiValores": {"true": "SIM", "false": "NÃO", "YES": "SIM", "NO": "NÃO"},
           "tipo": "radio",
           "rotulo": "Abono pecuniário",
           "seletores": {
@@ -2456,6 +2470,8 @@
           }
         },
         "adiantar13": {
+          "api": ["payFirstInstallmentEarlier", "anticipate13th"],
+          "apiValores": {"true": "SIM", "false": "NÃO", "YES": "SIM", "NO": "NÃO"},
           "tipo": "radio",
           "rotulo": "Adiantar 13º salário",
           "seletores": {
@@ -2561,6 +2577,7 @@
       "complexidade": "simples",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "employee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2568,12 +2585,15 @@
           "fonte": "empregado"
         },
         "motivo": {
+          "api": ["terminationMotiveExpanded.description", "terminationReasonExpanded.description", "terminationMotive", "terminationReason", "reason"],
           "fc": "terminationMotive",
           "tipo": "combo",
           "rotulo": "Motivo de rescisão",
           "obrigatorio": true
         },
         "avisoDadoPor": {
+          "api": ["grantedBy"],
+          "apiValores": {"EMPLOYEE": "EMPREGADO", "EMPLOYER": "EMPREGADOR"},
           "tipo": "radio",
           "rotulo": "Aviso dado pelo",
           "obrigatorio": true,
@@ -2731,6 +2751,7 @@
       "complexidade": "calculo",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "employee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2750,6 +2771,7 @@
           ]
         },
         "motivo": {
+          "api": ["terminationReasonExpanded.description", "terminationMotiveExpanded.description", "terminationReason", "reason"],
           "fc": "terminationReason",
           "tipo": "combo",
           "rotulo": "Motivo da rescisão",
@@ -2764,6 +2786,8 @@
           ]
         },
         "tipoAviso": {
+          "api": ["priorNoticeType", "noticeType", "grantedBy"],
+          "apiValores": {"WORKED": "TRABALHADO", "INDEMNIFIED": "INDENIZADO", "ABSENSE_DISPENSATION": "AUSÊNCIA/DISPENSA", "ABSENCE_DISPENSATION": "AUSÊNCIA/DISPENSA"},
           "tipo": "radio",
           "rotulo": "Aviso prévio",
           "seletores": {
@@ -2984,6 +3008,8 @@
       "botaoEnviar": "SALVAR E ENVIAR",
       "campos": {
         "tipoLancamento": {
+          "api": ["entryType", "payrollEntryType", "type"],
+          "apiValores": {"WAGE_ADVANCE": "ADIANTAMENTO", "ADVANCE": "ADIANTAMENTO", "MONTHLY": "MENSAL", "PRS": "PLR", "PLR": "PLR"},
           "tipo": "radio",
           "rotulo": "Tipo de lançamento",
           "obrigatorio": true,
@@ -3102,6 +3128,7 @@
           "grupo": "Geral"
         },
         "cargo": {
+          "api": ["jobPositionExpanded.description", "jobPositionExpanded.name"],
           "fc": "jobPositionExpanded",
           "tipo": "combo",
           "rotulo": "Cargo",
@@ -3111,6 +3138,7 @@
           "grupo": "Geral"
         },
         "funcao": {
+          "api": ["occupationExpanded.description", "occupationExpanded.name"],
           "fc": "occupationExpanded",
           "tipo": "combo",
           "rotulo": "Função",
@@ -3127,6 +3155,7 @@
           "calibrar": true
         },
         "servico": {
+          "api": ["serviceExpanded.name", "serviceExpanded.description"],
           "fc": "serviceExpanded",
           "tipo": "combo",
           "rotulo": "Serviço (sede onde ficará alocado)",
@@ -3134,6 +3163,7 @@
           "calibrar": true
         },
         "departamento": {
+          "api": ["departmentExpanded.description", "departmentExpanded.name"],
           "fc": "departmentExpanded",
           "tipo": "combo",
           "rotulo": "Departamento",
@@ -3144,12 +3174,14 @@
           "grupo": "Geral"
         },
         "centroCusto": {
+          "api": ["costCenterExpanded.description", "costCenterExpanded.name"],
           "fc": "costCenterExpanded",
           "tipo": "combo",
           "rotulo": "Centro de custo",
           "grupo": "Geral"
         },
         "sindicato": {
+          "api": ["laborUnionClientExpanded.name", "laborUnionClientExpanded.description"],
           "fc": "laborUnionClientExpanded",
           "tipo": "combo",
           "rotulo": "Sindicato",
@@ -3169,6 +3201,7 @@
           "grupo": "Geral"
         },
         "categoria": {
+          "api": ["category"],
           "fc": "category",
           "tipo": "combo",
           "rotulo": "Categoria",
@@ -3188,6 +3221,7 @@
           "grupo": "Geral"
         },
         "vinculo": {
+          "api": ["employmentRelationship"],
           "fc": "employmentRelationship",
           "tipo": "combo",
           "rotulo": "Vínculo empregatício",
@@ -3214,6 +3248,7 @@
           "calibrar": true
         },
         "contratoExperiencia": {
+          "api": ["daysExperience"],
           "fc": "daysExperience",
           "tipo": "numero",
           "rotulo": "Contrato de experiência (dias)",
@@ -3227,6 +3262,7 @@
           "prorrogacaoEm": "prorrogacao"
         },
         "prorrogacao": {
+          "api": ["extensionDays"],
           "fc": "extensionDays",
           "tipo": "numero",
           "rotulo": "Dias de prorrogação",
@@ -3244,6 +3280,7 @@
           "calibrar": true
         },
         "jornada": {
+          "api": ["workDayExpanded.description", "workDayExpanded.name"],
           "fc": "workDayExpanded",
           "tipo": "combo",
           "rotulo": "Jornada",
@@ -3254,6 +3291,7 @@
           "grupo": "Geral"
         },
         "cargaHoraria": {
+          "api": ["monthlyHours"],
           "fc": "monthlyHours",
           "tipo": "numero",
           "rotulo": "Carga horária mensal",
@@ -3908,6 +3946,7 @@
           "grupo": "Geral"
         },
         "categoriaEsocial": {
+          "api": ["eSocialCategory"],
           "fc": "eSocialCategory",
           "tipo": "combo",
           "rotulo": "Categoria eSocial",
@@ -3927,6 +3966,7 @@
           ]
         },
         "agenteIntegracao": {
+          "api": ["integrationAgentExpanded.name", "integrationAgentExpanded.description"],
           "fc": "integrationAgentExpanded",
           "tipo": "combo",
           "rotulo": "Agente de integração",
@@ -4047,11 +4087,13 @@
           ]
         },
         "categoriaSefip": {
+          "api": ["sefipCategory"],
           "fc": "sefipCategory",
           "tipo": "combo",
           "rotulo": "Categoria SEFIP"
         },
         "tipoContribuinte": {
+          "api": ["taxpayerType"],
           "fc": "taxpayerType",
           "tipo": "combo",
           "rotulo": "Tipo",
@@ -4070,6 +4112,7 @@
           ]
         },
         "categoriaEsocial": {
+          "api": ["eSocialCategory"],
           "fc": "eSocialCategory",
           "tipo": "combo",
           "rotulo": "Categoria eSocial",

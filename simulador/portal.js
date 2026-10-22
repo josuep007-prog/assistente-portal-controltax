@@ -197,6 +197,12 @@
       if (r.inicio) { it.vacationStartDate = dia(r.inicio, 0); it.paymentDate = dia(r.inicio, 2); it.vacationDays = r.dias || 30; }
       if (r.abono != null) it.bonusDays = r.abono;   // dias de abono do aviso (para o "Pedir o cálculo")
       if (slug === 'termination-notice') { it.adviceDate = dia(r.data, 0); it.reason = 'ApprenticeContractTermination'; it.grantedBy = 'EMPLOYEE'; }   // como o Onvio manda (em inglês)
+      // para o "Pedir de novo" (lote 6): o tipo de afastamento e dados de saúde inventados (que nunca podem ir para o pedido novo),
+      // o cálculo de férias com as escolhas, e o cadastro com dados da pessoa e da empresa (só os da empresa podem ir) — a calibrar
+      if (slug === 'employee-leave') { it.leaveDate = dia(r.data, 0); it.employeeLeaveTypeExpanded = { description: /maternidade/i.test(r.assunto || '') ? 'Licença maternidade' : 'Doença período igual ou inferior a 15 dias' }; it.cid = 'Z76'; it.doctorName = 'DR. MEDICO DE EXEMPLO'; it.crm = '00000'; }
+      if (slug === 'vacation-calculation') { it.initialDate = it.vacationStartDate || dia(r.data, -10); it.payBonusDays = false; it.payFirstInstallmentEarlier = true; }
+      if (FAMILIA[slug] === 'cadastro') { it.admissionDate = dia(r.data, 3); it.nationalIdentity = '000.000.000-00'; it.motherName = 'MAE DE EXEMPLO'; it.jobPositionExpanded = { description: 'VENDEDOR' }; it.employeeRegistrationProfessionalExpanded = { departmentExpanded: { description: 'ESCRITÓRIO' } }; it.daysExperience = 45; it.extensionDays = 45; }
+      if (slug === 'general-requests') it.departmentExpanded = { name: 'CONTÁBIL' };
       return Promise.resolve(it);
     },
     detalhe: true,

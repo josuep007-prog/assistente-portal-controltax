@@ -190,6 +190,23 @@ async def teste_plataforma(b):
     check(not await pn.evaluate("document.body.classList.contains('plat')") and '1041' in await pg.evaluate("document.querySelector('#p-main').innerText"), 'Ver no portal: abre a solicitação no portal, com o painel ao lado')
     await pn.click('#btn-plat'); await pg.wait_for_timeout(800)
     check(await pn.evaluate("document.body.classList.contains('plat')"), 'volta para a tela cheia')
+    # lote 6 (39): "Pedir de novo" no detalhe: mesmo tipo, com os valores do portal, sem datas, sem CID e (cadastro) sem a pessoa
+    async def pedir_de_novo(numero):
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
+        await pn.click('[data-vis-sol="tabela"]'); await pn.fill('#sol-q', numero); await pg.wait_for_timeout(500)
+        await pn.click('#sol-grupos [data-card]'); await pg.wait_for_timeout(800)
+        await pn.click('#modal .dt-pedir-novo')
+    await pedir_de_novo('1039')
+    ok = await espera(portal_com(selectedEmployee='JOANA FONSECA', selectedLeaveType='Licença maternidade'), 30)
+    v = await portal()
+    check(ok and not v.get('leaveDate') and 'Z76' not in (v.get('description') or ''), f"Pedir de novo: afastamento com a funcionária e o tipo do portal, sem a data e sem CID ({v.get('selectedEmployee')!r}, {v.get('selectedLeaveType')!r}, data {v.get('leaveDate')!r})")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave')"); await pg.wait_for_timeout(1500)
+    await pedir_de_novo('957')
+    ok = await espera(portal_com(jobPositionExpanded='VENDEDOR'), 30)
+    v = await portal()
+    check(ok and not v.get('name') and not v.get('nationalIdentity') and not v.get('motherName') and not v.get('admissionDate'), f"Pedir de novo num cadastro: só as escolhas da empresa (cargo {v.get('jobPositionExpanded')!r}), nada da pessoa")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-registration')"); await pg.wait_for_timeout(1500)
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(500); await pn.fill('#sol-q', ''); await pg.wait_for_timeout(400)
     # Funcionários: experiência e atalho com o funcionário escolhido
     await pn.click('#rail [data-mod="funcionarios"]'); await pg.wait_for_timeout(800)
     check(await pn.evaluate("getComputedStyle(document.querySelector('#emp-list')).overflowY === 'auto' && !!document.querySelector('#emp-q')"), 'funcionários: a lista rola e a busca fica à vista')

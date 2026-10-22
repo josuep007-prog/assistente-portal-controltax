@@ -2264,11 +2264,8 @@ function renderRepetir() {
     // inclusive o que tinha ficado guardado de um cadastro começado
     const cadastro = !!E.camposDaEmpresa(h.tipo, S.rules);
     if (cadastro && S.work[h.tipo]) { const { empregados, opcoes } = S.work[h.tipo]; S.work[h.tipo] = null; Object.assign(w(h.tipo), { empregados, opcoes }); }
-    const t = tipoDef(h.tipo); const W = w(h.tipo);
-    for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) {
-      if (k === 'dias' || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
-      W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };
-    }
+    const W = w(h.tipo);
+    for (const [k, v] of Object.entries(E.valoresParaRepetir(h.tipo, h.valores, S.rules))) W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };
     W.rascunhoVisto = true;
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true, semEmpresa: true });
@@ -2438,7 +2435,8 @@ async function renderHistorico() {
     const h = historico[+b.dataset.i];
     if (!(await empresaDoPedido(h.tipo, { sugerida: h.empresa }))) return;
     const W = w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    // outro pedido a partir do histórico: a regra do Repetir (sem datas; num cadastro, só os campos da empresa)
+    for (const [k, v] of Object.entries(E.valoresParaRepetir(h.tipo, h.valores, S.rules))) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true, semEmpresa: true });
   }));

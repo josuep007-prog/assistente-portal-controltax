@@ -505,6 +505,18 @@ export function montarPlataforma(A) {
     await P.novoPedido(vv.tipo, { empregado: i.empregado, sugeridos: vv.valores, fonte: vv.fonte });
     const W = A.w(vv.tipo); W.avisoUsado = true;
   }
+  /** "Pedir de novo" no detalhe de uma solicitação do portal (feita aqui, direto no portal ou em outra máquina): um pedido do
+   *  mesmo tipo, para a mesma empresa, com os valores lidos do detalhe (regras: campos.*.api) — sem datas, sem assunto e
+   *  descrição, sem dados de saúde; num cadastro, só os campos da empresa. Tudo entra como sugestão "da solicitação nº X". */
+  async function pedirDeNovo(i, bruto = null) {
+    const t = S.rules.tipos[i.tipo]; if (!t) return;
+    if (!bruto && i.id && (t.apiDetalhe || t.apiLista)) bruto = (await request({ type: 'detalheCompleto', lista: t.apiDetalhe || t.apiLista, solicitacao: i.id }, 20000))?.dados || null;
+    const vals = E.valoresDoDetalhe(i.tipo, bruto || {}, S.rules);
+    // o funcionário da lista, se o detalhe não trouxe (num cadastro, a pessoa é outra: nunca vai)
+    if (!vals.empregado && i.empregado && E.resolveTipo(S.rules, i.tipo)?.campos?.empregado) vals.empregado = i.empregado;
+    const { empregado, ...resto } = vals;
+    await P.novoPedido(i.tipo, { empregado, sugeridos: resto, fonte: i.numero ? `da solicitação nº ${i.numero}` : 'da solicitação no portal', empresa: i.empresa || undefined });
+  }
   /** "Programar" férias a vencer: o aviso já com a 1ª data de início que vale (30 dias de antecedência, fora de sexta e véspera de feriado). */
   function programarFerias(nome) {
     const ini = E.primeiroInicioFerias(E.addDays(E.today(), +S.rules.config?.avisoFeriasDias || 30), S.rules);
@@ -907,7 +919,7 @@ export function montarPlataforma(A) {
     if (!i) return;
     const t = S.rules.tipos[i.tipo];
     const mo = E.motivoCliente(i, E.today(), S.rules);
-    const st = { aba, trs: null, trsErro: false, dados: null, dadosErro: false, datas: { ...(i.datas || {}) } };
+    const st = { aba, trs: null, trsErro: false, dados: null, dadosErro: false, bruto: null, datas: { ...(i.datas || {}) } };
     const topo = [['Responsável no escritório', i.responsavel], ['Aberta em', fmt(i.criado)], ['Atualizada', fmt(i.atualizado)], ['Expectativa', i.expectativa ? fmt(i.expectativa) : ''],
       ['Prescreve em', i.prescreveEm != null ? `${i.prescreveEm} dia(s)` : ''], ['Empresa', variasEmpresas(S.plat.sol?.itens) ? i.empresa : '']].filter(([, v]) => v && v !== '—');
     const dlg = dialogo({
@@ -919,6 +931,7 @@ export function montarPlataforma(A) {
         <div class="dp-tabs dt-tabs" role="tablist">${[['conversa', 'Conversa'], ['dados', 'Dados'], ['observar', 'O que observar']].map(([k, r]) => `<button type="button" role="tab" class="dp-tab" data-dt="${k}">${r}</button>`).join('')}</div>
         <div class="dt-body" id="dt-body"></div>`,
       acoes: [...(['avisoFerias', 'avisoRescisao'].includes(i.tipo) && !['cancelada', 'prescrita'].includes(i.estado) ? [{ rotulo: `${icon('calc', 'ic-sm')} Pedir o cálculo`, cls: 'dt-pedir-calc', fn: () => { pedirCalculoDoAviso(i, st.datas); } }] : []),
+        ...(t ? [{ rotulo: `${icon('refresh', 'ic-sm')} Pedir de novo`, cls: 'dt-pedir-novo', fn: () => { pedirDeNovo(i, st.bruto); } }] : []),
         { rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) },
         { rotulo: `${icon('copy', 'ic-sm')} Copiar observações`, cls: 'btn-ghost dt-copiar', fn: async () => { const o = E.observacoesCliente(i, st.datas, S.rules); try { await navigator.clipboard.writeText(o.map(x => `• ${x.texto}`).join('\n')); toast('Observações copiadas.'); } catch { toast('Não consegui copiar.'); } return false; } },
         '|', { rotulo: 'Fechar' }]
@@ -982,6 +995,7 @@ export function montarPlataforma(A) {
     if (lista && i.id) request({ type: 'detalheCompleto', lista, solicitacao: i.id }, 20000).then((r) => {
       if (!r?.dados) st.dadosErro = true;
       else {
+        st.bruto = r.dados;   // só na memória, enquanto o detalhe está aberto (para o "Pedir de novo")
         st.dados = D.camposDetalhe(r.dados);
         const d = E.datasDoAviso(r.dados);
         for (const [k, v] of Object.entries(d)) if (v != null) st.datas[k] = v;
@@ -1321,8 +1335,9 @@ export function montarPlataforma(A) {
   async function reaproveitar(h, outroPedido = false) {
     if (!h) return;
     const W = A.w(h.tipo);
-    // outro pedido a partir do histórico: num cadastro, só os campos da empresa (nada da pessoa anterior)
-    const vals = outroPedido ? E.valoresReaproveitaveis(h.tipo, h.valores, S.rules) : h.valores || {};
+    // outro pedido a partir do histórico: a regra do Repetir (sem datas; num cadastro, só os campos da empresa).
+    // "Começou e não enviou" continua levando tudo
+    const vals = outroPedido ? E.valoresParaRepetir(h.tipo, h.valores, S.rules) : h.valores || {};
     for (const [k, v] of Object.entries(vals)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     W.rascunhoVisto = true;
     A.gerarTextos(h.tipo, true);

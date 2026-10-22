@@ -389,6 +389,59 @@ export function valoresReaproveitaveis(tipoKey, valores, rules) {
   }
   return out;
 }
+/** O que o "Repetir" leva (e o "Histórico deste computador" também): o que pode ser reaproveitado, menos as datas, a
+ *  competência e os dias do afastamento — são de cada pedido. ("Começou e não enviou" continua levando tudo.) */
+export function valoresParaRepetir(tipoKey, valores, rules) {
+  const tipo = resolveTipo(rules, tipoKey); const out = {};
+  for (const [k, v] of Object.entries(valoresReaproveitaveis(tipoKey, valores, rules))) {
+    if (k === 'dias' || ['data', 'competencia'].includes(tipo?.campos?.[k]?.tipo)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+/* "Pedir de novo" a partir do detalhe de uma solicitação do portal ({lista}/{id}?expand=all): cada campo diz onde está no
+   detalhe (regras: campos.*.api, um caminho ou uma lista; apiValores traduz os códigos do Onvio). Nunca vão datas, competência,
+   assunto, descrição nem dados de saúde (CID, médico, CRM); num cadastro, só os campos da empresa (config.camposDaEmpresa).
+   Código técnico sem tradução ("ApprenticeContractTermination") fica de fora: o cliente escolhe na lista. A calibrar no Onvio real. */
+const NAO_REPETE = new Set(['assunto', 'descricao', 'cid', 'medico', 'crm', 'observacoes', 'dias']);
+function noCaminho(obj, caminho) {
+  let v = obj;
+  for (const p of String(caminho).split('.')) { if (v == null || typeof v !== 'object') return undefined; v = v[p]; }
+  return v;
+}
+/** O primeiro pedaço do caminho pode vir dentro de um bloco do detalhe (ex.: employeeRegistrationProfessionalExpanded). */
+function noDetalhe(obj, caminho, prof = 3) {
+  const v = noCaminho(obj, caminho); if (v != null && v !== '') return v;
+  if (prof <= 0 || !obj || typeof obj !== 'object') return undefined;
+  for (const x of Object.values(obj)) if (x && typeof x === 'object' && !Array.isArray(x)) { const r = noDetalhe(x, caminho, prof - 1); if (r != null && r !== '') return r; }
+  return undefined;
+}
+const pareceCodigo = (s) => /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(s) || /^[A-Z][a-z0-9]+([A-Z][a-z0-9]*)+$/.test(s);
+export function valoresDoDetalhe(tipoKey, detalhe, rules) {
+  const tipo = resolveTipo(rules, tipoKey); if (!tipo || !detalhe || typeof detalhe !== 'object') return {};
+  const daEmpresa = camposDaEmpresa(tipoKey, rules); const out = {};
+  for (const [k, def] of Object.entries(tipo.campos || {})) {
+    if (!def.api || def.sensivel || def.somenteAssistente || NAO_REPETE.has(k) || ['data', 'competencia'].includes(def.tipo)) continue;
+    if (daEmpresa && !daEmpresa.includes(k)) continue;
+    let bruto;
+    for (const c of [].concat(def.api)) { bruto = noDetalhe(detalhe, c); if (bruto != null && bruto !== '') break; }
+    if (bruto == null || bruto === '') continue;
+    let v = typeof bruto === 'object' ? texto1(bruto) : String(bruto);
+    v = String(v || '').trim(); if (!v) continue;
+    const mapa = def.apiValores || null;
+    if (mapa) { const m = mapa[v] ?? mapa[v.toUpperCase()]; if (m != null) v = String(m); else if (def.tipo === 'radio') continue; }
+    if (def.tipo === 'radio' && def.seletores && !Object.keys(def.seletores).some(o => norm(o) === norm(v))) continue;
+    if (!mapa?.[v] && pareceCodigo(v)) continue;
+    if (def.tipo === 'numero') { v = onlyDigits(v); if (!v) continue; }
+    out[k] = v;
+  }
+  // Solicitação Geral: o assunto sai do catálogo pelo assunto antigo (sem a competência), nunca copiado
+  if (tipoKey === 'geral') {
+    const g = assuntoGeral(texto1(detalhe.subject), rules);
+    if (g) { const it = rules.tipos.geral.catalogo.itens.find(x => x.id === g.id); out.assunto = it.assunto; if (!out.departamento) out.departamento = g.departamento; const d = renderTemplate(it.descricao || [], {}); if (d) out.descricao = d; }
+  }
+  return out;
+}
 /** Valores guardados no histórico: um cadastro enviado fica só com o nome, as datas da Agenda e os campos da empresa. */
 export function valoresParaHistorico(tipoKey, valores, status, rules) {
   const lista = camposDaEmpresa(tipoKey, rules);

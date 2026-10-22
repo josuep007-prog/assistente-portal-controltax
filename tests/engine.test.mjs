@@ -1133,4 +1133,32 @@ t('Solicitação Geral: departamento casa com a lista do portal pelos sinônimos
   assert.equal(c.documento.id, 'cnd'); assert.equal(c.campos.departamento.valor, 'Fiscal');
 });
 
+t('Pedir de novo: valores do detalhe do portal sem datas, sem saúde e, no cadastro, só os da empresa', () => {
+  const af = E.valoresDoDetalhe('afastamento', { clientEmployeeExpanded: { name: 'ANA EXEMPLO' }, employeeLeaveTypeExpanded: { description: 'Licença maternidade' }, leaveDate: '2026-10-01T00:00:00',
+    cid: 'Z76', doctorName: 'DR. EXEMPLO', crm: '00000', subject: 'Afastamento – ANA EXEMPLO', description: 'CID Z76', catNumber: '123' }, rules);
+  assert.deepEqual(af, { empregado: 'ANA EXEMPLO', tipoAfastamento: 'Licença maternidade' });
+  // aviso de rescisão: o código do Onvio sem tradução fica de fora; o "aviso dado por" é traduzido pelas regras
+  const ar = E.valoresDoDetalhe('avisoRescisao', { clientEmployeeExpanded: { name: 'ANA EXEMPLO' }, grantedBy: 'EMPLOYEE', reason: 'ApprenticeContractTermination', adviceDate: '2026-10-01T00:00:00' }, rules);
+  assert.deepEqual(ar, { empregado: 'ANA EXEMPLO', avisoDadoPor: 'EMPREGADO' });
+  const cf = E.valoresDoDetalhe('calculoFerias', { clientEmployeeExpanded: { name: 'ANA EXEMPLO' }, vacationDays: 20, payBonusDays: false, payFirstInstallmentEarlier: true, initialDate: '2026-11-03T00:00:00' }, rules);
+  assert.deepEqual(cf, { empregado: 'ANA EXEMPLO', diasGozo: '20', abono: 'NÃO', adiantar13: 'SIM' });
+  // cadastro: nome, CPF, mãe e admissão nunca vão; departamento dentro de um bloco do detalhe também é achado
+  const cad = E.valoresDoDetalhe('cadastroEmpregado', { name: 'FULANA DE EXEMPLO', nationalIdentity: '000.000.000-00', motherName: 'MAE', admissionDate: '2026-09-01T00:00:00',
+    jobPositionExpanded: { description: 'VENDEDOR' }, employeeRegistrationProfessionalExpanded: { departmentExpanded: { description: 'ESCRITÓRIO' } }, daysExperience: 45, extensionDays: 45 }, rules);
+  assert.deepEqual(cad, { cargo: 'VENDEDOR', departamento: 'ESCRITÓRIO', contratoExperiencia: '45', prorrogacao: '45' });
+  // Geral: departamento do detalhe e o assunto do catálogo, sem a competência antiga
+  const g = E.valoresDoDetalhe('geral', { subject: 'Guia do FGTS – 2ª via – competência 09/2026', departmentExpanded: { name: 'PESSOAL' } }, rules);
+  assert.equal(g.departamento, 'PESSOAL'); assert.equal(g.assunto, 'Guia do FGTS – 2ª via'); assert.ok(!/09\/2026|Competência/.test(g.descricao));
+  assert.deepEqual(E.valoresDoDetalhe('afastamento', null, rules), {});
+  // o campo só vai se as regras disserem onde ele está no detalhe (campos.*.api)
+  assert.ok(Object.values(rules.tipos.afastamento.campos).filter(c => c.api).every(c => !c.sensivel && c.tipo !== 'data'));
+});
+
+t('Repetir e histórico deste computador: sem datas, sem dias do atestado e sem CID', () => {
+  const v = E.valoresParaRepetir('afastamento', { empregado: 'ANA EXEMPLO', dataAfastamento: '01/10/2026', dias: '3', tipoAfastamento: 'Doença período igual ou inferior a 15 dias', cid: 'Z76', assunto: 'x', descricao: 'y' }, rules);
+  assert.deepEqual(v, { empregado: 'ANA EXEMPLO', tipoAfastamento: 'Doença período igual ou inferior a 15 dias' });
+  assert.deepEqual(E.valoresParaRepetir('rubricas', { tipoLancamento: 'MENSAL', competencia: '09/2026' }, rules), { tipoLancamento: 'MENSAL' });
+  assert.deepEqual(Object.keys(E.valoresParaRepetir('cadastroEmpregado', { nome: 'FULANA', cpf: '1', cargo: 'VENDEDOR', dataAdmissao: '01/09/2026' }, rules)), ['cargo']);
+});
+
 console.log(`\n${n} testes ok`);
