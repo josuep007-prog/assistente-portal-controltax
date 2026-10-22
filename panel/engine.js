@@ -117,7 +117,7 @@ export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = 
     const hit = toks.filter(t => T.includes(' ' + t + ' ')).length;
     const s = toks.length ? hit / toks.length : 0;
     if (toks.length >= 2 && s >= 0.66) {
-      if (!best || s > best.bruto) { best = { option: e, score: s * 0.95, bruto: s }; empates.clear(); }
+      if (!best || s > best.bruto) { best = { option: e, score: Math.min(0.8, s * 0.95), bruto: s }; empates.clear(); }   // nome incompleto: até 0,8
       else if (s === best.bruto && best.option !== e) empates.add(e);
     }
   }
@@ -125,9 +125,9 @@ export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = 
   if (best && empates.size) return { option: null, score: 0, candidatos: [best.option, ...empates] };
   if (best) return best;
   if (!soPrimeiroNome) return null;
-  // só o primeiro nome ("o Jorge pediu demissão"): vale se for único na lista
+  // só o primeiro nome ("o Jorge pediu demissão"): vale se for único na lista, mas o cliente confirma (abaixo do limiar)
   const firsts = (employees || []).filter(e => { const f = norm(e).split(' ')[0]; return f.length > 2 && T.includes(' ' + f + ' '); });
-  return firsts.length === 1 ? { option: firsts[0], score: 0.7 } : null;
+  return firsts.length === 1 ? { option: firsts[0], score: 0.55, soPrimeiroNome: true } : null;
 }
 
 /** Funcionários cujo primeiro nome aparece no texto (para perguntar quando há mais de um). */
@@ -154,25 +154,81 @@ export function classifyDocument(text, rules) {
   return out.sort((a, b) => b.bruto - a.bruto);
 }
 
+/* ---------------- Leitor: confiança, âncoras e formatos (regras: config.leitor) ---------------- */
+/* Precisão acima de tudo: valor com confiança abaixo do limiar não vai ao portal sozinho (vira sugestão de um clique);
+   valor sem âncora (1º CPF/CEP/e-mail do texto, "Data:" genérico) fica abaixo do limiar; a qualidade do OCR põe um teto. */
+const LEITOR_PADRAO = {
+  confiancaMinimaPortal: 0.6, semAncora: 0.5,
+  ocrBaixo: 75, ocrTetoBaixo: 0.55, ocrTetoNomes: 85, ocrRuim: 45,
+  contextoCpfDescarta: ['registro', 'renach', 'inscri[cç][aã]o', 'pis', 'pasep', 'nis', 'nit', 'cns', 'cart[aã]o sus', 'matr[ií]cula', 'protocolo', 'espelho', 'c[oó]digo', 'c[oô]njuge', 'dependente', 'respons[aá]vel', 'genitor', 'm[aã]e', 'pai', 'cnpj', 'empregador', 'empresa'],
+  formatos: {
+    cpf: '^\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}$', cep: '^\\d{5}-?\\d{3}$', pis: '^[\\d.\\-]{11,14}$',
+    rg: '^(?:[A-Z]{2}[\\s\\-]?)?(?:\\d{1,2}\\.?\\d{3}\\.?\\d{3}(?:-?[\\dXx])?|\\d{5,14}(?:-?[\\dXx])?)$',
+    agencia: '^\\d{3,5}(?:-?[\\dXx])?$', conta: '^\\d{1,13}(?:-?[\\dXx]{1,2})?$',
+    telefone: '^\\(?\\d{2}\\)?\\s?\\d{4,5}-?\\d{4}$', numero: '^(?:\\d{1,6}[A-Za-z]?|S\\/?N)$',
+    ctpsNumero: '^\\d{4,8}$', ctpsSerie: '^\\d{3,5}(?:-?[A-Z]{2})?$', titulo: '^\\d{12}$', zona: '^\\d{1,4}$', secao: '^\\d{1,4}$', cnh: '^\\d{9,11}$'
+  },
+  tiposComNome: ['nome', 'mae', 'pai', 'conjuge', 'nomeSocial']
+};
+export const cfgLeitor = (rules) => ({ ...LEITOR_PADRAO, ...(rules?.config?.leitor || {}), formatos: { ...LEITOR_PADRAO.formatos, ...(rules?.config?.leitor?.formatos || {}) } });
+/** Confiança mínima para um valor lido ir ao portal sem o cliente confirmar. */
+export const limiarPortal = (rules) => cfgLeitor(rules).confiancaMinimaPortal;
+
+/** O valor tem o formato do campo? (e-mail, CEP, CPF, PIS, RG, agência, conta, telefone, número, datas, nomes e listas
+ *  com valoresAceitos). Devolve { ok, valor } — valor corrigido quando a lista das regras tem uma opção quase igual. */
+export function validarValor(k, def, valor, rules) {
+  const v = String(valor ?? '').trim(); if (!v) return { ok: false };
+  const L = cfgLeitor(rules); const tp = def?.tipo;
+  const casa = (rx) => { try { return new RegExp(rx, 'i').test(v); } catch { return true; } };
+  if (tp === 'email' || k === 'email') return { ok: validEmail(v) };
+  if (tp === 'cpf' || k === 'cpf') return { ok: validCPF(v) };
+  if (tp === 'pis' || k === 'pis') return { ok: validPIS(v) };
+  if (tp === 'cep' || k === 'cep') return { ok: onlyDigits(v).length === 8 && casa(L.formatos.cep) };
+  if (tp === 'data') return { ok: !!parseDate(v) };
+  if (tp === 'telefone' || k === 'telefone') { const d = onlyDigits(v).length; return { ok: d >= 10 && d <= 11 }; }
+  if (L.formatos[k]) return { ok: casa(L.formatos[k]) };
+  if (L.tiposComNome.includes(k)) return { ok: !/\d/.test(v) && /\p{L}{2}/u.test(v) && !/[=:;|@#$%&*_<>]/.test(v) };
+  if (def?.seletores && Object.keys(def.seletores).length) return { ok: Object.keys(def.seletores).some(o => norm(o) === norm(v)) };
+  const aceitos = def?.valoresAceitos;
+  if (Array.isArray(aceitos) && aceitos.length) {
+    const N = norm(v);
+    const exato = aceitos.find(o => norm(o) === N || norm(o).replace(/\s*\(.*?\)/g, '') === N || casaRadical(N.toLowerCase(), norm(o).toLowerCase().split(' ')[0]));
+    if (exato) return { ok: true };
+    const quase = bestMatch(v, aceitos, 0.72);
+    return quase ? { ok: false, valor: quase.option } : { ok: false };
+  }
+  // lista sem opções conhecidas: texto com sobra de OCR ("Sotteira =") não serve
+  if (tp === 'combo' || tp === 'radio') return { ok: !/[=|_<>{}\[\]#]/.test(v) && /\p{L}/u.test(v) };
+  return { ok: true };
+}
+
 /** Extração genérica "Rótulo: valor" usando os sinônimos dos campos.
- *  O valor vai até: 2+ espaços, " | ", fim da linha ou o início de outro rótulo conhecido ("… Bairro: …"). */
-export function extractByLabels(text, campos) {
-  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const escRx = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-  const allSyns = [...new Set(Object.values(campos || {}).flatMap(d => d.sinonimos || []))].sort((a, b) => b.length - a.length);
-  const nextLabel = allSyns.length ? new RegExp(`\\s+(?:${allSyns.map(escRx).join('|')})\\s*[:\\-–]\\s`, 'i') : null;
+ *  O valor vai até: 2+ espaços, " | ", " = ", fim da linha ou o início de outro rótulo conhecido ("… Bairro: …",
+ *  também sem acento, como o OCR lê). Sinônimos genéricos só valem nos documentos de campos[].sinonimosSoEm
+ *  ({ "sinônimo": ["docId", …, "texto" = texto colado sem documento] }). */
+export function extractByLabels(text, campos, opts = {}) {
+  const docId = opts.docId ?? null;
+  const lines = String(text || '').normalize('NFC').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const escRx = (x) => plain(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const synsDe = (def) => [...(def.sinonimos || []), ...Object.entries(def.sinonimosSoEm || {}).filter(([, docs]) => [].concat(docs || []).includes(docId || 'texto')).map(([s]) => s)];
+  const allSyns = [...new Set(Object.values(campos || {}).flatMap(d => [...(d.sinonimos || []), ...Object.keys(d.sinonimosSoEm || {})]))].sort((a, b) => b.length - a.length);
+  const nextLabel = allSyns.length ? new RegExp(`\\s+(?:${allSyns.map(escRx).join('|')})\\s*[:\\-–=]\\s`) : null;
   const out = {};
   for (const [key, def] of Object.entries(campos || {})) {
-    const syns = (def.sinonimos || []).slice().sort((a, b) => b.length - a.length);
+    const syns = synsDe(def).slice().sort((a, b) => b.length - a.length);
     for (const syn of syns) {
-      const re = new RegExp(`(?:^|\\s|\\|)${escRx(syn)}\\s*[:\\-–]\\s*(.{1,160}?)(?=\\s{2,}|\\s\\|\\s|$)`, 'i');
+      // ":" "-" "=" separam rótulo e valor; "." (o OCR troca ":" por ".") só com o rótulo no começo da linha ou de uma coluna
+      const re = new RegExp(`(?:(?:^|\\s{2,}|\\|\\s*)${escRx(syn)}\\s*[:\\-–=.]|(?:^|\\s|\\|)${escRx(syn)}\\s*[:\\-–=])\\s*(.{1,160}?)(?=\\s{2,}|\\s\\|\\s|$)`);
       for (const l of lines) {
-        const m = l.match(re);
+        const lp = plain(l);                 // mesma posição de cada letra (texto em NFC), sem acentos e em minúsculas
+        const m = lp.match(re);
         if (!m || !m[1]) continue;
-        let v = m[1].trim();
-        if (nextLabel) { const cut = (' ' + v).search(nextLabel); if (cut > 0) v = v.slice(0, cut - 1).trim(); }
-        v = v.replace(/[;,]$/, '').trim();
-        if (v) { out[key] = { valor: v, fonte: syn, conf: 0.75, linha: l }; break; }
+        const ini = m.index + m[0].length - m[1].length;
+        let v = l.slice(ini, ini + m[1].length).trim(); let vp = lp.slice(ini, ini + m[1].length).trim();
+        if (nextLabel) { const cut = (' ' + vp).search(nextLabel); if (cut > 0) { v = v.slice(0, cut - 1).trim(); vp = vp.slice(0, cut - 1).trim(); } }
+        // " = " e "—" separam colunas no OCR; aspas e símbolos soltos no fim são sobra da leitura
+        v = v.split(/\s+[=—]\s*|\s*=\s+/)[0].replace(/(?<=\d)["“”'`´|=]+\S*$/, '').replace(/[;,]$/, '').trim();
+        if (v) { out[key] = { valor: v, fonte: syn, conf: 0.75, linha: l, ancora: true }; break; }
       }
       if (out[key]) break;
     }
@@ -181,22 +237,54 @@ export function extractByLabels(text, campos) {
 }
 
 const RX = {
-  cpf: /\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b/g,
+  // CPF com os grupos separados por espaço ou vírgula (OCR: "000 .123.407-23", "000,123.407-23")
+  cpf: /(?<![\d.,])(\d{3}(?:\s?[.,]\s?)?\d{3}(?:\s?[.,]\s?)?\d{3}(?:\s?[-–]\s?)?\d{2})(?![\d])/g,
   pis: /\b(\d{3}\.?\d{5}\.?\d{2}-?\d)\b/g,
   cep: /\b(\d{5}-?\d{3})\b/,
   email: /\b([\w.+-]+@[\w-]+\.[\w.-]+)\b/,
   tel: /(\(?\d{2}\)?\s?9?\d{4}-?\d{4})/,
   data: /\b(\d{2}\/\d{2}\/\d{4})\b/g
 };
+/** O número está junto de qual rótulo? 'sim' (o rótulo do campo é o mais perto, na linha ou na de cima),
+ *  'outro' (o mais perto é registro/RENACH/inscrição/PIS/CNS…), null (nenhum rótulo). */
+function rotuloPerto(text, idx, rotulo, descarta) {
+  const ini = text.lastIndexOf('\n', idx - 1) + 1;
+  const antes = plain(text.slice(Math.max(ini, idx - 60), idx));
+  const ultimo = (rx) => { let p = -1; for (const m of antes.matchAll(new RegExp(`(?<![a-z])(?:${rx})(?![a-z])`, 'g'))) p = m.index; return p; };
+  const pR = ultimo(rotulo), pD = descarta.length ? ultimo(descarta.join('|')) : -1;
+  if (pR >= 0 || pD >= 0) return pR > pD ? 'sim' : 'outro';
+  // rótulo na linha de cima (RG, CNH, CIN: "CPF   DATA NASCIMENTO" e o valor embaixo)
+  if (antes.trim()) return null;
+  const fimAnt = ini - 1; if (fimAnt <= 0) return null;
+  const linhaAnt = plain(text.slice(text.lastIndexOf('\n', fimAnt - 1) + 1, fimAnt));
+  const temR = new RegExp(`(?<![a-z])(?:${rotulo})(?![a-z])`).test(linhaAnt);
+  const temD = descarta.length && new RegExp(`(?<![a-z])(?:${descarta.join('|')})(?![a-z])`).test(linhaAnt);
+  return temR && !temD ? 'sim' : temD && !temR ? 'outro' : null;
+}
 
-export function extractGeneric(text) {
-  const out = {};
-  const cpfs = [...String(text).matchAll(RX.cpf)].map(m => m[1]).filter(validCPF);
-  if (cpfs.length) out.cpf = { valor: fmtCPF(cpfs[0]), conf: 0.95, fonte: 'CPF válido no texto' };
-  const pis = [...String(text).matchAll(RX.pis)].map(m => m[1]).filter(p => validPIS(p) && !cpfs.some(c => onlyDigits(c) === onlyDigits(p)));
-  if (pis.length) out.pis = { valor: pis[0], conf: 0.8, fonte: 'PIS válido no texto' };
-  const cep = String(text).match(RX.cep); if (cep) out.cep = { valor: fmtCEP(cep[1]), conf: 0.6, fonte: 'CEP no texto' };
-  const em = String(text).match(RX.email); if (em) out.email = { valor: em[1], conf: 0.8, fonte: 'e-mail no texto' };
+export function extractGeneric(text, rules) {
+  const out = {}; const T = String(text || '').normalize('NFC');
+  const L = cfgLeitor(rules);
+  // CPF: o que está junto do rótulo "CPF" vale; perto de registro/RENACH/inscrição/PIS/CNS é outro número; sem rótulo fica para conferir
+  const cpfs = [];
+  for (const m of T.matchAll(RX.cpf)) {
+    const d = onlyDigits(m[1]); if (d.length !== 11 || !validCPF(d)) continue;
+    const r = rotuloPerto(T, m.index, 'cpf|c\\.p\\.f\\.?', L.contextoCpfDescarta);
+    if (r !== 'outro') cpfs.push({ d, ancora: r === 'sim' });
+  }
+  const cpf = cpfs.find(c => c.ancora) || cpfs[0];
+  if (cpf) out.cpf = cpf.ancora ? { valor: fmtCPF(cpf.d), conf: 0.95, fonte: 'CPF junto do rótulo', ancora: true, validado: true } : { valor: fmtCPF(cpf.d), conf: Math.min(0.5, L.semAncora), fonte: 'CPF no texto (sem rótulo)' };
+  const pis = [];
+  for (const m of T.matchAll(RX.pis)) {
+    if (!validPIS(m[1]) || cpfs.some(c => c.d === onlyDigits(m[1]))) continue;
+    pis.push({ v: m[1], ancora: rotuloPerto(T, m.index, 'pis|pasep|nis|nit|pis\\/pasep', []) === 'sim' });
+  }
+  const p1 = pis.find(p => p.ancora) || pis[0];
+  if (p1) out.pis = p1.ancora ? { valor: p1.v, conf: 0.8, fonte: 'PIS junto do rótulo', ancora: true, validado: true } : { valor: p1.v, conf: L.semAncora, fonte: 'PIS no texto (sem rótulo)' };
+  // CEP sem o bloco do endereço não diz de quem é (pode ser da empresa ou da clínica): fica baixo, o leitor de endereço decide
+  const cep = T.match(RX.cep); if (cep) out.cep = { valor: fmtCEP(cep[1]), conf: 0.4, fonte: 'CEP no texto' };
+  const em = T.match(RX.email);
+  if (em) { const ancora = /e-?mail\s*:?\s*$/i.test(T.slice(Math.max(0, em.index - 20), em.index)); out.email = { valor: em[1], conf: ancora ? 0.8 : L.semAncora, fonte: ancora ? 'e-mail junto do rótulo' : 'e-mail no texto (sem rótulo)', ancora, validado: true }; }
   return out;
 }
 
@@ -209,7 +297,9 @@ function runPatterns(text, patterns) {
 
 /**
  * Lê um texto e devolve: documento provável, tipo de solicitação sugerido e campos.
- * ctx = { employees: [...], tipoAtual: 'afastamento' | null }
+ * ctx = { employees: [...], tipoAtual: 'afastamento' | null, hoje, confiancaOcr: 0–100 | null, metodo: 'ocr' | 'pdf-texto' | … }
+ * Cada campo traz { valor, conf, fonte } e, quando vale, ancora (junto do rótulo/frase) e validado (formato conferido).
+ * Abaixo de config.leitor.confiancaMinimaPortal o valor é só sugestão: o painel não o manda ao portal sem o cliente usar.
  */
 export function analyzeText(text, rules, ctx = {}) {
   const docs = classifyDocument(text, rules);
@@ -218,25 +308,28 @@ export function analyzeText(text, rules, ctx = {}) {
   let tipoKey = ctx.tipoAtual || doc?.tipoSolicitacao || null;
   if (!ctx.tipoAtual && doc?.id === 'atestado') tipoKey = rules.config?.atestadoAte15DiasVaiPara || 'afastamento';
   const tipo = tipoKey ? resolveTipo(rules, tipoKey) : null;
+  const LC = cfgLeitor(rules);
   const campos = {};
-  const put = (k, v, conf, fonte) => { if (v == null || v === '') return; if (!campos[k] || campos[k].conf < conf) campos[k] = { valor: v, conf, fonte }; };
+  const put = (k, v, conf, fonte, extra = {}) => { if (v == null || v === '') return; if (!campos[k] || campos[k].conf < conf) campos[k] = { valor: v, conf, fonte, ...extra }; };
+  // documento de outro pedido (ex.: pedido de demissão aberto num afastamento): os rótulos do tipo não valem nele
+  const outraFamilia = !!(ctx.tipoAtual && docRule?.tipoSolicitacao && docRule.tipoSolicitacao !== ctx.tipoAtual && !FAMILIAS_PEDIDO.some(f => f.includes(docRule.tipoSolicitacao) && f.includes(ctx.tipoAtual)));
 
-  const rotulados = tipo ? extractByLabels(text, tipo.campos) : {};
-  for (const [k, v] of Object.entries(rotulados)) put(k, v.valor, v.conf, v.fonte);
-  for (const [k, v] of Object.entries(extractGeneric(text))) if (!tipo || tipo.campos[k]) put(k, v.valor, v.conf, v.fonte);
+  const rotulados = tipo && !outraFamilia ? extractByLabels(text, tipo.campos, { docId: docRule?.id || null }) : {};
+  for (const [k, v] of Object.entries(rotulados)) put(k, v.valor, v.conf, v.fonte, { ancora: true });
+  for (const [k, v] of Object.entries(extractGeneric(text, rules))) if (!tipo || tipo.campos[k]) put(k, v.valor, v.conf, v.fonte, { ancora: !!v.ancora, validado: !!v.validado });
   // documento pessoal (RG, CNH, CIN, CTPS digital, título): rótulo numa linha, valor na de baixo
   const pessoal = docRule?.leitor === 'pessoal' && tipo ? lerDocumentoPessoal(text, rules.config?.leitorPessoal, docRule.id) : null;
-  if (pessoal) for (const [k, v] of Object.entries(pessoal.campos)) if (tipo.campos[k]) put(k, v.valor, v.conf, v.fonte);
+  if (pessoal) for (const [k, v] of Object.entries(pessoal.campos)) if (tipo.campos[k]) put(k, v.valor, v.conf, v.fonte, { ancora: true });
   // leitor próprio do documento (atestado): lê dias, data, CID, médico e paciente com mais cuidado
   const usaLeitor = docRule ? (docRule.leitor || (docRule.id === 'atestado' ? 'atestado' : null)) === 'atestado' : tipoKey === 'afastamento';
   const leitor = usaLeitor ? lerAtestado(text, ctx.hoje || today()) : null;
   if (leitor) {
     const cite = (x) => x?.trecho ? `“${x.trecho}”` : (docRule?.nome || 'documento');
-    if (leitor.dias) put('dias', String(leitor.dias.n), leitor.dias.conf, cite(leitor.dias));
-    if (leitor.data) put('dataAfastamento', leitor.data.data, leitor.data.conf, cite(leitor.data));
-    if (leitor.cid) put('cid', leitor.cid, 0.7, docRule?.nome || 'documento');
-    if (leitor.medico) put('medico', leitor.medico, 0.7, docRule?.nome || 'documento');
-  } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
+    if (leitor.dias) put('dias', String(leitor.dias.n), leitor.dias.conf, cite(leitor.dias), { ancora: true, validado: leitor.dias.conf >= 0.9 });
+    if (leitor.data) put('dataAfastamento', leitor.data.data, leitor.data.conf, cite(leitor.data), { ancora: leitor.data.conf >= 0.75, validado: leitor.data.conf >= 0.75 });
+    if (leitor.cid) put('cid', leitor.cid, 0.7, docRule?.nome || 'documento', { ancora: true });
+    if (leitor.medico) put('medico', leitor.medico, 0.7, docRule?.nome || 'documento', { ancora: true });
+  } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome, { ancora: true }); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
   // Solicitação Geral (alvará, CND…): departamento e assunto pelo catálogo; a descrição só do modelo do item
   if (tipoKey === 'geral' && docRule) {
@@ -266,33 +359,42 @@ export function analyzeText(text, rules, ctx = {}) {
     }
   }
   // endereço: só de documentos que podem trazê-lo (documentos[].endereco: comprovante e ficha) ou de um texto sem documento;
-  // as linhas que já viraram outros campos (naturalidade, "SSP/ES"…) não entram
+  // no comprovante, só o bloco do titular (o da empresa emissora fica de fora); as linhas que já viraram outros campos não entram
+  const titular = doc?.id === 'comprovanteEndereco' ? titularComprovante(text) : null;
+  let bairroDuvida = false;
   if (tipo?.campos?.cep) {
     const ADDR = ['cep', 'endereco', 'numero', 'complemento', 'bairro', 'municipio', 'uf'];
     if (!docRule || docRule.endereco) {
-      const usadas = new Set(Object.entries(rotulados).filter(([k]) => !ADDR.includes(k)).map(([, v]) => v.linha));
-      const livre = String(text || '').split(/\r?\n/).filter(l => !usadas.has(l.trim())).join('\n');
       const ender = rotulados.endereco ? separarEndereco(rotulados.endereco.valor) : {};
-      if (ender.endereco) { campos.endereco.valor = ender.endereco; for (const k of ['numero', 'complemento', 'bairro', 'municipio', 'uf']) if (ender[k] && tipo.campos[k] && !rotulados[k]) put(k, ender[k], 0.7, rotulados.endereco.fonte); }
-      for (const [k, v] of Object.entries(extractAddress(livre))) if (tipo.campos[k]) put(k, v, docRule?.id === 'comprovanteEndereco' ? 0.7 : 0.45, 'endereço no documento');
+      if (ender.endereco) { campos.endereco.valor = ender.endereco; for (const k of ['numero', 'complemento', 'bairro', 'municipio', 'uf']) if (ender[k] && tipo.campos[k] && !rotulados[k]) put(k, ender[k], 0.7, rotulados.endereco.fonte, { ancora: true }); }
+      if (campos.cep && !rotulados.cep) delete campos.cep;     // o 1º CEP do texto pode ser da empresa: vale o do bloco escolhido
+      const le = lerEndereco(text, rules, { docId: docRule?.id || null, titular });
+      if (le) {
+        bairroDuvida = le.bairroDuvida;
+        // com rótulos (ficha), o leitor de blocos só completa; sem o bloco do titular, nada passa do limiar
+        const conf = docRule?.id === 'comprovanteEndereco' ? le.conf : Math.min(le.conf, 0.45);
+        for (const [k, v] of Object.entries(le.campos)) if (tipo.campos[k] && !rotulados[k]) put(k, v, k === 'bairro' && le.bairroDuvida ? Math.min(conf, 0.45) : conf, le.fonte, { ancora: conf >= 0.6 });
+      }
     } else for (const k of ADDR) if (campos[k] && !rotulados[k]) delete campos[k];
   }
   for (const k of docRule?.naoPreenche || []) delete campos[k];
   // datas extraídas: normaliza
   for (const [k, c] of Object.entries(campos)) {
     const def = tipo?.campos?.[k];
-    const junto = (alvo, v) => { if (v && tipo.campos[alvo] && (!campos[alvo] || campos[alvo].conf < c.conf)) campos[alvo] = { valor: v, conf: c.conf, fonte: c.fonte }; };
+    const junto = (alvo, v) => { if (v && tipo.campos[alvo] && (!campos[alvo] || campos[alvo].conf < c.conf)) campos[alvo] = { valor: v, conf: c.conf, fonte: c.fonte, ancora: c.ancora }; };
     // "Vitória/ES" → município e UF; "1234567 SSP/ES" → RG, órgão e UF; "45 + 45" → experiência e prorrogação (regras: separaUf, separaOrgaoUf, prorrogacaoEm)
     if (def?.separaOrgaoUf) { const r = separarRg(c.valor); if (r) { c.valor = r.numero; junto(def.separaOrgaoUf[0], r.orgao); junto(def.separaOrgaoUf[1], r.uf); } }
     if (def?.separaUf) { const u = separarUf(c.valor); if (u) { c.valor = u.antes; junto(def.separaUf, u.uf); } }
     if (def?.prorrogacaoEm) { const d = diasExperiencia(c.valor); if (d[1] != null) junto(def.prorrogacaoEm, String(d[1])); }
     if (def?.tipo === 'data') {
-      // "01/11/2026 a 31/10/2027" (vigência do estágio): vale a primeira data
-      const d = parseDate(c.valor) || parseDate(String(c.valor).match(/\d{1,2}\/\d{1,2}\/\d{2,4}/)?.[0]);
+      // "01/11/2026 a 31/10/2027" (vigência do estágio), "03/11/2026 por 30 dias": vale a primeira data
+      const d = parseDate(c.valor) || parseDate(String(c.valor).match(/\d{1,2}\s?[\/.\-]\s?\d{1,2}\s?[\/.\-]\s?\d{2,4}/)?.[0]?.replace(/\s/g, ''));
       if (d) c.valor = fmtDate(d); else delete campos[k];
     }
     if (def?.tipo === 'numero') { const m = String(c.valor).match(/\d[\d.]*/); const n = m ? parseInt(onlyDigits(m[0]), 10) : NaN; if (isNaN(n)) delete campos[k]; else c.valor = String(n); }
     if (def?.tipo === 'cpf' && c.valor) c.valor = fmtCPF(c.valor);
+    // nome com sobra do OCR no fim ("MARTA LUCIA PRADO í", "ANA SOUZA |"): tira a sobra
+    if (LC.tiposComNome.includes(k)) c.valor = String(c.valor).replace(/(?:\s+(?:\p{Ll}|[^\p{L}\s]+))+$/u, '').trim();
     if (def?.tipo === 'radio' && def.seletores?.['Sim'] && def.seletores?.['Não']) { const v = simNao(c.valor) || def.outroTextoVira || null; if (v) c.valor = v; else delete campos[k]; }
     else if (def?.tipo === 'radio' && def.seletores) { const ops = Object.keys(def.seletores).filter(o => norm(o).startsWith(norm(c.valor)) && norm(c.valor)); if (ops.length === 1) c.valor = ops[0]; }
   }
@@ -302,21 +404,30 @@ export function analyzeText(text, rules, ctx = {}) {
     if (ta) put('tipoAfastamento', ta.valor, 0.7, ta.motivo);
   }
   // funcionário
-  let candidatos = null; const avisosExtra = [];
+  let candidatos = null; const avisosExtra = []; let pacienteOutro = false;
   if (tipo?.campos?.empregado && ctx.employees?.length) {
-    const pm = leitor?.paciente ? empregadoPorNome(leitor.paciente.nome, ctx.employees) : null;
-    if (pm?.option) put('empregado', pm.option, Math.min(pm.score, leitor.paciente.conf + 0.15), `“${leitor.paciente.trecho}”`);
+    const pac = leitor?.paciente;
+    const pm = pac ? empregadoPorNome(pac.nome, ctx.employees) : null;
+    if (pm?.option && pm.contradiz) {
+      // "MARIA EDUARDA" no atestado e "MARIA APARECIDA" na lista: pode ser de uma filha — o cliente confere
+      put('empregado', pm.option, 0.45, `“${pac.trecho}”`);
+      pacienteOutro = true;
+      avisosExtra.push({ nivel: 'atencao', id: 'outroNome', mensagem: (rules.mensagens?.documentoOutroNome || 'O documento está em nome de {nome}, que não é exatamente {funcionario}. Confira se é do funcionário (pode ser de um dependente).').replaceAll('{nome}', pac.nome).replaceAll('{funcionario}', pm.option) });
+    } else if (pm?.option) put('empregado', pm.option, Math.min(pm.score, pac.conf + 0.15), `“${pac.trecho}”`, { ancora: true, validado: pm.score >= 0.9 });
     else if (pm?.candidatos) candidatos = pm.candidatos;
     else {
       const m = findEmployeeInText(leitor ? semOutrasPessoas(text) : text, ctx.employees, { soPrimeiroNome: !leitor && !doc });
-      const outroNome = leitor?.paciente && leitor.paciente.nome.split(' ').length >= 2;
+      const outroNome = pac && pac.nome.split(' ').length >= 2;
       if (m?.candidatos) candidatos = m.candidatos;       // empate: o cliente escolhe
       else if (m && outroNome) {
-        put('empregado', m.option, Math.min(m.score, 0.45), `sobrenome igual ao de “${leitor.paciente.nome}”`);
-        avisosExtra.push({ nivel: 'atencao', id: 'outroNome', mensagem: `O atestado está em nome de ${leitor.paciente.nome}, que não é exatamente ${m.option}. Confira se é do funcionário (pode ser de um dependente).` });
-      } else if (m) put('empregado', m.option, m.score, 'nome encontrado no documento');
+        put('empregado', m.option, Math.min(m.score, 0.45), `sobrenome igual ao de “${pac.nome}”`);
+        pacienteOutro = true;
+        avisosExtra.push({ nivel: 'atencao', id: 'outroNome', mensagem: `O atestado está em nome de ${pac.nome}, que não é exatamente ${m.option}. Confira se é do funcionário (pode ser de um dependente).` });
+      } else if (m) put('empregado', m.option, m.score, 'nome encontrado no documento', { validado: m.score >= 0.95 });
     }
   }
+  // atestado de outra pessoa (dependente): o tipo de afastamento fica com o cliente
+  if (pacienteOutro && campos.tipoAfastamento) delete campos.tipoAfastamento;
   if (tipo?.campos?.nome && !campos.nome && !(docRule?.naoPreenche || []).includes('nome')) {
     // na mesma linha do rótulo (o nome da linha de baixo é do leitor de documento pessoal)
     const m = String(text).match(/(?:nome|paciente|portador|titular)[ \t]*[:\-]?[ \t]*([A-ZÀ-Ú][A-ZÀ-Ú \t]{8,60})(?=\n|\s{2,}|$)/);
@@ -325,15 +436,60 @@ export function analyzeText(text, rules, ctx = {}) {
   // motivo sem aviso prévio (término da experiência, justa causa): o cálculo não leva data nem tipo de aviso
   if (tipo?.campos?.tipoAviso && campos.motivo && !temAviso({ motivo: campos.motivo.valor }, rules)) { delete campos.tipoAviso; delete campos.dataAvisoPrevio; }
   // comprovante em nome de outra pessoa (a tela compara com o nome do cadastro) e filiação para confirmar
-  const titular = doc?.id === 'comprovanteEndereco' ? titularComprovante(text) : null;
   const avComp = avisoComprovante(titular, ctx.nome, rules);
   if (avComp) avisosExtra.push(avComp);
   if (pessoal?.filiacao?.length === 2 && tipo?.campos?.mae && campos.mae) {
     const outro = pessoal.filiacao.find(x => x !== campos.mae.valor) || '';
     avisosExtra.push({ nivel: 'atencao', id: 'filiacao', mensagem: (rules.mensagens?.filiacaoConfira || 'Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira.').replaceAll('{mae}', campos.mae.valor).replaceAll('{outro}', outro) });
   }
+  // P6 — formato: e-mail, CPF, CEP, RG, agência, conta, telefone, nomes e listas; o que não serve fica para conferir
+  for (const [k, c] of Object.entries(campos)) {
+    const def = tipo?.campos?.[k]; if (!def || k === 'empregado') continue;
+    const v = validarValor(k, def, c.valor, rules);
+    if (v.ok) { if (['cpf', 'pis', 'email', 'cep', 'data', 'telefone'].includes(def.tipo) || ['cpf', 'pis', 'email', 'cep'].includes(k) || LC.formatos[k]) c.validado = c.validado ?? true; continue; }
+    if (v.valor) { c.fonte = `${c.fonte} — li “${c.valor}”, parece “${v.valor}”`; c.valor = v.valor; }
+    c.conf = Math.min(c.conf, v.valor ? 0.5 : 0.4); c.confira = 'formato'; c.validado = false;
+  }
+  if (bairroDuvida && campos.bairro && campos.bairro.conf > 0.45 && !rotulados.bairro) campos.bairro.conf = 0.45;
+  // P2 — qualidade do OCR: leitura ruim não preenche nada (pede outra foto); leitura fraca, só sugestão (menos o validado e ancorado)
+  const ocrConf = ctx.metodo === 'ocr' || (ctx.metodo == null && ctx.confiancaOcr != null) ? ctx.confiancaOcr : null;
+  let fotoRuim = false;
+  if (ocrConf != null && ocrConf < LC.ocrRuim && Object.keys(campos).length) {
+    fotoRuim = true;
+    for (const k of Object.keys(campos)) delete campos[k];
+    candidatos = null;
+  } else if (ocrConf != null && ocrConf < LC.ocrBaixo) {
+    for (const c of Object.values(campos)) if (!(c.ancora && c.validado) && c.conf > LC.ocrTetoBaixo) { c.conf = LC.ocrTetoBaixo; c.confira = c.confira || 'leitura'; }
+  }
+  // nomes não têm dígito verificador: de foto, o OCR troca ou junta palavras ("EMMA THIAGO…") — ficam para o cliente confirmar
+  if (ocrConf != null && ocrConf < LC.ocrTetoNomes) for (const k of LC.tiposComNome) if (campos[k] && campos[k].conf > LC.ocrTetoBaixo) { campos[k].conf = LC.ocrTetoBaixo; campos[k].confira = campos[k].confira || 'leitura'; }
+  if (fotoRuim || (ocrConf != null && ocrConf < LC.ocrRuim)) avisosExtra.push({ nivel: 'atencao', id: 'fotoRuim', mensagem: rules.mensagens?.leituraRuimOutraFoto || 'Não consegui ler este arquivo com segurança (foto tremida, escura ou cortada). Para não preencher nada errado, deixei os campos em branco. Se puder, mande outra foto: o documento inteiro, de frente, com boa luz e sem reflexo.' });
+  // quem é a pessoa do documento (um documento, uma pessoa: o painel não mistura documentos de pessoas diferentes)
+  const pessoa = pessoaDaAnalise({ campos, paciente: leitor?.paciente?.nome || null });
   const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra, ...avisosMotivo];
-  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos, titular, filiacao: pessoal?.filiacao || null, layout: pessoal?.layout || null };
+  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos, titular, filiacao: pessoal?.filiacao || null, layout: pessoal?.layout || null, pessoa, fotoRuim, confiancaOcr: ocrConf };
+}
+
+/* ---------------- Um documento, uma pessoa ---------------- */
+const FAMILIAS_PEDIDO = [['avisoFerias', 'calculoFerias'], ['avisoRescisao', 'calculoRescisao'], ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte']];
+/** De quem é o documento: { nome, cpf } (nome do cadastro, funcionário escolhido ou paciente; CPF válido). null = não diz. */
+export function pessoaDaAnalise(a) {
+  const c = a?.campos || {};
+  const cpf = c.cpf?.valor && validCPF(c.cpf.valor) && (c.cpf.conf ?? 0) >= 0.6 ? onlyDigits(c.cpf.valor) : null;
+  const nome = (c.nome?.valor && (c.nome.conf ?? 0) >= 0.6 ? c.nome.valor : null) || (c.empregado?.valor && (c.empregado.conf ?? 0) >= 0.6 ? c.empregado.valor : null) || null;
+  return cpf || nome ? { nome, cpf } : null;
+}
+/** Duas pessoas são a mesma? true / false / null (não dá para dizer). CPF manda; sem CPF, o nome inteiro. */
+export function mesmaPessoa(a, b) {
+  if (!a || !b) return null;
+  if (a.cpf && b.cpf) return a.cpf === b.cpf;
+  if (a.nome && b.nome) {
+    if (norm(a.nome) === norm(b.nome)) return true;
+    const pm = empregadoPorNome(a.nome, [b.nome]);
+    if (pm?.option && !pm.contradiz && pm.score >= 0.8) return true;
+    return similarity(a.nome, b.nome) >= 0.9;
+  }
+  return null;
 }
 
 /* ---------------- Tipos e campos ---------------- */
@@ -602,9 +758,21 @@ export function renderFirst(list, values) {
  *   { palavras?, documentos?, valor? | ate15?, acima15?, limiteDias? }
  * Devolve { valor, motivo } ou null (sem dias quando o tipo depende deles).
  */
+/** Tira do texto as opções de formulário que NÃO estão marcadas: "(X) Doença ( ) Acidente do trabalho" → "(X) Doença".
+ *  Formulários impressos trazem todas as opções escritas; só a marcada diz alguma coisa. */
+export function semOpcoesDesmarcadas(text) {
+  const MARCA = /([(\[]\s*(?:[xX✓✔☒■▣])?\s*[)\]])/;
+  return String(text || '').split(/\n/).map(l => {
+    const partes = l.split(MARCA);
+    if (partes.length < 3) return l;
+    let out = partes[0];
+    for (let i = 1; i < partes.length; i += 2) if (/[xX✓✔☒■▣]/.test(partes[i])) out += partes[i] + partes[i + 1];
+    return out;
+  }).join('\n');
+}
 export function inferTipoAfastamento(text, dias, docId, regras) {
-  // linhas que são só uma opção de formulário ("( ) doença", "U acidente do trabalho") não dizem nada
-  const T = plain(String(text || '').split(/\n/).filter(l => !(l.trim().length < 34 && /^\W{0,4}[a-zà-úA-ZÀ-Ú]?\W{0,4}\s*(doen[cç]a|acidente d[eo] trabalho|acidente de trajeto|outros?)\s*\W*$/i.test(l.trim()))).join('\n'));
+  // linhas que são só uma opção de formulário ("( ) doença", "U acidente do trabalho") e opções desmarcadas não dizem nada
+  const T = plain(semOpcoesDesmarcadas(text).split(/\n/).filter(l => !(l.trim().length < 34 && /^\W{0,4}[a-zà-úA-ZÀ-Ú]?\W{0,4}\s*(doen[cç]a|acidente d[eo] trabalho|acidente de trajeto|outros?)\s*\W*$/i.test(l.trim()))).join('\n'));
   const n = parseInt(dias, 10);
   for (const r of regras || []) {
     const porPalavra = r.palavras?.length && r.palavras.some(w => T.includes(plain(w)));
@@ -1708,29 +1876,52 @@ const MES_NUM = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 
 /** Data de início do afastamento: "a partir de 03/09/2026", "na data de…", "02/09/26", "3 de setembro de 2026";
  *  "a partir desta data" usa a data do próprio documento. Ignora nascimento, decretos e leis. */
 export function lerDataAtestado(text, hoje = today()) {
-  const orig = String(text || '').normalize('NFC'); const p = plain(orig);
+  const orig0 = String(text || '').normalize('NFC');
+  // OCR: O no lugar de 0 e l/I no lugar de 1 dentro de uma data ("O8/1O/2O26", "l5/10/2026") — troca 1 por 1, mesma posição
+  const orig = orig0.replace(/(?<![\p{L}\d])[\dOoIl|]{1,2}\s?[\/.\-]\s?[\dOoIl|]{1,2}\s?[\/.\-]\s?[\dOoIl|]{2,4}(?![\p{L}\d])/gu, (m) => /\d/.test(m) ? m.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1') : m);
+  const p = plain(orig);
   const ds = [];
-  const add = (i, len, d, y2) => { if (d && !isNaN(d)) ds.push({ i, len, d, y2 }); };
+  const add = (i, len, d, y2, semAno) => { if (d && !isNaN(d)) ds.push({ i, len, d, y2, semAno }); };
   const mk = (dd, mm, yy) => { let y = +yy; if (y < 100) y += 2000; const d = new Date(y, mm - 1, dd); return d.getMonth() === mm - 1 && d.getDate() === +dd ? d : null; };
+  // sem ano ("no dia 10 de outubro", "a partir de 10/10"): o ano de hoje (ou o anterior, se cairia muito no futuro)
+  const mkSemAno = (dd, mm) => { let d = mk(dd, mm, hoje.getFullYear()); if (d && d > addDays(hoje, 90)) d = mk(dd, mm, hoje.getFullYear() - 1); return d; };
+  const MES = 'janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
   for (const m of p.matchAll(/(?<![\d/])(\d{1,2})\s?[\/.\-]\s?(\d{1,2})\s?[\/.\-]\s?(\d{4}|\d{2})(?![\d/])/g)) add(m.index, m[0].length, mk(+m[1], +m[2], m[3]), m[3].length === 2);
-  for (const m of p.matchAll(/\b(\d{1,2})(?:o|º)?\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(\d{4})/g)) add(m.index, m[0].length, mk(+m[1], MES_NUM[m[2]], m[3]));
+  for (const m of p.matchAll(new RegExp(`\\b(\\d{1,2})(?:o|º)?\\s+de\\s+(${MES})\\s+de\\s+(\\d{4})`, 'g'))) add(m.index, m[0].length, mk(+m[1], MES_NUM[m[2]], m[3]));
   for (const m of p.matchAll(/\b(\d{1,2})\s+de\s+(\d{1,2})\s+de\s+(\d{2}|\d{4})\b/g)) add(m.index, m[0].length, mk(+m[1], +m[2], m[3]), m[3].length === 2);
+  for (const m of p.matchAll(new RegExp(`(?:\\bdia\\s+|\\bem\\s+|a\\s?partir\\s+de\\s+)(\\d{1,2})(?:o|º)?\\s+de\\s+(${MES})(?!\\s+de\\s+\\d)`, 'g'))) { const i = m.index + m[0].indexOf(m[1]); add(i, m.index + m[0].length - i, mkSemAno(+m[1], MES_NUM[m[2]]), false, true); }
+  for (const m of p.matchAll(/(?:\bdia\s+|a\s?partir\s+de\s+)(\d{1,2})\/(\d{1,2})(?![\d/])/g)) { const i = m.index + m[0].indexOf(m[1]); add(i, m.index + m[0].length - i, mkSemAno(+m[1], +m[2]), false, true); }
   const min = addDays(hoje, -400), max = addDays(hoje, 90);
+  // "a partir desta data" / "nesta data": a data é a do atendimento da frase (ou, sem ela, a data do documento)
+  const desta = [...p.matchAll(/a\s?parti[r]?\s+(?:desta|da presente|da)\s+data|\bnesta data\b|\bna presente data\b/g)].map(m => m.index);
+  const ATEND = /(no dia|na data de|na data|entrada|atendid[oa]|atendimento|consulta|data e hora|data\/hora)[^\n]{0,14}$/;
   let best = null;
   for (const x of ds) {
     if (x.d < min || x.d > max) continue;
     const antes = p.slice(Math.max(0, x.i - 40), x.i);
-    let sc = 0;
+    let sc = 0; let generico = false;
     if (/(nasc|nascimento|decreto|portaria|resolucao|\blei\b|validade|vencimento)[^\n]{0,25}$/.test(antes)) sc -= 10;
+    // emissão, impressão e 2ª via são da folha, não do atendimento
+    const daFolha = /(emissao|emitid[oa]|impress[aoã]o|impresso|reimpress|2a via|segunda via|gerado em|gerada em)[^\n]{0,25}$/.test(antes);
     if (/a\s?parti[r]?\s+d[eo]a?\s*[\[(]?\s*$/.test(antes) || /a\s?parti[r]?\s+(?:desta|da presente)\s+data\s*[:,]?\s*$/.test(antes)) sc += 6;
-    else if (/(no dia|na data de|na data|data de emissao|emissao|entrada|atendid[oa]|data e hora|data\s*:|data\/hora)[^\n]{0,14}$/.test(antes)) sc += 3;
-    else if (/,\s*$/.test(antes) || /\b[a-z]{2}\s*[-,]\s*$/.test(antes)) sc += 2;   // "Serra-ES, 17 de setembro de 2026"
-    if (/impressao[^\n]{0,14}$/.test(antes)) sc -= 1;
+    else if (!daFolha && ATEND.test(antes)) sc += 3;
+    else if (!daFolha && /\bdata\s*:\s*$/.test(antes)) { sc += 2; generico = true; }
+    else if (!daFolha && (/,\s*$/.test(antes) || /\b[a-z]{2}\s*[-,]\s*$/.test(antes))) sc += 2;   // "Serra-ES, 17 de setembro de 2026"
+    if (daFolha) sc -= 3;
+    if (desta.length && sc > -5) {
+      // a frase "a partir desta data" fala do atendimento mais perto antes dela; sem atendimento, da data do documento
+      const depois = desta.find(i => i > x.i && i - x.i < 260);
+      if (depois != null && ATEND.test(antes)) sc += 7;
+      else if (depois == null && !daFolha && sc >= 2) sc += 4;
+    }
     if (x.d > hoje) sc -= 1;
-    if (!best || sc > best.sc) best = { ...x, sc };
+    if (!best || sc > best.sc) best = { ...x, sc, generico };
   }
   if (!best || best.sc < -5) return null;
-  return { data: fmtDate(best.d), conf: best.sc >= 6 ? 0.85 : best.sc >= 2 ? 0.75 : 0.6, trecho: trechoDe(orig, best.i - 28, best.i + best.len) };
+  // "Data:" sozinho, data sem ano ou sem contexto: fica para o cliente conferir (abaixo do limiar)
+  let conf = best.sc >= 6 ? 0.85 : best.sc >= 3 ? 0.75 : best.sc >= 2 && !best.generico ? 0.6 : 0.5;
+  if (best.semAno) conf = Math.min(conf, 0.55);
+  return { data: fmtDate(best.d), conf, trecho: trechoDe(orig0, best.i - 28, best.i + best.len), generico: best.generico, semAno: !!best.semAno };
 }
 
 /** CID: "CID: A09", "CID10 N390", "CID 10: B349", "C.I.D. F419"; corrige trocas comuns do OCR (2→Z, O→0). */
@@ -1809,9 +2000,12 @@ export function semOutrasPessoas(text) {
 }
 
 /** Funcionário a partir do nome lido no documento (tolera erros pequenos de OCR e sobrenome cortado). */
+/* Mais de 0,85 só com o nome inteiro batendo (abreviação "N." vale); nome do meio que contradiz ("MARIA EDUARDA" ×
+   "MARIA APARECIDA") fica em 0,45 com o aviso; só o primeiro nome, 0,55 — o cliente confirma. */
 export function empregadoPorNome(nome, employees) {
   const toks = (s) => norm(s).split(' ').filter(t => t.length > 1 && !CONECTORES.has(t));
   const P = toks(nome); if (!P.length) return null;
+  const iniciais = norm(nome).split(' ').filter(t => t.length === 1 && !CONECTORES.has(t));
   const parecido = (a, b) => a === b || (a.length >= 4 && b.startsWith(a)) || (b.length >= 4 && a.startsWith(b)) || (Math.min(a.length, b.length) >= 5 && lev(a, b) <= 1);
   const res = [];
   for (const e of employees || []) {
@@ -1819,12 +2013,21 @@ export function empregadoPorNome(nome, employees) {
     if (!parecido(P[0], T[0])) continue;
     const hit = P.filter(p => T.some(t => parecido(p, t))).length;
     const score = hit / Math.max(P.length, Math.min(T.length, 3));
-    if (P.length === 1 || score >= 0.5) res.push({ option: e, score: Math.min(0.97, 0.55 + score * 0.42) });
+    if (!(P.length === 1 || score >= 0.5)) continue;
+    const sobraP = P.filter(p => !T.some(t => parecido(p, t)));                 // no documento e não no cadastro
+    const sobraT = T.filter(t => !P.some(p => parecido(p, t)) && !iniciais.some(i => t.startsWith(i)));   // no cadastro e não no documento
+    let conf;
+    if (P.length === 1) conf = 0.55;                                            // só o primeiro nome
+    else if (sobraP.length && sobraT.length) conf = 0.45;                       // nome do meio contradiz
+    else if (!sobraP.length && !sobraT.length) conf = 0.95;                     // nome inteiro (abreviações valem)
+    else conf = Math.min(0.8, 0.55 + score * 0.3);                             // falta ou sobra um nome: confira
+    res.push({ option: e, score: conf, ordem: Math.min(0.97, 0.55 + score * 0.42), contradiz: !!(sobraP.length && sobraT.length) });
   }
-  res.sort((a, b) => b.score - a.score);
+  res.sort((a, b) => b.ordem - a.ordem || b.score - a.score);
   if (!res.length) return null;
-  if (res.length > 1 && res[1].score >= res[0].score - 0.02) return { option: null, candidatos: res.filter(r => r.score >= res[0].score - 0.02).map(r => r.option) };
-  return res[0];
+  if (res.length > 1 && res[1].ordem >= res[0].ordem - 0.02) return { option: null, candidatos: res.filter(r => r.ordem >= res[0].ordem - 0.02).map(r => r.option) };
+  const { ordem, ...r } = res[0]; void ordem;
+  return r;
 }
 
 /** Avisos sobre o documento (regras: documentos[].avisos = [{ palavras?, cid?, semCampo?, nivel, mensagem }]). */
@@ -1898,23 +2101,111 @@ export function separarEndereco(linha) {
   if (livres.length && !out.municipio && out.uf) out.municipio = livres.shift();
   return out;
 }
+/* ---------- Endereço por blocos (regras: config.leitorEndereco) ----------
+   Uma conta de luz traz o endereço da distribuidora (com CNPJ, no topo) e o do cliente (embaixo de "Dados do cliente"
+   ou do nome do titular). Cada endereço do texto vira um bloco (rua + bairro + CEP + cidade, linhas vizinhas);
+   blocos com CNPJ/S.A./LTDA/SAC ou no topo perdem pontos, o bloco do titular ganha. Dois blocos parecidos = dúvida. */
+const END_PADRAO = {
+  rotulosTitular: ['dados do cliente', 'unidade consumidora', 'dados do consumidor', 'dados do titular', 'local de instalacao', 'endereco de instalacao', 'endereco da instalacao', 'endereco do imovel', 'endereco de entrega', 'endereco de correspondencia', 'endereco do cliente', 'endereco do titular', 'cliente', 'titular', 'consumidor', 'destinatario'],
+  rebaixar: ['cnpj', 'cnp\\)', 's\\.a\\.?', 's\\/a', 'ltda', 'eireli', 'sac', 'central de atendimento', 'atendimento ao cliente', 'ouvidoria', 'www', 'inscricao estadual', 'companhia', 'cia\\.'],
+  palavrasDeConta: ['consumo', 'leitura', 'instalacao', 'matricula', 'hidrometro', 'medidor', 'vencimento', 'referencia', 'plano', 'periodo', 'telefone', 'fatura', 'nota fiscal', 'kwh', 'total', 'valor', 'conta', 'codigo', 'cliente', 'classe', 'tarifa', 'ligacao', 'rota', 'emissao']
+};
+const cfgEnd = (rules) => ({ ...END_PADRAO, ...(rules?.config?.leitorEndereco || {}) });
+const RX_CEP = /\b(\d{5})\s?[-.]?\s?(\d{3})\b/;
+/** Corta a linha no começo de outra coluna: 3+ espaços, "Rótulo:" (palavras com minúsculas antes de dois-pontos) ou palavra de conta. */
+const ROT_ENDERECO = /^(?:bairro|cep|cidade|municipio|uf|estado|complemento|numero|n[º°o]|endereco|logradouro|rua)$/;
+function cortarColuna(l, palavras) {
+  let s = String(l || '').split(/\s{3,}|\s\|\s|\s·\s/)[0];
+  // "… APTO 302 Consumo: 210 kWh": corta no começo do rótulo (palavras com minúsculas antes dos dois-pontos; em maiúsculas, a última);
+  // rótulo no começo da linha ("CEP: …") ou de endereço ("Bairro: …") fica
+  for (let dp = s.indexOf(':'); dp > 0; dp = s.indexOf(':', dp + 1)) {
+    const ws = s.slice(0, dp).split(/\s+/).filter(Boolean); let k = ws.length;
+    while (k > 0 && /\p{Ll}/u.test(ws[k - 1]) && k > ws.length - 3) k--;
+    if (k === ws.length) k = ws.length - 1;
+    if (k <= 0 || ROT_ENDERECO.test(plain(ws[ws.length - 1]))) continue;
+    if (/^\d/.test(s.slice(dp + 1).trim()) && /^\d{1,2}$/.test(ws[ws.length - 1])) continue;   // hora "08:00"
+    s = ws.slice(0, k).join(' '); break;
+  }
+  const p = plain(s); let corte = s.length;
+  for (const w of palavras || []) { const m = p.match(new RegExp(`(?:^|\\s)${escR(plain(w))}(?![a-z])`)); if (m && m.index < corte) corte = m.index; }
+  return s.slice(0, corte).replace(/[\s,;\-–]+$/, '').trim();
+}
+/** Cidade e UF na linha do CEP ("CEP 29101-450 VILA VELHA - ES", "Vila Velha/ES - CEP 29101-450"). */
+function cidadeDaLinha(l, palavras) {
+  const s = cortarColuna(l, palavras).replace(/\bCEP\b\s*:?/i, ' ').replace(RX_CEP, ' ').replace(/\s+/g, ' ').trim().replace(/^[\s,;\-–·]+|[\s,;\-–·]+$/g, '');
+  const u = separarUf(s.split(/\s{2,}|·/)[0]) || separarUf(s.replace(/^.*?[,;]\s*/, ''));
+  if (u && /^[\p{L} .'-]{3,40}$/u.test(u.antes)) return { municipio: u.antes.trim(), uf: u.uf };
+  return null;
+}
+/** Todos os endereços do texto, com a pontuação de cada um. */
+export function blocosEndereco(text, rules, { titular = null, ignorar = null } = {}) {
+  const C = cfgEnd(rules);
+  const L = String(text || '').normalize('NFC').split(/\r?\n/).map(l => l.trim());
+  const rxReb = new RegExp(`(?<![a-z])(?:${C.rebaixar.join('|')})(?![a-z])`);
+  const rxTit = new RegExp(`(?:^|\\s{2,}|^\\W*)(?:${C.rotulosTitular.map(x => escR(plain(x))).join('|')})(?![a-z])`);
+  const T = titular ? norm(titular) : '';
+  const blocos = [];
+  const usadas = new Set();
+  for (let i = 0; i < L.length; i++) {
+    const lp = plain(L[i]); const r = L[i].search(RX_LOGRADOURO);
+    const cepAqui = RX_CEP.test(L[i]) && /\bcep\b|\d{5}-\d{3}/i.test(L[i]);
+    if (r < 0 && !cepAqui) continue;
+    if (usadas.has(i) || ignorar?.has(L[i])) continue;   // linha que já virou outro campo (naturalidade, "SSP/ES"…)
+    const b = { linhas: [i], pontos: 0, motivos: [] };
+    if (r >= 0) {
+      const e = separarEndereco(cortarColuna(L[i].slice(r), C.palavrasDeConta));
+      if (!e.endereco || !e.numero) { if (!cepAqui) continue; } else Object.assign(b, { endereco: e.endereco, numero: e.numero, complemento: e.complemento, bairro: e.bairro, municipio: e.municipio, uf: e.uf });
+    }
+    const cepM = L[i].match(RX_CEP); if (cepAqui && cepM) { b.cep = `${cepM[1]}-${cepM[2]}`; const c = cidadeDaLinha(L[i].slice(L[i].search(/\bcep\b/i) >= 0 ? L[i].search(/\bcep\b/i) : 0), C.palavrasDeConta); if (c && !b.municipio) Object.assign(b, c); }
+    // rua sem CEP na linha: bairro e CEP nas linhas de baixo (até 4)
+    if (b.endereco && !b.cep) {
+      const meio = [];
+      for (let j = i + 1; j < Math.min(L.length, i + 5); j++) {
+        if (L[j].search(RX_LOGRADOURO) >= 0 && !RX_CEP.test(L[j])) break;
+        if (RX_CEP.test(L[j]) && /\bcep\b|\d{5}-\d{3}/i.test(L[j])) {
+          const m = L[j].match(RX_CEP); b.cep = `${m[1]}-${m[2]}`; b.linhas.push(j); usadas.add(j);
+          const c = cidadeDaLinha(L[j], C.palavrasDeConta); if (c) { if (!b.municipio) b.municipio = c.municipio; if (!b.uf) b.uf = c.uf; }
+          break;
+        }
+        meio.push(j);
+      }
+      if (b.cep && !b.bairro) {
+        const cand = meio.map(j => ({ j, v: cortarColuna(L[j], C.palavrasDeConta) })).filter(x => x.v && /^[\p{L} .'’-]{3,40}$/u.test(x.v) && x.v.split(/\s+/).length <= 5 && !rxReb.test(plain(x.v)) && !(T && norm(x.v) === T));
+        if (cand.length === 1) { b.bairro = cand[0].v; b.linhas.push(cand[0].j); }
+        else if (cand.length > 1) { b.bairro = cand[0].v; b.bairroDuvida = true; b.linhas.push(cand[0].j); }
+      }
+    }
+    // pontos: empresa (CNPJ, S.A., SAC) e topo da página perdem; o bloco do titular ganha
+    const viz = [...b.linhas, i - 1].filter(x => x >= 0).map(x => plain(L[x]));
+    if (viz.some(x => rxReb.test(x))) { b.pontos -= 3; b.motivos.push('empresa'); }
+    if (i <= 1) { b.pontos -= 2; b.motivos.push('topo'); }
+    for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+      const pj = plain(L[j]);
+      if (rxTit.test(pj) || (T && norm(L[j]).includes(T))) { b.pontos += 3; b.titular = true; b.motivos.push('titular'); break; }
+      if (j < i - 1 && RX_CEP.test(L[j])) break;
+    }
+    if (!b.endereco) { b.pontos -= 1; b.motivos.push('so cep'); }
+    if (b.endereco && b.cep && b.municipio) b.pontos += 1;
+    blocos.push(b);
+  }
+  return blocos.sort((a, b) => b.pontos - a.pontos);
+}
+/** Endereço do documento: { campos: { k: valor }, conf, fonte } ou null.
+ *  Comprovante: só o bloco do titular (sem ele, abaixo do limiar). Dois blocos que empatam: abaixo do limiar. */
+export function lerEndereco(text, rules, { docId = null, titular = null, ignorar = null } = {}) {
+  const bl = blocosEndereco(text, rules, { titular, ignorar });
+  const bom = bl.filter(b => b.pontos >= 0);
+  const b = bom[0]; if (!b) return null;
+  const empate = bom.length > 1 && bom[1].pontos >= b.pontos - 1 && (bom[1].cep !== b.cep || norm(bom[1].endereco) !== norm(b.endereco));
+  let conf = docId === 'comprovanteEndereco' ? (b.titular ? 0.7 : 0.5) : 0.5;
+  if (empate) conf = Math.min(conf, 0.45);
+  const campos = {};
+  for (const k of ['cep', 'endereco', 'numero', 'complemento', 'bairro', 'municipio', 'uf']) if (b[k]) campos[k] = String(b[k]).trim();
+  return { campos, conf, bairroDuvida: !!b.bairroDuvida, fonte: b.titular ? 'endereço do titular no documento' : 'endereço no documento', blocos: bl.length };
+}
 /** Endereço em contas de consumo, comprovantes e fichas (as linhas que já viraram outros campos não entram). */
-export function extractAddress(text) {
-  const out = {}; const T = String(text || '');
-  const cep = T.match(/\b(\d{5})-(\d{3})\b/) || T.match(/\bCEP\s*:?\s*(\d{5})\.?-?(\d{3})\b/i) || T.match(/\b(\d{5})(\d{3})\b/);
-  if (cep) out.cep = `${cep[1]}-${cep[2]}`;
-  const linhas = T.split(/\n/);
-  for (const l of linhas) {
-    const i = l.search(RX_LOGRADOURO); if (i < 0) continue;
-    const e = separarEndereco(l.slice(i).split(/\s{3,}/)[0]);
-    if (e.endereco && e.numero) { Object.assign(out, e); break; }
-  }
-  if (!out.bairro) { const b = T.match(/\bbairro\s*:?\s*([A-ZÀ-Úa-zà-ú0-9 .'-]{3,40}?)(?=\s{2,}|\s*[,\n|]|\s+-\s|$)/i); if (b) out.bairro = b[1].trim(); }
-  if (!out.municipio) {
-    const cid = T.match(/([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú ]{2,40})\s*[-\/]\s*(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/);
-    if (cid) { out.municipio = cid[1].trim(); out.uf = cid[2]; }
-  }
-  return out;
+export function extractAddress(text, rules) {
+  return lerEndereco(text, rules)?.campos || {};
 }
 /* ---------- Documento pessoal com o rótulo em cima do valor (RG, CNH, CIN, CTPS digital, título) ---------- */
 /* Regras: config.leitorPessoal = { layouts: { id: { palavras, campos, maeLinha, rgIgualCpf, padroesTexto } },
@@ -1953,10 +2244,10 @@ export function lerDocumentoPessoal(text, cfg = {}, docId = null) {
     if (pad[k]) { try { if (!new RegExp(pad[k], 'i').test(x)) return false; } catch { /* regex inválida nas regras */ } }
     switch (tp) {
       case 'data': return !!parseDate(x);
-      case 'cpf': return /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(x);
+      case 'cpf': return /^\d{3}[.,]?\d{3}[.,]?\d{3}-?\d{2}$/.test(x.replace(/\s+/g, ''));   // OCR: "000 .123.407-23"
       case 'numero': return /\d/.test(x) && /^[\d.\-\/ Xx]+$/.test(x);
       case 'uf': return x.length === 2 && UF_SET.has(x.toUpperCase());
-      case 'sigla': return /^[A-Za-z]{2,8}$/.test(x);
+      case 'sigla': return /^[A-Za-z]{2,8}(?:\/[A-Za-z]{2})?$/.test(x);   // "SSP/ES": órgão e UF juntos (o cadastro separa)
       case 'categoria': return /^(?:ACC|[A-E]{1,2})$/i.test(x);
       case 'nome': return !/\d/.test(x) && /\p{L}{2}/u.test(x);
       default: return /\p{L}/u.test(x);
@@ -2048,7 +2339,8 @@ export function titularComprovante(text) {
 }
 /** Comprovante em nome de outra pessoa: aviso educativo (pode ser de um parente; o escritório pode pedir uma declaração). */
 export function avisoComprovante(titular, nome, rules) {
-  if (!titular || !nome || empregadoPorNome(titular, [nome])?.option || similarity(titular, nome) >= 0.85) return null;
+  const pm = titular && nome ? empregadoPorNome(titular, [nome]) : null;
+  if (!titular || !nome || (pm?.option && !pm.contradiz && pm.score > 0.55) || similarity(titular, nome) >= 0.85) return null;
   const msg = rules?.mensagens?.comprovanteOutraPessoa || 'O comprovante de residência está em nome de {titular}. Tudo bem se for de um parente (pai, mãe, cônjuge): nesse caso o escritório pode pedir uma declaração de residência assinada pelo titular.';
   return { nivel: 'info', id: 'comprovanteOutraPessoa', mensagem: msg.replace('{titular}', titular).replace('{nome}', nome) };
 }

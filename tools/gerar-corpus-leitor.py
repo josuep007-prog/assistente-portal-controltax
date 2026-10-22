@@ -335,7 +335,7 @@ doc('cin', pagina(f'''<div class="card" id="doc">
 <div style="display:flex;gap:26px"><div><div class="lbl">Órgão Expedidor</div><div class="val">SSP/ES</div></div><div><div class="lbl">Data de Emissão</div><div class="val">10/05/2025</div></div><div><div class="lbl">Validade</div><div class="val">10/05/2035</div></div></div>
 </div></div>''', CIN_CSS), 'identidade', 'cadastroEmpregado',
     {'nome': 'ANA PAULA FERREIRA', 'cpf': cpf('000123408'), 'nascimento': '05/12/1995', 'mae': 'ROSA MARIA FERREIRA', 'pai': 'PAULO FERREIRA', 'municipioNascimento': 'CARIACICA', 'ufNascimento': 'ES',
-     'orgaoRg': 'SSP/ES', 'dataRg': '10/05/2025', 'rg': '*', 'sexo': 'Feminino', 'cnhValidade': None, 'nomeSocial': None},
+     'orgaoRg': 'SSP', 'ufRg': 'ES', 'dataRg': '10/05/2025', 'rg': '*', 'sexo': 'Feminino', 'cnhValidade': None, 'nomeSocial': None},   # o portal tem Órgão e UF do RG separados
     formas=('pdf', 'img', 'foto'), forma='card', descricao='CIN nova (número = CPF), rótulos bilíngues')
 
 doc('ctps-digital', pagina(f'''<div class="pg">
@@ -397,7 +397,7 @@ Horário de trabalho: 08:00 às 17:00</p>
 </div>'''), 'fichaAdmissao', 'cadastroEmpregado',
     {'nome': 'LARISSA MONTEIRO DUARTE', 'cpf': cpf('000123404'), 'pis': pis('0001234567'), 'nascimento': '11/11/2001', 'sexo': 'Feminino', 'estadoCivil': 'Solteira', 'racaCor': 'Parda',
      'grauInstrucao': 'Ensino médio completo', 'municipioNascimento': 'Serra', 'ufNascimento': 'ES', 'mae': 'MARIA APARECIDA SANTOS', 'pai': 'JOSE MONTEIRO DUARTE',
-     'rg': '4.455.667', 'orgaoRg': 'SSP/ES', 'dataRg': '20/01/2019', 'endereco': 'Rua Sete de Setembro Ficticia', 'numero': '1200', 'complemento': 'Casa 2', 'bairro': 'Laranjeiras',
+     'rg': '4.455.667', 'orgaoRg': 'SSP', 'ufRg': 'ES', 'dataRg': '20/01/2019', 'endereco': 'Rua Sete de Setembro Ficticia', 'numero': '1200', 'complemento': 'Casa 2', 'bairro': 'Laranjeiras',
      'cep': '29165-130', 'municipio': 'Serra', 'uf': 'ES', 'telefone': '(27) 99888-7766', 'email': 'larissa.exemplo@exemplo.invalid', 'cargo': 'ASSISTENTE ADMINISTRATIVO',
      'dataAdmissao': '20/10/2026', 'salario': '2150,00', 'contratoExperiencia': '45', 'prorrogacao': '45', 'banco': '*', 'agencia': '1234-5', 'conta': '98765-4', 'jornada': '*', 'digitoConta': '*', 'tipoConta': '*'},
     formas=('pdf', 'img', 'foto', 'scan', 'scanmisto'), descricao='ficha com rótulos (melhor caso), cabeçalho com endereço da empresa')

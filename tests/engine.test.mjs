@@ -1202,4 +1202,126 @@ t('Rubricas: planilha → linhas, nome da rubrica → evento da empresa pelos ap
   assert.deepEqual(E.linhasDoTexto('• JOAO DA SILVA — Horas extras 50%: 10:30\n• Funcionário a confirmar — Faltas: 2 dias'), [{ empregado: 'JOAO DA SILVA', rubrica: 'Horas extras 50%', valor: '10:30' }, { empregado: '', rubrica: 'Faltas', valor: '2 dias' }]);
 });
 
+/* ---- Lote 5: leitor que não preenche errado (textos inventados, no layout dos documentos do corpus fictício) ---- */
+const LH = new Date(2026, 9, 18);
+const LEMP = ['FERNANDA OLIVEIRA SANTOS', 'MARIA APARECIDA SANTOS', 'RAFAEL NUNES BARBOSA', 'VANESSA CRISTINA LOPES', 'THIAGO HENRIQUE PRADO', 'BEATRIZ CAMPOS'];
+const L5 = (txt, tipo, ctx = {}) => E.analyzeText(txt, rules, { employees: LEMP, tipoAtual: tipo, hoje: LH, ...ctx });
+
+t('leitor (1, 3): conta com o endereço da distribuidora em cima — vale o bloco do titular', () => {
+  const conta = 'COMPANHIA DE LUZ FICTÍCIA S.A.\nAv. das Usinas Inventadas, 900 - Centro - Cidade Teste/ES - CEP 29000-111 · CNPJ 00.000.333/0001-00\nDADOS DO CLIENTE   CONTA DE ENERGIA\nFULANO DE TESTE   Instalação: 0099\nRUA DOS IPÊS, 12 APTO 5 Consumo: 99 kWh\nBAIRRO INVENTADO   Leitura atual: 10/09/2026\nCEP 29100-300 VILA TESTE - ES\nVENCIMENTO 20/10/2026';
+  const c = L5(conta, 'cadastroEmpregado').campos;
+  assert.equal(c.endereco.valor, 'RUA DOS IPÊS'); assert.equal(c.numero.valor, '12'); assert.equal(c.complemento.valor, 'APTO 5');
+  assert.equal(c.bairro.valor, 'BAIRRO INVENTADO'); assert.equal(c.cep.valor, '29100-300'); assert.equal(c.municipio.valor, 'VILA TESTE'); assert.equal(c.uf.valor, 'ES');
+  assert.ok(c.cep.conf >= 0.6, 'bloco do titular vai ao portal');
+  // sem "Dados do cliente" nem titular: dois endereços que empatam ficam abaixo do limiar
+  const dois = 'FATURA\nRua Um Inventada, 10 - Centro - Serra/ES - CEP 29160-000\n\n\n\nRua Dois Inventada, 20 - Centro - Vitória/ES - CEP 29010-000\nconsumo kwh vencimento';
+  const d = L5(dois, 'cadastroEmpregado').campos;
+  assert.ok(!d.cep || d.cep.conf < 0.6, 'empate: sugestão, não preenche');
+});
+
+t('leitor (2): CEP de clínica num ASO não vira endereço; CEP sem rótulo fica baixo', () => {
+  const aso = 'ATESTADO DE SAÚDE OCUPACIONAL\nClínica Teste, Rua da Saúde, 50 - Centro - Vitória/ES - CEP 29010-500\nNome: FULANA DE TESTE CPF: 529.982.247-25\nExame: (X) Admissional ( ) Demissional\nConclusão: (X) Apto ( ) Inapto';
+  const c = L5(aso, 'cadastroEmpregado').campos;
+  for (const k of ['cep', 'endereco', 'municipio', 'bairro']) assert.equal(c[k], undefined, k);
+  assert.equal(c.cpf.valor, '529.982.247-25');
+  assert.ok(E.extractGeneric('pague até 10/10 · 29010-500', rules).cep.conf <= 0.4);
+});
+
+t('leitor (3): CPF com espaço do OCR e rótulo em cima; número do registro da CNH não é CPF', () => {
+  const cnh = 'CARTEIRA NACIONAL DE HABILITAÇÃO\nNOME\nTHIAGO HENRIQUE PRADO\nCPF DATA NASCIMENTO\n529 .982.247-25 19/01/1990\nNº REGISTRO VALIDADE\n01234567890 25/06/2031';
+  const g = E.extractGeneric(cnh, rules);
+  assert.equal(g.cpf.valor, '529.982.247-25'); assert.ok(g.cpf.conf >= 0.9);
+  const so = E.extractGeneric('Nº REGISTRO\n01234567890', rules);
+  assert.equal(so.cpf, undefined, 'registro da CNH descartado');
+  assert.ok(E.extractGeneric('codigo 529.982.247-25 xx', rules).cpf === undefined || E.extractGeneric('linha 529.982.247-25', rules).cpf.conf <= 0.5);
+  assert.ok(E.extractGeneric('linha solta 529.982.247-25', rules).cpf.conf <= 0.5, 'sem rótulo: sugestão');
+});
+
+t('leitor (4, 14): nome do meio que contradiz, abreviação e só o primeiro nome', () => {
+  const r = E.empregadoPorNome('MARIA EDUARDA SANTOS', LEMP);
+  assert.equal(r.option, 'MARIA APARECIDA SANTOS'); assert.ok(r.contradiz); assert.ok(r.score <= 0.45);
+  assert.ok(E.empregadoPorNome('Rafael N. Barbosa', LEMP).score > 0.85, 'abreviação vale');
+  assert.ok(E.empregadoPorNome('Vanessa', LEMP).score <= 0.55);
+  assert.ok(E.findEmployeeInText('a Beatriz pediu', LEMP).score <= 0.55);
+  const a = L5('ATESTADO MÉDICO\nAtesto que a paciente MARIA EDUARDA SANTOS necessita de 2 (dois) dias de afastamento a partir de 15/10/2026.\nCRM-ES 1234', 'afastamento');
+  assert.ok(a.campos.empregado.conf < 0.6 && a.avisos.some(x => x.id === 'outroNome'));
+  assert.equal(a.campos.tipoAfastamento, undefined, 'atestado de outra pessoa: o tipo fica com o cliente');
+});
+
+t('leitor (5): 2ª via — a data é a do atendimento, não a da emissão; O→0, sem ano e "Data:" genérico', () => {
+  const v2 = '2ª VIA\nData de emissão: 17/10/2026 08:12\nATESTADO MÉDICO\nPaciente: Rafael N. Barbosa Nasc.: 21/09/1985\nAtesto que o paciente esteve em atendimento neste serviço no dia 10/10/2026, necessitando\nde 3 (três) dias de afastamento de suas atividades a partir desta data.\nCRM-ES 1';
+  const d = E.lerDataAtestado(v2, LH); assert.equal(d.data, '10/10/2026'); assert.ok(d.conf >= 0.75);
+  assert.equal(E.lerDataAtestado('repouso a partir de 1O/1O/2O26', LH).data, '10/10/2026');
+  const sa = E.lerDataAtestado('atendido no dia 12 de outubro, repouso de 2 dias', LH); assert.equal(sa.data, '12/10/2026'); assert.ok(sa.conf < 0.6);
+  const g = E.lerDataAtestado('Atestado\nData: 16/10/2026\nafastada por 2 dias', LH); assert.equal(g.data, '16/10/2026'); assert.ok(g.conf < 0.6, '"Data:" sozinho é sugestão');
+});
+
+t('leitor (6, 9): opções impressas desmarcadas e atestado de dependente', () => {
+  const auto = rules.tipos.afastamento.tipoAfastamentoAuto;
+  assert.equal(E.semOpcoesDesmarcadas('Motivo: (X) Doença () Acidente do trabalho ( ) Outros').trim(), 'Motivo: (X) Doença');
+  assert.equal(E.inferTipoAfastamento('Motivo: (X) Doença () Acidente do trabalho () Outros', 5, 'atestado', auto).valor, 'Doença período igual ou inferior a 15 dias');
+  const f = L5('ATESTADO MÉDICO\nAtesto que a menor ANA TESTE SANTOS, 7 anos, necessita de 2 (dois) dias de repouso, devendo permanecer sob os cuidados de sua mãe, FERNANDA OLIVEIRA SANTOS, a partir de 15/10/2026.\nCID: J11\nDra. Pediatra Fictícia\nCRM-ES 5', 'afastamento');
+  assert.equal(f.campos.empregado.valor, 'FERNANDA OLIVEIRA SANTOS');
+  assert.equal(f.campos.tipoAfastamento, undefined);
+  assert.ok(f.avisos.some(a => a.id === 'dependente'));
+});
+
+t('leitor (7, 8): "Data:" de ASO não vira data do aviso; sinônimos genéricos só no documento certo', () => {
+  const aso = 'ATESTADO DE SAÚDE OCUPACIONAL\nNome: RAFAEL NUNES BARBOSA\nExame: (X) Demissional\nConclusão: (X) Apto\nData: 17/10/2026';
+  assert.equal(L5(aso, 'avisoRescisao').campos.dataAviso, undefined);
+  const ficha = 'FICHA DE ADMISSÃO\nNome completo: FULANA DE TESTE\nCategoria: Empregado\nValidade: 31/12/2027\nRegistro: 12345';
+  const c = L5(ficha, 'cadastroEmpregado').campos;
+  assert.equal(c.cnhCategoria, undefined); assert.equal(c.cnhValidade, undefined); assert.equal(c.cnh, undefined);
+  const t2 = E.extractByLabels('Categoria: AB', E.resolveTipo(rules, 'cadastroEmpregado').campos, { docId: 'identidade' });
+  assert.equal(t2.cnhCategoria.valor, 'AB');
+});
+
+t('leitor (10, P6): corta no próximo rótulo sem acento e em "="; formato inválido fica para conferir', () => {
+  const ficha = 'FICHA DE ADMISSÃO\nNome completo: FULANA DE TESTE\nRG: 4.455.667 Orgão expedidor: SSP/ES\nEstado civil: Sotteira = Raça/cor: Parda\nBanco: 001 Agência: 1234-5"É Conta corrente: 98765-4\nE-mail: fulana .teste&exemplo. invalid\nData de admissão: 03/11/2026 por 30 dias';
+  const c = L5(ficha, 'cadastroEmpregado').campos;
+  assert.equal(c.rg.valor, '4.455.667'); assert.equal(c.orgaoRg.valor, 'SSP'); assert.equal(c.ufRg.valor, 'ES');
+  assert.equal(c.estadoCivil.valor, 'Solteira'); assert.ok(c.estadoCivil.conf < 0.6, 'OCR corrigido: confira');
+  assert.equal(c.racaCor.valor, 'Parda'); assert.equal(c.agencia.valor, '1234-5'); assert.equal(c.conta.valor, '98765-4');
+  assert.ok(c.email.conf < 0.6 && c.email.confira === 'formato');
+  assert.equal(c.dataAdmissao.valor, '03/11/2026');
+  assert.equal(E.validarValor('email', { tipo: 'email' }, 'a@b.com', rules).ok, true);
+  assert.equal(E.validarValor('agencia', { tipo: 'texto' }, '12A4', rules).ok, false);
+});
+
+t('leitor (P2): foto ruim não preenche nada; foto fraca só sugere (menos o validado e junto do rótulo)', () => {
+  const txt = 'FICHA DE ADMISSÃO\nNome completo: FULANA DE TESTE\nCPF: 529.982.247-25\nCargo: AUXILIAR';
+  const ruim = L5(txt, 'cadastroEmpregado', { metodo: 'ocr', confiancaOcr: 40 });
+  assert.equal(Object.keys(ruim.campos).length, 0); assert.ok(ruim.fotoRuim && ruim.avisos.some(a => a.id === 'fotoRuim'));
+  const fraca = L5(txt, 'cadastroEmpregado', { metodo: 'ocr', confiancaOcr: 60 }).campos;
+  assert.ok(fraca.cpf.conf >= 0.6, 'CPF validado e com rótulo continua');
+  assert.ok(fraca.cargo.conf < 0.6 && fraca.nome.conf < 0.6);
+  assert.ok(L5(txt, 'cadastroEmpregado', { metodo: 'pdf-texto', confiancaOcr: 100 }).campos.cargo.conf >= 0.6);
+});
+
+t('leitor (P5): um documento, uma pessoa', () => {
+  const a = E.pessoaDaAnalise({ campos: { nome: { valor: 'FULANA DE TESTE', conf: 0.75 }, cpf: { valor: '529.982.247-25', conf: 0.95 } } });
+  assert.deepEqual(a, { nome: 'FULANA DE TESTE', cpf: '52998224725' });
+  assert.equal(E.mesmaPessoa(a, { nome: 'OUTRA PESSOA', cpf: '11144477735' }), false);
+  assert.equal(E.mesmaPessoa(a, { nome: 'Fulana de Teste', cpf: null }), true);
+  assert.equal(E.mesmaPessoa({ nome: 'MARIA EDUARDA SANTOS' }, { nome: 'MARIA APARECIDA SANTOS' }), false);
+  assert.equal(E.mesmaPessoa(a, null), null);
+  assert.equal(E.pessoaDaAnalise({ campos: { nome: { valor: 'X Y', conf: 0.5 } } }), null, 'sugestão não identifica a pessoa');
+});
+
+t('leitor (12): aviso de férias em tabela — o gozo não é o período aquisitivo; nome sem sobra do OCR', () => {
+  const av = 'AVISO DE FÉRIAS\nParticipamos que suas férias serão concedidas conforme abaixo:\nPERÍODO AQUISITIVO   PERÍODO DE GOZO\n01/03/2025 a 28/02/2026   03/11/2026 a 02/12/2026\nDIAS DE FÉRIAS   RETORNO AO TRABALHO\n30   03/12/2026\nCiente em 02/10/2026.';
+  const c = L5(av, 'calculoFerias').campos;
+  assert.equal(c.inicioGozo.valor, '03/11/2026'); assert.equal(c.diasGozo.valor, '30');
+  const rg = L5('CARTEIRA DE IDENTIDADE\nREGISTRO GERAL\nFILIAÇÃO\nJOSE DE TESTE\nMARTA DE TESTE í', 'cadastroEmpregado').campos;
+  assert.equal(rg.mae.valor, 'MARTA DE TESTE');
+});
+
+t('leitor: CIN com rótulos bilíngues, órgão "SSP/ES" e sexo ao lado da nacionalidade', () => {
+  const cin = 'CARTEIRA DE IDENTIDADE NACIONAL\nNOME / NAME\nFULANA DE TESTE\nSEXO / SEX NACIONALIDADE / NATIONALITY DATA DE NASCIMENTO\nF BRA 05/12/1995\nREGISTRO GERAL - CPF / PERSONAL NUMBER\n529.982.247-25\nNATURALIDADE / PLACE OF BIRTH\nSERRA/ES\nÓRGÃO EXPEDIDOR DATA DE EMISSÃO VALIDADE\nSSP/ES 10/05/2025 10/05/2035';
+  const c = L5(cin, 'cadastroEmpregado').campos;
+  assert.equal(c.nome.valor, 'FULANA DE TESTE'); assert.equal(c.sexo.valor, 'Feminino'); assert.equal(c.nascimento.valor, '05/12/1995');
+  assert.equal(c.cpf.valor, '529.982.247-25'); assert.equal(c.municipioNascimento.valor, 'SERRA'); assert.equal(c.ufNascimento.valor, 'ES');
+  assert.equal(c.orgaoRg.valor, 'SSP'); assert.equal(c.ufRg.valor, 'ES');
+});
+
 console.log(`\n${n} testes ok`);
