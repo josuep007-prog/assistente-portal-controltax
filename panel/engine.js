@@ -2028,6 +2028,30 @@ export function filtrarPorEmpresa(itens, filtro, empresaAtual) {
   const atual = l.filter(i => !i.empresa || mesmaEmpresa(i.empresa, empresaAtual));
   return atual.some(i => i.empresa) ? atual : l;
 }
+/** Empresas que o login enxerga, para a caixa "Para qual empresa?" ao abrir um pedido: as das solicitações lidas,
+ *  as já vistas antes (a lista é relida quando a empresa muda) e a que está aberta no portal. Cada uma traz quantas
+ *  solicitações tem em aberto e quantas esperam o cliente. A aberta no portal vem primeiro. */
+export function empresasParaEscolha(itens, empresaAtual, conhecidas = []) {
+  const m = new Map();
+  const poe = (nome, apelido = '') => {
+    const k = norm(nome); if (!k) return null;
+    if (!m.has(k)) m.set(k, { nome, apelido: '', abertas: 0, esperam: 0 });
+    const e = m.get(k); if (apelido && !e.apelido) e.apelido = apelido;
+    return e;
+  };
+  for (const c of conhecidas || []) poe(c.nome, c.apelido);
+  for (const i of itens || []) {
+    const e = poe(i.empresa, i.empresaApelido); if (!e) continue;
+    if (['aguardando', 'andamento'].includes(i.estado)) e.abertas++;
+    if (i.aguardando) e.esperam++;
+  }
+  // a do portal: se for a mesma de uma já listada (nome um pouco diferente no cabeçalho), não duplica
+  const atual = [...m.values()].find(e => mesmaEmpresa(e.nome, empresaAtual));
+  if (!atual && norm(empresaAtual)) poe(empresaAtual);
+  const lista = [...m.values()].map(e => ({ ...e, atual: mesmaEmpresa(e.nome, empresaAtual) }));
+  return lista.sort((a, b) => (b.atual - a.atual) || a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+export const mesmaEmpresaNome = (a, b) => mesmaEmpresa(a, b);
 /** Nomes das empresas que o filtro mostra (para marcar as caixas do seletor). */
 export function empresasSelecionadas(itens, filtro, empresaAtual) {
   const todas = empresasDasSolicitacoes(itens).map(e => e.nome);

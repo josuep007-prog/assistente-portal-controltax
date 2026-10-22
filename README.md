@@ -17,11 +17,16 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
-## Novidades da 2.7 — preencher mais sozinho (parte 2)
+## Novidades da 2.8 — preencher mais sozinho (parte 2)
 
 - **Cadastro:** `config.camposDaEmpresa` (Repetir/histórico/modelos sem dados pessoais), sugestões da última admissão e `empresas.<trecho>.padroes`, `config.experienciaSugerida`, ficha colada e `config.textoLivre.cadastro`, leitor de documento pessoal (`config.leitorPessoal`, `leitor: "pessoal"`), categorias do estagiário/contribuinte (revisar com o escritório).
 - **Rescisão e férias:** `opcoesPorPalavra` nos documentos, `config.motivoAuto`, `calculados` por tipo (`E.sugeridos`), `depoisDeEnviar`, `anexos[].modelo` ("Gerar pelo modelo"), `config.experienciaSaidas`, `config.avisoPrevioContagem` (Súmula 380), resumo automático e "Para terminar".
 - **Leitor:** `tools/gerar-corpus-leitor.py` (documentos fictícios) e `tools/auditar-leitor.py` (placar campo a campo).
+## Novidades da 2.7 — empresa do pedido
+
+**Para qual empresa?** Se o seu acesso tem mais de uma empresa, abrir um pedido para preencher mostra uma caixa por cima de tudo para você escolher a empresa (a que está aberta no portal já vem marcada; "Cancelar" não abre nada). O Assistente troca a empresa no portal, confere vendo o nome novo na tela e só então abre o formulário. Se o portal não confirmar a troca, ele avisa e não abre o pedido — assim nada vai para a empresa errada.
+**Trocar dentro do pedido:** o nome da empresa no alto do pedido é um botão. Ao trocar, o pedido reabre na empresa nova com o que você já tinha preenchido e os documentos; só o funcionário (e as listas) sai, porque é de cada empresa.
+**Também:** lotes de atestados perguntam a empresa uma vez só; "Repetir" e o histórico sugerem a empresa do pedido antigo; o resumo antes de enviar mostra a empresa. A caixa só aparece quando o Assistente já sabe de mais de uma empresa (pelas solicitações lidas).
 
 ## Novidades da 2.6 — preencher mais sozinho (parte 1)
 

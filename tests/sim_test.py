@@ -40,6 +40,15 @@ async def teste_plataforma(b):
     pg.on('pageerror', lambda e: erros.append(str(e)))
     await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
     pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    # com três empresas no acesso, abrir um pedido pergunta a empresa (2.7): os testes antigos confirmam a que já vem marcada
+    auto_emp = {'on': True}
+    async def _auto_empresa():
+        while True:
+            try:
+                if auto_emp['on'] and await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa_emp = asyncio.create_task(_auto_empresa())
     portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
     total = lambda: pg.evaluate("window.__ctPlatform.fetchList('employee-leave').then(r => r.json()).then(j => j.totalItems)")
     def portal_com(**kv):
@@ -313,7 +322,61 @@ async def teste_plataforma(b):
     check(ok, 'leitura automática: a resposta do escritório aparece sem clicar em nada')
     await pn.evaluate("document.documentElement.setAttribute('data-theme','dark')"); await pn.click('#rail [data-mod="inicio"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(600)
     await pg.screenshot(path='/tmp/sim-20-escuro.png')
+    # ---- Empresa do pedido (2.7): com mais de uma empresa no acesso, pergunta antes de abrir e dá para trocar dentro do pedido ----
+    print('[2.7] empresa do pedido')
+    auto_emp['on'] = False
+    BASE_EMP, OUTRA, TERCEIRA = 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', 'COMERCIO MODELO DE ALIMENTOS LTDA', 'OFICINA FICTICIA DE SERVICOS ME'
+    path = lambda: pg.evaluate("window.__ctPlatform.path()")
+    titulo = lambda: pg.evaluate("document.querySelector('main .title')?.innerText || ''")
+    escolha = 'document.querySelector(".pd-escolha .intent[data-tipo=afastamento]")'
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click()
+    await pn.locator('.ee-lista').wait_for(timeout=8000)
+    check(await pn.locator('.ee-li').count() == 3 and 'aberta no portal' in await pn.locator('.ee-lista').inner_text(), 'abrir um pedido com três empresas no acesso: caixa "Para qual empresa?" com as três')
+    check(await pn.locator('input[name="ee-emp"]:checked').get_attribute('value') == BASE_EMP, 'a empresa aberta no portal já vem marcada')
+    await pn.click('.dlg [data-acao="0"]'); await pg.wait_for_timeout(800)
+    check('/add' not in await path() and await pn.locator('.ee-lista').count() == 0, 'cancelar a escolha não abre o formulário')
+    # escolher outra empresa: troca no portal e abre o pedido nela
+    await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click()
+    await pn.locator('.ee-lista').wait_for(timeout=8000)
+    await pn.click(f'.ee-li[data-nome="{OUTRA}"]'); await pn.click('.dlg [data-acao="2"]')
+    ok = await espera(lambda: pg.evaluate("window.__ctPlatform.path().endsWith('/employee-leave/add')"), 25)
+    check(ok and OUTRA in await titulo(), 'escolher outra empresa: o portal troca e o formulário abre nela')
+    nomes = await pg.evaluate("window.__ctPlatform.employees().then(l => l.map(e => e.name))")
+    check('CARLOS EDUARDO PAIVA' in nomes and 'ADRIANA MOTA LIMA' not in nomes, 'os funcionários são os da empresa escolhida')
+    await espera(lambda: pn.locator('#pd-emp').count(), 10)
+    check('MODELO' in await pn.locator('#pd-emp').inner_text(), 'dentro do pedido, a empresa aparece como botão para trocar')
+    # trocar de empresa dentro do pedido: o que foi preenchido fica, o funcionário sai
+    await pn.fill('#f-dataAfastamento', '09/10/2026'); await pn.dispatch_event('#f-dataAfastamento', 'input'); await pn.dispatch_event('#f-dataAfastamento', 'change')
+    await pn.fill('#f-empregado', 'DEBORA SANTANA'); await pn.dispatch_event('#f-empregado', 'change'); await pg.wait_for_timeout(1500)
+    await pn.click('#pd-emp'); await pn.locator('.ee-lista').wait_for(timeout=8000)
+    check('Trocar a empresa do pedido' in await pn.locator('.dlg-head').inner_text() and await pn.locator('input[name="ee-emp"]:checked').get_attribute('value') == OUTRA, 'botão da empresa: caixa de troca, com a empresa do pedido marcada')
+    await pn.click(f'.ee-li[data-nome="{TERCEIRA}"]'); await pn.click('.dlg [data-acao="2"]')
+    # o formulário antigo continua na tela até a troca terminar: espera o título da empresa nova (e a data refeita nele)
+    ok = await espera(lambda: pg.evaluate("(e) => (document.querySelector('main .title')?.innerText || '').includes(e) && !!document.querySelector('main [formcontrolname=leaveDate]')", TERCEIRA), 40)
+    check(ok, 'trocar de empresa dentro do pedido: o formulário reabre na empresa nova')
+    ok = await espera(lambda: pg.evaluate("document.querySelector('main [formcontrolname=leaveDate]')?.value === '09/10/2026'"), 25)
+    check(ok, 'o que o cliente preencheu (a data) segue para a empresa nova')
+    v = await portal()
+    check(not v.get('selectedEmployee'), f"o funcionário da empresa antiga não vai junto (portal: {v.get('selectedEmployee')!r})")
+    emp_pl = await pn.locator('#f-empregado').input_value()
+    check(emp_pl == '', f'e o campo do funcionário na plataforma fica vazio, para escolher de novo (tem {emp_pl!r})')
+    ok = await espera(lambda: pn.evaluate("!document.body.classList.contains('trocando-empresa')"), 40)
+    check(ok, 'a troca de empresa dentro do pedido termina')
+    # troca que o portal não confirma: nada é aberto (o pedido iria para a empresa errada)
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
+    await pg.evaluate("window.__ctPlatform.trocarEmpresa = () => Promise.resolve({ ok: false })")
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click()
+    await pn.locator('.ee-lista').wait_for(timeout=8000)
+    await pn.click(f'.ee-li[data-nome="{BASE_EMP}"]'); await pn.click('.dlg [data-acao="2"]'); await pg.wait_for_timeout(2500)
+    mod = await pn.locator('#modal').inner_text()
+    check('Não consegui trocar de empresa' in mod and '/add' not in await path(), f'se o portal não confirma a troca, avisa e não abre o pedido (modal: {mod[:80]!r}, rota: {await path()})')
+    await pn.evaluate("document.querySelector('#modal .dlg-x')?.click()")
+
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    tarefa_emp.cancel()
     await ctx.close()
 
 async def teste_mecanica(b):
@@ -693,6 +756,15 @@ async def main():
             await pg.click('.form__buttons--add'); await pg.wait_for_timeout(1200)
             if await painel().locator('#modal').is_visible() and await painel().locator('#m-send').count(): await painel().click('#m-send')
         def painel(): return next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+        # com três empresas no acesso, abrir um pedido pergunta a empresa (2.7): estes testes confirmam a que já vem marcada
+        async def _auto_empresa():
+            while True:
+                try:
+                    f = painel()
+                    if f and await f.locator('.ee-lista').count(): await f.click('.dlg [data-acao="2"]', timeout=800)
+                except Exception: pass
+                await asyncio.sleep(0.15)
+        tarefa_emp = asyncio.create_task(_auto_empresa())
         so13 = os.environ.get('SIM_SO') == '13'   # SIM_SO=13 roda só a parte da versão 1.3
         if not so13:
             # abre Afastamento > Adicionar pelo menu do portal
@@ -882,6 +954,8 @@ async def main():
             lote_txt = await pn.locator('#lote').inner_text()
             check(v.get('vacationStartDate') == '10/11/2026' and v.get('vacationDays') == '20' and '1 de 2' in lote_txt, 'vários pedidos: o lote abre o 1º preenchido e deixa o 2º na fila')
             await pn.click('#lote-parar'); await pg.wait_for_timeout(300)
+            # pedido do lote preparado sem pendência abre o resumo do "Conferir e enviar" (2.8): volta sem enviar
+            if await pn.locator('#modal').is_visible() and await pn.locator('#modal #m-fix').count(): await pn.click('#modal #m-fix'); await pg.wait_for_timeout(300)
 
             # lista longa virtualizada: nomes do começo (A) e do meio (I) da lista
             print('\n[lista longa] funcionário fora das primeiras linhas da lista')

@@ -1066,4 +1066,27 @@ t('estagiário e contribuinte: categorias do eSocial/SEFIP pelas regras e tipo p
   assert.ok(t.condicionais.every(c => c.revisarComEscritorio));
 });
 
+/* ---- Empresa do pedido (2.7): quais empresas a caixa "Para qual empresa?" oferece ---- */
+
+t('empresas do login: as das solicitações, as já vistas e a aberta no portal, com a do portal primeiro', () => {
+  const itens = [
+    { empresa: 'COMERCIO MODELO LTDA', empresaApelido: 'MODELO', estado: 'aguardando', aguardando: true },
+    { empresa: 'COMERCIO MODELO LTDA', empresaApelido: 'MODELO', estado: 'andamento' },
+    { empresa: 'COMERCIO MODELO LTDA', empresaApelido: 'MODELO', estado: 'concluida' },
+    { empresa: 'OFICINA FICTICIA ME', estado: 'andamento' },
+  ];
+  const l = E.empresasParaEscolha(itens, 'EMPRESA EXEMPLO LTDA', []);
+  assert.deepEqual(l.map(e => e.nome), ['EMPRESA EXEMPLO LTDA', 'COMERCIO MODELO LTDA', 'OFICINA FICTICIA ME'], 'a do portal vem primeiro mesmo sem solicitações');
+  assert.equal(l[0].atual, true);
+  const m = l.find(e => e.nome === 'COMERCIO MODELO LTDA');
+  assert.deepEqual([m.apelido, m.abertas, m.esperam], ['MODELO', 2, 1], 'conta só as abertas e as que esperam o cliente');
+  // a lista das solicitações é relida a cada troca de empresa: as empresas já vistas continuam na caixa
+  assert.equal(E.empresasParaEscolha([], 'OFICINA FICTICIA ME', l.map(({ nome, apelido }) => ({ nome, apelido }))).length, 3);
+  // o nome do cabeçalho do portal pode vir um pouco diferente do da solicitação: não duplica
+  assert.equal(E.empresasParaEscolha(itens, 'oficina ficticia', []).filter(e => /OFICINA/.test(e.nome)).length, 1);
+  // um acesso com uma empresa só não tem o que escolher
+  assert.equal(E.empresasParaEscolha([], 'EMPRESA EXEMPLO LTDA', []).length, 1);
+  assert.equal(E.empresasParaEscolha([{ empresa: 'A LTDA' }, { empresa: 'A LTDA' }], 'A LTDA', []).length, 1);
+});
+
 console.log(`\n${n} testes ok`);

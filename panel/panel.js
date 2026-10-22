@@ -176,11 +176,24 @@ function aplicarModo(modo) {
 /** Guarda o que estava em andamento com o nome da empresa anterior e começa limpo: listas de
  *  empregados, valores lidos e lote não valem para outra empresa. */
 function trocouDeEmpresa(empresaAntes) {
-  const pares = Object.entries(S.work).filter(([, W]) => W).map(([tipo, W]) => ({ tipo, empresa: empresaAntes, dados: rascunhoDe(W) })).filter(x => x.dados);
+  const troca = S.trocaPedida;          // troca pedida por nós (caixa "Para qual empresa?" ou botão da empresa no pedido)
+  const manter = troca?.manter || null; // o pedido (tipo) que segue com o cliente para a empresa nova
+  const pares = Object.entries(S.work).filter(([tipo, W]) => W && tipo !== manter).map(([tipo, W]) => ({ tipo, empresa: empresaAntes, dados: rascunhoDe(W) })).filter(x => x.dados);
   if (pares.length) gravarRascunhos(pares);
+  const levado = manter ? S.work[manter] : null;
   S.work = {}; cargasEmpregados.clear(); S.sugestao = null; S.ultimoEnvio = null;
+  if (levado) { S.work[manter] = levado; semDadosDaEmpresa(levado, troca); }
   if (S.lote && !S.lote.concluido) { S.lote.pausado = true; renderLote(); }
   lastKey = '';
+}
+/** O que é de uma empresa não vale na outra: funcionário e listas (departamento, motivos…). O resto do pedido fica. */
+function semDadosDaEmpresa(W, troca) {
+  W.empregados = []; W.opcoes = {}; W.candidatos = null; W.pacienteLido = null;
+  if (!troca?.conservarEmpregado) { delete W.valores.empregado; W.editados.delete('empregado'); delete W.fonteVerdade?.empregado; }
+  W.ultimoPreenchido = {}; W.portalVisto = null; W.desfeitos = null; W.resultados = null;
+  for (const a of W.arquivos || []) a.anexado = false;   // o formulário da empresa nova está vazio: anexa de novo
+  // com o foco num campo o formulário da plataforma não é redesenhado: o funcionário antigo ficaria na tela
+  if (document.activeElement?.closest?.('#fields')) document.activeElement.blur();
 }
 
 /* A página continua com o script antigo quando a extensão é atualizada sem recarregar o portal:
@@ -479,10 +492,19 @@ function renderContextBanner() {
   } else el.innerHTML = '';
 }
 
-async function openTipo(tipo, { manter = false } = {}) {
+/** Pergunta para qual empresa é o pedido (se o acesso tem mais de uma) e troca no portal. Quem prepara dados antes de
+ *  abrir o formulário chama isto primeiro: se o cliente desistir, nada fica preparado. false = desistiu ou a troca falhou. */
+async function empresaDoPedido(tipo, { sugerida = '' } = {}) {
+  if (standalone || (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) || !P?.escolherEmpresa) return true;
+  return !!(await P.escolherEmpresa({ tipo, sugerida }));
+}
+async function openTipo(tipo, { manter = false, semEmpresa = false, sugerida = '' } = {}) {
   const t = S.rules.tipos[tipo]; if (!t) return;
   if (!manter) S.sugestao = null;
   if (standalone) return;
+  // com mais de uma empresa no acesso, pergunta para qual é o pedido e troca no portal antes de abrir o formulário
+  // (se este pedido já está aberto, a empresa já foi escolhida)
+  if (!semEmpresa && !(await empresaDoPedido(tipo, { sugerida }))) return false;
   S.abrindo = tipo;
   await request({ type: 'navigate', slug: t.slug, add: true }, 12000);
   w(tipo);
@@ -606,6 +628,8 @@ function montarPedidos(itens) {
 }
 
 async function iniciarLote(pedidos, fora) {
+  // pergunta a empresa uma vez só: todas as solicitações do lote vão para ela
+  if (!(await empresaDoPedido(null))) return;
   S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pausado: false, concluido: false };
   S.sugestao = null;
   toast(`${pedidos.length} solicitações para abrir, uma de cada vez.`);
@@ -627,7 +651,7 @@ async function abrirPedido(i) {
   const W = w(p.tipo);
   p.itens.forEach(it => { it.anexado = false; it.removido = false; it.outroTipo = null; });
   W.arquivos = []; juntarArquivos(W, p.itens);
-  await openTipo(p.tipo, { manter: true });
+  await openTipo(p.tipo, { manter: true, semEmpresa: true });
   for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo); k++) await esperar(200);
   await loadEmpregados(p.tipo);
   for (const it of p.itens) {
@@ -782,10 +806,11 @@ function renderSugestao() {
     </div>`;
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
   $('#sug-go')?.addEventListener('click', async () => {
+    if (!(await empresaDoPedido(tipo))) return;      // desistiu da empresa: a sugestão continua na tela
     comecarDoZeroSeAbandonado(tipo);
     const W = w(tipo); const todos = [it, ...(s.extras || [])]; juntarArquivos(W, todos);
     S.sugestao = null;
-    await openTipo(tipo, { manter: true });
+    await openTipo(tipo, { manter: true, semEmpresa: true });
     // Reanalisa com a lista de funcionários desta tela
     setTimeout(async () => {
       await loadEmpregados(tipo);
@@ -934,9 +959,10 @@ const comAjustes = (campos, ajustes) => camposComAjustes({ analise: { campos }, 
 const dicasHtml = (s) => (s.dicas || []).map(d => `<div class="note warn" style="margin:0 0 10px">${icon('alert')}<div>${esc(d)}</div></div>`).join('');
 
 async function abrirDoTexto(el, s, destino) {
+  if (!(await empresaDoPedido(destino))) return;     // desistiu da empresa: o texto entendido continua na tela
   S.sugestao = null; el.innerHTML = '';
   comecarDoZeroSeAbandonado(destino);
-  await openTipo(destino, { manter: true });
+  await openTipo(destino, { manter: true, semEmpresa: true });
   for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === destino); k++) await esperar(200);
   await loadEmpregados(destino);
   const r = E.parseFreeText(s.texto, S.rules, { employees: w(destino).empregados, tipoAtual: destino });
@@ -1121,8 +1147,13 @@ function renderPreencher() {
   }
   const t = tipoDef(tipo);
   const plat = S.modo === 'plataforma';
+  // com mais de uma empresa no acesso, a empresa do pedido é um botão: abre a caixa para trocar sem perder o que foi preenchido
+  const variasEmp = plat && (P?.empresasDoLogin?.().length || 0) > 1;
+  const empresaCab = variasEmp
+    ? `<button type="button" class="btn btn-sm pd-emp" id="pd-emp" title="Trocar a empresa deste pedido (o que você preencheu fica; o funcionário você escolhe de novo)" aria-haspopup="dialog">${icon('briefcase', 'ic-sm')}<span>${esc(P.apelidoDe(S.ctx.empresa))}</span><span aria-hidden="true">▾</span></button>`
+    : `<small class="muted">${esc(S.ctx.empresa)}</small>`;
   const cab = `<div class="card${plat ? ' pd-head' : ''}">
-      ${plat ? `<button type="button" class="btn btn-sm pd-voltar" id="pd-voltar" title="Voltar para a escolha do tipo de solicitação (o pedido aberto continua no portal)">${icon('left', 'ic-sm')} Outro tipo</button><div class="pd-t"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small> <span class="chip sector">${esc(t.setor)}</span></div><ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
+      ${plat ? `<button type="button" class="btn btn-sm pd-voltar" id="pd-voltar" title="Voltar para a escolha do tipo de solicitação (o pedido aberto continua no portal)">${icon('left', 'ic-sm')} Outro tipo</button><div class="pd-t"><h3>${esc(t.nome)}</h3>${empresaCab} <span class="chip sector">${esc(t.setor)}</span></div><ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
         <button type="button" class="btn btn-ghost btn-sm" id="ver-portal" title="Mostra o formulário original do portal">${icon('external', 'ic-sm')} Ver no portal</button>
         <div class="progress"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>` : `
       <div class="card-h">
@@ -1184,6 +1215,7 @@ function renderPreencher() {
   `;
   $('#ver-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
   $('#pd-voltar')?.addEventListener('click', () => P.voltarEscolha());
+  $('#pd-emp')?.addEventListener('click', () => P.trocarEmpresaDoPedido());
   bindDrop($('#drop-form'));
   $('#btn-fill').addEventListener('click', () => fillPortal(tipo));
   $('#btn-undo').addEventListener('click', desfazerPreenchimento);
@@ -1275,7 +1307,7 @@ function renderFilesOnly() {
       const destino = outro.outroTipo;
       const W2 = w(destino); W2.arquivos.push(outro); W.arquivos = W.arquivos.filter(a => a !== outro);
       outro.outroTipo = null;
-      await openTipo(destino, { manter: true });
+      await openTipo(destino, { manter: true, semEmpresa: true });
       setTimeout(async () => { await loadEmpregados(destino); outro.analise = E.analyzeText(outro.texto || '', S.rules, { employees: w(destino).empregados, tipoAtual: destino }); applyAnalysis(destino, outro); }, 900);
     });
   }
@@ -1942,7 +1974,7 @@ function onSubmitAttempt(m) {
     <h3 id="mh">${list.length ? 'Antes de enviar' : 'Tudo pronto para enviar'}</h3>
     <p class="muted" style="margin:0 0 10px">${esc(auto && !list.length ? 'Preparei o pedido. Confira o resumo e, se estiver certo, envie: o envio é feito pelo próprio portal.' : list.length ? (S.rules.mensagens?.envioComPendencias || '') : 'Confira o resumo. O envio é feito pelo próprio portal.')}</p>
     <div class="resumo card pad"><b>${esc(vals.assunto || t.nome)}</b>
-      <dl class="kv" style="margin-top:6px">${principais.map(([k, c]) => `<dt>${esc(c.rotulo)}</dt><dd>${esc(vals[k])}</dd>`).join('')}
+      <dl class="kv" style="margin-top:6px">${(P?.empresasDoLogin?.().length || 0) > 1 ? `<dt>Empresa</dt><dd>${esc(S.ctx.empresa)}</dd>` : ''}${principais.map(([k, c]) => `<dt>${esc(c.rotulo)}</dt><dd>${esc(vals[k])}</dd>`).join('')}
       <dt>Anexos</dt><dd>${anexos.length ? esc(anexos.map(a => a.nome).join(', ')) : 'nenhum'}</dd></dl></div>
     ${list.length ? `<div class="checks" style="margin-top:10px">${list.map(i => `<div class="chk ${i.nivel}"><span class="st">${icon(i.nivel === 'erro' ? 'x' : 'alert', 'ic-sm')}</span><span>${esc(i.mensagem)}</span></div>${i.modelo ? botaoModelo(i.modelo) : ''}`).join('')}</div>` : ''}
     <div class="actions" style="margin-top:14px">
@@ -2010,11 +2042,12 @@ async function renderModelosInicio() {
       <button class="btn btn-sm" data-use="${md.id}">Usar</button><button class="icon-btn" data-del="${md.id}" aria-label="Apagar modelo ${esc(md.nome)}" style="color:var(--ink-3)">${icon('trash', 'ic-sm')}</button></div>`).join('')}</div>`;
   el.querySelectorAll('[data-use]').forEach(b => b.addEventListener('click', async () => {
     const md = modelos.find(x => x.id === b.dataset.use); if (!md) return;
+    if (!(await empresaDoPedido(md.tipo))) return;
     const W = w(md.tipo);
     // modelos antigos de cadastro podem ter dados da pessoa: só os campos da empresa voltam
     for (const [k, v] of Object.entries(E.camposDaEmpresa(md.tipo, S.rules) ? E.valoresReaproveitaveis(md.tipo, md.valores, S.rules) : md.valores)) W.valores[k] = { valor: v, conf: 1, fonte: 'modelo' };
     gerarTextos(md.tipo, true);
-    await openTipo(md.tipo, { manter: true });
+    await openTipo(md.tipo, { manter: true, semEmpresa: true });
     if (S.prefs.preencherAoLer) setTimeout(() => fillPortal(md.tipo, { silencioso: true }), 900);
   }));
   el.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
@@ -2199,6 +2232,7 @@ function renderRepetir() {
   if (!h) { el.innerHTML = ''; return; }
   el.innerHTML = `<button class="li repetir" type="button" id="rep-go">${icon('refresh')}<div class="main"><b>Repetir a última solicitação</b><small>${esc(h.resumo)} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div>${icon('arrow', 'ic-sm')}</button>`;
   $('#rep-go').addEventListener('click', async () => {
+    if (!(await empresaDoPedido(h.tipo, { sugerida: h.empresa }))) return;
     // cadastro: só as escolhas da empresa (cargo, departamento…); os dados da pessoa anterior ficam de fora,
     // inclusive o que tinha ficado guardado de um cadastro começado
     const cadastro = !!E.camposDaEmpresa(h.tipo, S.rules);
@@ -2210,7 +2244,7 @@ function renderRepetir() {
     }
     W.rascunhoVisto = true;
     gerarTextos(h.tipo, true);
-    await openTipo(h.tipo, { manter: true });
+    await openTipo(h.tipo, { manter: true, semEmpresa: true });
     if (S.prefs.preencherAoLer) setTimeout(() => fillPortal(h.tipo, { silencioso: true }), 900);
     toast(cadastro ? 'Repeti só as escolhas da empresa (cargo, departamento, jornada…). Os dados da pessoa ficam de fora: complete com os do novo funcionário.' : 'Repeti os dados da última solicitação, menos as datas. Confira e complete.');
   });
@@ -2366,17 +2400,20 @@ async function renderHistorico() {
     <div class="actions" style="margin-top:12px"><button class="btn btn-ghost" id="h-clear">${icon('trash', 'ic-sm')} Limpar histórico</button></div>` : '<p class="muted">As solicitações que você preencher com o Assistente aparecem aqui.</p>'}`;
   viewEl.querySelectorAll('[data-fazer]').forEach(b => b.addEventListener('click', () => { const x = prazos[+b.dataset.fazer]?.pedir; if (x) P.novoPedido(x.tipo, { empregado: x.empregado, sugeridos: x.valores, fonte: x.fonte }); }));
   viewEl.querySelectorAll('[data-cont]').forEach(b => b.addEventListener('click', async () => {
-    const h = historico[+b.dataset.cont]; const W = w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
-    gerarTextos(h.tipo, true);
-    await openTipo(h.tipo, { manter: true });
-  }));
-  viewEl.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', async () => {
-    const h = historico[+b.dataset.i];
+    const h = historico[+b.dataset.cont];
+    if (!(await empresaDoPedido(h.tipo, { sugerida: h.empresa }))) return;
     const W = w(h.tipo);
     for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     gerarTextos(h.tipo, true);
-    await openTipo(h.tipo, { manter: true });
+    await openTipo(h.tipo, { manter: true, semEmpresa: true });
+  }));
+  viewEl.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', async () => {
+    const h = historico[+b.dataset.i];
+    if (!(await empresaDoPedido(h.tipo, { sugerida: h.empresa }))) return;
+    const W = w(h.tipo);
+    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    gerarTextos(h.tipo, true);
+    await openTipo(h.tipo, { manter: true, semEmpresa: true });
   }));
   $('#h-clear')?.addEventListener('click', async () => {
     const b = $('#h-clear');
