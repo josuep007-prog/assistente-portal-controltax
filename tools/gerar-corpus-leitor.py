@@ -501,6 +501,55 @@ doc('certidao-nascimento', pagina(f'''<div class="pg" style="font-size:13.5px">
 </div>'''), 'certidao', None, {}, formas=('pdf', 'img', 'foto'), descricao='certidão de filho (sem pedido próprio)')
 
 
+# ---------- lote 5: documentos de DP que antes passavam batido (carta do INSS, espelho de ponto, certidão de casamento, ASO periódico)
+doc('carta-inss', pagina(f"""<div class="pg">
+<div class="hdr"><div class="b">INSTITUTO NACIONAL DO SEGURO SOCIAL</div><div class="sm">Agência da Previdência Social Exemplo · Comunicação de decisão</div></div>
+<h1 style="font-size:18px">COMUNICAÇÃO DE DECISÃO</h1>
+<table class="f"><tr><td colspan="2"><small>Segurado</small>RAFAEL NUNES BARBOSA</td><td><small>CPF</small>{cpf('000123405')}</td></tr>
+<tr><td><small>Espécie</small>Auxílio por incapacidade temporária</td><td><small>NB</small>123.456.789-0</td><td><small>Perícia médica</small>25/09/2026</td></tr></table>
+<p style="font-size:15px;text-align:justify">Informamos que o benefício foi concedido. Data do início do benefício (DIB): 20/09/2026.
+Data de cessação do benefício (DCB): 30/11/2026. Caso a incapacidade persista, o segurado poderá solicitar a prorrogação.</p>
+</div>"""), 'cartaInss', 'afastamento',
+    {'empregado': 'RAFAEL NUNES BARBOSA', 'dataAfastamento': None, 'dias': None, 'tipoAfastamento': None, 'cid': None, 'medico': None},
+    formas=('pdf', 'img', 'foto'), descricao='carta do INSS: a DIB (16º dia) não é a data do afastamento; "segurado" não é apólice de seguro',
+    extra={'notas': ['20/09/2026', '30/11/2026']})
+
+doc('espelho-ponto', pagina(f"""<div class="pg">
+<div class="hdr"><div class="b">{EMPRESA}</div><div class="sm">ESPELHO DE PONTO</div></div>
+<p>Funcionário: CARLOS EDUARDO MENDES &nbsp;&nbsp; Matrícula: 15</p>
+<p>Período: 01/10/2026 a 31/10/2026 &nbsp;&nbsp; Competência: 10/2026</p>
+<table class="f"><tr><td><small>Entrada</small>08:00</td><td><small>Saída</small>12:00</td><td><small>Entrada</small>13:00</td><td><small>Saída</small>17:48</td></tr></table>
+<h2>Totais do período</h2>
+<p>Horas trabalhadas: 176:00</p><p>Horas extras 50%: 10:30</p><p>Faltas: 2</p><p>Atrasos: 01:15</p>
+</div>"""), 'espelhoPonto', 'rubricas', {'competencia': '10/2026'},
+    formas=('pdf', 'img', 'foto'), descricao='espelho de ponto: competência e totais (vão para a descrição)')
+
+doc('certidao-casamento', pagina(f"""<div class="pg" style="font-size:13.5px">
+<div class="c b">REPÚBLICA FEDERATIVA DO BRASIL</div><div class="c b">REGISTRO CIVIL DAS PESSOAS NATURAIS</div>
+<h1>CERTIDÃO DE CASAMENTO</h1>
+<table class="f"><tr><td colspan="3"><small>Cônjuges</small>FULANA DE TESTE SILVA e BELTRANO DE TESTE SOUZA</td></tr>
+<tr><td><small>Data do casamento</small>12/06/2020</td><td colspan="2"><small>Regime de bens</small>Comunhão parcial</td></tr>
+<tr><td colspan="3"><small>CPF</small>{cpf('000123414')}</td></tr></table>
+<p>O conteúdo da certidão é verdadeiro. Dou fé. Cartório do 2º Ofício de Vila Velha/ES, 12/06/2020.</p>
+<div class="ass">Oficial de Registro Civil</div>
+</div>"""), 'certidao', 'cadastroEmpregado',
+    {'estadoCivil': 'Casado', 'conjuge': None, 'cpf': None, 'nome': None, 'nascimento': None},
+    formas=('pdf', 'img', 'foto'), descricao='certidão de casamento: marca o estado civil; CPF e nomes dela não entram no cadastro')
+
+doc('aso-periodico', pagina(f"""<div class="pg">
+<div class="hdr"><div class="b">MEDICINA DO TRABALHO EXEMPLO LTDA</div><div class="sm">Av. Saúde Ocupacional, 900 - Centro - Vitória/ES</div></div>
+<h1 style="font-size:18px">ATESTADO DE SAÚDE OCUPACIONAL</h1>
+<p>Nome: JOAO PEDRO MARTINS &nbsp;&nbsp; CPF: {cpf('000123415')}</p>
+<p>Data de nascimento: 03/03/1990 &nbsp;&nbsp; Admissão: 10/03/2021</p>
+<p>Tipo de exame: ( ) Admissional (X) Periódico ( ) Demissional</p>
+<p>Data do exame: 06/10/2026</p>
+<p>Parecer: (X) Apto ( ) Inapto</p>
+<p style="margin-top:28px">Vitória/ES, 07/10/2026</p>
+<div class="ass">Dr. Médico Examinador Fictício<br>CRM-ES 11111</div>
+</div>"""), 'aso', None, {}, formas=('pdf', 'foto'), descricao='ASO periódico: não escolhe pedido; data pela pista "data do exame"',
+    extra={'aso': {'tipo': 'periodico', 'resultado': 'APTO', 'data': '06/10/2026'}})
+
+
 # ---------------------------------------------------------------- degradações
 def coeficientes(src, dst):
     m = []
@@ -554,9 +603,11 @@ def gerar(pasta):
     from playwright.sync_api import sync_playwright
     os.makedirs(pasta, exist_ok=True)
     gab = []
+    so = [x for x in os.environ.get('CORPUS_SO', '').split(',') if x]   # CORPUS_SO=carta-inss,espelho-ponto gera só esses (num corpus novo)
     with sync_playwright() as p:
         nav = p.chromium.launch(channel='chromium', headless=True)
         for i, d in enumerate(DOCS):
+            if so and not any(x in d['id'] for x in so): continue
             card = d['forma'] == 'card'
             pg = nav.new_page(viewport={'width': 900 if card else 794, 'height': 600 if card else 1123}, device_scale_factor=1.6)
             pg.set_content(d['html']); pg.wait_for_timeout(150)
@@ -595,6 +646,22 @@ def gerar(pasta):
                 gab.append(dict(arquivo=arq, base=d['id'], forma=forma, descricao=d['descricao'], documento=d['documento'], tipo=d['tipo'], campos=d['campos'], **d['extra']))
         nav.close()
 
+    if so:   # corpus parcial: só a planilha larga (se pedida) e o gabarito
+        if 'planilha-larga' in so:
+            from openpyxl import Workbook
+            wb = Workbook(); capa = wb.active; capa.title = 'Capa'; capa.append(['Empresa Exemplo — controle da folha'])
+            ws = wb.create_sheet('Variáveis out-2026')
+            ws.append(['Lançamentos do mês — outubro/2026']); ws.append([])
+            ws.append(['Nome', 'Matrícula', 'HE 50%', 'Faltas', 'Comissão'])
+            ws.append(['ANA PAULA FERREIRA', 12, '10:30', 0, None]); ws.append(['GABRIEL ALVES PEREIRA', 13, '02:00', 1, 350.0]); ws.append(['NOME QUE NAO EXISTE', 14, '00:30', None, None])
+            ws.append(['Total', None, '13:00', 1, 350.0])
+            wb.save(os.path.join(pasta, 'planilha-larga--xlsx.xlsx'))
+            gab.append(dict(arquivo='planilha-larga--xlsx.xlsx', base='planilha-larga', forma='xlsx', descricao='formato largo, título antes do cabeçalho, aba certa, nome fora da lista, linha de total',
+                            documento='planilha', tipo='rubricas', campos={}, rubricas={'formato': 'largo', 'n': 5, 'competencia': '10/2026', 'naoAchados': ['NOME QUE NAO EXISTE']}))
+        with open(os.path.join(pasta, 'gabarito.json'), 'w', encoding='utf-8') as f:
+            json.dump({'hoje': '2026-10-18', 'funcionarios': FUNCIONARIOS, 'documentos': gab}, f, ensure_ascii=False, indent=1)
+        print(f'{len(gab)} arquivos fictícios em {os.path.abspath(pasta)}')
+        return
     # atestados do gerador antigo (mesmos layouts dos testes)
     spec = importlib.util.spec_from_file_location('gerar_exemplos', os.path.join(AQUI, 'gerar-exemplos-atestados.py'))
     ge = importlib.util.module_from_spec(spec); spec.loader.exec_module(ge)

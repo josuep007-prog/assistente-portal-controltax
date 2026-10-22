@@ -925,6 +925,171 @@ async def teste_lote6(b):
     tarefa_emp.cancel()
     await ctx.close()
 
+
+async def teste_lote5(b):
+    """Lote 5: CPF acha o funcionário, lote por pessoa, regra dos 60 dias, planilha larga, Word/HEIC e recorte da foto."""
+    import datetime, zipfile, io
+    print('\n[lote 5] CPF, lote por pessoa, 60 dias, planilha, Word/HEIC e recorte da foto')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    async def regras(route):   # limite alto de propósito: todo valor lido de foto vira "confira" (o recorte aparece sempre)
+        resp = await route.fetch(); j = await resp.json()
+        j['config']['recorteLeitura']['confiancaPalavraMinima'] = 101
+        await route.fulfill(response=resp, json=j)
+    await ctx.route('**/rules/regras.json', regras)
+    async def sheetjs(route): await route.fulfill(path=os.path.join(base, 'lib', 'xlsx', 'xlsx.full.min.js'), content_type='text/javascript')
+    await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/xlsx/**', sheetjs)
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    def painel(): return next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto_empresa():
+        while True:
+            try:
+                f = painel()
+                if f and await f.locator('.ee-lista').count(): await f.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa_emp = asyncio.create_task(_auto_empresa())
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    def tem(**kv):
+        async def f():
+            v = await portal(); return all(v.get(k) == x for k, x in kv.items())
+        return f
+    async def mandar(nome, conteudo, tipo='text/plain'):
+        await pg.evaluate("([n, t, c]) => window.__ctSim.hooks().sendFiles([new File([c], n, { type: t })])", [nome, tipo, conteudo])
+    async def cancelar():
+        # o portal fica coberto pela plataforma: o clique vai direto no botão (como o Assistente faria)
+        await pg.evaluate("[...document.querySelectorAll('main button')].find(b => /CANCELAR/.test(b.innerText))?.click()")
+        await pg.wait_for_timeout(1200)
+    pn = painel()
+    hoje = datetime.date.today(); f = lambda d: d.strftime('%d/%m/%Y')
+
+    # 23: o CPF do documento acha o funcionário (o nome do documento não bate com a lista)
+    cpf = await pg.evaluate("window.__ctPlatform.employees().then(l => l.find(e => e.name === 'JOAO DA SILVA').cpf)")
+    cpf_f = f'{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}'
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    txt = f'ATESTADO MÉDICO\nAtesto que o paciente JOAO DE SOUZA SILVA, CPF {cpf_f}, necessita de 2 (dois) dias de repouso a partir de {f(hoje - datetime.timedelta(days=3))}.\nDra. Fictícia de Teste\nCRM-ES 1234'
+    await mandar('atestado-cpf.txt', txt); await pg.wait_for_timeout(1500)
+    if await pn.locator('#sug-go').count(): await pn.click('#sug-go')
+    ok = await espera(tem(selectedEmployee='JOAO DA SILVA'), 40)
+    check(ok, f"CPF do documento acha o funcionário na lista ({(await portal()).get('selectedEmployee')})")
+    await cancelar()
+
+    # 28: dois pedidos de demissão de pessoas diferentes viram dois pedidos
+    p1 = 'PEDIDO DE DEMISSÃO\nEu, JORGE OLIVEIRA ALVES, venho por meio desta formalizar meu pedido de demissão, a partir de 16/10/2026.'
+    p2 = 'PEDIDO DE DEMISSÃO\nEu, LUCAS MOREIRA, venho por meio desta formalizar meu pedido de demissão, a partir de 17/10/2026.'
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("([a, b]) => window.__ctSim.hooks().sendFiles([new File([a], 'demissao-jorge.txt', { type: 'text/plain' }), new File([b], 'demissao-lucas.txt', { type: 'text/plain' })])", [p1, p2])
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#lote ol li').length === 2"), 40)
+    check(ok, 'lote: dois pedidos de demissão de pessoas diferentes viram dois pedidos')
+    lote_txt = await pn.locator('#lote').inner_text() if await pn.locator('#lote').count() else ''
+    check('JORGE OLIVEIRA ALVES' in lote_txt and 'LUCAS MOREIRA' in lote_txt and '2 pessoas' in lote_txt, 'lote: cada pedido mostra a pessoa e o aviso "documentos de 2 pessoas"')
+    if await pn.locator('#lote-parar').count(): await pn.click('#lote-parar')
+    await cancelar()
+
+    # 36: regra dos 60 dias — atestado anterior do histórico + este: "É a mesma doença?"
+    empresa = await pn.evaluate("() => document.querySelector('#empresa')?.innerText?.trim() || ''")
+    ant = {'chave': 'x', 'quando': int(datetime.datetime.now().timestamp() * 1000) - 86400000, 'empresa': empresa or 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', 'tipo': 'afastamento', 'status': 'enviado', 'resumo': 'Atestado de teste', 'anexos': [],
+           'valores': {'empregado': 'CAMILA ROCHA', 'dataAfastamento': f(hoje - datetime.timedelta(days=30)), 'dias': '10'}}
+    await pn.evaluate("h => chrome.storage.local.set({ historico: [h] })", ant)
+    await pg.reload(); await pg.wait_for_timeout(3500); pn = painel()
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    at = f'ATESTADO MÉDICO\nAtesto que CAMILA ROCHA necessita de 8 (oito) dias de repouso a partir de {f(hoje - datetime.timedelta(days=5))}.\nDra. Fictícia de Teste\nCRM-ES 1234'
+    await mandar('atestado-60.txt', at); await pg.wait_for_timeout(1500)
+    if await pn.locator('#sug-go').count(): await pn.click('#sug-go')
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#r60') && document.querySelector('#r60').innerText.includes('mesma doença')"), 40)
+    check(ok, 'regra dos 60 dias: pergunta "É a mesma doença?" com a conta à vista (10 + 8 = 18 dias)')
+    if ok:
+        conta = await pn.locator('#r60').inner_text()
+        check('18 dias' in conta and 'CID' not in conta, 'a pergunta mostra a conta e nunca o CID')
+        await pn.click('#r60-sim')
+        ok = await espera(lambda: pg.evaluate("[...document.querySelectorAll('main bento-combobox')].some(e => e.querySelector('input').value === 'Novo afast. mesma doença')"), 25)
+        check(ok, 'respondendo "Sim", o tipo "Novo afast. mesma doença" vai ao portal')
+        ok = await espera(lambda: pg.evaluate("[...document.querySelectorAll('main textarea')].some(t => t.value.includes('Soma 18 dias'))"), 20)
+        check(ok, 'a descrição explica "soma 18 dias com o atestado de dd/mm"')
+    await cancelar()
+
+    # 14: planilha larga, com o título antes do cabeçalho, competência do título e nomes conferidos
+    csv = 'Variáveis de outubro/2026;;;\n;;;\nNome;HE 50%;Faltas;Comissão\nJOAO DA SILVA;10:30;0;\nJORGE OLIVEIRA ALVES;02:00;1;R$ 350,00\nFULANO INEXISTENTE;00:30;;\n'
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await mandar('variaveis.csv', csv, 'text/csv')
+    if await espera(lambda: pn.evaluate("!!document.querySelector('#sug-go')"), 30): await pn.click('#sug-go')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#grade-rub')?.innerText || '').includes('5 valor')"), 40)
+    check(ok, 'planilha larga (uma rubrica por coluna, célula zerada fora): 5 valores')
+    ok = await espera(tem(basisDate='10/2026'), 20)
+    check(ok, 'competência tirada do título da planilha')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#checks')?.innerText || '').includes('FULANO INEXISTENTE')"), 20)
+    check(ok, 'nome que não está na lista de funcionários é avisado')
+    ok = await espera(lambda: pg.evaluate("[...document.querySelectorAll('main textarea')].some(t => t.value.includes('Totais por rubrica') && t.value.includes('13:00'))"), 20)
+    check(ok, 'totais por rubrica na descrição (HE 50%: 13:00)')
+    check(await pn.locator('#baixar-modelo').count() == 1, '"Baixar planilha modelo" na tela das rubricas')
+    await cancelar()
+
+    # 19: Word é lido; HEIC e TIFF explicam o que fazer; a lista de formatos do seletor
+    acc = await pn.evaluate("document.querySelector('#file-input').accept")
+    check('.docx' in acc and '.odt' in acc and '.ods' in acc and '.tif' not in acc, 'seletor aceita Word/ODT/ODS e não oferece TIFF')
+    xml = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>PEDIDO DE DEMISSÃO</w:t></w:r></w:p><w:p><w:r><w:t>Eu, JORGE OLIVEIRA ALVES, venho por meio desta formalizar meu pedido de demissão, a partir de 16/10/2026.</w:t></w:r></w:p></w:body></w:document>'
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>')
+        z.writestr('word/document.xml', xml)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("(a) => window.__ctSim.hooks().sendFiles([new File([new Uint8Array(a)], 'carta.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })])", list(bio.getvalue()))
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#sugestao')?.innerText || '').includes('Pedido de demissão')"), 30)
+    check(ok, 'arquivo do Word lido: reconhece o pedido de demissão')
+    await pn.evaluate("document.querySelector('#sug-x')?.click()")
+    await mandar('foto.heic', 'x', 'image/heic')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#sugestao')?.innerText || '').includes('Ctrl+V')"), 20)
+    t = await pn.locator('#sugestao').inner_text() if await pn.locator('#sugestao').count() else ''
+    check(ok and 'Não consegui ler' in t, 'HEIC: diz que não leu e ensina o print com Ctrl+V')
+    await pn.evaluate("document.querySelector('#sug-x')?.click()")
+
+    # 29: um PDF com RG, comprovante e ASO marca os três itens do checklist do cadastro
+    pag = ctx_pdf = await ctx.new_page()
+    html = ('<html><body style="font-family:Arial;font-size:14px">'
+            '<div style="page-break-after:always"><h2>CARTEIRA DE IDENTIDADE</h2><p>REGISTRO GERAL 1.234.567</p><p>NOME FULANA DE TESTE</p><p>FILIAÇÃO MAE DE TESTE</p><p>NATURALIDADE VITORIA/ES</p><p>DATA DE NASCIMENTO 05/12/1995</p></div>'
+            '<div style="page-break-after:always"><h2>CONTA DE LUZ - FATURA DE ENERGIA</h2><p>DADOS DO CLIENTE</p><p>Nome: FULANA DE TESTE</p><p>RUA DAS FLORES, 10 - CENTRO</p><p>Vila Velha/ES CEP 29101-450</p><p>Vencimento 10/11/2026</p><p>Consumo 210 kWh</p></div>'
+            '<div><h2>ATESTADO DE SAÚDE OCUPACIONAL</h2><p>Clínica Exemplo, Av. Central, 900 - CEP 29010-500</p><p>Tipo de exame: (X) Admissional ( ) Demissional</p><p>Parecer: (X) Apto ( ) Inapto</p><p>Data do exame: 10/10/2026</p></div></body></html>')
+    await pag.set_content(html); pdf = await pag.pdf(format='A4'); await pag.close()
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("(a) => window.__ctSim.hooks().sendFiles([new File([new Uint8Array(a)], 'documentos-juntos.pdf', { type: 'application/pdf' })])", list(pdf))
+    if await espera(lambda: pn.evaluate("!!document.querySelector('#sug-go')"), 40): await pn.click('#sug-go')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#doc-checklist .dl-i.ok').length >= 3"), 40)
+    check(ok, 'PDF com RG, comprovante e ASO: os três itens do checklist ficam marcados' + ('' if ok else f" ({await pn.evaluate('document.querySelector(`#doc-checklist`)?.innerText || null')!r})"))
+    await cancelar()
+
+    # 42: foto com dúvida — recorte ao lado do campo, Confirmar manda ao portal
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("""async () => { const b = await (await fetch('exemplos/atestado-foto.png')).blob(); window.__ctSim.hooks().sendFiles([new File([b], 'atestado-foto.png', { type: 'image/png' })]); }""")
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#sug-go')"), 90)
+    if ok: await pn.click('#sug-go')
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.confira-box')"), 60)
+    check(ok, 'foto: a caixa "Confira estas leituras" aparece')
+    if ok:
+        okimg = await espera(lambda: pn.evaluate("[...document.querySelectorAll('.confira-box img.recorte')].some(i => !i.hidden && i.src.startsWith('data:image/png') && i.naturalWidth > 10)"), 15)
+        check(okimg, 'cada campo duvidoso mostra o recorte da foto')
+        check(await pn.evaluate("!/CID|médico|CRM/i.test(document.querySelector('.confira-box').innerText)"), 'sem recorte nem texto de CID e médico')
+        antes = await portal()
+        check(not antes.get('leaveDate'), 'o valor duvidoso não vai ao portal sozinho')
+        if await pn.locator('#conf-todas').count(): await pn.click('#conf-todas')
+        else: await pn.click('[data-conf-k]')
+        ok = await espera(lambda: pn.evaluate("!document.querySelector('.confira-box')"), 20)
+        check(ok, 'Confirmar: o valor vai ao portal e sai da caixa')
+    await cancelar()
+    tarefa_emp.cancel()
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
 async def main():
     serve()
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
@@ -943,6 +1108,12 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_sugestao(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'l5':   # SIM_SO=l5 roda só o lote 5 (CPF, lote por pessoa, 60 dias, planilha, Word/HEIC, recorte)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_lote5(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'mec':   # SIM_SO=mec roda só a mecânica do preenchimento
@@ -1318,6 +1489,7 @@ async def main():
         await teste_lote4(b)
         await teste_lote6(b)
         await teste_sugestao(b)
+        await teste_lote5(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 

@@ -213,6 +213,15 @@
           post({ type: 'empregadoDetalhe', id: m.id, dados: (employeesRaw.get(companyName()) || []).find(e => norm(e?.name) === alvo) || null });
           break;
         }
+        case 'empregadoPorCpf': {   // de quem são estes CPFs? Só o nome volta: a lista com os CPFs não sai da aba
+          if (!employeesRaw.has(companyName())) { employeesCache.clear(); await employeeNames(); }
+          const raw = employeesRaw.get(companyName()) || [];
+          // a calibrar no Onvio real: o nome e o formato (com ou sem máscara) do CPF na lista de empregados
+          const cpfDe = (e) => String(e?.cpf ?? e?.cpfNumber ?? e?.nationalIdentity ?? e?.taxId ?? e?.personalIdentity ?? '').replace(/\D/g, '');
+          const porCpf = new Map(raw.map(e => [cpfDe(e), String(e?.name || '').trim()]).filter(([c, n]) => c.length === 11 && n));
+          post({ type: 'empregadoPorCpf', id: m.id, listaTemCpf: porCpf.size > 0, achados: (m.cpfs || []).map(c => String(c).replace(/\D/g, '')).filter(c => porCpf.has(c)).map(c => ({ cpf: c, nome: porCpf.get(c) })) });
+          break;
+        }
         case 'employees': {
           let names = await employeeNames();
           if (!names.length && m.aquecer && await aquecerEmpregados()) names = await employeeNames();

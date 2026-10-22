@@ -30,24 +30,25 @@ window.__ler = async (nome) => {
   const b = await (await fetch('/__corpus/' + encodeURIComponent(nome))).blob();
   self.__ctOcrLog = []; const t0 = performance.now();
   const r = await readFile(new File([b], nome, { type: tipoMime(nome) }), () => {}, { ocr: true });
-  return { texto: r.texto || '', metodo: r.metodo, confianca: r.confianca ?? null, rotacao: r.rotacao || 0, paginas: r.paginas, tabela: r.tabela || null, ocrLog: self.__ctOcrLog, ms: Math.round(performance.now() - t0) };
+  return { texto: r.texto || '', metodo: r.metodo, confianca: r.confianca ?? null, rotacao: r.rotacao || 0, paginas: r.paginas, tabela: r.tabela || null, abas: r.abas || null, ocrLog: self.__ctOcrLog, ms: Math.round(performance.now() - t0) };
 };
 // mesmas listas do panel.js (docDeOutroTipo)
 const DOCS_NEUTROS = ['certidao', 'aso', 'identidade', 'cpf', 'comprovanteEndereco', 'ctps', 'seguro', 'bancario'];
 const FAMILIAS = [['avisoFerias', 'calculoFerias'], ['avisoRescisao', 'calculoRescisao'], ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte']];
 const outroTipo = (doc, tipo) => { const dt = doc?.tipoSolicitacao; if (!dt || dt === tipo || DOCS_NEUTROS.includes(doc.id)) return null; if (FAMILIAS.some(f => f.includes(dt) && f.includes(tipo))) return null; return dt; };
 const limiar = E.limiarPortal ? E.limiarPortal(rules) : 0;
-window.__analisar = ({ nome, texto, tabela, tipoEsperado, funcionarios, hoje, metodo, confianca }) => {
+window.__analisar = ({ nome, texto, tabela, abas, tipoEsperado, funcionarios, hoje, metodo, confianca }) => {
   const h = new Date(hoje + 'T00:00:00');
   // como o painel: o método e a confiança do OCR vão junto (leitura fraca vira sugestão)
   const ocr = { metodo, confiancaOcr: metodo === 'ocr' ? confianca : null };
   const a1 = E.analyzeText(texto || nome, rules, { employees: [], tipoAtual: null, hoje: h, ...ocr });
-  if (tabela) { a1.tipoSugerido = 'rubricas'; a1.documento = { id: 'planilha', nome: 'Planilha de lançamentos' }; }
+  const rub = tabela ? E.lerPlanilhaRubricas(abas || [{ nome: '', linhas: tabela }], rules, { nomeArquivo: nome, hoje: h }) : null;   // lote 5: formato longo ou largo, em qualquer aba
+  if (rub) { a1.tipoSugerido = 'rubricas'; a1.documento = { id: 'planilha', nome: 'Planilha de lançamentos' }; }
   const tipo = tipoEsperado || a1.tipoSugerido;
   let a2 = null; const campos = {}; let outro = null;
   if (tipo) {
     a2 = E.analyzeText(texto || nome, rules, { employees: funcionarios, tipoAtual: tipo, hoje: h, ...ocr });
-    if (tabela) a2.documento = { id: 'planilha', nome: 'Planilha de lançamentos' };
+    if (rub) a2.documento = { id: 'planilha', nome: 'Planilha de lançamentos' };
     const t = E.resolveTipo(rules, tipo); outro = outroTipo(a2.documento, tipo);
     const desc = JSON.stringify(t.descricao || []);
     for (const [k, c] of Object.entries(a2.campos)) {
@@ -67,7 +68,9 @@ window.__analisar = ({ nome, texto, tabela, tipoEsperado, funcionarios, hoje, me
     sugerido: a1.tipoSugerido || null, doc2: a2?.documento?.id || null, tipoAvaliado: tipo || null, outroTipo: outro, campos,
     candidatos: a2?.candidatos || null, paciente: a2?.paciente || null, avisos: (a2?.avisos || []).map(a => a.id || a.mensagem.slice(0, 60)), pessoa: a2?.pessoa || null,
     aso: docId === 'aso' ? E.readASO(texto) : null, resumo: E.summarizeDocument(a2 || a1, texto || ''),
-    linhasTabela: tabela ? tabela.slice(1).map(r => String(r[0] || '')) : null
+    linhasTabela: tabela ? tabela.slice(1).map(r => String(r[0] || '')) : null,
+    rubricas: rub ? { formato: rub.formato, n: rub.linhas.length, competencia: rub.competencia, naoAchados: E.conferirPlanilha(rub.linhas, funcionarios, []).naoAchados } : null,
+    notas: (a2?.notas || a1.notas || []).map(n => n.texto)
   };
 };
 window.__pronto = true;
@@ -190,7 +193,7 @@ async def rodar(corpus, gab, so, paralelo, usar_cache):
                     if nome not in cache:
                         cache[nome] = await pg.evaluate('(n) => window.__ler(n)', nome)
                     lido = cache[nome]
-                    an = await pg.evaluate('(a) => window.__analisar(a)', dict(nome=nome, texto=lido['texto'], tabela=lido.get('tabela'), tipoEsperado=d.get('tipo'), funcionarios=gab['funcionarios'], hoje=gab['hoje'], metodo=lido.get('metodo'), confianca=lido.get('confianca')))
+                    an = await pg.evaluate('(a) => window.__analisar(a)', dict(nome=nome, texto=lido['texto'], tabela=lido.get('tabela'), abas=lido.get('abas'), tipoEsperado=d.get('tipo'), funcionarios=gab['funcionarios'], hoje=gab['hoje'], metodo=lido.get('metodo'), confianca=lido.get('confianca')))
                     resultados[nome] = dict(lido={k: v for k, v in lido.items() if k not in ('tabela',)}, analise=an)
                     print(f'  [{n}] {nome}: {lido["metodo"]} conf={lido.get("confianca")} rot={lido.get("rotacao")} {lido.get("ms", 0) / 1000:.0f}s → {an["doc1"]}/{an["sugerido"]}', flush=True)
                 except Exception as e:
@@ -234,6 +237,11 @@ def relatorio(docs, resultados, saida):
         if g.get('aso') and a.get('aso'):
             for k, v in g['aso'].items():
                 ok = N(a['aso'].get(k)) == N(v); extras.append(f'aso.{k}={"ok" if ok else repr(a["aso"].get(k))}')
+        if g.get('rubricas') is not None:
+            rb = a.get('rubricas') or {}
+            for k, v in g['rubricas'].items(): extras.append(f'rubricas.{k}=' + ('ok' if rb.get(k) == v else repr(rb.get(k))))
+        if g.get('notas') is not None:
+            extras.append('notas ' + ('ok' if all(any(x in n for n in a.get('notas') or []) for x in g['notas']) else repr(a.get('notas'))))
         if g.get('linhas') is not None:
             extras.append('linhas ' + ('ok' if [N(x) for x in a.get('linhasTabela') or []] == [N(x) for x in g['linhas']] else repr(a.get('linhasTabela'))))
         tot['esperados'] += len(esperados); tot['certos'] += len(certos); tot['preenchidos'] += len(preench); tot['errados'] += len(errados)
