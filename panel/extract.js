@@ -97,9 +97,11 @@ async function ocrImage(source, onProgress) {
 
 /** Nota de uma leitura: palavras de documento reconhecidas + confiança do OCR. */
 const PALAVRAS_DOC = /\b(atest|declar|paciente|afastamento|afastad|dias?|data|necessit|trabalho|atividades|medic|consulta|crm|cid|repouso|portador|cpf|nome|assinatura|unidade|sa[uú]de)/gi;
+const palavrasDoc = (texto, rx = PALAVRAS_DOC) => new Set((String(texto || '').match(rx) || []).map(x => x.toLowerCase().slice(0, 6))).size;
+/** Palavras de qualquer documento trabalhista (para decidir se o texto de um PDF é o documento ou só um rodapé). */
+const PALAVRAS_GERAIS = /\b(atest|declar|paciente|afastament|dias?|data|necessit|trabalho|medic|consulta|crm|cid|repouso|cpf|nome|assinatura|cep|endere[cç]|rua|avenida|venciment|fatura|conta|total|valor|cnpj|nasciment|identidade|registro|admiss|sal[aá]ri|empresa|cliente|recibo|f[eé]rias|aviso|rescis|demiss|contrato|cargo|fun[cç][aã]o|habilita|filia[cç]|eleitor)/gi;
 export function notaLeitura(r) {
-  const palavras = new Set((String(r.texto).match(PALAVRAS_DOC) || []).map(x => x.toLowerCase().slice(0, 6))).size;
-  return palavras * 6 + (r.conf || 0) * 0.6;
+  return palavrasDoc(r.texto) * 6 + (r.conf || 0) * 0.6;
 }
 
 /** OCR com segunda chance: se a leitura sai fraca, tenta a imagem girada e/ou com limiar adaptativo. */
@@ -156,8 +158,9 @@ async function readPdf(file, onProgress, { ocr = true } = {}) {
   let metodo = 'pdf-texto';
   const confs = [], rots = [];
   const poor = text.replace(/\s+/g, '').length < 40 * maxPages;
-  if (poor && ocr) {
-    metodo = 'ocr';
+  // PDF escaneado com um rodapé de texto ("Digitalizado com o aplicativo…"): tem texto, mas nenhuma palavra de documento
+  const semPalavras = palavrasDoc(text, PALAVRAS_GERAIS) < 2 && text.replace(/\s+/g, '').length < 400 * maxPages;
+  if ((poor || semPalavras) && ocr) {
     const ocrPages = [];
     const n = Math.min(maxPages, 5);
     for (let i = 1; i <= n; i++) {
@@ -169,9 +172,12 @@ async function readPdf(file, onProgress, { ocr = true } = {}) {
       const r = await ocrMelhor(blob, onProgress, [0.3 + ((i - 1) / n) * 0.7, 0.3 + (i / n) * 0.7]);
       ocrPages.push(r.texto); confs.push(r.conf); rots.push(r.rot);
     }
-    text = ocrPages.join('\n\n');
+    const textoOcr = ocrPages.join('\n\n');
+    // fica com o OCR quando ele lê mais palavras de documento (ou quando o PDF não tinha texto)
+    if (poor || palavrasDoc(textoOcr, PALAVRAS_GERAIS) > palavrasDoc(text, PALAVRAS_GERAIS)) { text = textoOcr; metodo = 'ocr'; }
+    else confs.length = 0;
   }
-  return { texto: text, paginas: pdf.numPages, metodo, confianca: confs.length ? Math.round(Math.min(...confs)) : 100, rotacao: rots.find(Boolean) || 0 };
+  return { texto: text, paginas: pdf.numPages, metodo, confianca: confs.length ? Math.round(Math.min(...confs)) : 100, rotacao: metodo === 'ocr' ? rots.find(Boolean) || 0 : 0 };
 }
 
 /* ---------- Planilhas ---------- */
