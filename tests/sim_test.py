@@ -1053,6 +1053,20 @@ async def teste_lote5(b):
     check(ok and 'Não consegui ler' in t, 'HEIC: diz que não leu e ensina o print com Ctrl+V')
     await pn.evaluate("document.querySelector('#sug-x')?.click()")
 
+    # 29: um PDF com RG, comprovante e ASO marca os três itens do checklist do cadastro
+    pag = ctx_pdf = await ctx.new_page()
+    html = ('<html><body style="font-family:Arial;font-size:14px">'
+            '<div style="page-break-after:always"><h2>CARTEIRA DE IDENTIDADE</h2><p>REGISTRO GERAL 1.234.567</p><p>NOME FULANA DE TESTE</p><p>FILIAÇÃO MAE DE TESTE</p><p>NATURALIDADE VITORIA/ES</p><p>DATA DE NASCIMENTO 05/12/1995</p></div>'
+            '<div style="page-break-after:always"><h2>CONTA DE LUZ - FATURA DE ENERGIA</h2><p>DADOS DO CLIENTE</p><p>Nome: FULANA DE TESTE</p><p>RUA DAS FLORES, 10 - CENTRO</p><p>Vila Velha/ES CEP 29101-450</p><p>Vencimento 10/11/2026</p><p>Consumo 210 kWh</p></div>'
+            '<div><h2>ATESTADO DE SAÚDE OCUPACIONAL</h2><p>Clínica Exemplo, Av. Central, 900 - CEP 29010-500</p><p>Tipo de exame: (X) Admissional ( ) Demissional</p><p>Parecer: (X) Apto ( ) Inapto</p><p>Data do exame: 10/10/2026</p></div></body></html>')
+    await pag.set_content(html); pdf = await pag.pdf(format='A4'); await pag.close()
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("(a) => window.__ctSim.hooks().sendFiles([new File([new Uint8Array(a)], 'documentos-juntos.pdf', { type: 'application/pdf' })])", list(pdf))
+    if await espera(lambda: pn.evaluate("!!document.querySelector('#sug-go')"), 40): await pn.click('#sug-go')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#doc-checklist .dl-i.ok').length >= 3"), 40)
+    check(ok, 'PDF com RG, comprovante e ASO: os três itens do checklist ficam marcados' + ('' if ok else f" ({await pn.evaluate('document.querySelector(`#doc-checklist`)?.innerText || null')!r})"))
+    await cancelar()
+
     # 42: foto com dúvida — recorte ao lado do campo, Confirmar manda ao portal
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
     await pg.evaluate("""async () => { const b = await (await fetch('exemplos/atestado-foto.png')).blob(); window.__ctSim.hooks().sendFiles([new File([b], 'atestado-foto.png', { type: 'image/png' })]); }""")

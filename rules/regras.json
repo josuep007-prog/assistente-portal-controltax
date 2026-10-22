@@ -5143,10 +5143,10 @@
       "rotuloAssunto": "Carta do INSS",
       "extrairNotas": {
         "dib": [
-          "(?:DIB|data\\s+(?:do|de)\\s+in[íi]cio\\s+do\\s+benef[íi]cio)\\s*[:\\-]?\\s*(\\d{1,2}\\s?/\\s?\\d{1,2}\\s?/\\s?\\d{4})"
+          "(?:DIB|data\\s+(?:do|de)\\s+in[íi]cio\\s+do\\s+benef[íi]cio)\\s*\\)?\\s*[:\\-]?\\s*(\\d{1,2}\\s?/\\s?\\d{1,2}\\s?/\\s?\\d{4})"
         ],
         "dcb": [
-          "(?:DCB|data\\s+(?:da|de)\\s+cessa[çc][ãa]o(?:\\s+do\\s+benef[íi]cio)?)\\s*[:\\-]?\\s*(\\d{1,2}\\s?/\\s?\\d{1,2}\\s?/\\s?\\d{4})"
+          "(?:DCB|data\\s+(?:da|de)\\s+cessa[çc][ãa]o(?:\\s+do\\s+benef[íi]cio)?)\\s*\\)?\\s*[:\\-]?\\s*(\\d{1,2}\\s?/\\s?\\d{1,2}\\s?/\\s?\\d{4})"
         ],
         "nb": [
           "(?:NB|n[úu]mero\\s+do\\s+benef[íi]cio|benef[íi]cio\\s+n[º°o.]*)\\s*[:\\-]?\\s*(\\d[\\d./-]{8,14}\\d)"
