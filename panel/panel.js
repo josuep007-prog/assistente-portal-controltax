@@ -386,8 +386,16 @@ function renderInicio() {
    Só preenche a solicitação aberta quando o texto é sobre ela (ou o cliente escolhe isso). */
 const mesmaFamilia = (a, b) => a === b || FAMILIAS.some(f => f.includes(a) && f.includes(b));
 /* Cartões de escolha (aviso ou cálculo, com ou sem atestado, empate) vêm das regras: config.textoLivre.escolhas (E.escolhaPara). */
-/** Mostra o cartão do texto livre. */
-function mostrarSugestao() { if (S.view !== 'inicio') setView('inicio'); else renderSugestao(); }
+/** Mostra o cartão do texto livre ou do documento lido. Na plataforma ele fica no Novo pedido (onde estão a escolha do
+ *  tipo, o texto livre e o documento): com um formulário aberto, volta para a escolha; no painel encaixado, no Início. */
+function mostrarSugestao() {
+  if (S.modo === 'plataforma' && S.plat) {
+    if (S.ctx.route?.mode === 'form') S.plat.escolher = true;
+    if (S.view !== 'preencher' || !$('#sugestao')) setView('preencher'); else renderSugestao();
+    return;
+  }
+  if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+}
 /** Campos do cartão com o que o cliente trocou ou descartou nele (ajustes: valor novo ou null). */
 function camposComAjustes(s) {
   const c = { ...(s.analise?.campos || {}) };
@@ -509,6 +517,8 @@ async function empresaDoPedido(tipo, { sugerida = '' } = {}) {
 }
 async function openTipo(tipo, { manter = false, semEmpresa = false, sugerida = '' } = {}) {
   const t = S.rules.tipos[tipo]; if (!t) return;
+  // documento lido fora de um formulário (cartão na tela) e o cliente escolheu o pedido: os arquivos vão junto
+  if (!manter && !standalone && S.sugestao?.item) return abrirComArquivos(tipo, S.sugestao);
   if (!manter) S.sugestao = null;
   if (standalone) return;
   // com mais de uma empresa no acesso, pergunta para qual é o pedido e troca no portal antes de abrir o formulário
@@ -517,7 +527,26 @@ async function openTipo(tipo, { manter = false, semEmpresa = false, sugerida = '
   S.abrindo = tipo;
   await request({ type: 'navigate', slug: t.slug, add: true }, 12000);
   w(tipo);
+  if (S.plat) S.plat.escolher = false;   // plataforma: mostra o formulário (mesmo se este pedido já estava aberto)
   setView('preencher');
+}
+/** Abre o pedido com os arquivos do cartão (o documento lido e os demais do lote) e relê cada um com a lista de
+ *  funcionários desta solicitação. Vale para "Abrir … e preencher" e para o tipo que o cliente escolheu quando o
+ *  documento não foi reconhecido — o arquivo não se perde. */
+async function abrirComArquivos(tipo, s) {
+  if (!(await empresaDoPedido(tipo))) return false;      // desistiu da empresa: o cartão continua na tela
+  const todos = [s.item, ...(s.extras || [])].filter(Boolean);
+  for (let k = 0; k < 300 && todos.some(x => x.status === 'lendo'); k++) await esperar(200);   // ainda lendo: espera terminar
+  comecarDoZeroSeAbandonado(tipo);
+  juntarArquivos(w(tipo), todos);
+  if (S.sugestao === s) S.sugestao = null;
+  await openTipo(tipo, { manter: true, semEmpresa: true });
+  for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
+  if (S.ctx.tipo !== tipo) return false;
+  await loadEmpregados(tipo);
+  for (const x of todos) { if (x.texto) x.analise = E.analyzeText(x.texto, S.rules, { employees: w(tipo).empregados, tipoAtual: tipo }); applyAnalysis(tipo, x, { preencher: false }); }
+  if (S.prefs.preencherAoLer) await fillPortal(tipo, { silencioso: true });
+  return true;
 }
 
 /* =================== Leitura de arquivos =================== */
@@ -560,7 +589,7 @@ async function handleFiles(files, origem) {
     const item = novoItem(file, origem);
     if (noForm) {
       S.sugestao = { item, analise: null };
-      if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+      mostrarSugestao();
       await processItem(item, null);
       renderSugestao();
     } else {
@@ -582,7 +611,8 @@ async function handleVarios(files, origem) {
   if (S.lote && !S.lote.concluido) { toast('Termine (ou pare) o lote atual antes de arrastar outros arquivos.'); return; }
   const itens = files.map(f => novoItem(f, origem));
   S.loteLeitura = { itens };
-  if (!['inicio', 'preencher'].includes(S.view)) setView(S.ctx.route?.mode === 'form' ? 'preencher' : 'inicio'); else renderLote();
+  // plataforma: a leitura aparece no Novo pedido (com um formulário aberto, nele); painel: no Início ou no Preencher
+  if (S.modo === 'plataforma' ? S.view !== 'preencher' : !['inicio', 'preencher'].includes(S.view)) setView(S.modo === 'plataforma' || S.ctx.route?.mode === 'form' ? 'preencher' : 'inicio'); else renderLote();
   for (const it of itens) { await processItem(it, null); renderLote(); }
   S.loteLeitura = null;
   const { pedidos, fora } = montarPedidos(itens);
@@ -604,7 +634,7 @@ async function handleVarios(files, origem) {
   }
   const principal = pedidos[0]?.itens[0] || itens[0];
   S.sugestao = { item: principal, extras: itens.filter(i => i !== principal) };
-  if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+  mostrarSugestao();
 }
 
 function montarPedidos(itens) {
@@ -810,26 +840,12 @@ function renderSugestao() {
       <div class="card-b">
         <p style="margin:0 0 8px">${esc(it.nome)} parece ser <b>${esc(a.documento?.nome || 'um documento')}</b>${tipo ? ` → <b>${esc(S.rules.tipos[tipo]?.nome)}</b>` : ''}.${s.extras?.length ? ` Os outros ${s.extras.length} arquivo(s) vão junto.` : ''}</p>
         ${nCampos ? `<p class="muted" style="margin:0 0 10px">${nCampos} informação(ões) encontradas: ${Object.keys(a.campos).map(k => tipoDef(tipo || 'geral')?.campos?.[k]?.rotulo).filter(Boolean).slice(0, 6).map(esc).join(', ')}${nCampos > 6 ? '…' : ''}</p>` : ''}
-        ${tipo ? `<button class="btn btn-primary btn-block" id="sug-go">Abrir ${esc(S.rules.tipos[tipo]?.nome)} e preencher ${icon('arrow', 'ic-sm')}</button>` : `<p class="muted">Não reconheci o tipo. Escolha acima o que você precisa fazer — o arquivo vai junto.</p>`}
+        ${tipo ? `<button class="btn btn-primary btn-block" id="sug-go">Abrir ${esc(S.rules.tipos[tipo]?.nome)} e preencher ${icon('arrow', 'ic-sm')}</button>` : `<p class="muted" id="sug-escolha">Não reconheci o tipo. Escolha abaixo o que você precisa fazer — ${s.extras?.length ? 'os arquivos vão' : 'o arquivo vai'} junto e eu leio de novo com a lista de funcionários.</p>`}
       </div>
     </div>`;
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
-  $('#sug-go')?.addEventListener('click', async () => {
-    if (!(await empresaDoPedido(tipo))) return;      // desistiu da empresa: a sugestão continua na tela
-    comecarDoZeroSeAbandonado(tipo);
-    const W = w(tipo); const todos = [it, ...(s.extras || [])]; juntarArquivos(W, todos);
-    S.sugestao = null;
-    await openTipo(tipo, { manter: true, semEmpresa: true });
-    // Reanalisa com a lista de funcionários desta tela
-    setTimeout(async () => {
-      await loadEmpregados(tipo);
-      for (const x of todos) { if (x.texto) x.analise = E.analyzeText(x.texto, S.rules, { employees: w(tipo).empregados, tipoAtual: tipo }); applyAnalysis(tipo, x, { preencher: false }); }
-      if (S.prefs.preencherAoLer) fillPortal(tipo, { silencioso: true });
-    }, 900);
-  });
-  if (!tipo) {
-    $('#intents')?.querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => { const W = w(b.dataset.tipo); if (!W.arquivos.includes(it)) W.arquivos.push(it); }, { once: true }));
-  }
+  // os arquivos vão junto e são relidos com a lista de funcionários da solicitação (o tipo escolhido abaixo faz o mesmo: openTipo)
+  $('#sug-go')?.addEventListener('click', () => abrirComArquivos(tipo, s));
 }
 
 /** Lista "rótulo: valor" do cartão, em que cada valor pode ser trocado (clique) ou descartado (x).

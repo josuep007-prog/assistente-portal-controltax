@@ -601,7 +601,6 @@ export function montarPlataforma(A) {
     viewEl.innerHTML = `
       <div id="avisos-esc"></div>
       <div id="lote"></div>
-      <div id="sugestao"></div>
       ${enviado}${aviso}<div id="proximo"></div>
       <p class="hj-saud"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</p>
       <div class="dp-toolbar hj-barra">
@@ -733,7 +732,7 @@ export function montarPlataforma(A) {
     viewEl.querySelectorAll('.eq-lista').forEach(l => { limitarCinco(l); marcarRolagem(l); });   // até 5 itens à vista; o resto rola
 
     ligarIr(viewEl);
-    A.renderSugestao(); A.renderLote(); A.renderAvisosInicio();
+    A.renderLote(); A.renderAvisosInicio();   // o cartão do documento/texto fica no Novo pedido (mostrarSugestao)
   }
   // Carrossel: um aviso por vez. A barra invisível é o relógio (5 s por volta); passar o mouse ou focar pausa.
   function iniciarCarrossel(raiz) {
