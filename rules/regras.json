@@ -1512,6 +1512,45 @@
         "redutorNo13": true
       }
     },
+    "umPedidoPorDocumento": [
+      "atestado",
+      "comparecimento"
+    ],
+    "ocrMaxPaginas": 8,
+    "regra60dias": {
+      "_comentario": "Decreto 3.048/99, art. 75: atestados do mesmo funcionário em que um começa até janelaDias depois do retorno do anterior se somam (mesma doença); passando de limiteDias, pergunta \"É a mesma doença?\" e, se sim, sugere tipoSugerido e põe a conta na descrição. Vale no lote e no histórico enviado deste computador. Decisão do escritório: a regra, o tipo e se a pergunta aparece (perguntar: false desliga).",
+      "revisarComEscritorio": true,
+      "ativo": true,
+      "perguntar": true,
+      "janelaDias": 60,
+      "limiteDias": 15,
+      "tipoSugerido": "Novo afast. mesma doença",
+      "pergunta": "{funcionario} tem outro atestado há pouco tempo: {conta}. Juntos passam de {limite} dias. É a mesma doença?",
+      "textoDescricao": "Soma {soma} dias com {anteriores} (regra dos 60 dias — mesma doença, informado pelo cliente)."
+    },
+    "aso": {
+      "_comentario": "Conferência do ASO anexado. exameDoPedido: o exame que cada pedido pede. diasDemissional: NR-7, exame demissional em até 10 dias do término. Decisão do escritório: prazos do PCMSO e quando um exame recente dispensa o demissional (135/90 dias pela NR-7: dispensaDemissionalDias, ainda não usado).",
+      "revisarComEscritorio": true,
+      "exameDoPedido": {
+        "cadastroEmpregado": "admissional",
+        "cadastroEstagiario": "admissional",
+        "cadastroContribuinte": "admissional",
+        "avisoRescisao": "demissional",
+        "calculoRescisao": "demissional"
+      },
+      "diasDemissional": 10,
+      "dispensaDemissionalDias": {
+        "grau1e2": 135,
+        "grau3e4": 90
+      }
+    },
+    "recorteLeitura": {
+      "_comentario": "Foto: confiança de cada palavra lida (só na memória). Valor que veio de palavras com confiança média abaixo de confiancaPalavraMinima (0–100) fica como sugestão e só vai ao portal depois de confirmado; a tela mostra o recorte da foto (nunca de CID e médico). Decisão do escritório: o limite.",
+      "revisarComEscritorio": true,
+      "ativo": true,
+      "confiancaPalavraMinima": 70,
+      "margem": 12
+    },
     "leitor": {
       "_comentario": "Precisão acima de tudo (vazio é melhor que errado). confiancaMinimaPortal: abaixo disso o valor lido NÃO vai ao portal sozinho — aparece como sugestão com o botão Usar. semAncora: teto do valor sem rótulo junto (1º CPF/PIS/e-mail do texto). ocrBaixo/ocrTetoBaixo: foto com confiança do OCR abaixo de ocrBaixo fica no máximo em ocrTetoBaixo (menos o valor validado e junto do rótulo); ocrTetoNomes: nomes (sem dígito verificador) de foto abaixo dessa confiança ficam como sugestão. ocrRuim: abaixo disso não preenche nada e pede outra foto (mensagens.leituraRuimOutraFoto). contextoCpfDescarta: palavras que, mais perto do número do que o rótulo CPF, dizem que é outro número (registro da CNH, RENACH, PIS, CNS) ou de outra pessoa. formatos: o valor tem de ter esse formato para ir ao portal (senão vira 'confira'). Valores calibrados com o corpus fictício (tools/auditar-leitor.py); a calibrar com documentos reais (sem guardá-los).",
       "confiancaMinimaPortal": 0.6,
@@ -1519,7 +1558,10 @@
       "ocrBaixo": 75,
       "ocrTetoBaixo": 0.55,
       "ocrTetoNomes": 85,
-      "ocrRuim": 45
+      "ocrRuim": 45,
+      "formatos": {
+        "competencia": "^(?:0[1-9]|1[0-2])/\\d{4}$"
+      }
     },
     "leitorEndereco": {
       "_comentario": "Endereço por blocos (comprovante e ficha). rotulosTitular: o bloco logo abaixo de um destes rótulos (ou do nome do titular) é o do cliente. rebaixar: bloco com estas palavras (ou nas 2 primeiras linhas) é da empresa emissora. palavrasDeConta: onde cortar a linha do endereço quando o OCR junta colunas ('APTO 302 Consumo: 210 kWh'). Escrever sem acento. A calibrar com contas reais.",
@@ -2203,6 +2245,7 @@
         "Médico/CRM: {medico}",
         "CAT nº {numeroCat} emitida em {dataCat} ({tipoCat})",
         "Documento anexo: {anexosNomes}",
+        "{notasDocumento}",
         "{observacoes}"
       ],
       "dicas": [
@@ -2975,6 +3018,7 @@
           "id": "asoDemissional",
           "rotulo": "ASO demissional",
           "documento": "aso",
+          "asoTipo": "demissional",
           "obrigatorio": false
         }
       ],
@@ -3172,6 +3216,8 @@
       "descricao": [
         "Lançamentos {tipoLancamento} – competência {competencia}",
         "{tabelaRubricas}",
+        "{totaisRubricas}",
+        "{notasDocumento}",
         "{observacoes}"
       ],
       "planilha": {
@@ -3224,7 +3270,7 @@
         "colunaEmpregado": 0
       },
       "dicas": [
-        "Arraste uma planilha (Excel ou CSV) com as colunas Empregado, Rubrica e Valor: eu monto o resumo e confiro os nomes.",
+        "Arraste uma planilha (Excel ou CSV): com as colunas Empregado, Rubrica e Valor ou com uma coluna por rubrica (Nome | HE 50% | Faltas…). Eu monto o resumo com os totais e confiro os nomes com a lista de funcionários. Se preferir, baixe a planilha modelo.",
         "Use 'Adicionar funcionários' no portal para lançar os valores na grade."
       ],
       "apiLista": "br-payroll-sr/v1/payroll-entries",
@@ -3928,6 +3974,7 @@
           "id": "aso",
           "rotulo": "ASO admissional (apto)",
           "documento": "aso",
+          "asoTipo": "admissional",
           "obrigatorio": true
         },
         {
@@ -4396,6 +4443,8 @@
             "declaracao de comparecimento",
             "compareceu",
             "esteve presente",
+            "esteve nesta unidade",
+            "esteve neste consultório",
             "esteve em consulta",
             "permaneceu nesta unidade"
           ],
@@ -4481,6 +4530,17 @@
     },
     {
       "id": "certidao",
+      "leitor": "certidao",
+      "_comentario": "Certidão de casamento marca o estado civil e o cônjuge (o outro nome, quando o nome do funcionário já está no cadastro); certidão de nascimento sugere dependentes no cadastro ou a data como início do afastamento (confira). Os dados do registrado (CPF, nome) nunca entram.",
+      "preencheSo": [
+        "estadoCivil",
+        "conjuge",
+        "possuiDependentes",
+        "dataAfastamento",
+        "empregado"
+      ],
+      "estadoCivilCasamento": "Casado",
+      "neutro": true,
       "nome": "Certidão de nascimento/casamento",
       "tipoSolicitacao": null,
       "palavras": [
@@ -4617,6 +4677,22 @@
     },
     {
       "id": "aso",
+      "neutro": true,
+      "tipoPorExame": {
+        "_comentario": "ASO sozinho (fora do lote): o exame marcado escolhe o pedido. Decisão do escritório.",
+        "revisarComEscritorio": true,
+        "admissional": "cadastroEmpregado",
+        "demissional": "calculoRescisao"
+      },
+      "pistasData": [
+        "data do exame",
+        "data de realização",
+        "data da realização",
+        "realizado em",
+        "data do aso",
+        "data de emissão",
+        "data:"
+      ],
       "nome": "ASO — Atestado de Saúde Ocupacional",
       "tipoSolicitacao": null,
       "palavras": [
@@ -4649,6 +4725,7 @@
     },
     {
       "id": "identidade",
+      "neutro": true,
       "nome": "RG / CNH",
       "tipoSolicitacao": "cadastroEmpregado",
       "palavras": [
@@ -4671,6 +4748,7 @@
     },
     {
       "id": "cpf",
+      "neutro": true,
       "nome": "Comprovante de CPF",
       "tipoSolicitacao": "cadastroEmpregado",
       "palavras": [
@@ -4684,6 +4762,8 @@
     },
     {
       "id": "comprovanteEndereco",
+      "neutro": true,
+      "definePessoa": false,
       "nome": "Comprovante de residência",
       "tipoSolicitacao": "cadastroEmpregado",
       "palavras": [
@@ -4708,6 +4788,7 @@
     },
     {
       "id": "ctps",
+      "neutro": true,
       "nome": "Carteira de Trabalho",
       "tipoSolicitacao": "cadastroEmpregado",
       "palavras": [
@@ -4759,6 +4840,15 @@
     },
     {
       "id": "seguro",
+      "neutro": true,
+      "negativas": [
+        "instituto nacional do seguro social",
+        "previdência social",
+        "comunicação de decisão",
+        "auxílio por incapacidade",
+        "auxílio-doença",
+        "perícia médica"
+      ],
       "nome": "Apólice de seguro",
       "tipoSolicitacao": null,
       "palavras": [
@@ -4877,6 +4967,8 @@
     },
     {
       "id": "bancario",
+      "neutro": true,
+      "definePessoa": false,
       "nome": "Dados bancários",
       "tipoSolicitacao": null,
       "palavras": [
@@ -4890,6 +4982,7 @@
     },
     {
       "id": "titulo",
+      "neutro": true,
       "nome": "Título de eleitor",
       "tipoSolicitacao": null,
       "palavras": [
@@ -5007,6 +5100,264 @@
       ],
       "minPalavras": 2,
       "rotuloAssunto": "Certidão negativa de débitos"
+    },
+    {
+      "id": "cartaInss",
+      "nome": "Carta do INSS (benefício por incapacidade)",
+      "tipoSolicitacao": "afastamento",
+      "revisarComEscritorio": true,
+      "_comentario": "Carta de concessão/decisão do INSS. Decisão do escritório: qual solicitação usar. A DIB (início do benefício) costuma ser o 16º dia: NÃO vira data do afastamento — DIB e DCB vão para a descrição (notas).",
+      "palavras": [
+        "instituto nacional do seguro social",
+        "inss",
+        "benefício",
+        "auxílio por incapacidade temporária",
+        "auxílio-doença",
+        "auxílio doença",
+        "perícia médica",
+        "comunicação de decisão",
+        "dib",
+        "dcb",
+        "data de cessação",
+        "data do início do benefício",
+        "segurado",
+        "requerimento"
+      ],
+      "forte": [
+        "comunicação de decisão",
+        "instituto nacional do seguro social",
+        "data de cessação do benefício",
+        "auxílio por incapacidade temporária",
+        "carta de concessão"
+      ],
+      "minPalavras": 2,
+      "neutro": false,
+      "naoPreenche": [
+        "dataAfastamento",
+        "dias",
+        "tipoAfastamento",
+        "cid",
+        "medico"
+      ],
+      "rotuloAssunto": "Carta do INSS",
+      "extrairNotas": {
+        "dib": [
+          "(?:DIB|data\\s+(?:do|de)\\s+in[íi]cio\\s+do\\s+benef[íi]cio)\\s*[:\\-]?\\s*(\\d{1,2}\\s?/\\s?\\d{1,2}\\s?/\\s?\\d{4})"
+        ],
+        "dcb": [
+          "(?:DCB|data\\s+(?:da|de)\\s+cessa[çc][ãa]o(?:\\s+do\\s+benef[íi]cio)?)\\s*[:\\-]?\\s*(\\d{1,2}\\s?/\\s?\\d{1,2}\\s?/\\s?\\d{4})"
+        ],
+        "nb": [
+          "(?:NB|n[úu]mero\\s+do\\s+benef[íi]cio|benef[íi]cio\\s+n[º°o.]*)\\s*[:\\-]?\\s*(\\d[\\d./-]{8,14}\\d)"
+        ]
+      },
+      "notas": [
+        {
+          "id": "inss",
+          "texto": [
+            "Carta do INSS (benefício nº {nb}): início (DIB) em {dib} e fim previsto (DCB) em {dcb}.",
+            "Carta do INSS: início do benefício (DIB) em {dib} e fim previsto (DCB) em {dcb}.",
+            "Carta do INSS: início do benefício (DIB) em {dib}.",
+            "Carta do INSS: fim previsto do benefício (DCB) em {dcb}."
+          ]
+        }
+      ],
+      "avisos": [
+        {
+          "id": "cartaInss",
+          "palavras": [
+            "instituto nacional do seguro social",
+            "inss"
+          ],
+          "nivel": "info",
+          "mensagem": "Carta do INSS: a DIB (início do benefício) costuma ser o 16º dia do afastamento, por isso não a usei como data do afastamento — anotei a DIB e a DCB na descrição. Se o funcionário voltou na DCB, avise o retorno ao escritório; se ainda não pode voltar, ele pede a prorrogação ao INSS e você manda a nova carta."
+        }
+      ]
+    },
+    {
+      "id": "comparecimento",
+      "nome": "Declaração de comparecimento",
+      "tipoSolicitacao": "afastamento",
+      "revisarComEscritorio": true,
+      "_comentario": "Declaração de horas (consulta, exame). Não é afastamento: não lê dias nem escolhe o tipo. Decisão do escritório: qual solicitação usar (hoje, Afastamento, para anexar).",
+      "leitor": "atestado",
+      "palavras": [
+        "declaração de comparecimento",
+        "compareceu",
+        "esteve neste consultório",
+        "esteve nesta unidade",
+        "esteve presente",
+        "permaneceu nesta unidade",
+        "para consulta",
+        "no período das",
+        "horas",
+        "declaro"
+      ],
+      "forte": [
+        "declaração de comparecimento",
+        "atestado de comparecimento",
+        "esteve nesta unidade",
+        "esteve neste consultório",
+        "compareceu a esta unidade",
+        "compareceu nesta unidade",
+        "permaneceu nesta unidade"
+      ],
+      "negativas": [
+        "dias de afastamento",
+        "dias de repouso",
+        "afastado de suas atividades por",
+        "afastada de suas atividades por",
+        "necessita de afastamento",
+        "deverá permanecer afastad"
+      ],
+      "minPalavras": 2,
+      "neutro": false,
+      "naoPreenche": [
+        "dias",
+        "tipoAfastamento"
+      ],
+      "rotuloAssunto": "Declaração de comparecimento",
+      "avisos": [
+        {
+          "id": "comparecimento",
+          "palavras": [
+            "declaração de comparecimento",
+            "atestado de comparecimento",
+            "compareceu",
+            "esteve nesta unidade",
+            "esteve neste consultório",
+            "permaneceu nesta unidade",
+            "no período das"
+          ],
+          "nivel": "info",
+          "mensagem": "Declaração de comparecimento: ela justifica as horas da consulta, mas não é afastamento (não tem dias). Informe o horário nas observações; se o médico deu dias de repouso, mande o atestado."
+        }
+      ]
+    },
+    {
+      "id": "contratoExperiencia",
+      "nome": "Contrato de experiência",
+      "tipoSolicitacao": "cadastroEmpregado",
+      "neutro": false,
+      "_comentario": "Contrato de trabalho a título de experiência: admissão, salário, cargo e prazos (45 + 45). O endereço da empregadora vem antes do empregado: endereço não é lido.",
+      "palavras": [
+        "contrato de experiência",
+        "a título de experiência",
+        "contrato de trabalho",
+        "empregadora",
+        "empregado",
+        "art. 443",
+        "art. 451",
+        "prorrogado",
+        "experiência"
+      ],
+      "forte": [
+        "contrato de trabalho a título de experiência",
+        "contrato de experiência",
+        "contrato individual de trabalho por prazo determinado"
+      ],
+      "minPalavras": 2,
+      "extrair": {
+        "nome": [
+          "de\\s+outro\\s+lado,?\\s+([A-ZÀ-Ú][A-ZÀ-Ú\\s]{5,80}?),\\s*(?:portador|brasileir|inscrit|residente|CPF)"
+        ],
+        "cargo": [
+          "(?:exercer[áa]\\s+(?:a\\s+)?fun[çc][ãa]o\\s+de|exercer\\s+(?:a\\s+)?fun[çc][ãa]o\\s+de|para\\s+o\\s+cargo\\s+de|no\\s+cargo\\s+de)\\s+([A-ZÀ-Ú][A-ZÀ-Ú ]{2,60}?)\\s*(?:,|\\.|mediante|com\\s+sal)"
+        ],
+        "salario": [
+          "sal[áa]rio(?:\\s+mensal)?(?:\\s+de)?\\s*R\\$\\s*(\\d{1,3}(?:\\.\\d{3})*,\\d{2})"
+        ],
+        "dataAdmissao": [
+          "(?:in[íi]cio\\s+em|admitid[oa]\\s+em|data\\s+de\\s+admiss[ãa]o\\s*:?)\\s*(\\d{1,2}/\\d{1,2}/\\d{4})"
+        ],
+        "contratoExperiencia": [
+          "(?:pelo\\s+)?prazo\\s+de\\s+(\\d{1,3})\\s*(?:\\([^)]{0,30}\\)\\s*)?dias"
+        ],
+        "prorrogacao": [
+          "prorrogad[oa]\\s+por\\s+(?:mais\\s+)?(\\d{1,3})\\s*(?:\\([^)]{0,30}\\)\\s*)?dias"
+        ],
+        "ctpsNumero": [
+          "CTPS\\s*(?:n[º°o.]*\\s*)?(\\d{4,8})(?!\\d)"
+        ],
+        "ctpsSerie": [
+          "CTPS\\s*(?:n[º°o.]*\\s*)?\\d{4,8},?\\s*s[ée]rie\\s*(\\d{3,5})"
+        ]
+      },
+      "rotuloAssunto": "Contrato de experiência"
+    },
+    {
+      "id": "espelhoPonto",
+      "nome": "Espelho de ponto",
+      "tipoSolicitacao": "rubricas",
+      "revisarComEscritorio": true,
+      "neutro": false,
+      "_comentario": "Espelho/folha de ponto: competência e totais (horas extras, faltas, atrasos, adicional noturno) vão para a descrição das variáveis da folha. Decisão do escritório: qual solicitação usar.",
+      "palavras": [
+        "espelho de ponto",
+        "espelho do ponto",
+        "cartão de ponto",
+        "registro de ponto",
+        "marcações",
+        "entrada",
+        "saída",
+        "horas trabalhadas",
+        "banco de horas",
+        "horas extras",
+        "faltas",
+        "atrasos",
+        "jornada"
+      ],
+      "forte": [
+        "espelho de ponto",
+        "espelho do ponto",
+        "folha de ponto",
+        "relatório de ponto",
+        "cartão de ponto"
+      ],
+      "minPalavras": 3,
+      "extrair": {
+        "competencia": [
+          "compet[êe]ncia\\s*:?\\s*(\\d{2}/\\d{4})",
+          "per[íi]odo\\s*:?\\s*\\d{2}/(\\d{2}/\\d{4})\\s*(?:a|at[ée]|-)"
+        ]
+      },
+      "extrairNotas": {
+        "funcionario": [
+          "(?:funcion[áa]rio|empregado|colaborador|nome)\\s*:\\s*([A-ZÀ-Ú][A-ZÀ-Ú ]{4,60}?)(?=\\s{2,}|\\n|$|\\s+(?:matr|cpf|cargo|admiss))"
+        ],
+        "he50": [
+          "(?:horas?\\s+extras?|H\\.?E\\.?)\\s*50\\s*%?\\s*:?\\s*(\\d{1,3}:\\d{2})"
+        ],
+        "he100": [
+          "(?:horas?\\s+extras?|H\\.?E\\.?)\\s*100\\s*%?\\s*:?\\s*(\\d{1,3}:\\d{2})"
+        ],
+        "faltas": [
+          "(?:total\\s+de\\s+)?faltas\\s*(?:\\(dias\\))?\\s*:?\\s*(\\d{1,2})(?![\\d:])"
+        ],
+        "atrasos": [
+          "(?:total\\s+de\\s+)?atrasos\\s*:?\\s*(\\d{1,3}:\\d{2})"
+        ],
+        "noturno": [
+          "adicional\\s+noturno\\s*:?\\s*(\\d{1,3}:\\d{2})"
+        ]
+      },
+      "notas": [
+        {
+          "id": "ponto",
+          "titulo": [
+            "Espelho de ponto de {funcionario} — totais:",
+            "Espelho de ponto — totais:"
+          ],
+          "linhas": [
+            "horas extras 50% {he50}",
+            "horas extras 100% {he100}",
+            "faltas {faltas}",
+            "atrasos {atrasos}",
+            "adicional noturno {noturno}"
+          ]
+        }
+      ],
+      "rotuloAssunto": "Espelho de ponto"
     }
   ],
   "mensagens": {
@@ -5052,7 +5403,22 @@
     "leituraRuimOutraFoto": "Não consegui ler este arquivo com segurança (foto tremida, escura, cortada ou com reflexo). Para não preencher nada errado, deixei os campos em branco. Se puder, mande outra foto: o documento inteiro, de frente, com boa luz e sem reflexo — ou o PDF original.",
     "documentoOutroNome": "O documento está em nome de {nome}, que não é exatamente {funcionario}. Confira se é do funcionário (pode ser de um dependente) e escolha a pessoa certa.",
     "sugestaoLeitura": "Li no documento, mas com dúvida — confira e toque em Usar.",
-    "documentoOutraPessoa": "“{arquivo}” é de outra pessoa ({nome}). Para não misturar dados de duas pessoas, não usei nada dele neste pedido."
+    "documentoOutraPessoa": "“{arquivo}” é de outra pessoa ({nome}). Para não misturar dados de duas pessoas, não usei nada dele neste pedido.",
+    "leituraHeic": "Foto em HEIC (iPhone) eu ainda não consigo ler. Abra a foto, tire um print da tela e cole aqui com Ctrl+V — ou envie como JPG.",
+    "leituraTiff": "Imagem TIFF eu não consigo ler. Abra o arquivo, tire um print da tela e cole aqui com Ctrl+V — ou salve como JPG ou PDF.",
+    "leituraPdfSenha": "Este PDF tem senha e eu não consigo abrir. Abra o PDF (com a senha) e use Imprimir → Salvar como PDF: o arquivo novo fica sem senha.",
+    "leituraImagem": "Não consegui abrir esta imagem. Abra o arquivo, tire um print da tela e cole aqui com Ctrl+V.",
+    "leituraFalhou": "Não consegui ler “{arquivo}”. Escolha o pedido e eu anexo o arquivo assim mesmo.",
+    "leituraPaginas": "Li {lidas} de {total} páginas de “{arquivo}” (o limite é {limite}). Se o que importa está depois, mande essas páginas num arquivo separado.",
+    "certidaoDependente": "Certidão de nascimento de {nome}{data}: se for filho(a) do funcionário, marque “Possui dependentes” — o escritório cadastra o dependente.",
+    "certidaoConjuge": "Na certidão de casamento li {a} e {b}. Quando o nome do funcionário estiver no cadastro, eu marco o outro como cônjuge — ou escreva o nome do cônjuge.",
+    "cpfDeOutraPessoa": "O CPF do documento ({cpf}) não é de nenhum funcionário da lista — pode ser de um dependente. Confira de quem é o documento.",
+    "lotePessoas": "Há documentos de {n} pessoas: abri um pedido para cada uma, para não misturar os dados.",
+    "loteSemPessoa": "Não sei de quem é este documento",
+    "planilhaNaoAchei": "Na planilha, não achei na lista de funcionários: {nomes}. Confira os nomes antes de enviar.",
+    "planilhaDesligados": "Na planilha há funcionário(s) desligado(s): {nomes}. Confira com o escritório.",
+    "planilhaRepetidas": "Linhas repetidas na planilha (mesmo funcionário e rubrica): {linhas}.",
+    "confiraLeituras": "Confira estas leituras: a foto estava difícil nestes campos. Compare com o recorte e confirme — só depois eles vão ao portal."
   },
   "avisosEscritorio": [
     {

@@ -307,6 +307,9 @@ export function analyzeText(text, rules, ctx = {}) {
   const docRule = doc ? rules.documentos.find(d => d.id === doc.id) : null;
   let tipoKey = ctx.tipoAtual || doc?.tipoSolicitacao || null;
   if (!ctx.tipoAtual && doc?.id === 'atestado') tipoKey = rules.config?.atestadoAte15DiasVaiPara || 'afastamento';
+  // ASO sozinho: o tipo de exame marcado diz o pedido (documentos[].tipoPorExame: admissional → cadastro, demissional → cálculo da rescisão)
+  const exameAso = docRule?.tipoPorExame ? readASO(text, docRule).tipo : null;
+  if (!ctx.tipoAtual && exameAso && typeof docRule.tipoPorExame[exameAso] === 'string') tipoKey = docRule.tipoPorExame[exameAso];
   const tipo = tipoKey ? resolveTipo(rules, tipoKey) : null;
   const LC = cfgLeitor(rules);
   const campos = {};
@@ -329,7 +332,7 @@ export function analyzeText(text, rules, ctx = {}) {
     if (leitor.data) put('dataAfastamento', leitor.data.data, leitor.data.conf, cite(leitor.data), { ancora: leitor.data.conf >= 0.75, validado: leitor.data.conf >= 0.75 });
     if (leitor.cid) put('cid', leitor.cid, 0.7, docRule?.nome || 'documento', { ancora: true });
     if (leitor.medico) put('medico', leitor.medico, 0.7, docRule?.nome || 'documento', { ancora: true });
-  } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome, { ancora: true }); }
+  } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v.replace(/\s+/g, ' '), 0.7, docRule.nome, { ancora: true }); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
   // Solicitação Geral (alvará, CND…): departamento e assunto pelo catálogo; a descrição só do modelo do item
   if (tipoKey === 'geral' && docRule) {
@@ -403,8 +406,29 @@ export function analyzeText(text, rules, ctx = {}) {
     const ta = inferTipoAfastamento(text, campos.dias?.valor, doc?.id, tipo.tipoAfastamentoAuto);
     if (ta) put('tipoAfastamento', ta.valor, 0.7, ta.motivo);
   }
+  // certidão (documentos[].leitor = "certidao"): só o que ela diz sobre o funcionário — casamento marca o estado civil e o cônjuge;
+  // nascimento sugere dependentes (cadastro) ou a data como início para conferir (afastamento). Os dados do registrado não entram.
+  const avisosExtra = [];
+  const certidao = docRule?.leitor === 'certidao' && tipo ? lerCertidao(text) : null;
+  if (certidao) {
+    for (const k of Object.keys(campos)) delete campos[k];
+    const fonteC = certidao.tipo === 'casamento' ? 'certidão de casamento' : 'certidão de nascimento';
+    if (certidao.tipo === 'casamento') {
+      if (tipo.campos.estadoCivil) put('estadoCivil', docRule.estadoCivilCasamento || 'Casado', 0.65, fonteC);
+      const nomes = certidao.nomes || [];
+      const i = ctx.nome && nomes.length === 2 ? nomes.findIndex(n => mesmaPessoa({ nome: n }, { nome: ctx.nome }) === true) : -1;
+      if (tipo.campos.conjuge && i >= 0) put('conjuge', nomes[1 - i], 0.7, fonteC, { ancora: true });
+      else if (tipo.campos.conjuge && nomes.length === 2) avisosExtra.push({ nivel: 'info', id: 'conjuge', mensagem: (rules.mensagens?.certidaoConjuge || 'Na certidão de casamento li {a} e {b}. Quando o nome do funcionário estiver no cadastro, eu marco o outro como cônjuge — ou escreva o nome do cônjuge.').replace('{a}', nomes[0]).replace('{b}', nomes[1]) });
+    } else if (certidao.tipo === 'nascimento') {
+      if (tipo.campos.possuiDependentes) {
+        put('possuiDependentes', 'Sim', 0.5, `${fonteC} (confira)`);
+        if (certidao.registrado) avisosExtra.push({ nivel: 'info', id: 'dependente', mensagem: (rules.mensagens?.certidaoDependente || 'Certidão de nascimento de {nome}{data}: se for filho(a) do funcionário, marque “Possui dependentes” — o escritório cadastra o dependente.').replace('{nome}', certidao.registrado).replace('{data}', certidao.data ? ` (nascido em ${certidao.data})` : '') });
+      }
+      if (tipo.campos.dataAfastamento && certidao.data) put('dataAfastamento', certidao.data, 0.5, `data de nascimento na ${fonteC} (confira)`);
+    }
+  }
   // funcionário
-  let candidatos = null; const avisosExtra = []; let pacienteOutro = false;
+  let candidatos = null; let pacienteOutro = false;
   if (tipo?.campos?.empregado && ctx.employees?.length) {
     const pac = leitor?.paciente;
     const pm = pac ? empregadoPorNome(pac.nome, ctx.employees) : null;
@@ -442,6 +466,12 @@ export function analyzeText(text, rules, ctx = {}) {
     const outro = pessoal.filiacao.find(x => x !== campos.mae.valor) || '';
     avisosExtra.push({ nivel: 'atencao', id: 'filiacao', mensagem: (rules.mensagens?.filiacaoConfira || 'Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira.').replaceAll('{mae}', campos.mae.valor).replaceAll('{outro}', outro) });
   }
+  // documento que só pode trazer alguns campos (documentos[].preencheSo: a certidão não traz CPF nem nome do funcionário)
+  if (Array.isArray(docRule?.preencheSo)) for (const k of Object.keys(campos)) if (!docRule.preencheSo.includes(k)) delete campos[k];
+  // notas para a descrição (DIB/DCB da carta do INSS, totais do espelho de ponto): o que o portal não tem campo
+  let notas = notasDoDocumento(text, docRule);
+  // CPFs válidos do documento (sem os de registro/PIS/CNS/responsável): o painel pergunta à aba do portal de quem são
+  const cpfs = tipo?.campos?.empregado ? cpfsDoTexto(text, rules).map(c => c.cpf) : [];
   // P6 — formato: e-mail, CPF, CEP, RG, agência, conta, telefone, nomes e listas; o que não serve fica para conferir
   for (const [k, c] of Object.entries(campos)) {
     const def = tipo?.campos?.[k]; if (!def || k === 'empregado') continue;
@@ -457,9 +487,9 @@ export function analyzeText(text, rules, ctx = {}) {
   if (ocrConf != null && ocrConf < LC.ocrRuim && Object.keys(campos).length) {
     fotoRuim = true;
     for (const k of Object.keys(campos)) delete campos[k];
-    candidatos = null;
+    candidatos = null; notas = []; cpfs.length = 0;
   } else if (ocrConf != null && ocrConf < LC.ocrBaixo) {
-    for (const c of Object.values(campos)) if (!(c.ancora && c.validado) && c.conf > LC.ocrTetoBaixo) { c.conf = LC.ocrTetoBaixo; c.confira = c.confira || 'leitura'; }
+    for (const c of [...Object.values(campos), ...notas]) if (!(c.ancora && c.validado) && c.conf > LC.ocrTetoBaixo) { c.conf = LC.ocrTetoBaixo; c.confira = c.confira || 'leitura'; }
   }
   // nomes não têm dígito verificador: de foto, o OCR troca ou junta palavras ("EMMA THIAGO…") — ficam para o cliente confirmar
   if (ocrConf != null && ocrConf < LC.ocrTetoNomes) for (const k of LC.tiposComNome) if (campos[k] && campos[k].conf > LC.ocrTetoBaixo) { campos[k].conf = LC.ocrTetoBaixo; campos[k].confira = campos[k].confira || 'leitura'; }
@@ -467,7 +497,87 @@ export function analyzeText(text, rules, ctx = {}) {
   // quem é a pessoa do documento (um documento, uma pessoa: o painel não mistura documentos de pessoas diferentes)
   const pessoa = pessoaDaAnalise({ campos, paciente: leitor?.paciente?.nome || null });
   const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra, ...avisosMotivo];
-  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos, titular, filiacao: pessoal?.filiacao || null, layout: pessoal?.layout || null, pessoa, fotoRuim, confiancaOcr: ocrConf };
+  return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos, titular, filiacao: pessoal?.filiacao || null, layout: pessoal?.layout || null, pessoa, fotoRuim, confiancaOcr: ocrConf, notas, cpfs, exameAso, certidao: certidao ? { tipo: certidao.tipo } : null };
+}
+
+/* ---------------- Notas, certidão e CPFs do documento ---------------- */
+/** Linhas para a descrição com o que o documento traz e o portal não tem campo (documentos[].notas, com os valores de
+ *  documentos[].extrairNotas): DIB e DCB da carta do INSS, totais do espelho de ponto. Cada nota: { texto: "…{dib}…" ou
+ *  [alternativas, a 1ª completa vale] } ou { titulo, linhas: [...] } (só as linhas com valor). Datas normalizadas. */
+export function notasDoDocumento(text, docRule) {
+  if (!docRule?.notas?.length) return [];
+  const vals = {};
+  for (const [k, pats] of Object.entries(docRule.extrairNotas || {})) {
+    let v = runPatterns(text, pats); if (!v) continue;
+    v = v.replace(/\s+/g, ' ').trim();
+    if (/^\d{1,2}\s?[/.-]\s?\d{1,2}\s?[/.-]\s?\d{2,4}$/.test(v)) { const d = parseDate(v.replace(/\s/g, '')); if (!d) continue; v = fmtDate(d); }
+    if (v) vals[k] = v;
+  }
+  const out = [];
+  for (const n of docRule.notas) {
+    let s = '';
+    if (Array.isArray(n?.linhas)) {
+      const ls = n.linhas.map(l => renderTemplate(l, vals)).filter(Boolean);
+      if (ls.length) s = `${renderTemplate(n.titulo || '', vals)} ${ls.join('; ')}`.trim();
+    } else s = renderFirst(n?.texto ?? n, vals);
+    if (s) out.push({ id: n?.id || docRule.id, texto: s, conf: n?.conf ?? 0.7, fonte: docRule.nome });
+  }
+  return out;
+}
+
+const CERT_ROTULOS_CONJUGE = /c[oô]njuges?|contraentes?|nubentes?|noivos?/i;
+const nomeDeLinha = (s) => {
+  const n = String(s || '').replace(/[^\p{L}' ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  const ws = n.split(' ').filter(Boolean);
+  return ws.length >= 2 && ws.length <= 8 && n === n.toUpperCase() && !ws.some(w => NAO_NOME.has(norm(w))) ? n : null;
+};
+/** Certidão de casamento ou de nascimento (civil): { tipo: 'casamento'|'nascimento'|null, nomes: [cônjuges], registrado, data }. */
+export function lerCertidao(text) {
+  const T = String(text || '').normalize('NFC'); const t = plain(T);
+  const tipo = /certidao\s+de\s+casamento/.test(t) ? 'casamento' : /certidao\s+de\s+nascimento/.test(t) ? 'nascimento'
+    : /\bcasamento\b/.test(t) && !/\bnascid[oa]\b/.test(t) ? 'casamento' : /\bnascimento\b/.test(t) ? 'nascimento' : null;
+  const linhas = T.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  // data junto da pista: na mesma linha (depois do rótulo) ou na linha de baixo, na mesma coluna aproximada
+  const dataPerto = (rx) => {
+    for (let i = 0; i < linhas.length; i++) {
+      const m = plain(linhas[i]).match(rx); if (!m) continue;
+      const resto = linhas[i].slice(m.index + m[0].length);
+      const d1 = resto.match(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/); if (d1 && parseDate(d1[1])) return fmtDate(parseDate(d1[1]));
+      const prox = linhas[i + 1] || ''; const ds = [...prox.matchAll(/\b(\d{1,2}\/\d{1,2}\/\d{4})\b/g)];
+      if (ds.length === 1 && parseDate(ds[0][1])) return fmtDate(parseDate(ds[0][1]));
+    }
+    return null;
+  };
+  const out = { tipo, nomes: [], registrado: null, data: null };
+  if (tipo === 'casamento') {
+    for (let i = 0; i < linhas.length && out.nomes.length < 2; i++) {
+      if (!CERT_ROTULOS_CONJUGE.test(linhas[i])) continue;
+      const depois = linhas[i].replace(/^.*?(?:c[oô]njuges?|contraentes?|nubentes?|noivos?)[^:]*:?/i, '');
+      for (const l of [depois, linhas[i + 1], linhas[i + 2], linhas[i + 3]]) {
+        for (const parte of String(l || '').split(/\s+E\s+|;|\s{3,}|\s+e\s+(?=[A-ZÀ-Ú])/)) { const n = nomeDeLinha(parte); if (n && !out.nomes.includes(n) && out.nomes.length < 2) out.nomes.push(n); }
+        if (out.nomes.length >= 2) break;
+      }
+    }
+    out.data = dataPerto(/data\s+do\s+(?:registro\s+do\s+)?casamento|celebrad[oa]\s+em|casaram-se\s+em/);
+  } else if (tipo === 'nascimento') {
+    for (let i = 0; i < linhas.length && !out.registrado; i++) {
+      const m = linhas[i].match(/^\s*nome(?:\s+do\s+registrado)?\s*:?\s*(.*)$/i); if (!m) continue;
+      out.registrado = nomeDeLinha(m[1]) || nomeDeLinha(linhas[i + 1]);
+    }
+    out.data = dataPerto(/data\s+de\s+nascimento|nascid[oa]\s+em|nasceu\s+em/);
+  }
+  return out;
+}
+
+/** CPFs válidos do texto que não estão junto de outro rótulo (registro, PIS, CNS, responsável, mãe…): [{ cpf, ancora }]. */
+export function cpfsDoTexto(text, rules) {
+  const T = String(text || '').normalize('NFC'); const L = cfgLeitor(rules); const out = [];
+  for (const m of T.matchAll(RX.cpf)) {
+    const d = onlyDigits(m[1]); if (d.length !== 11 || !validCPF(d) || out.some(c => c.cpf === d)) continue;
+    const r = rotuloPerto(T, m.index, 'cpf|c\\.p\\.f\\.?', L.contextoCpfDescarta);
+    if (r !== 'outro') out.push({ cpf: d, ancora: r === 'sim' });
+  }
+  return out;
 }
 
 /* ---------------- Um documento, uma pessoa ---------------- */
@@ -490,6 +600,131 @@ export function mesmaPessoa(a, b) {
     return similarity(a.nome, b.nome) >= 0.9;
   }
   return null;
+}
+
+/* ---------------- Lote: um pedido por tipo e por pessoa ---------------- */
+const NEUTROS_PADRAO = ['certidao', 'aso', 'identidade', 'cpf', 'comprovanteEndereco', 'ctps', 'seguro', 'bancario'];
+const SEM_PESSOA_PADRAO = ['comprovanteEndereco', 'bancario'];
+/** Documentos que servem a vários pedidos (RG, ASO, certidão…): documentos[].neutro nas regras (sem a marca, a lista antiga). */
+export function docsNeutros(rules) {
+  const docs = rules?.documentos || [];
+  return docs.some(d => 'neutro' in d) ? docs.filter(d => d.neutro).map(d => d.id) : NEUTROS_PADRAO;
+}
+/** Documentos que não dizem de quem é o pedido (comprovante de residência, dados bancários): documentos[].definePessoa = false. */
+export function docsSemPessoa(rules) {
+  const docs = rules?.documentos || [];
+  return docs.some(d => 'definePessoa' in d) ? docs.filter(d => d.definePessoa === false).map(d => d.id) : SEM_PESSOA_PADRAO;
+}
+/** De quem é o arquivo lido no lote: o funcionário encontrado; nos cadastros, o CPF ou o nome lido; no atestado, o paciente. */
+export function pessoaDoItem(it, rules) {
+  if (docsSemPessoa(rules).includes(it?.documento)) return null;
+  const a = it?.analise || {}; const e = a.campos?.empregado;
+  if (e?.valor && (e.conf ?? 0) >= 0.6) return { nome: e.valor, cpf: a.pessoa?.cpf || null };
+  return a.pessoa || (a.paciente ? { nome: a.paciente } : null);
+}
+const mesmoPedido = (a, b) => a === b || (CADASTROS.includes(a) && CADASTROS.includes(b));
+/** O tipo que mais aparece nos arquivos (o cartão de "Encontrei o caminho" usa este, não o do 1º arquivo). */
+export function tipoMaisFrequente(itens, rules) {
+  const neutros = docsNeutros(rules); const n = new Map();
+  for (const it of itens || []) { const t = it?.analise?.tipoSugerido; if (t) n.set(t, (n.get(t) || 0) + (neutros.includes(it.documento) ? 0.5 : 1)); }
+  return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+}
+/**
+ * Vários arquivos de uma vez → pedidos de um tipo e de uma pessoa. itens: [{ documento, analise: { tipoSugerido, campos,
+ * pessoa, paciente, titular } }]. Atestados (config.umPedidoPorDocumento) viram um pedido cada; o resto, um por tipo e pessoa.
+ * Documentos neutros (RG, ASO, certidão) vão para o pedido da mesma pessoa; sem pessoa, para o único pedido possível;
+ * senão ficam em `fora` (o cliente escolhe). Devolve { pedidos: [{ tipo, itens, pessoa }], fora, pessoas }.
+ */
+export function montarPedidosLote(itens, rules) {
+  const individuais = rules?.config?.umPedidoPorDocumento || ['atestado', 'comparecimento'];
+  const neutrosIds = docsNeutros(rules);
+  const pessoaDe = (it) => pessoaDoItem(it, rules);
+  const pedidos = []; const grupos = []; const neutros = []; const semPessoa = [];
+  for (const it of itens || []) {
+    const tipo = it.analise?.tipoSugerido || null;
+    if (individuais.includes(it.documento)) pedidos.push({ tipo: tipo || 'afastamento', itens: [it], pessoa: pessoaDe(it), individual: true });
+    else if (tipo && !neutrosIds.includes(it.documento)) { if (pessoaDe(it)) grupos.push({ tipo, it }); else semPessoa.push({ tipo, it }); }
+    else neutros.push(it);
+  }
+  const lista = [];   // pedidos que juntam documentos (não individuais)
+  const juntar = (tipo, it, p) => {
+    const g = lista.find(x => mesmoPedido(x.tipo, tipo) && (p ? mesmaPessoa(x.pessoa, p) === true : !x.pessoa));
+    if (g) { g.itens.push(it); if (!g.pessoa && p) g.pessoa = p; } else lista.push({ tipo, itens: [it], pessoa: p || null });
+  };
+  for (const { tipo, it } of grupos) juntar(tipo, it, pessoaDe(it));
+  // sem pessoa (nome não achado): vai para o único pedido desse tipo; senão, um pedido próprio
+  for (const { tipo, it } of semPessoa) {
+    const doTipo = lista.filter(x => mesmoPedido(x.tipo, tipo));
+    if (doTipo.length === 1) doTipo[0].itens.push(it); else juntar(tipo, it, null);
+  }
+  // neutros com pessoa: o pedido da mesma pessoa; sem esse pedido, um cadastro próprio quando o documento é de cadastro
+  const restoNeutros = [];
+  for (const it of neutros) {
+    const p = pessoaDe(it);
+    const alvo = p && [...pedidos, ...lista].find(x => mesmaPessoa(x.pessoa, p) === true);
+    if (alvo) alvo.itens.push(it);
+    else if (p && CADASTROS.includes(it.analise?.tipoSugerido)) juntar(it.analise.tipoSugerido, it, p);
+    else restoNeutros.push(it);
+  }
+  // documento que acompanha um atestado (ex.: CAT da mesma data e da mesma pessoa) entra na mesma solicitação
+  const data = (it) => it.analise?.campos?.dataAfastamento?.valor || null;
+  for (const g of [...lista]) {
+    const alvo = pedidos.find(p => p.individual && p.tipo === g.tipo && g.itens.every(it => data(it) && data(it) === data(p.itens[0])) && mesmaPessoa(p.pessoa, g.pessoa) !== false);
+    if (alvo) { alvo.itens.push(...g.itens); lista.splice(lista.indexOf(g), 1); }
+  }
+  // o tipo do pedido é o que mais aparece nele (sem contar os neutros)
+  for (const g of lista) { const t = tipoMaisFrequente(g.itens.filter(it => !neutrosIds.includes(it.documento)), rules); if (t) g.tipo = t; }
+  pedidos.push(...lista);
+  // neutros sem pessoa: comprovante pelo titular; senão o único pedido possível; senão o cliente escolhe
+  const fora = [];
+  for (const it of restoNeutros) {
+    const tt = it.analise?.titular;
+    const peloTitular = tt && pedidos.filter(p => mesmaPessoa(p.pessoa, { nome: tt }) === true);
+    if (peloTitular?.length === 1) { peloTitular[0].itens.push(it); continue; }
+    const naoIndiv = pedidos.filter(p => !p.individual);
+    if (pedidos.length === 1) pedidos[0].itens.push(it);
+    else if (naoIndiv.length === 1 && (!pessoaDe(it) || mesmaPessoa(naoIndiv[0].pessoa, pessoaDe(it)) !== false)) naoIndiv[0].itens.push(it);
+    else fora.push(it);
+  }
+  const pessoas = pedidos.reduce((acc, p) => p.pessoa && !acc.some(x => mesmaPessoa(x, p.pessoa) === true) ? [...acc, p.pessoa] : acc, []);
+  return { pedidos: pedidos.map(({ individual, ...p }) => p), fora, pessoas };
+}
+
+/* ---------------- Regra dos 60 dias (atestados do mesmo funcionário) ---------------- */
+const R60_PADRAO = { janelaDias: 60, limiteDias: 15, tipoSugerido: 'Novo afast. mesma doença', textoDescricao: 'Soma {soma} dias com {anteriores} (regra dos 60 dias — mesma doença, informado pelo cliente).' };
+export const regra60 = (rules) => ({ ...R60_PADRAO, ...(rules?.config?.regra60dias || {}) });
+/**
+ * Decreto 3.048/99, art. 75: afastamentos pela mesma doença se somam quando um começa até 60 dias depois do retorno do
+ * anterior; passando de 15 dias, o INSS paga a partir do 16º. atual/anteriores = { empregado, data: 'dd/mm/aaaa', dias,
+ * origem? }. Devolve null ou { soma, anteriores: [do mais antigo ao mais recente], passa, tipoSugerido, texto }.
+ */
+export function somaAtestados(atual, anteriores, rules) {
+  const R = regra60(rules); if (R.ativo === false) return null;
+  const ini = parseDate(atual?.data); const n = parseInt(atual?.dias, 10);
+  if (!ini || !(n > 0) || !atual?.empregado) return null;
+  const doMesmo = (anteriores || []).map(a => ({ ...a, ini: parseDate(a.data), n: parseInt(a.dias, 10) }))
+    .filter(a => a.ini && a.n > 0 && a.empregado && a.ini < ini && mesmaPessoa({ nome: a.empregado }, { nome: atual.empregado }) === true)
+    .sort((a, b) => b.ini - a.ini);
+  const cadeia = []; let ref = ini;
+  for (const a of doMesmo) {
+    if (cadeia.some(c => +c.ini === +a.ini)) continue;         // o mesmo atestado duas vezes (lote e histórico)
+    const retorno = addDays(a.ini, a.n);                       // dia em que voltou ao trabalho
+    const intervalo = diffDays(retorno, ref);
+    if (intervalo < 0) continue;                               // sobreposto (pedido repetido?): não soma
+    if (intervalo > (+R.janelaDias || 60)) break;
+    cadeia.unshift(a); ref = a.ini;
+  }
+  if (!cadeia.length) return null;
+  const soma = n + cadeia.reduce((s, a) => s + a.n, 0);
+  const anteriores_ = cadeia.map(a => ({ data: fmtDate(a.ini), dias: a.n, origem: a.origem || null }));
+  const lista = anteriores_.map(a => `o atestado de ${a.data.slice(0, 5)} (${a.dias} ${a.dias === 1 ? 'dia' : 'dias'})`);
+  const texto = renderTemplate(R.textoDescricao, { soma: String(soma), anteriores: lista.length > 1 ? `${lista.slice(0, -1).join(', ')} e ${lista[lista.length - 1]}` : lista[0] });
+  return { soma, anteriores: anteriores_, passa: soma > (+R.limiteDias || 15), tipoSugerido: R.tipoSugerido, texto };
+}
+/** Mesma doença pelo CID (só na memória, dentro do lote): mesma categoria (3 primeiros caracteres). null = não dá para dizer. */
+export function mesmaDoencaPeloCid(a, b) {
+  const x = norm(a).replace(/\s/g, '').slice(0, 3), y = norm(b).replace(/\s/g, '').slice(0, 3);
+  return x.length === 3 && y.length === 3 ? x === y : null;
 }
 
 /* ---------------- Tipos e campos ---------------- */
@@ -520,6 +755,41 @@ export const condicaoVale = (cond, values) => matchCond(cond, values || {});
 /** Documentos que servem a um anexo: anexos[].documentos (lista) ou o formato antigo anexos[].documento. */
 export const docsDoAnexo = (a) => [...new Set([...(a?.documentos || []), a?.documento].filter(Boolean))];
 export const anexoAceita = (a, docId) => !!docId && docsDoAnexo(a).includes(docId);
+/** O arquivo f ({ documento, documentos?, aso? }) cumpre o anexo a? Um PDF com vários documentos marca cada um; com
+ *  anexos[].asoTipo só vale o ASO desse exame (o periódico não conta como admissional; exame não lido conta). */
+export function anexoCasa(a, f) {
+  const ids = [...new Set([f?.documento, ...(f?.documentos || [])].filter(Boolean))];
+  if (!ids.some(id => anexoAceita(a, id))) return false;
+  if (a?.asoTipo && ids.includes('aso') && f?.aso?.tipo && plain(f.aso.tipo) !== plain(a.asoTipo)) return false;
+  return true;
+}
+const ASO_PADRAO = {
+  exameDoPedido: { cadastroEmpregado: 'admissional', cadastroEstagiario: 'admissional', cadastroContribuinte: 'admissional', avisoRescisao: 'demissional', calculoRescisao: 'demissional' },
+  diasDemissional: 10,
+  mensagens: {
+    inapto: 'O ASO “{arquivo}” está como INAPTO. Fale com o seu analista antes de seguir.',
+    exameOutro: 'O ASO anexado é {exame}, mas este pedido pede o {esperado}. Confira se é o exame certo.',
+    admissionalDepois: 'O ASO admissional é de {exame}, depois da admissão ({admissao}). O exame admissional deve ser feito antes do início do trabalho.',
+    demissionalLonge: 'O ASO demissional é de {exame} e o término é {termino}: pela NR-7, o exame demissional é feito em até {dias} dias do término do contrato. Confira com o escritório.'
+  }
+};
+/** Conferência do ASO anexado (anexos[].aso = { tipo, resultado, data } lidos do documento). Pura, para todos os pedidos. */
+export function verificarAso(tipoKey, values, anexos, rules) {
+  const C = { ...ASO_PADRAO, ...(rules?.config?.aso || {}) }; const M = { ...ASO_PADRAO.mensagens, ...(rules?.config?.aso?.mensagens || {}) };
+  const out = [];
+  for (const f of anexos || []) {
+    const a = f?.aso; if (!a) continue;
+    if (a.resultado === 'INAPTO') out.push({ nivel: 'erro', mensagem: M.inapto.replace('{arquivo}', f.nome || 'ASO') });
+    const esperado = C.exameDoPedido?.[tipoKey]; const ex = plain(a.tipo || '');
+    if (esperado && ex && ex !== plain(esperado)) out.push({ nivel: 'atencao', mensagem: M.exameOutro.replace('{exame}', a.tipo).replace('{esperado}', esperado) });
+    const dExame = parseDate(a.data); if (!dExame) continue;
+    const adm = parseDate(values?.dataAdmissao);
+    if (ex === 'admissional' && adm && dExame > adm) out.push({ nivel: 'atencao', campo: 'dataAdmissao', mensagem: M.admissionalDepois.replace('{exame}', fmtDate(dExame)).replace('{admissao}', fmtDate(adm)) });
+    const fim = parseDate(values?.dataDemissao);
+    if (ex === 'demissional' && fim && Math.abs(diffDays(fim, dExame)) > (+C.diasDemissional || 10)) out.push({ nivel: 'atencao', campo: 'dataDemissao', mensagem: M.demissionalLonge.replace('{exame}', fmtDate(dExame)).replace('{termino}', fmtDate(fim)).replace('{dias}', String(+C.diasDemissional || 10)) });
+  }
+  return out;
+}
 
 /* ---------------- Cadastros: o que se repete é da empresa, não da pessoa ---------------- */
 /* regras: config.camposDaEmpresa = { tipos, campos, historicoEnviado }; empresas.<trecho>.padroes; config.experienciaSugerida */
@@ -836,8 +1106,8 @@ export function runChecks(tipoKey, values, anexos, rules, hoje = today(), portal
     if (a.excetoQuando && matchCond(a.excetoQuando, values)) continue;
     // só conta como anexado o que está mesmo no portal: o que está só na lista do
     // Assistente ainda não foi para a solicitação (pendente)
-    const has = (anexos || []).some(f => anexoAceita(a, f.documento) && !f.pendente);
-    const soNoAssistente = !has && (anexos || []).find(f => anexoAceita(a, f.documento) && f.pendente);
+    const has = (anexos || []).some(f => anexoCasa(a, f) && !f.pendente);
+    const soNoAssistente = !has && (anexos || []).find(f => anexoCasa(a, f) && f.pendente);
     const temAlgum = (anexos || []).some(f => !f.pendente);
     // falta a carta e há modelo dela (anexos[].modelo, só quando modeloSe vale): a tela oferece "Gerar pelo modelo"
     const modelo = a.modelo && (!a.modeloSe || matchCond(a.modeloSe, values)) ? a.modelo : null;
@@ -848,6 +1118,9 @@ export function runChecks(tipoKey, values, anexos, rules, hoje = today(), portal
     else add('info', 'Anexos', `Se tiver, anexe: ${a.rotulo}`);
     if (!has && !soNoAssistente && modelo && res[n0]) Object.assign(res[n0], { modelo, anexo: a.id });
   }
+  // ASO anexado (em qualquer pedido): INAPTO é erro; exame de outro tipo, admissional depois da admissão e demissional
+  // longe do término (NR-7) são atenção — regras: config.aso
+  for (const v of verificarAso(tipoKey, values, anexos, rules)) add(v.nivel, 'Documento', v.mensagem, v.campo);
 
   // Regras e prazos
   for (const v of tipo.verificacoes || []) {
@@ -2397,11 +2670,32 @@ export function opcaoPorPalavra(text, regra) {
   return dono ? dono[0] : null;
 }
 const ASO_TIPOS = ['admissional', 'demissional', 'periodico', 'retorno ao trabalho', 'mudanca de funcao'];
-export function readASO(text) {
+const ASO_PISTAS = ['data do exame', 'data de realização', 'data da realização', 'realizado em', 'data do aso', 'data de emissão', 'data:'];
+/** ASO: resultado, tipo de exame marcado e data do exame — pela pista (documentos[].pistasData: "data do exame",
+ *  "realizado em", "Data:"); sem pista, a da linha "Cidade/UF, dd/mm/aaaa"; senão a última do texto (nunca nascimento/admissão). */
+export function readASO(text, docRule = null) {
   const t = plain(text);
   const resultado = opcaoMarcada(t, ['inapto', 'apto']);
   const tipo = opcaoMarcada(t, ASO_TIPOS);
-  const datas = findDates(text); const data = datas.length ? fmtDate(datas[datas.length - 1]) : null;
+  const T = String(text || '').normalize('NFC');
+  const RXD = /(\d{1,2})\s?[/.-]\s?(\d{1,2})\s?[/.-]\s?(\d{4})/;
+  let data = null;
+  for (const p of docRule?.pistasData || ASO_PISTAS) {
+    const P = plain(p).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+    const m = plain(T).match(new RegExp(`(?<![a-z])${P}`)); if (!m) continue;
+    const resto = T.slice(m.index + m[0].length, m.index + m[0].length + 40).split('\n')[0];
+    const d = resto.match(RXD); const dt = d && dataValida(+d[3], +d[2] - 1, +d[1]);
+    if (dt) { data = fmtDate(dt); break; }
+  }
+  if (!data) {
+    const local = T.match(/[A-Za-zÀ-ú .'-]{3,}\/[A-Z]{2}\s*,\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
+    if (local && parseDate(local[1])) data = fmtDate(parseDate(local[1]));
+  }
+  if (!data) {
+    // a última data que não é de nascimento nem de admissão
+    const linhas = T.split(/\n/).filter(l => !/nasc|admiss/i.test(plain(l)));
+    const datas = findDates(linhas.join('\n')); data = datas.length ? fmtDate(datas[datas.length - 1]) : null;
+  }
   return { resultado: resultado ? resultado.toUpperCase() : null, tipo, data };
 }
 /** Uma linha que resume o que foi entendido do documento (aparece embaixo do arquivo). */
