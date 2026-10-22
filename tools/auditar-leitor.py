@@ -290,13 +290,27 @@ def lote(docs, resultados):
               ('cadastroEmpregado', ['ficha-admissao--pdf.pdf', 'aso-admissional--pdf.pdf']),
               ('cadastroEmpregado', ['cnh--pdf.pdf', 'conta-luz--pdf.pdf', 'ctps-digital--pdf.pdf'])]
     print('\n=== LOTE (vários arquivos no mesmo formulário) ===')
+    def mesma(p, q):
+        """como E.mesmaPessoa: CPF manda; sem CPF, os nomes (um contido no outro)"""
+        if not p or not q: return None
+        if p.get('cpf') and q.get('cpf'): return p['cpf'] == q['cpf']
+        if p.get('nome') and q.get('nome'):
+            a, b = set(N(p['nome']).split()), set(N(q['nome']).split())
+            return a <= b or b <= a
+        return None
     for tipo, arqs in grupos:
         if not all(a in resultados and 'analise' in resultados[a] for a in arqs): continue
-        W = {}
+        W = {}; pessoa = None; fora = []
         for a in arqs:
+            # P5 (applyAnalysis): documento de outra pessoa não se mistura
+            p = resultados[a]['analise'].get('pessoa')
+            if pessoa and mesma(pessoa, p) is False: fora.append(a.split('--')[0]); continue
+            pessoa = pessoa or p
             for k, c in resultados[a]['analise']['campos'].items():
                 if k in GERADOS: continue
+                if c['conf'] < 0.6: continue          # sugestão: só com o clique do cliente
                 if k not in W or W[k][1] <= c['conf']: W[k] = (c['valor'], c['conf'], a.split('--')[0])
+        if fora: print(f'  {tipo}: de outra pessoa, ficou de fora: {", ".join(fora)}')
         mistura = {k: v for k, v in W.items() if v[2] != arqs[0].split('--')[0]}
         print(f'  {tipo}: {" + ".join(a.split("--")[0] for a in arqs)}')
         for k, (v, c, de) in sorted(W.items()):
