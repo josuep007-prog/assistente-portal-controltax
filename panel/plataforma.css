@@ -453,6 +453,11 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 #eq-avisos { border-top: 3px solid var(--viz-crit); }
 #eq-exp { border-top: 3px solid var(--viz-warn); }
 #eq-ferias { border-top: 3px solid var(--viz-s1); }
+/* preparar a resposta (lote 6): mensagens das regras e os arquivos da resposta */
+.rp-h { margin: 12px 0 6px; font: 600 13px var(--f-head); }
+.rp-textos .es-tx small { display: block; white-space: normal; margin-top: 2px; }
+.rp-arqs .li { cursor: pointer; }
+#rp-drop { margin-top: 8px; }
 /* variáveis da folha do mês (lote 6): ocupa duas colunas; a planilha pode ser solta no cartão */
 .hj-folha { grid-column: span 2; border-top: 3px solid var(--blue-deep); }
 .hj-folha.over { outline: 2px dashed var(--blue-deep); outline-offset: 2px; }
@@ -675,7 +680,7 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 /* Empresa do pedido (caixa "Para qual empresa?" e botão dentro do pedido) */
 .ee-dica { margin: 0 0 10px; font-size: 12.5px; }
 .ee-q { width: 100%; margin-bottom: 8px; }
-.ee-lista { display: grid; gap: 2px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 4px 0; }
+.ee-lista, .rp-lista { display: grid; gap: 2px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 4px 0; }
 .ee-li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
 .ee-li:hover { background: var(--surface-2); }
 .ee-li:has(input:checked) { background: var(--info-bg); border-color: color-mix(in srgb, var(--blue-deep) 35%, transparent); }

@@ -520,6 +520,60 @@ export function montarPlataforma(A) {
     const { empregado, ...resto } = vals;
     await P.novoPedido(i.tipo, { empregado, sugeridos: resto, fonte: i.numero ? `da solicitação nº ${i.numero}` : 'da solicitação no portal', empresa: i.empresa || undefined });
   }
+  /* Preparar a resposta (lote 6, regras: config.respostaPortal): o cliente escolhe uma das mensagens das regras (nunca texto
+     livre, nunca CID) e os arquivos — os soltos, que ele arrastou na plataforma, já vêm marcados. O Assistente abre a solicitação
+     certa no portal (procura o nº na lista), deixa a mensagem na caixa de resposta e anexa os arquivos. O clique em responder é
+     sempre do cliente, no portal; nada vai pela API. A tela do detalhe do Onvio real ainda não foi mapeada: a calibrar. */
+  function prepararResposta(i) {
+    const t = S.rules.tipos[i.tipo]; const cfg = S.rules.config?.respostaPortal || {};
+    const textos = (cfg.textos || []).filter(x => x?.id && x.texto);
+    if (!t || !textos.length) return;
+    const s = S.sugestao;
+    const soltos = s?.item ? [s.item, ...(s.extras || [])].filter(x => x?.file) : [];
+    const arquivos = soltos.map(x => ({ file: x.file, nome: x.file.name, levar: true, solto: true }));
+    const comArquivo = () => arquivos.some(a => a.levar);
+    const padrao = () => (comArquivo() ? textos.find(x => x.comAnexo) : null) || (i.veredito?.pede ? textos.find(x => x.id === (cfg.seEscritorioPede || 'informacao')) : null) || textos.find(x => !x.comAnexo) || textos[0];
+    let escolhido = padrao().id, mexeu = false;
+    const textoDe = (x) => String(x.texto).replace(/\{anexos\}/g, arquivos.filter(a => a.levar).map(a => a.nome).join(', ') || 'os arquivos').replace(/\{numero\}/g, i.numero || '');
+    const botao = esc(cfg.botaoResponder || 'RESPONDER');
+    const dlg = dialogo({
+      titulo: `${icon('chat')} Preparar resposta${i.numero ? ` <span class="mono" style="font-size:13px;color:var(--ink-3)">nº ${esc(i.numero)}</span>` : ''}`,
+      corpo: `<p class="muted" style="margin:0 0 10px">Eu abro esta solicitação no portal e deixo a mensagem e os arquivos na resposta. Você confere e clica em <b>${botao}</b> no próprio portal.</p>
+        ${i.veredito?.pede && i.veredito.frase ? `<div class="note" style="margin:0 0 10px">${icon('info')}<div><b>O escritório pediu:</b> “${esc(i.veredito.frase)}”</div></div>` : ''}
+        <div class="rp-lista rp-textos" role="radiogroup" aria-label="Mensagem">${textos.map(x => `<label class="ee-li"><input type="radio" name="rp-t" value="${esc(x.id)}"${x.id === escolhido ? ' checked' : ''}><span class="es-tx"><b>${esc(x.rotulo || x.id)}</b><small data-prev="${esc(x.id)}"></small></span></label>`).join('')}</div>
+        <h4 class="rp-h">Arquivos da resposta</h4><div class="list rp-arqs" id="rp-arqs"></div>
+        <div class="drop compact" id="rp-drop" role="button" tabindex="0">${icon('upload')}<div><b>Arraste os arquivos aqui</b><small>Ou clique para escolher. Eles vão anexados na resposta, no portal.</small></div></div>
+        <input type="file" id="rp-file" multiple hidden>`,
+      acoes: [{ rotulo: 'Cancelar' }, '|', { rotulo: `${icon('external', 'ic-sm')} Preparar no portal`, cls: 'btn-primary rp-ir', fn: () => { enviar(); } }]
+    });
+    const el = dlg.el;
+    const desenhar = () => {
+      if (!mexeu) { escolhido = padrao().id; el.querySelectorAll('input[name="rp-t"]').forEach(r => { r.checked = r.value === escolhido; }); }
+      el.querySelectorAll('[data-prev]').forEach(x => { x.textContent = textoDe(textos.find(y => y.id === x.dataset.prev)); });
+      el.querySelector('#rp-arqs').innerHTML = arquivos.length ? arquivos.map((a, n) => `<label class="li"><input type="checkbox" data-rp-arq="${n}"${a.levar ? ' checked' : ''}><div class="main"><b>${esc(a.nome)}</b><small>${a.solto ? 'arquivo que você arrastou na plataforma' : 'escolhido agora'}</small></div></label>`).join('') : '<p class="muted" style="margin:0">Nenhum arquivo (a resposta pode ir só com a mensagem).</p>';
+      el.querySelectorAll('[data-rp-arq]').forEach(c => c.addEventListener('change', () => { arquivos[+c.dataset.rpArq].levar = c.checked; desenhar(); }));
+    };
+    const juntar = (fs) => { for (const f of fs || []) if (!arquivos.some(a => a.nome === f.name && a.file.size === f.size)) arquivos.push({ file: f, nome: f.name, levar: true }); desenhar(); };
+    el.querySelectorAll('input[name="rp-t"]').forEach(r => r.addEventListener('change', () => { escolhido = r.value; mexeu = true; }));
+    const drop = el.querySelector('#rp-drop'), inp = el.querySelector('#rp-file');
+    drop.addEventListener('click', () => inp.click());
+    drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inp.click(); } });
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.remove('over'); juntar([...(e.dataTransfer?.files || [])]); });
+    inp.addEventListener('change', () => { juntar([...inp.files]); inp.value = ''; });
+    desenhar();
+    async function enviar() {
+      const x = textos.find(y => y.id === escolhido) || padrao();
+      const levar = arquivos.filter(a => a.levar).map(a => a.file);
+      const packed = await A.packFiles(levar);
+      const r = await request({ type: 'prepararResposta', slug: t.slug, numero: i.numero || '', texto: textoDe(x), files: packed }, 45000, packed.map(p => p.buf));
+      // os arquivos soltos foram para a resposta: o cartão do documento sai do Novo pedido
+      if (r?.ok && s && S.sugestao === s && arquivos.some(a => a.solto && a.levar)) { S.sugestao = null; }
+      if (!r?.ok) toast(`Não consegui preparar a resposta${r?.motivo ? ` (${r.motivo})` : ''}. Responda direto no portal.`);
+      else if (r.recusados?.length) toast(`O portal não aceitou: ${r.recusados.join(', ')}. Confira os anexos antes de responder.`);
+    }
+  }
   /* Variáveis da folha do mês (regras: config.variaveisFolha): "Preparar" abre o Lançamento de Rubricas com o tipo e a
      competência como sugestão (com a planilha, se foi arrastada no cartão); "Usar o lançamento do mês passado" leva o tipo e as
      linhas do último lançamento (deste computador ou, lido na hora, do portal), sem a competência antiga; "Nada a lançar este mês"
@@ -771,7 +825,7 @@ export function montarPlataforma(A) {
           const i = c.item;
           const acao = c.tipo === 'abaErrada' ? { rotulo: `Pedir em ${S.rules.tipos[c.aba]?.nome || 'outra aba'}`, fn: () => P.novoPedido(c.aba) }
             : c.tipo === 'duplicada' ? { rotulo: `Ver a nº ${c.outra.numero}`, fn: () => abrirDetalhe(c.outra) }
-            : { rotulo: 'Anexar no portal', fn: () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, id: i.numero || i.id }) };
+            : { rotulo: 'Anexar no portal', fn: () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, numero: i.numero }, 30000) };
           acoesEq.push({ acao: acao.fn, abrir: () => abrirDetalhe(i) });
           const n = acoesEq.length - 1;
           return `<div class="pn-li eq-li caso-${c.tipo}" data-eq-abrir="${n}"><span class="pill pill-${c.tipo === 'anexo' ? 'late' : 'today'}">${ROT_CASO[c.tipo]}</span><div class="main"><b>${esc([i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '))}</b><small>${esc(c.porque)}</small></div><div class="eq-acoes"><button type="button" class="btn btn-sm" data-eq="${n}">${esc(acao.rotulo)}</button></div></div>`;
@@ -991,7 +1045,8 @@ export function montarPlataforma(A) {
         <div class="dt-body" id="dt-body"></div>`,
       acoes: [...(['avisoFerias', 'avisoRescisao'].includes(i.tipo) && !['cancelada', 'prescrita'].includes(i.estado) ? [{ rotulo: `${icon('calc', 'ic-sm')} Pedir o cálculo`, cls: 'dt-pedir-calc', fn: () => { pedirCalculoDoAviso(i, st.datas); } }] : []),
         ...(t ? [{ rotulo: `${icon('refresh', 'ic-sm')} Pedir de novo`, cls: 'dt-pedir-novo', fn: () => { pedirDeNovo(i, st.bruto); } }] : []),
-        { rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) },
+        ...(t && i.aguardando && (S.rules.config?.respostaPortal?.textos || []).length ? [{ rotulo: `${icon('chat', 'ic-sm')} Preparar resposta`, cls: 'dt-responder', fn: () => { setTimeout(() => prepararResposta(i), 0); } }] : []),
+        { rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, numero: i.numero }, 30000) },
         { rotulo: `${icon('copy', 'ic-sm')} Copiar observações`, cls: 'btn-ghost dt-copiar', fn: async () => { const o = E.observacoesCliente(i, st.datas, S.rules); try { await navigator.clipboard.writeText(o.map(x => `• ${x.texto}`).join('\n')); toast('Observações copiadas.'); } catch { toast('Não consegui copiar.'); } return false; } },
         '|', { rotulo: 'Fechar' }]
     });
@@ -1543,7 +1598,7 @@ export function montarPlataforma(A) {
         const abrir = (e) => { if (e.target.closest('button')) return; abrirDetalhe(vis[+r.dataset.arq].item, { aba: 'conversa' }); };
         r.addEventListener('click', abrir); r.addEventListener('keydown', (e) => { if (e.key === 'Enter') abrir(e); });
       });
-      lista.querySelectorAll('[data-arq-portal]').forEach(b => b.addEventListener('click', () => { const i = vis[+b.dataset.arqPortal].item; request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, id: i.numero || i.id }); }));
+      lista.querySelectorAll('[data-arq-portal]').forEach(b => b.addEventListener('click', () => { const i = vis[+b.dataset.arqPortal].item; request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, numero: i.numero }, 30000); }));
       lista.querySelector('#arq-mais')?.addEventListener('click', () => { F.limite += LOTE_ARQ; ler(); });
       const n = viewEl.querySelector('[data-doc-aba="solicitacoes"]');
       if (n && arquivosLidos.size) { const t = n.querySelector('.tab-n') || n.appendChild(Object.assign(document.createElement('span'), { className: 'tab-n' })); t.textContent = todos.length; }

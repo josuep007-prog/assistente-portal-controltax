@@ -38,6 +38,20 @@
       "tipoLancamento": "MENSAL",
       "semCompetenciaPelaData": true
     },
+    "respostaPortal": {
+      "_comentario": "'Responder no portal' e 'Preparar resposta' no detalhe de uma solicitação (lote 6). O Assistente abre a lista do tipo, procura o nº e abre a solicitação (como o Control Onvio). 'Preparar resposta': o cliente escolhe uma destas mensagens (nunca texto livre, nunca CID; {anexos} = nomes dos arquivos, {numero} = nº da solicitação) e os arquivos; o Assistente deixa a mensagem na caixa de resposta (só se estiver vazia) e anexa os arquivos. O clique em responder fica SEMPRE com o cliente, no portal; nada é escrito pela API. A calibrar no Onvio real: a tela do detalhe, a caixa de resposta ('caixa': seletores, o primeiro que existir) e o nome do botão.",
+      "revisarComEscritorio": true,
+      "calibrar": true,
+      "caixa": ["[data-resposta] textarea", "textarea[formcontrolname=topicDescription]", "textarea[formcontrolname=answer]"],
+      "botaoResponder": "RESPONDER",
+      "seEscritorioPede": "informacao",
+      "textos": [
+        { "id": "anexo", "rotulo": "Envio do que foi pedido", "comAnexo": true, "texto": "Olá! Segue em anexo o que foi pedido: {anexos}. Obrigado!" },
+        { "id": "informacao", "rotulo": "Resposta ao que foi pedido", "texto": "Olá! Respondendo ao que foi pedido: as informações estão nesta resposta. Qualquer dúvida, estamos à disposição." },
+        { "id": "ciente", "rotulo": "Ciente, pode concluir", "texto": "Olá! Recebemos, obrigado. Pode concluir a solicitação." },
+        { "id": "conferir", "rotulo": "Vamos conferir", "texto": "Olá! Vamos conferir e respondemos em seguida. Obrigado!" }
+      ]
+    },
     "intervaloAtualizacaoRegrasMin": 30,
     "experienciaDias": [
       45,

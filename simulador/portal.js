@@ -216,7 +216,7 @@
       }
       return Promise.resolve(it);
     },
-    detalhe: true,
+    // sem rota direta do detalhe (como no Onvio real, até ser mapeada): "Ver/Responder no portal" procura o nº na lista
     rotaDocumentos: '/clientcenter/pt/documents',
     // documentos que o escritório publica (inventados): guias e holerites
     documentos: function () { return Promise.resolve(DOCS.map(function (x) { return { id: x.id, nome: x.nome, categoria: x.cat, competencia: x.comp, data: x.data }; })); },
@@ -493,10 +493,12 @@
     main.innerHTML = '<h2 class="p-h">Solicitações de ' + esc(T.nome.replace(/^Solicitação /, '')) + '</h2>' +
       '<div class="p-tablewrap"><bento-toolbar class="p-toolbar"><button type="button" data-add>⊕ Adicionar</button><button type="button" data-ref>↻ Atualizar</button><span class="sp"></span><label class="p-chk"><input type="checkbox" id="onlyPending"> Apenas pendentes</label></bento-toolbar>' +
       '<div class="p-scroll"><table class="p-table"><thead><tr><th>ID</th><th>Situação</th><th>Último Trâmite</th><th>Empregado</th><th>Assunto</th><th>Data</th></tr></thead><tbody>' +
-      (items.length ? items.map(function (r) { return '<tr><td>' + r.id + '</td><td><span class="p-st ' + (/aguard/i.test(r.status) ? 'warn' : /conclu/i.test(r.status) ? 'ok' : '') + '">' + esc(r.status) + '</span></td><td>' + esc(r.tramite || '') + '</td><td>' + esc(r.empregado || '—') + '</td><td>' + esc(r.assunto || '') + '</td><td class="num">' + esc(r.data) + '</td></tr>'; }).join('') : '<tr><td colspan="6" class="p-none">Você ainda não possui solicitações. Por favor clique em adicionar para começar.</td></tr>') +
+      (items.length ? items.map(function (r) { return '<tr data-id="' + r.id + '" style="cursor:pointer"><td>' + r.id + '</td><td><span class="p-st ' + (/aguard/i.test(r.status) ? 'warn' : /conclu/i.test(r.status) ? 'ok' : '') + '">' + esc(r.status) + '</span></td><td>' + esc(r.tramite || '') + '</td><td>' + esc(r.empregado || '—') + '</td><td>' + esc(r.assunto || '') + '</td><td class="num">' + esc(r.data) + '</td></tr>'; }).join('') : '<tr><td colspan="6" class="p-none">Você ainda não possui solicitações. Por favor clique em adicionar para começar.</td></tr>') +
       '</tbody></table></div></div>';
     main.querySelector('[data-add]').addEventListener('click', function () { go(SR + slug + '/add'); });
     main.querySelector('[data-ref]').addEventListener('click', function () { renderList(slug); });
+    // clicar na linha abre a solicitação (a rota do detalhe no Onvio real é a calibrar)
+    main.querySelectorAll('tr[data-id]').forEach(function (tr) { tr.addEventListener('click', function () { go(SR + slug + '/' + tr.dataset.id); }); });
   }
   function renderForm(slug) {
     var T = TYPES[slug];
@@ -587,8 +589,28 @@
     var T = TYPES[slug]; var r = (db.items[slug] || []).filter(function (x) { return String(x.id) === String(id); })[0];
     if (!r) { renderList(slug); return; }
     main.innerHTML = '<h2 class="p-h">Solicitação nº ' + esc(r.id) + ' — ' + esc(T.nome) + '</h2><div class="p-detail"><dl><dt>Situação</dt><dd>' + esc(r.status) + '</dd><dt>Empregado</dt><dd>' + esc(r.empregado || '—') + '</dd><dt>Assunto</dt><dd>' + esc(r.assunto) + '</dd><dt>Data</dt><dd>' + esc(r.data) + '</dd></dl>' +
-      '<h3 class="p-sub">Trâmites</h3><p>' + esc(r.tramite || '') + '</p><button type="button" class="p-btn-dark" data-back>VOLTAR</button></div>';
-    main.querySelector('[data-back]').addEventListener('click', function () { go(SR + slug); });
+      '<h3 class="p-sub">Trâmites</h3><p>' + esc(r.tramite || '') + '</p></div>';
+    // caixa de resposta (plausível, A CALIBRAR: a tela do detalhe do Onvio real não foi mapeada) — sem <form>, como um bloco do detalhe
+    var resp = h('section', { class: 'p-detail p-resposta', 'data-resposta': true });
+    resp.innerHTML = '<h3 class="p-sub">Responder</h3>';
+    var campo = h('div', { class: 'p-field wide' });
+    var txt = h('textarea', { id: 'resp-' + r.id, formcontrolname: 'topicDescription', rows: 4 });
+    campo.appendChild(h('label', { for: txt.id, class: 'p-label' }, 'Mensagem')); campo.appendChild(txt); resp.appendChild(campo);
+    var fctx = { files: function () { return []; } };
+    resp.appendChild(fileSel(fctx));
+    var btns = h('div', { class: 'p-form-btns' });
+    var responder = h('button', { type: 'button', class: 'p-btn-dark', 'data-responder': true }, 'RESPONDER');
+    var voltar = h('button', { type: 'button', class: 'btn btn-outline', 'data-back': true }, 'VOLTAR');
+    btns.appendChild(responder); btns.appendChild(voltar); resp.appendChild(btns);
+    main.appendChild(resp);
+    responder.addEventListener('click', function () {
+      if (!txt.value.trim() && !fctx.files().length) { toast('Escreva a resposta ou anexe um arquivo.', 'err'); return; }
+      r.status = 'Em andamento'; r.data = new Date().toLocaleDateString('pt-BR');
+      r.tramite = 'Cliente: ' + txt.value.trim() + (fctx.files().length ? ' (' + fctx.files().length + ' anexo(s))' : '');
+      persist(); go(SR + slug);
+      toast('Resposta incluída nesta simulação. Nada foi enviado ao escritório.', 'ok');
+    });
+    voltar.addEventListener('click', function () { go(SR + slug); });
   }
   function renderDocs() {
     main.innerHTML = '<h2 class="p-h">Documentos</h2><div class="p-scroll"><table class="p-table"><thead><tr><th>Documento</th><th>Competência</th><th>Publicado</th></tr></thead><tbody>' +

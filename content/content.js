@@ -253,7 +253,8 @@
           post({ type: 'arquivo', id: m.id, arquivo: packed }, packed ? [packed.buf] : []);
           break;
         }
-        case 'abrirNoPortal': await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id }); break;
+        case 'abrirNoPortal': { const ok = await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id, ok }); break; }
+        case 'prepararResposta': post({ type: 'respostaPreparada', id: m.id, ...(await prepararResposta(m)) }); break;
         case 'setBadge': setBadge(m.n); break;
         // "Ver no portal" no aviso: o portal fica coberto pela plataforma, o botão mostra a página com o painel ao lado
         case 'toast': toast(m.text, m.ms || 2600, m.acao === 'verPortal' ? { rotulo: 'Ver no portal', fn: () => setModo('painel') } : null); break;
@@ -1121,16 +1122,67 @@
     }
     return true;
   }
-  /** "Ver no portal": leva o portal à tela certa e mostra o portal com o painel encaixado. */
+  /** "Ver no portal" / "Responder no portal" / "Anexar no portal": leva o portal à solicitação certa (procura o nº na lista, como o
+   *  Control Onvio) e mostra o portal com o painel encaixado. Sem achar o nº, fica na lista e avisa. */
   async function abrirNoPortal(m) {
+    let aberta = false;
     if (m.area === 'documentos') {
       if (plat.navigate && plat.rotaDocumentos) plat.navigate(plat.rotaDocumentos);
       else [...document.querySelectorAll('a, button')].find(e => /^\s*documentos\s*$/i.test(e.innerText || '') && !e.closest('form'))?.click();   // a calibrar
     } else if (m.slug) {
-      const detalhe = m.id && (plat.detalhe || rules?.config?.rotaDetalheSolicitacao);
-      await navigate(detalhe ? `${m.slug}/${m.id}` : m.slug, false);
+      // m.id é o número do pedido no canal: o nº da solicitação vem em m.numero
+      const numero = String(m.numero || '').trim();
+      aberta = !!numero && await abrirSolicitacao(m.slug, numero);
+      if (!aberta) {
+        const rota = numero && (plat.detalhe || rules?.config?.rotaDetalheSolicitacao);
+        await navigate(rota ? `${m.slug}/${numero}` : m.slug, false);
+        aberta = !!rota;
+        if (!rota && numero) toast(`Abri a lista: procure a solicitação nº ${numero}.`, 6000);
+      }
     }
     setModo('painel');
+    return aberta;
+  }
+  /** Abre a solicitação pelo nº: abre a lista do tipo e clica na célula com o número (nunca em botões da linha).
+   *  A calibrar no Onvio real: lista paginada, se o clique é na linha ou num link, e a rota do detalhe. */
+  async function abrirSolicitacao(slug, numero) {
+    const alvo = String(numero || '').trim(); if (!alvo) return false;
+    await navigate(slug, false);
+    const lista = currentPath();
+    const celula = () => [...mainEl().querySelectorAll('tbody td, [role=gridcell]')].find(c => (c.innerText || '').trim() === alvo && !c.closest('form'));
+    let c = null;
+    for (let i = 0; i < 24 && !(c = celula()); i++) await sleep(250);
+    if (!c) return false;
+    (c.querySelector('a, [role=link]') || c).click();
+    for (let i = 0; i < 24; i++) { await sleep(250); if (currentPath() !== lista || !celula()) return true; }
+    return false;
+  }
+  /* ============ Preparar a resposta (lote 6) ============ */
+  /* Abre a solicitação certa e deixa um texto sugerido (das regras, escolhido pelo cliente no painel — nunca o texto livre, nunca
+     CID) na caixa de resposta, com os arquivos anexados. NUNCA clica em responder/enviar: isso é sempre do cliente, no portal.
+     Não escreve nada pela API. A tela do detalhe e a caixa de resposta do Onvio real não foram mapeadas: a calibrar (regras:
+     config.respostaPortal). */
+  function caixaResposta() {
+    const sels = [].concat(rules?.config?.respostaPortal?.caixa || ['[data-resposta] textarea', 'textarea[formcontrolname=topicDescription]']);
+    for (const s of sels) { try { const el = [...mainEl().querySelectorAll(s)].find(e => !e.disabled && !e.closest('#ct-assistente-host')); if (el) return el; } catch { /* seletor inválido nas regras */ } }
+    return null;
+  }
+  async function prepararResposta(m) {
+    const files = unpackFiles(m.files);
+    const aberta = await abrirNoPortal({ slug: m.slug, numero: m.numero });
+    if (!aberta) return { ok: false, motivo: 'não achei a solicitação na lista do portal' };
+    let caixa = null;
+    for (let i = 0; i < 24 && !(caixa = caixaResposta()); i++) await sleep(250);
+    if (!caixa) return { ok: false, motivo: 'não achei a caixa de resposta' };
+    await reveal(caixa);
+    const atual = (caixa.value || '').trim();
+    if (!atual && m.texto) setNative(caixa, String(m.texto));   // o que o cliente já escreveu fica como está
+    let anexos = null;
+    if (files.length) anexos = await attachFiles(files);
+    caixa.scrollIntoView({ block: 'center', behavior: 'instant' }); mark(caixa); caixa.focus?.();
+    sendContext();
+    toast(`Resposta preparada: confira e clique em ${rules?.config?.respostaPortal?.botaoResponder || 'RESPONDER'} no portal.`, 9000);
+    return { ok: true, textoPosto: !atual && !!m.texto, anexados: anexos?.aceitos || [], recusados: anexos?.recusados || [] };
   }
   /* O portal abriu uma janela (ou a sessão expirou) enquanto está coberto pela plataforma */
   let atencaoVista = '';
