@@ -17,6 +17,15 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.10 — rotinas do mês e respostas
+
+- **Novo pedido:** a leitura (arrastar/colar/escrever) aparece ali mesmo; o tipo escolhido leva os arquivos e relê com a lista de funcionários.
+- **Solicitação Geral:** `tipos.geral.catalogo` liga palavras a departamento e assunto (e documentos `alvara`/`cnd`); o departamento casa com a lista do portal (`E.departamentoDaLista`). Revisar com o escritório.
+- **Variáveis da folha:** `config.variaveisFolha` (dia de início do aviso e dia limite) põe o cartão no Hoje; some quando o portal já tem a competência.
+- **Pedir de novo:** `campos.*.api`/`apiValores` e `config.pedirDeNovo` dizem o que vem do detalhe (sem datas, sem CID/médico/CRM; cadastro só com `camposDaEmpresa`).
+- **Rubricas:** `tipos.rubricas.apelidosEventos` e `tipos.rubricas.grade` — "Lançar na grade" (a grade real ainda não foi mapeada).
+- **Responder:** `config.respostaPortal` (mensagens sugeridas); "Responder/Anexar no portal" procuram o nº na lista. O envio é sempre do cliente.
+
 ## Novidades da 2.9 — o leitor não preenche errado
 
 - **Com dúvida, não preenche:** valor lido com confiança abaixo de `config.leitor` (0,6) aparece como "Li no documento… [Usar]" e não vai ao portal, nem ao assunto ou à descrição. Foto com OCR ruim vira só sugestões (abaixo de 75) ou pede outra foto (abaixo de 45).

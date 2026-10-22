@@ -63,7 +63,7 @@ function requestFill(msg, transfer = [], aoAvancar = null, inatividade = 25000) 
   });
 }
 // agir no portal (abrir, preencher, enviar) com uma janela do portal aberta: a plataforma avisa por cima (S.antesDeAgir)
-const AGIR_NO_PORTAL = new Set(['navigate', 'fill', 'requestSubmit']);
+const AGIR_NO_PORTAL = new Set(['navigate', 'fill', 'requestSubmit', 'preencherGrade', 'prepararResposta']);
 const send = (msg, transfer) => { if (AGIR_NO_PORTAL.has(msg?.type)) S.antesDeAgir?.(msg); S.port?.postMessage(msg, transfer || []); };
 const packFiles = async (files) => Promise.all(files.map(async f => ({ name: f.name, type: f.type, lastModified: f.lastModified, buf: await f.arrayBuffer() })));
 const toast = (text) => send({ type: 'toast', text });
@@ -386,8 +386,16 @@ function renderInicio() {
    Só preenche a solicitação aberta quando o texto é sobre ela (ou o cliente escolhe isso). */
 const mesmaFamilia = (a, b) => a === b || FAMILIAS.some(f => f.includes(a) && f.includes(b));
 /* Cartões de escolha (aviso ou cálculo, com ou sem atestado, empate) vêm das regras: config.textoLivre.escolhas (E.escolhaPara). */
-/** Mostra o cartão do texto livre. */
-function mostrarSugestao() { if (S.view !== 'inicio') setView('inicio'); else renderSugestao(); }
+/** Mostra o cartão do texto livre ou do documento lido. Na plataforma ele fica no Novo pedido (onde estão a escolha do
+ *  tipo, o texto livre e o documento): com um formulário aberto, volta para a escolha; no painel encaixado, no Início. */
+function mostrarSugestao() {
+  if (S.modo === 'plataforma' && S.plat) {
+    if (S.ctx.route?.mode === 'form') S.plat.escolher = true;
+    if (S.view !== 'preencher' || !$('#sugestao')) setView('preencher'); else renderSugestao();
+    return;
+  }
+  if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+}
 /** Campos do cartão com o que o cliente trocou ou descartou nele (ajustes: valor novo ou null). */
 function camposComAjustes(s) {
   const c = { ...(s.analise?.campos || {}) };
@@ -445,6 +453,7 @@ async function entenderTexto(texto, { origem = 'inicio', mesmoAssim = false } = 
     await loadEmpregados(tipoAberto);
     const r = E.parseFreeText(texto, S.rules, { employees: w(tipoAberto).empregados, tipoAtual: tipoAberto });
     anotarCandidatos(tipoAberto, texto, r.campos);
+    if (tipoAberto === 'rubricas' && r.linhas?.length) { w(tipoAberto).linhasRubricas = r.linhas; w(tipoAberto).grade = null; }
     $('#free-sug') && ($('#free-sug').innerHTML = '');
     aplicarCampos(tipoAberto, r.campos, 'sua descrição');
     if (r.dicas?.length) toast(r.dicas.join(' '));
@@ -474,6 +483,15 @@ function juntarCampos(tipo, campos, fonte) {
     if (k === 'empregado' && W.empregados.length) { const m = E.bestMatch(c.valor, W.empregados, 0.6); if (!m) continue; c.valor = m.option; }
     W.valores[k] = { valor: c.valor, conf: c.conf ?? 0.6, fonte: c.fonte || fonte };
   }
+  ajustarDepartamento(tipo);
+}
+/** Solicitação Geral: o departamento do catálogo das regras ("Pessoal") vira o nome da lista do portal ("DEPARTAMENTO PESSOAL"),
+ *  pelos sinônimos de tipos.geral.catalogo.departamentos. Sem a lista carregada, fica como está (o portal escolhe a parecida). */
+function ajustarDepartamento(tipo) {
+  const W = w(tipo); const v = W.valores.departamento;
+  if (tipo !== 'geral' || !v?.valor || W.editados.has('departamento') || !W.opcoes.departamento?.length) return;
+  const o = E.departamentoDaLista(v.valor, W.opcoes.departamento, S.rules);
+  if (o && o !== v.valor) W.valores.departamento = { ...v, valor: o };
 }
 function aplicarCampos(tipo, campos, fonte) {
   juntarCampos(tipo, campos, fonte);
@@ -500,6 +518,8 @@ async function empresaDoPedido(tipo, { sugerida = '' } = {}) {
 }
 async function openTipo(tipo, { manter = false, semEmpresa = false, sugerida = '' } = {}) {
   const t = S.rules.tipos[tipo]; if (!t) return;
+  // documento lido fora de um formulário (cartão na tela) e o cliente escolheu o pedido: os arquivos vão junto
+  if (!manter && !standalone && S.sugestao?.item) return abrirComArquivos(tipo, S.sugestao);
   if (!manter) S.sugestao = null;
   if (standalone) return;
   // com mais de uma empresa no acesso, pergunta para qual é o pedido e troca no portal antes de abrir o formulário
@@ -508,7 +528,26 @@ async function openTipo(tipo, { manter = false, semEmpresa = false, sugerida = '
   S.abrindo = tipo;
   await request({ type: 'navigate', slug: t.slug, add: true }, 12000);
   w(tipo);
+  if (S.plat) S.plat.escolher = false;   // plataforma: mostra o formulário (mesmo se este pedido já estava aberto)
   setView('preencher');
+}
+/** Abre o pedido com os arquivos do cartão (o documento lido e os demais do lote) e relê cada um com a lista de
+ *  funcionários desta solicitação. Vale para "Abrir … e preencher" e para o tipo que o cliente escolheu quando o
+ *  documento não foi reconhecido — o arquivo não se perde. */
+async function abrirComArquivos(tipo, s) {
+  if (!(await empresaDoPedido(tipo))) return false;      // desistiu da empresa: o cartão continua na tela
+  const todos = [s.item, ...(s.extras || [])].filter(Boolean);
+  for (let k = 0; k < 300 && todos.some(x => x.status === 'lendo'); k++) await esperar(200);   // ainda lendo: espera terminar
+  comecarDoZeroSeAbandonado(tipo);
+  juntarArquivos(w(tipo), todos);
+  if (S.sugestao === s) S.sugestao = null;
+  await openTipo(tipo, { manter: true, semEmpresa: true });
+  for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
+  if (S.ctx.tipo !== tipo) return false;
+  await loadEmpregados(tipo);
+  for (const x of todos) { if (x.texto) x.analise = analisarItem(x, tipo, w(tipo).empregados); applyAnalysis(tipo, x, { preencher: false }); }
+  if (S.prefs.preencherAoLer) await fillPortal(tipo, { silencioso: true });
+  return true;
 }
 
 /* =================== Leitura de arquivos =================== */
@@ -551,7 +590,7 @@ async function handleFiles(files, origem) {
     const item = novoItem(file, origem);
     if (noForm) {
       S.sugestao = { item, analise: null };
-      if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+      mostrarSugestao();
       await processItem(item, null);
       renderSugestao();
     } else {
@@ -573,7 +612,8 @@ async function handleVarios(files, origem) {
   if (S.lote && !S.lote.concluido) { toast('Termine (ou pare) o lote atual antes de arrastar outros arquivos.'); return; }
   const itens = files.map(f => novoItem(f, origem));
   S.loteLeitura = { itens };
-  if (!['inicio', 'preencher'].includes(S.view)) setView(S.ctx.route?.mode === 'form' ? 'preencher' : 'inicio'); else renderLote();
+  // plataforma: a leitura aparece no Novo pedido (com um formulário aberto, nele); painel: no Início ou no Preencher
+  if (S.modo === 'plataforma' ? S.view !== 'preencher' : !['inicio', 'preencher'].includes(S.view)) setView(S.modo === 'plataforma' || S.ctx.route?.mode === 'form' ? 'preencher' : 'inicio'); else renderLote();
   for (const it of itens) { await processItem(it, null); renderLote(); }
   S.loteLeitura = null;
   const { pedidos, fora } = montarPedidos(itens);
@@ -595,7 +635,7 @@ async function handleVarios(files, origem) {
   }
   const principal = pedidos[0]?.itens[0] || itens[0];
   S.sugestao = { item: principal, extras: itens.filter(i => i !== principal) };
-  if (S.view !== 'inicio') setView('inicio'); else renderSugestao();
+  mostrarSugestao();
 }
 
 function montarPedidos(itens) {
@@ -817,26 +857,12 @@ function renderSugestao() {
       <div class="card-b">
         <p style="margin:0 0 8px">${esc(it.nome)} parece ser <b>${esc(a.documento?.nome || 'um documento')}</b>${tipo ? ` → <b>${esc(S.rules.tipos[tipo]?.nome)}</b>` : ''}.${s.extras?.length ? ` Os outros ${s.extras.length} arquivo(s) vão junto.` : ''}</p>
         ${nCampos ? `<p class="muted" style="margin:0 0 10px">${nCampos} informação(ões) encontradas: ${Object.keys(a.campos).map(k => tipoDef(tipo || 'geral')?.campos?.[k]?.rotulo).filter(Boolean).slice(0, 6).map(esc).join(', ')}${nCampos > 6 ? '…' : ''}</p>` : ''}
-        ${tipo ? `<button class="btn btn-primary btn-block" id="sug-go">Abrir ${esc(S.rules.tipos[tipo]?.nome)} e preencher ${icon('arrow', 'ic-sm')}</button>` : `<p class="muted">Não reconheci o tipo. Escolha acima o que você precisa fazer — o arquivo vai junto.</p>`}
+        ${tipo ? `<button class="btn btn-primary btn-block" id="sug-go">Abrir ${esc(S.rules.tipos[tipo]?.nome)} e preencher ${icon('arrow', 'ic-sm')}</button>` : `<p class="muted" id="sug-escolha">Não reconheci o tipo. Escolha abaixo o que você precisa fazer — ${s.extras?.length ? 'os arquivos vão' : 'o arquivo vai'} junto e eu leio de novo com a lista de funcionários.</p>`}
       </div>
     </div>`;
   $('#sug-x').addEventListener('click', () => { S.sugestao = null; renderSugestao(); });
-  $('#sug-go')?.addEventListener('click', async () => {
-    if (!(await empresaDoPedido(tipo))) return;      // desistiu da empresa: a sugestão continua na tela
-    comecarDoZeroSeAbandonado(tipo);
-    const W = w(tipo); const todos = [it, ...(s.extras || [])]; juntarArquivos(W, todos);
-    S.sugestao = null;
-    await openTipo(tipo, { manter: true, semEmpresa: true });
-    // Reanalisa com a lista de funcionários desta tela
-    setTimeout(async () => {
-      await loadEmpregados(tipo);
-      for (const x of todos) { if (x.texto) x.analise = analisarItem(x, tipo, w(tipo).empregados); applyAnalysis(tipo, x, { preencher: false }); }
-      if (S.prefs.preencherAoLer) fillPortal(tipo, { silencioso: true });
-    }, 900);
-  });
-  if (!tipo) {
-    $('#intents')?.querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => { const W = w(b.dataset.tipo); if (!W.arquivos.includes(it)) W.arquivos.push(it); }, { once: true }));
-  }
+  // os arquivos vão junto e são relidos com a lista de funcionários da solicitação (o tipo escolhido abaixo faz o mesmo: openTipo)
+  $('#sug-go')?.addEventListener('click', () => abrirComArquivos(tipo, s));
 }
 
 /** Lista "rótulo: valor" do cartão, em que cada valor pode ser trocado (clique) ou descartado (x).
@@ -987,6 +1013,8 @@ async function abrirDoTexto(el, s, destino) {
   anotarCandidatos(destino, s.texto, campos);
   // cálculo de um aviso que já está no portal: os dados do aviso entram como sugestão (o texto vale mais)
   if (s.avisoNoPortal && PAR_AVISO[destino] === s.avisoNoPortal.tipo) { const vv = E.valoresDoAviso(s.avisoNoPortal, S.rules); aplicarSugestoes(destino, vv.valores, vv.fonte); w(destino).avisoUsado = true; }
+  // variáveis da folha entendidas no texto: as linhas também podem ir para a grade do portal
+  if (destino === 'rubricas' && (s.linhas || r.linhas)?.length) { w(destino).linhasRubricas = s.linhas || r.linhas; w(destino).grade = null; }
   aplicarCampos(destino, campos, 'sua descrição');
 }
 
@@ -1048,8 +1076,12 @@ function applyAnalysis(tipo, item, opts = {}) {
     const m = E.bestMatch(W.valores.empregado.valor, W.empregados, 0.7);
     if (m) W.valores.empregado.valor = m.option; else W.valores.empregado.conf = 0.3;
   }
-  // tabela de rubricas
-  if (item.tabela && tipo === 'rubricas') W.valores.tabelaRubricas = { valor: tabelaRubricasTexto(item.tabela), conf: 0.9, fonte: item.nome };
+  ajustarDepartamento(tipo);
+  // tabela de rubricas: o texto da descrição e as linhas para a grade do portal (todas as planilhas do pedido)
+  if (item.tabela && tipo === 'rubricas') {
+    W.valores.tabelaRubricas = { valor: tabelaRubricasTexto(item.tabela), conf: 0.9, fonte: item.nome };
+    W.linhasRubricas = W.arquivos.filter(a => a.tabela && !a.removido).flatMap(a => E.linhasDaPlanilha(a.tabela, S.rules)); W.grade = null;
+  }
   // sugere outro tipo
   gerarTextos(tipo);
   if (S.view === 'preencher') render();
@@ -1071,15 +1103,7 @@ function usarDocumentoNoLugar(tipo, item) {
 }
 
 function tabelaRubricasTexto(rows) {
-  if (!rows?.length) return '';
-  const head = rows[0].map(h => E.norm(h));
-  const P = S.rules.tipos.rubricas.planilha || {};
-  const find = (names) => head.findIndex(h => names.some(n => h.includes(E.norm(n))));
-  let iE = find(P.colunasEmpregado || []), iR = find(P.colunasRubrica || []), iV = find(P.colunasValor || []);
-  const hasHeader = iE >= 0 || iR >= 0 || iV >= 0;
-  if (!hasHeader) { iE = 0; iR = 1; iV = 2; }
-  const body = hasHeader ? rows.slice(1) : rows;
-  return body.filter(r => r.some(c => String(c).trim())).map(r => `• ${r[iE] ?? ''} — ${r[iR] ?? ''}: ${r[iV] ?? ''}`).join('\n');
+  return E.linhasDaPlanilha(rows, S.rules).map(l => `• ${l.empregado} — ${l.rubrica}: ${l.valor}`).join('\n');
 }
 
 /* =================== Valores combinados =================== */
@@ -1245,7 +1269,7 @@ function renderPreencher() {
     </div>`;
   // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
   viewEl.innerHTML = plat ? `
-    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div>
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div><div id="grade-rub"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
         <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
@@ -1259,6 +1283,7 @@ function renderPreencher() {
     <div id="rascunho"></div>
     <div id="sug-cad"></div>
     <div id="dica-pedido"></div>
+    <div id="grade-rub"></div>
     ${drop}
     ${livre}
     ${arquivos}
@@ -1287,7 +1312,45 @@ function renderPreencher() {
   $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
-  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo);
+  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo); renderGradeRubricas(tipo);
+}
+/* Rubricas (lote 6): as linhas da planilha, do texto ou do mês passado vão para a grade do portal quando o cliente pede
+   ("Lançar na grade"): o nome da rubrica casa com o evento da empresa pelos apelidos das regras; o que não casar fica para ele.
+   A grade real ainda não foi mapeada (a calibrar); o Desfazer volta as células e o envio é sempre pelo botão do portal. */
+function renderGradeRubricas(tipo) {
+  const el = $('#grade-rub'); if (!el) return;
+  const W = w(tipo); const l = W.linhasRubricas || [];
+  if (tipo !== 'rubricas' || !l.length || tipoDef(tipo)?.grade?.ativo === false) { el.innerHTML = ''; return; }
+  const g = W.grade;
+  const pessoas = new Set(l.map(x => E.norm(x.empregado)).filter(Boolean)).size;
+  const res = g?.lendo ? `<p class="muted" style="margin:6px 0 0">Lançando na grade do portal…</p>`
+    : g?.erro ? `<p class="muted" style="margin:6px 0 0">${esc(g.erro)}</p>`
+    : g?.resultado ? `<ul class="tips" style="margin-top:6px"><li>${g.resultado.n} valor(es) lançado(s) na grade. Confira no portal antes de enviar.</li>
+        ${g.semEvento?.length ? `<li>Sem evento da empresa para: ${esc(g.semEvento.join(', '))} — lance na grade ou fale com o escritório.</li>` : ''}
+        ${g.semEmpregado?.length ? `<li>Não achei na grade: ${esc(g.semEmpregado.join(', '))}.</li>` : ''}
+        ${g.resultado.faltaram?.length ? `<li>${g.resultado.faltaram.length} célula(s) não aceitaram o valor.</li>` : ''}</ul>` : '';
+  el.innerHTML = `<div class="note grade-rub">${icon('sheet')}<div style="flex:1;min-width:0"><b>Lançar na grade do portal</b> <small class="muted">— ${l.length} valor(es)${pessoas ? ` de ${pessoas} funcionário(s)` : ''}; os nomes das rubricas são casados com os eventos da empresa.</small>${res}
+    <div class="actions" style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" id="grade-lancar"${g?.lendo ? ' disabled' : ''}>${g?.resultado ? 'Lançar de novo' : 'Lançar na grade'}</button></div></div></div>`;
+  $('#grade-lancar').addEventListener('click', () => lancarNaGrade(tipo));
+}
+async function lancarNaGrade(tipo) {
+  const W = w(tipo);
+  if (!W.linhasRubricas?.length || S.ctx.route?.mode !== 'form' || S.ctx.tipo !== tipo) return;
+  W.grade = { lendo: true }; renderGradeRubricas(tipo);
+  for (let k = 0; k < 150 && S.preenchendo; k++) await esperar(200);   // um preenchimento em andamento termina antes
+  await enviarPendenteAgora(tipo);   // a competência digitada aqui vai antes (o portal pede antes de adicionar os funcionários)
+  let g = null, r = null, plano = null;
+  S.preenchendo = true;
+  try {
+    g = await request({ type: 'lerGrade', adicionar: true }, 20000);
+    if (g?.ok) {
+      plano = E.montarGrade(W.linhasRubricas, g.eventos, g.empregados, S.rules);
+      r = plano.celulas.length ? await request({ type: 'preencherGrade', celulas: plano.celulas }, 30000) : { ok: true, n: 0, faltaram: [] };
+    }
+  } finally { S.preenchendo = false; }
+  W.grade = g?.ok ? { ...plano, resultado: r || { n: 0, faltaram: plano.celulas } }
+    : { erro: `Não consegui lançar na grade: ${g?.motivo || 'o portal não respondeu'}. Os valores continuam na descrição para o escritório.` };
+  renderGradeRubricas(tipo);
 }
 /* Cadastro: "Como na última admissão", padrões da empresa e experiência 45 + 45 — sugestões que o cliente usa ou não.
    Só campos da empresa (config.camposDaEmpresa); só aparece o que ainda está vazio aqui e no portal. */
@@ -1823,6 +1886,7 @@ async function fillPortal(tipo, { silencioso = false, daPlataforma = false, so =
     for (const [k, v] of Object.entries(W.desfeitos || {})) if (!W.valores[k]?.valor && !W.editados.has(k)) W.valores[k] = v;
     W.desfeitos = null;
   } else if (silencioso && W.pausarAuto) return;       // o cliente desfez: só preenche de novo se ele pedir
+  ajustarDepartamento(tipo);
   gerarTextos(tipo);
   if (silencioso && telaDiferente(tipo) && !W.forcarPreenchimento) { renderModoSeguro(tipo); return; }
   const values = {};
@@ -2019,6 +2083,7 @@ function aoDesfazer(m) {
   }
   W.portalVisto = null;
   for (const n of m.anexos || []) { const a = W.arquivos.find(x => E.norm(x.nome) === E.norm(n)); if (a) a.anexado = false; }
+  if (m.grade) W.grade = null;   // a grade de rubricas voltou: o botão "Lançar na grade" volta também
   W.pausarAuto = true;
   W.resultados = null;
   if (S.view === 'preencher') render();
@@ -2309,11 +2374,8 @@ function renderRepetir() {
     // inclusive o que tinha ficado guardado de um cadastro começado
     const cadastro = !!E.camposDaEmpresa(h.tipo, S.rules);
     if (cadastro && S.work[h.tipo]) { const { empregados, opcoes } = S.work[h.tipo]; S.work[h.tipo] = null; Object.assign(w(h.tipo), { empregados, opcoes }); }
-    const t = tipoDef(h.tipo); const W = w(h.tipo);
-    for (const [k, v] of Object.entries(E.valoresReaproveitaveis(h.tipo, h.valores, S.rules))) {
-      if (k === 'dias' || ['data', 'competencia'].includes(t.campos[k]?.tipo)) continue;
-      W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };
-    }
+    const W = w(h.tipo);
+    for (const [k, v] of Object.entries(E.valoresParaRepetir(h.tipo, h.valores, S.rules))) W.valores[k] = { valor: v, conf: 1, fonte: 'última solicitação' };
     W.rascunhoVisto = true;
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true, semEmpresa: true });
@@ -2483,7 +2545,8 @@ async function renderHistorico() {
     const h = historico[+b.dataset.i];
     if (!(await empresaDoPedido(h.tipo, { sugerida: h.empresa }))) return;
     const W = w(h.tipo);
-    for (const [k, v] of Object.entries(h.valores)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
+    // outro pedido a partir do histórico: a regra do Repetir (sem datas; num cadastro, só os campos da empresa)
+    for (const [k, v] of Object.entries(E.valoresParaRepetir(h.tipo, h.valores, S.rules))) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     gerarTextos(h.tipo, true);
     await openTipo(h.tipo, { manter: true, semEmpresa: true });
   }));
@@ -2689,7 +2752,7 @@ const P = montarPlataforma({
   setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
   renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
   prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado, copiarDiagnostico,
-  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar, renderFieldsOnly
+  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar, renderFieldsOnly, packFiles
 });
 
 /* =================== Início =================== */

@@ -189,6 +189,17 @@
           break;
         }
         case 'undo': { const r = await desfazer(); post({ type: 'undoResult', id: m.id, ...r }); break; }
+        // grade do Lançamento de Rubricas (lote 6; a grade real não foi mapeada — a calibrar). Nunca envia.
+        case 'lerGrade': post({ type: 'grade', id: m.id, ...(await comboLock(() => lerGrade(!!m.adicionar))) }); break;
+        case 'preencherGrade': {
+          preenchendoAgora = true;
+          let r; try { r = await comboLock(() => preencherGrade(m.celulas || [])); } finally { preenchendoAgora = false; }
+          if (modo === 'plataforma') iframe?.focus();
+          post({ type: 'gradePreenchida', id: m.id, ...r });
+          sendContext(); avisarDesfazer();
+          if (r.mudou) toast('Grade preenchida pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });
+          break;
+        }
         case 'attach': { const a = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n: a.n, anexos: a }); sendContext(); break; }
         case 'getOptions': {
           const opts = await comboLock(() => comboOptions(m.locator, m.force));
@@ -242,7 +253,8 @@
           post({ type: 'arquivo', id: m.id, arquivo: packed }, packed ? [packed.buf] : []);
           break;
         }
-        case 'abrirNoPortal': await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id }); break;
+        case 'abrirNoPortal': { const ok = await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id, ok }); break; }
+        case 'prepararResposta': post({ type: 'respostaPreparada', id: m.id, ...(await prepararResposta(m)) }); break;
         case 'setBadge': setBadge(m.n); break;
         // "Ver no portal" no aviso: o portal fica coberto pela plataforma, o botão mostra a página com o painel ao lado
         case 'toast': toast(m.text, m.ms || 2600, m.acao === 'verPortal' ? { rotulo: 'Ver no portal', fn: () => setModo('painel') } : null); break;
@@ -753,6 +765,55 @@
     return { ok: true, resultados, anexados: anexos?.n || 0, anexos, depois, mudou };
   }
 
+  /* ============ Grade do Lançamento de Rubricas (lote 6) ============ */
+  /* A grade real ainda NÃO foi mapeada (a empresa de teste não tem eventos): o simulador reproduz uma grade plausível — tabela
+     com o funcionário na 1ª coluna e um evento por coluna, um campo por célula. Seletores nas regras (tipos.rubricas.grade),
+     a calibrar no Onvio real. Só escreve nos campos da grade (com Desfazer); quem envia é o cliente, pelo botão do portal. */
+  const cfgGrade = () => ({ tabela: "table[aria-label='Rubricas'], [role=grid][aria-label='Rubricas']", botaoAdicionarTodos: 'Adicionar todos os funcionários', colunaEmpregado: 0, ...(rules?.tipos?.rubricas?.grade || {}) });
+  const acharGrade = () => mainEl().querySelector(cfgGrade().tabela);
+  function lerTabelaGrade(tab) {
+    const ce = +cfgGrade().colunaEmpregado || 0;
+    const titulos = [...tab.querySelectorAll('thead th, [role=columnheader]')].map(th => (th.innerText || '').trim());
+    const linhas = [...tab.querySelectorAll('tbody tr, [role=row]')].filter(r => r.querySelector('input'));
+    const celulas = (r) => [...r.querySelectorAll('td, [role=gridcell], [role=rowheader]')];
+    const empregados = linhas.map(r => (celulas(r)[ce]?.innerText || '').trim());
+    return { titulos, linhas, empregados, celulas, eventos: titulos.filter((_, i) => i !== ce) };
+  }
+  async function lerGrade(adicionar) {
+    const r = routeInfo();
+    if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, motivo: 'abra o Lançamento de Rubricas' };
+    let tab = acharGrade();
+    if ((!tab || !lerTabelaGrade(tab).linhas.length) && adicionar) {
+      const alvo = norm(cfgGrade().botaoAdicionarTodos);
+      const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
+      if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
+      await reveal(b); b.click();
+      for (let i = 0; i < 20 && !(tab = acharGrade()); i++) await sleep(250);
+    }
+    if (!tab) return { ok: false, motivo: 'a grade não apareceu (a competência está preenchida?)' };
+    const g = lerTabelaGrade(tab);
+    return { ok: true, eventos: g.eventos, empregados: g.empregados };
+  }
+  /** celulas: [{ empregado, evento, valor }] com os nomes exatos da grade (o painel casa os nomes antes). */
+  async function preencherGrade(celulas) {
+    const tab = acharGrade(); if (!tab) return { ok: false, n: 0, mudou: 0, faltaram: celulas };
+    await reveal(tab);
+    const g = lerTabelaGrade(tab);
+    const antes = [], faltaram = [];
+    for (const c of celulas) {
+      const i = g.empregados.findIndex(e => norm(e) === norm(c.empregado));
+      const col = g.titulos.findIndex(t => norm(t) === norm(c.evento));
+      const inp = i >= 0 && col >= 0 ? g.celulas(g.linhas[i])[col]?.querySelector('input') : null;
+      if (!inp || inp.disabled || inp.readOnly) { faltaram.push(c); continue; }
+      const v0 = inp.value || '';
+      if (v0 === String(c.valor)) continue;
+      setNative(inp, String(c.valor)); mark(inp); await sleep(30);
+      antes.push({ empregado: c.empregado, evento: c.evento, antes: v0 });
+    }
+    if (antes.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: antes }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
+    return { ok: true, n: celulas.length - faltaram.length, mudou: antes.length, faltaram };
+  }
+
   /* ============ Desfazer o último preenchimento ============ */
   const desfazerPilha = [];
   const avisarDesfazer = () => { const n = desfazerPilha.filter(d => d.path === currentPath()).length; post({ type: 'undoState', n }); };
@@ -805,12 +866,21 @@
         } catch { falhas.push(k); }
       }
       for (const n of d.anexos) { if (await removerAnexo(n)) anexos.push(n); else falhas.push('anexo:' + n); }
+      // grade de rubricas: cada célula volta ao valor de antes
+      const tab = d.grade?.length ? acharGrade() : null;
+      const g = tab ? lerTabelaGrade(tab) : null;
+      for (const c of d.grade || []) {
+        const i = g ? g.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1;
+        const col = g ? g.titulos.findIndex(t => norm(t) === norm(c.evento)) : -1;
+        const inp = i >= 0 && col >= 0 ? g.celulas(g.linhas[i])[col]?.querySelector('input') : null;
+        if (inp) setNative(inp, c.antes); else falhas.push('grade:' + c.evento);
+      }
     });
     sendContext(); avisarDesfazer();
     toast(falhas.length ? `Desfeito em parte: confira ${falhas.length} item(ns) no formulário.` : 'Preenchimento desfeito: o formulário voltou a como estava.', 4000);
     // os valores que voltaram: a plataforma mostra o mesmo que o portal
     const valores = Object.fromEntries(campos.map(k => [k, d.antes[k] || '']));
-    post({ type: 'undone', campos, anexos, falhas, valores });
+    post({ type: 'undone', campos, anexos, falhas, valores, grade: (d.grade || []).length });
     return { ok: !falhas.length, campos, anexos, falhas, valores };
   }
 
@@ -1052,16 +1122,67 @@
     }
     return true;
   }
-  /** "Ver no portal": leva o portal à tela certa e mostra o portal com o painel encaixado. */
+  /** "Ver no portal" / "Responder no portal" / "Anexar no portal": leva o portal à solicitação certa (procura o nº na lista, como o
+   *  Control Onvio) e mostra o portal com o painel encaixado. Sem achar o nº, fica na lista e avisa. */
   async function abrirNoPortal(m) {
+    let aberta = false;
     if (m.area === 'documentos') {
       if (plat.navigate && plat.rotaDocumentos) plat.navigate(plat.rotaDocumentos);
       else [...document.querySelectorAll('a, button')].find(e => /^\s*documentos\s*$/i.test(e.innerText || '') && !e.closest('form'))?.click();   // a calibrar
     } else if (m.slug) {
-      const detalhe = m.id && (plat.detalhe || rules?.config?.rotaDetalheSolicitacao);
-      await navigate(detalhe ? `${m.slug}/${m.id}` : m.slug, false);
+      // m.id é o número do pedido no canal: o nº da solicitação vem em m.numero
+      const numero = String(m.numero || '').trim();
+      aberta = !!numero && await abrirSolicitacao(m.slug, numero);
+      if (!aberta) {
+        const rota = numero && (plat.detalhe || rules?.config?.rotaDetalheSolicitacao);
+        await navigate(rota ? `${m.slug}/${numero}` : m.slug, false);
+        aberta = !!rota;
+        if (!rota && numero) toast(`Abri a lista: procure a solicitação nº ${numero}.`, 6000);
+      }
     }
     setModo('painel');
+    return aberta;
+  }
+  /** Abre a solicitação pelo nº: abre a lista do tipo e clica na célula com o número (nunca em botões da linha).
+   *  A calibrar no Onvio real: lista paginada, se o clique é na linha ou num link, e a rota do detalhe. */
+  async function abrirSolicitacao(slug, numero) {
+    const alvo = String(numero || '').trim(); if (!alvo) return false;
+    await navigate(slug, false);
+    const lista = currentPath();
+    const celula = () => [...mainEl().querySelectorAll('tbody td, [role=gridcell]')].find(c => (c.innerText || '').trim() === alvo && !c.closest('form'));
+    let c = null;
+    for (let i = 0; i < 24 && !(c = celula()); i++) await sleep(250);
+    if (!c) return false;
+    (c.querySelector('a, [role=link]') || c).click();
+    for (let i = 0; i < 24; i++) { await sleep(250); if (currentPath() !== lista || !celula()) return true; }
+    return false;
+  }
+  /* ============ Preparar a resposta (lote 6) ============ */
+  /* Abre a solicitação certa e deixa um texto sugerido (das regras, escolhido pelo cliente no painel — nunca o texto livre, nunca
+     CID) na caixa de resposta, com os arquivos anexados. NUNCA clica em responder/enviar: isso é sempre do cliente, no portal.
+     Não escreve nada pela API. A tela do detalhe e a caixa de resposta do Onvio real não foram mapeadas: a calibrar (regras:
+     config.respostaPortal). */
+  function caixaResposta() {
+    const sels = [].concat(rules?.config?.respostaPortal?.caixa || ['[data-resposta] textarea', 'textarea[formcontrolname=topicDescription]']);
+    for (const s of sels) { try { const el = [...mainEl().querySelectorAll(s)].find(e => !e.disabled && !e.closest('#ct-assistente-host')); if (el) return el; } catch { /* seletor inválido nas regras */ } }
+    return null;
+  }
+  async function prepararResposta(m) {
+    const files = unpackFiles(m.files);
+    const aberta = await abrirNoPortal({ slug: m.slug, numero: m.numero });
+    if (!aberta) return { ok: false, motivo: 'não achei a solicitação na lista do portal' };
+    let caixa = null;
+    for (let i = 0; i < 24 && !(caixa = caixaResposta()); i++) await sleep(250);
+    if (!caixa) return { ok: false, motivo: 'não achei a caixa de resposta' };
+    await reveal(caixa);
+    const atual = (caixa.value || '').trim();
+    if (!atual && m.texto) setNative(caixa, String(m.texto));   // o que o cliente já escreveu fica como está
+    let anexos = null;
+    if (files.length) anexos = await attachFiles(files);
+    caixa.scrollIntoView({ block: 'center', behavior: 'instant' }); mark(caixa); caixa.focus?.();
+    sendContext();
+    toast(`Resposta preparada: confira e clique em ${rules?.config?.respostaPortal?.botaoResponder || 'RESPONDER'} no portal.`, 9000);
+    return { ok: true, textoPosto: !atual && !!m.texto, anexados: anexos?.aceitos || [], recusados: anexos?.recusados || [] };
   }
   /* O portal abriu uma janela (ou a sessão expirou) enquanto está coberto pela plataforma */
   let atencaoVista = '';

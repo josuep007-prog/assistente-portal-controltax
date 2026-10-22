@@ -816,7 +816,8 @@ t('pedido: radicais, erro de digitação, pesos, palavras que não contam e cart
   assert.equal(tp('fériaz do Ronaldo'), 'avisoFerias');
   assert.equal(tp('atestdo do Ronaldo de 2 dias'), 'afastamento');
   assert.equal(tp('contratar estagiária'), 'cadastroEstagiario');
-  assert.equal(tp('folha de pagamento de setembro'), undefined);
+  // "folha de pagamento" não é rubrica: desde o lote 6 vai para a Solicitação Geral (catálogo: holerites, Pessoal)
+  assert.equal(tp('folha de pagamento de setembro'), 'geral');
   assert.equal(L('calcular rescisão do Ronaldo, aviso indenizado, último dia 20/10').tipoSugerido, 'calculoRescisao');
   const res = E.escolhaPara('calcular rescisão do Ronaldo, aviso indenizado', rules);
   assert.equal(res.id, 'rescisao'); assert.equal(E.destaqueEscolha('calcular rescisão do Ronaldo, aviso indenizado', res), 'calculoRescisao');
@@ -1087,6 +1088,118 @@ t('empresas do login: as das solicitações, as já vistas e a aberta no portal,
   // um acesso com uma empresa só não tem o que escolher
   assert.equal(E.empresasParaEscolha([], 'EMPRESA EXEMPLO LTDA', []).length, 1);
   assert.equal(E.empresasParaEscolha([{ empresa: 'A LTDA' }, { empresa: 'A LTDA' }], 'A LTDA', []).length, 1);
+});
+
+/* ---- Lote 6 ---- */
+
+t('Solicitação Geral: o texto escolhe departamento e assunto pelo catálogo, sem copiar o texto', () => {
+  const cat = rules.tipos.geral.catalogo;
+  assert.equal(cat.revisarComEscritorio, true); assert.equal(cat.calibrar, true);
+  const txt = 'Oi, a Zuleica perdeu a segunda via da guia do FGTS de setembro, podem mandar?';
+  assert.equal(E.suggestTipoByText(txt, rules, null)?.tipo, 'geral', 'sem aba própria: Solicitação Geral');
+  const r = E.parseFreeText(txt, rules, { hoje });
+  assert.equal(r.tipoSugerido, 'geral');
+  assert.equal(r.campos.departamento.valor, 'Pessoal');
+  assert.equal(r.campos.assunto.valor, 'Guia do FGTS – 2ª via – competência 09/2026');
+  assert.match(r.campos.descricao.valor, /2ª via da guia do FGTS/);
+  assert.ok(!/zuleica|perdeu|podem mandar/i.test(r.campos.descricao.valor + r.campos.assunto.valor), 'o texto do cliente não vai para a descrição nem para o assunto');
+  // sem competência no texto: a linha da competência não entra
+  assert.ok(!/Competência/.test(E.parseFreeText('segunda via da guia do FGTS', rules, { hoje }).campos.descricao.valor));
+  const dep = (s) => E.parseFreeText(s, rules, { hoje }).campos.departamento?.valor;
+  assert.equal(dep('preciso cancelar uma nota fiscal'), 'Fiscal');
+  assert.equal(dep('a guia do DAS do simples nacional'), 'Fiscal');
+  assert.equal(dep('o balancete e a DRE de setembro'), 'Contábil');
+  assert.equal(dep('o boleto dos honorários veio errado'), 'Financeiro');
+  assert.equal(dep('quero o holerite do mês passado'), 'Pessoal');
+  assert.equal(dep('informe de rendimentos 2025'), 'Pessoal');
+  // nota fiscal sem modelo de descrição: fica para o cliente
+  assert.equal(E.parseFreeText('preciso cancelar uma nota fiscal', rules, { hoje }).campos.descricao, undefined);
+  // pedido com aba própria continua indo para ela (e a Geral avisa "aba errada")
+  assert.equal(E.suggestTipoByText('Ronaldo 10 horas extras', rules, null)?.tipo, 'rubricas');
+  assert.equal(E.suggestTipoByText('oi, tudo bem?', rules, null), null);
+});
+
+t('Solicitação Geral: departamento casa com a lista do portal pelos sinônimos; alvará e CND pelo documento', () => {
+  assert.equal(E.departamentoDaLista('Pessoal', ['MASTER', 'CONTÁBIL', 'PESSOAL', 'FISCAL'], rules), 'PESSOAL');
+  assert.equal(E.departamentoDaLista('Contábil', ['MASTER', 'CONTÁBIL', 'PESSOAL'], rules), 'CONTÁBIL');
+  assert.equal(E.departamentoDaLista('Pessoal', ['DEPTO. PESSOAL', 'FISCAL'], rules), 'DEPTO. PESSOAL', 'palavra inteira dentro da opção');
+  assert.equal(E.departamentoDaLista('Societário', ['MASTER', 'ADMINISTRATIVO', 'TI'], rules), 'ADMINISTRATIVO');
+  assert.equal(E.departamentoDaLista('Financeiro', ['MASTER', 'TI'], rules), null);
+  const a = E.analyzeText('PREFEITURA MUNICIPAL DE EXEMPLO\nALVARÁ DE FUNCIONAMENTO\nInscrição municipal 000\nAtividade: comércio varejista\nValidade: 12/2027', rules, {});
+  assert.equal(a.documento.id, 'alvara'); assert.equal(a.tipoSugerido, 'geral');
+  assert.equal(a.campos.departamento.valor, 'Societário'); assert.equal(a.campos.assunto.valor, 'Alvará de funcionamento');
+  assert.ok(!/12\/2027/.test(a.campos.assunto.valor), 'validade do documento não vira competência');
+  const c = E.analyzeText('CERTIDÃO NEGATIVA DE DÉBITOS RELATIVOS AOS TRIBUTOS FEDERAIS E À DÍVIDA ATIVA DA UNIÃO\nEmitida em 01/10/2026', rules, {});
+  assert.equal(c.documento.id, 'cnd'); assert.equal(c.campos.departamento.valor, 'Fiscal');
+});
+
+t('Pedir de novo: valores do detalhe do portal sem datas, sem saúde e, no cadastro, só os da empresa', () => {
+  const af = E.valoresDoDetalhe('afastamento', { clientEmployeeExpanded: { name: 'ANA EXEMPLO' }, employeeLeaveTypeExpanded: { description: 'Licença maternidade' }, leaveDate: '2026-10-01T00:00:00',
+    cid: 'Z76', doctorName: 'DR. EXEMPLO', crm: '00000', subject: 'Afastamento – ANA EXEMPLO', description: 'CID Z76', catNumber: '123' }, rules);
+  assert.deepEqual(af, { empregado: 'ANA EXEMPLO', tipoAfastamento: 'Licença maternidade' });
+  // aviso de rescisão: o código do Onvio sem tradução fica de fora; o "aviso dado por" é traduzido pelas regras
+  const ar = E.valoresDoDetalhe('avisoRescisao', { clientEmployeeExpanded: { name: 'ANA EXEMPLO' }, grantedBy: 'EMPLOYEE', reason: 'ApprenticeContractTermination', adviceDate: '2026-10-01T00:00:00' }, rules);
+  assert.deepEqual(ar, { empregado: 'ANA EXEMPLO', avisoDadoPor: 'EMPREGADO' });
+  const cf = E.valoresDoDetalhe('calculoFerias', { clientEmployeeExpanded: { name: 'ANA EXEMPLO' }, vacationDays: 20, payBonusDays: false, payFirstInstallmentEarlier: true, initialDate: '2026-11-03T00:00:00' }, rules);
+  assert.deepEqual(cf, { empregado: 'ANA EXEMPLO', diasGozo: '20', abono: 'NÃO', adiantar13: 'SIM' });
+  // cadastro: nome, CPF, mãe e admissão nunca vão; departamento dentro de um bloco do detalhe também é achado
+  const cad = E.valoresDoDetalhe('cadastroEmpregado', { name: 'FULANA DE EXEMPLO', nationalIdentity: '000.000.000-00', motherName: 'MAE', admissionDate: '2026-09-01T00:00:00',
+    jobPositionExpanded: { description: 'VENDEDOR' }, employeeRegistrationProfessionalExpanded: { departmentExpanded: { description: 'ESCRITÓRIO' } }, daysExperience: 45, extensionDays: 45 }, rules);
+  assert.deepEqual(cad, { cargo: 'VENDEDOR', departamento: 'ESCRITÓRIO', contratoExperiencia: '45', prorrogacao: '45' });
+  // Geral: departamento do detalhe e o assunto do catálogo, sem a competência antiga
+  const g = E.valoresDoDetalhe('geral', { subject: 'Guia do FGTS – 2ª via – competência 09/2026', departmentExpanded: { name: 'PESSOAL' } }, rules);
+  assert.equal(g.departamento, 'PESSOAL'); assert.equal(g.assunto, 'Guia do FGTS – 2ª via'); assert.ok(!/09\/2026|Competência/.test(g.descricao));
+  assert.deepEqual(E.valoresDoDetalhe('afastamento', null, rules), {});
+  // o campo só vai se as regras disserem onde ele está no detalhe (campos.*.api)
+  assert.ok(Object.values(rules.tipos.afastamento.campos).filter(c => c.api).every(c => !c.sensivel && c.tipo !== 'data'));
+});
+
+t('Repetir e histórico deste computador: sem datas, sem dias do atestado e sem CID', () => {
+  const v = E.valoresParaRepetir('afastamento', { empregado: 'ANA EXEMPLO', dataAfastamento: '01/10/2026', dias: '3', tipoAfastamento: 'Doença período igual ou inferior a 15 dias', cid: 'Z76', assunto: 'x', descricao: 'y' }, rules);
+  assert.deepEqual(v, { empregado: 'ANA EXEMPLO', tipoAfastamento: 'Doença período igual ou inferior a 15 dias' });
+  assert.deepEqual(E.valoresParaRepetir('rubricas', { tipoLancamento: 'MENSAL', competencia: '09/2026' }, rules), { tipoLancamento: 'MENSAL' });
+  assert.deepEqual(Object.keys(E.valoresParaRepetir('cadastroEmpregado', { nome: 'FULANA', cpf: '1', cargo: 'VENDEDOR', dataAdmissao: '01/09/2026' }, rules)), ['cargo']);
+});
+
+t('Variáveis da folha do mês: competência, janela do aviso e quando o cartão some', () => {
+  const cfg = rules.config.variaveisFolha;
+  assert.equal(cfg.revisarComEscritorio, true); assert.equal(cfg.calibrar, true);
+  const v = E.variaveisDoMes(new Date(2026, 9, 22), rules, [], []);
+  assert.equal(v.competencia, '10/2026'); assert.equal(E.fmtDate(v.limite), '03/11/2026'); assert.equal(v.tipoLancamento, 'MENSAL');
+  assert.equal(E.variaveisDoMes(new Date(2026, 10, 2), rules, [], []).competencia, '10/2026', 'até o dia limite: a competência é a do mês anterior');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 10), rules, [], []), null, 'fora da janela do aviso');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'andamento', competencia: '10/2026' }], []), null, 'o portal já tem o lançamento');
+  assert.ok(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'concluida', competencia: '09/2026' }], []), 'lançamento de outra competência não conta');
+  assert.ok(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'cancelada', competencia: '10/2026' }], []), 'cancelado não conta');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), rules, [{ tipo: 'rubricas', estado: 'andamento', competencia: '', criado: new Date(2026, 9, 21) }], []), null, 'sem a competência na lista: pela data de criação (a calibrar)');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), rules, [], ['10/2026']), null, '"Nada a lançar este mês"');
+  // dia limite num domingo: antecipa para o dia útil anterior
+  assert.equal(E.fmtDate(E.variaveisDoMes(new Date(2026, 9, 22), { ...rules, config: { ...rules.config, variaveisFolha: { ...cfg, diaLimite: 8 } } }, [], []).limite), '06/11/2026');
+  assert.equal(E.variaveisDoMes(new Date(2026, 9, 22), { ...rules, config: { ...rules.config, variaveisFolha: { ...cfg, ativo: false } } }, [], []), null);
+});
+
+t('Rubricas: planilha → linhas, nome da rubrica → evento da empresa pelos apelidos, células da grade', () => {
+  assert.equal(rules.tipos.rubricas.apelidosEventos.revisarComEscritorio, true); assert.equal(rules.tipos.rubricas.grade.calibrar, true);
+  const rows = [['Empregado', 'Rubrica', 'Valor'], ['JOAO DA SILVA', 'HE 50', '10:30'], ['JORGE OLIVEIRA ALVES', 'Faltas (dias)', '1'], ['RONALDO DE SOUZA', 'Comissão', 'R$ 350,00'], ['RONALDO DE SOUZA', 'Bônus de Natal', '100'], ['FULANO QUE NAO EXISTE', 'Faltas', '2']];
+  const l = E.linhasDaPlanilha(rows, rules);
+  assert.equal(l.length, 5); assert.deepEqual(l[0], { empregado: 'JOAO DA SILVA', rubrica: 'HE 50', valor: '10:30' });
+  const ev = ['0001 - HORAS EXTRAS 50%', '0002 - HORAS EXTRAS 100%', '0010 - FALTAS', '0020 - COMISSÕES', '0030 - ADICIONAL NOTURNO'];
+  assert.equal(E.eventoDaRubrica('HE 50', ev, rules), '0001 - HORAS EXTRAS 50%');
+  assert.equal(E.eventoDaRubrica('Horas extras 100%', ev, rules), '0002 - HORAS EXTRAS 100%');
+  assert.equal(E.eventoDaRubrica('HE 100', ev, rules), '0002 - HORAS EXTRAS 100%');
+  assert.equal(E.eventoDaRubrica('Faltas (dias)', ev, rules), '0010 - FALTAS');
+  assert.equal(E.eventoDaRubrica('Comissão', ev, rules), '0020 - COMISSÕES');
+  assert.equal(E.eventoDaRubrica('Adicional noturno', ev, rules), '0030 - ADICIONAL NOTURNO');
+  assert.equal(E.eventoDaRubrica('Bônus de Natal', ev, rules), null, 'sem par seguro: o cliente lança');
+  const g = E.montarGrade(l, ev, ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'], rules);
+  assert.equal(g.celulas.length, 3); assert.deepEqual(g.semEvento, ['Bônus de Natal']); assert.deepEqual(g.semEmpregado, ['FULANO QUE NAO EXISTE']);
+  assert.equal(g.celulas.find(c => c.evento === '0020 - COMISSÕES').valor, '350,00');
+  assert.equal(E.montarGrade([{ empregado: 'JOAO DA SILVA', rubrica: 'Horas extras 50%', valor: '10 horas' }], ev, ['JOAO DA SILVA'], rules).celulas[0].valor, '10');
+  // o lançamento já feito (detalhe do portal; formato a calibrar) e o texto da descrição de volta em linhas
+  const ant = E.linhasDoLancamento({ payrollEntryClientEmployeeExpanded: [{ clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, payrollEntryItems: [{ eventExpanded: { description: '0001 - HORAS EXTRAS 50%' }, value: '08:00' }] }] });
+  assert.deepEqual(ant, [{ empregado: 'JOAO DA SILVA', rubrica: 'HORAS EXTRAS 50%', valor: '08:00' }]);
+  assert.deepEqual(E.linhasDoLancamento(null), []);
+  assert.deepEqual(E.linhasDoTexto('• JOAO DA SILVA — Horas extras 50%: 10:30\n• Funcionário a confirmar — Faltas: 2 dias'), [{ empregado: 'JOAO DA SILVA', rubrica: 'Horas extras 50%', valor: '10:30' }, { empregado: '', rubrica: 'Faltas', valor: '2 dias' }]);
 });
 
 /* ---- Lote 5: leitor que não preenche errado (textos inventados, no layout dos documentos do corpus fictício) ---- */
