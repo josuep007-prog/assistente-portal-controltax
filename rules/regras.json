@@ -222,9 +222,12 @@
         "ctps": { "palavras": ["carteira de trabalho digital", "ctps digital", "nome civil"], "campos": ["nome", "nomeSocial", "cpf", "nascimento", "sexo", "mae", "pai", "pis"] },
         "titulo": { "palavras": ["justiça eleitoral", "título eleitoral", "título de eleitor"], "campos": ["nome", "nascimento", "mae", "pai", "titulo", "zona", "secao"], "padroesTexto": { "titulo": ["\\b(\\d{4}\\s?\\d{4}\\s?\\d{4})\\b"], "zona": ["\\bzona\\s*:?\\s*(\\d{1,4})\\b"], "secao": ["\\bse[çc][ãa]o\\s*:?\\s*(\\d{1,4})\\b"] } },
         "cpf": { "palavras": ["cadastro de pessoas físicas", "situação cadastral"], "campos": ["nome", "cpf", "nascimento"] },
-        "rg": { "palavras": ["registro geral", "carteira de identidade", "secretaria de segurança", "secretaria da segurança"], "maeLinha": 2, "campos": ["nome", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "rg", "dataRg", "orgaoRg", "ufRg", "cpf", "pis"] }
+        "rg": { "palavras": ["registro geral", "carteira de identidade", "secretaria de segurança", "secretaria da segurança"], "maeLinha": 2, "campos": ["nome", "mae", "pai", "nascimento", "municipioNascimento", "ufNascimento", "rg", "dataRg", "orgaoRg", "ufRg", "cpf", "pis"] },
+        "avisoFerias": {"palavras": ["aviso de férias"], "campos": ["inicioGozo", "fimGozo", "diasGozo"]}
       },
-      "porDocumento": { "identidade": "rg", "ctps": "ctps", "titulo": "titulo", "cpf": "cpf" },
+      "porDocumento": { "identidade": "rg", "ctps": "ctps", "titulo": "titulo", "cpf": "cpf",
+        "avisoFeriasAssinado": "avisoFerias"
+      },
       "rotulos": {
         "nome": ["nome", "nome civil", "nome e sobrenome", "nome do eleitor", "nome do titular"],
         "nomeSocial": ["nome social"],
@@ -247,11 +250,18 @@
         "secao": ["seção"],
         "pis": ["pis/pasep", "pis", "nis", "nit"],
         "sexo": ["sexo"],
-        "_data": ["1ª habilitação", "primeira habilitação", "data emissão", "data de emissão", "data da emissão", "data de domicílio eleitoral"],
+        "_data": ["1ª habilitação", "primeira habilitação", "data emissão", "data de emissão", "data da emissão", "data de domicílio eleitoral", "retorno ao trabalho", "data de retorno"],
         "_texto": ["permissão", "acc", "observações", "nacionalidade", "município/uf", "município", "uf", "doc. origem", "doc origem", "local", "assinatura do titular", "assinatura do portador", "assinatura"],
-        "_numero": ["nº renach", "renach", "espelho", "código de segurança"]
+        "_numero": ["nº renach", "renach", "espelho", "código de segurança"],
+        "inicioGozo+fimGozo": ["período de gozo", "período de férias"],
+        "_data+_data": ["período aquisitivo"],
+        "diasGozo": ["dias de férias", "dias de gozo"]
       },
-      "tipos": { "nascimento": "data", "dataRg": "data", "cnhValidade": "data", "rg": "numero", "cnh": "numero", "cpf": "cpf", "titulo": "numero", "zona": "numero", "secao": "numero", "pis": "numero", "orgaoRg": "sigla", "ufRg": "uf", "ufNascimento": "uf", "cnhCategoria": "categoria", "nome": "nome", "nomeSocial": "nome", "mae": "nome", "pai": "nome", "municipioNascimento": "texto", "sexo": "texto" },
+      "tipos": { "nascimento": "data", "dataRg": "data", "cnhValidade": "data", "rg": "numero", "cnh": "numero", "cpf": "cpf", "titulo": "numero", "zona": "numero", "secao": "numero", "pis": "numero", "orgaoRg": "sigla", "ufRg": "uf", "ufNascimento": "uf", "cnhCategoria": "categoria", "nome": "nome", "nomeSocial": "nome", "mae": "nome", "pai": "nome", "municipioNascimento": "texto", "sexo": "texto",
+        "inicioGozo": "data",
+        "fimGozo": "data",
+        "diasGozo": "numero"
+      },
       "padroes": {
         "rg": "^(?:\\d{1,2}\\.?\\d{3}\\.?\\d{3}(?:-?[\\dXx])?|\\d{5,14}(?:-?[\\dXx])?)$",
         "cnh": "^\\d{9,11}$",
@@ -259,7 +269,8 @@
         "titulo": "^\\d{4}\\s?\\d{4}\\s?\\d{4}$",
         "zona": "^\\d{1,4}$",
         "secao": "^\\d{1,4}$",
-        "orgaoRg": "^(?:SSP|SESP|SDS|PC|IFP|DETRAN|DIC|IGP|SJS|SEJUSP|PM|MAER|MEX|MMA|POF|DPF|SPTC|IIRGD|CGPI|SSPDS|ITEP|IML|SEDS|SJTC|CNH|OAB|CRM|CREA|[A-Z]{3,6})$"
+        "orgaoRg": "^(?:SSP|SESP|SDS|PC|IFP|DETRAN|DIC|IGP|SJS|SEJUSP|PM|MAER|MEX|MMA|POF|DPF|SPTC|IIRGD|CGPI|SSPDS|ITEP|IML|SEDS|SJTC|CNH|OAB|CRM|CREA|[A-Z]{3,6})$",
+        "diasGozo": "^\\d{1,2}$"
       }
     },
     "camposDaEmpresa": {
@@ -4666,6 +4677,7 @@
     {
       "id": "avisoFeriasAssinado",
       "nome": "Aviso de férias",
+      "leitor": "pessoal",
       "tipoSolicitacao": "calculoFerias",
       "palavras": [
         "aviso de férias",
@@ -4679,11 +4691,11 @@
       ],
       "extrair": {
         "inicioGozo": [
-          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(?:de\\s*|a\\s*partir\\s*de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)[ \\t]*:?[ \\t]*(?:de\\s*|a\\s*partir\\s*de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})",
           "(?:in[íi]cio\\s*(?:do\\s*gozo|das\\s*f[ée]rias)|gozar[áa]?\\s*(?:suas\\s*|as\\s*)?f[ée]rias\\s*(?:a\\s*partir\\s*de|de|no\\s*per[íi]odo\\s*de))\\s*:?\\s*(?:de\\s*)?(\\d{1,2}/\\d{1,2}/\\d{2,4})"
         ],
         "fimGozo": [
-          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)\\s*:?\\s*(?:de\\s*)?\\d{1,2}/\\d{1,2}/\\d{2,4}\\s*(?:a|at[ée]|-)\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
+          "per[íi]odo\\s*de\\s*(?:gozo|f[ée]rias)[ \\t]*:?[ \\t]*(?:de\\s*)?\\d{1,2}/\\d{1,2}/\\d{2,4}\\s*(?:a|at[ée]|-)\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})",
           "(?:t[ée]rmino|fim)\\s*(?:do\\s*gozo|das\\s*f[ée]rias)\\s*:?\\s*(\\d{1,2}/\\d{1,2}/\\d{2,4})"
         ],
         "diasGozo": [
