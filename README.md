@@ -17,6 +17,14 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.11 — documentos, lote e leitura de arquivos
+
+- **Documentos novos** (`documentos[]`): `cartaInss`, `comparecimento`, `contratoExperiencia`, `espelhoPonto`; certidões (`leitor: "certidao"`).
+- **Planilha de rubricas** em qualquer formato, com nomes conferidos e modelo para baixar. **Word/ODT** lidos com o SheetJS que já está em `lib/`.
+- **Funcionário pelo CPF** do documento (`empregadoPorCpf`; o campo do CPF na API real é um palpite, a calibrar).
+- **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
+- **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
+
 ## Novidades da 2.10 — rotinas do mês e respostas
 
 - **Novo pedido:** a leitura (arrastar/colar/escrever) aparece ali mesmo; o tipo escolhido leva os arquivos e relê com a lista de funcionários.
