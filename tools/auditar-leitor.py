@@ -36,14 +36,17 @@ window.__ler = async (nome) => {
 const DOCS_NEUTROS = ['certidao', 'aso', 'identidade', 'cpf', 'comprovanteEndereco', 'ctps', 'seguro', 'bancario'];
 const FAMILIAS = [['avisoFerias', 'calculoFerias'], ['avisoRescisao', 'calculoRescisao'], ['cadastroEmpregado', 'cadastroEstagiario', 'cadastroContribuinte']];
 const outroTipo = (doc, tipo) => { const dt = doc?.tipoSolicitacao; if (!dt || dt === tipo || DOCS_NEUTROS.includes(doc.id)) return null; if (FAMILIAS.some(f => f.includes(dt) && f.includes(tipo))) return null; return dt; };
-window.__analisar = ({ nome, texto, tabela, tipoEsperado, funcionarios, hoje }) => {
+const limiar = E.limiarPortal ? E.limiarPortal(rules) : 0;
+window.__analisar = ({ nome, texto, tabela, tipoEsperado, funcionarios, hoje, metodo, confianca }) => {
   const h = new Date(hoje + 'T00:00:00');
-  const a1 = E.analyzeText(texto || nome, rules, { employees: [], tipoAtual: null, hoje: h });
+  // como o painel: o método e a confiança do OCR vão junto (leitura fraca vira sugestão)
+  const ocr = { metodo, confiancaOcr: metodo === 'ocr' ? confianca : null };
+  const a1 = E.analyzeText(texto || nome, rules, { employees: [], tipoAtual: null, hoje: h, ...ocr });
   if (tabela) { a1.tipoSugerido = 'rubricas'; a1.documento = { id: 'planilha', nome: 'Planilha de lançamentos' }; }
   const tipo = tipoEsperado || a1.tipoSugerido;
   let a2 = null; const campos = {}; let outro = null;
   if (tipo) {
-    a2 = E.analyzeText(texto || nome, rules, { employees: funcionarios, tipoAtual: tipo, hoje: h });
+    a2 = E.analyzeText(texto || nome, rules, { employees: funcionarios, tipoAtual: tipo, hoje: h, ...ocr });
     if (tabela) a2.documento = { id: 'planilha', nome: 'Planilha de lançamentos' };
     const t = E.resolveTipo(rules, tipo); outro = outroTipo(a2.documento, tipo);
     const desc = JSON.stringify(t.descricao || []);
@@ -52,15 +55,17 @@ window.__analisar = ({ nome, texto, tabela, tipoEsperado, funcionarios, hoje }) 
       let valor = c.valor, conf = c.conf;
       if (k === 'empregado') { const m = E.bestMatch(valor, funcionarios, 0.7); if (m) valor = m.option; else conf = 0.3; }
       const naDescricao = desc.includes('{' + k + '}') && (k !== 'cid' || !!rules.config?.incluirCidNaDescricao);
+      // abaixo do limiar o painel não manda ao portal: fica como sugestão de um clique ("Usar")
+      const sugestao = conf < limiar;
       campos[k] = { valor: String(valor), conf, fonte: c.fonte, tipoCampo: def.tipo, somenteAssistente: !!def.somenteAssistente,
-        portal: !outro && (!def.somenteAssistente || naDescricao), comoVai: outro ? 'descartado (documento de outro tipo)' : def.somenteAssistente ? (naDescricao ? 'descrição' : 'só no assistente') : 'campo do portal' };
+        portal: !outro && !sugestao && (!def.somenteAssistente || naDescricao), comoVai: outro ? 'descartado (documento de outro tipo)' : sugestao ? 'sugestão (Usar)' : def.somenteAssistente ? (naDescricao ? 'descrição' : 'só no assistente') : 'campo do portal' };
     }
   }
   const docId = (a2 || a1).documento?.id;
   return {
     doc1: a1.documento?.id || null, doc1Score: a1.documento?.score != null ? +a1.documento.score.toFixed(2) : null, alternativas: (a1.alternativas || []).map(d => d.id),
     sugerido: a1.tipoSugerido || null, doc2: a2?.documento?.id || null, tipoAvaliado: tipo || null, outroTipo: outro, campos,
-    candidatos: a2?.candidatos || null, paciente: a2?.paciente || null, avisos: (a2?.avisos || []).map(a => a.id || a.mensagem.slice(0, 60)),
+    candidatos: a2?.candidatos || null, paciente: a2?.paciente || null, avisos: (a2?.avisos || []).map(a => a.id || a.mensagem.slice(0, 60)), pessoa: a2?.pessoa || null,
     aso: docId === 'aso' ? E.readASO(texto) : null, resumo: E.summarizeDocument(a2 || a1, texto || ''),
     linhasTabela: tabela ? tabela.slice(1).map(r => String(r[0] || '')) : null
   };
@@ -185,7 +190,7 @@ async def rodar(corpus, gab, so, paralelo, usar_cache):
                     if nome not in cache:
                         cache[nome] = await pg.evaluate('(n) => window.__ler(n)', nome)
                     lido = cache[nome]
-                    an = await pg.evaluate('(a) => window.__analisar(a)', dict(nome=nome, texto=lido['texto'], tabela=lido.get('tabela'), tipoEsperado=d.get('tipo'), funcionarios=gab['funcionarios'], hoje=gab['hoje']))
+                    an = await pg.evaluate('(a) => window.__analisar(a)', dict(nome=nome, texto=lido['texto'], tabela=lido.get('tabela'), tipoEsperado=d.get('tipo'), funcionarios=gab['funcionarios'], hoje=gab['hoje'], metodo=lido.get('metodo'), confianca=lido.get('confianca')))
                     resultados[nome] = dict(lido={k: v for k, v in lido.items() if k not in ('tabela',)}, analise=an)
                     print(f'  [{n}] {nome}: {lido["metodo"]} conf={lido.get("confianca")} rot={lido.get("rotacao")} {lido.get("ms", 0) / 1000:.0f}s → {an["doc1"]}/{an["sugerido"]}', flush=True)
                 except Exception as e:
@@ -210,7 +215,7 @@ def pct(a, b): return f'{100 * a / b:5.1f}%' if b else '   — '
 def relatorio(docs, resultados, saida):
     porDoc, porCampo, porForma, porBase = [], {}, {}, {}
     graves = []
-    tot = dict(esperados=0, certos=0, preenchidos=0, errados=0, graves=0, docOk=0, docN=0, tipoOk=0, tipoN=0)
+    tot = dict(esperados=0, certos=0, preenchidos=0, errados=0, graves=0, docOk=0, docN=0, tipoOk=0, tipoN=0, aoPortal=0, aoPortalCertos=0, sugestoes=0, sugestoesCertas=0)
     print('\n=== POR ARQUIVO ===')
     for g in docs:
         nome = g['arquivo']; r = resultados.get(nome)
@@ -232,6 +237,9 @@ def relatorio(docs, resultados, saida):
         if g.get('linhas') is not None:
             extras.append('linhas ' + ('ok' if [N(x) for x in a.get('linhasTabela') or []] == [N(x) for x in g['linhas']] else repr(a.get('linhasTabela'))))
         tot['esperados'] += len(esperados); tot['certos'] += len(certos); tot['preenchidos'] += len(preench); tot['errados'] += len(errados)
+        vai = [l for l in preench if l['portal']]; sug = [l for l in preench if l.get('comoVai', '').startswith('sugest')]
+        tot['aoPortal'] += len(vai); tot['aoPortalCertos'] += sum(1 for l in vai if l['estado'] == 'certo')
+        tot['sugestoes'] += len(sug); tot['sugestoesCertas'] += sum(1 for l in sug if l['estado'] == 'certo')
         for l in errados:
             if l['gravidade'] == 'GRAVE': tot['graves'] += 1; graves.append((nome, l))
         for l in linhas:
@@ -267,6 +275,7 @@ def relatorio(docs, resultados, saida):
     print(f'documento reconhecido: {tot["docOk"]}/{tot["docN"]}   tipo de pedido sugerido certo: {tot["tipoOk"]}/{tot["tipoN"]}')
     print(f'precisão (certos/preenchidos): {pct(tot["certos"], tot["preenchidos"])}   cobertura (certos/esperados): {pct(tot["certos"], tot["esperados"])}')
     print(f'valores errados preenchidos: {tot["errados"]}   graves (iam ao portal com confiança ≥ {ALTA}): {tot["graves"]}')
+    print(f'o que vai ao portal sozinho: {tot["aoPortal"]} valores, precisão {pct(tot["aoPortalCertos"], tot["aoPortal"])}   sugestões de um clique: {tot["sugestoes"]} ({pct(tot["sugestoesCertas"], tot["sugestoes"])} certas)')
     print('\n=== ERROS GRAVES ===')
     for nome, l in graves:
         print(f'  {nome:<38} {l["campo"]:<18} lido={l["obtido"]!r} esperado={l["esperado"]!r} conf={l["conf"]} ({l.get("fonte")})')
