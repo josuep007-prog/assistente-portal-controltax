@@ -607,6 +607,22 @@ function montarPedidos(itens) {
     else if (tipo && !DOCS_NEUTROS.includes(it.documento)) { if (!grupos.has(tipo)) grupos.set(tipo, []); grupos.get(tipo).push(it); }
     else neutros.push(it);
   }
+  // P5 — cadastro: um pedido por pessoa (nome/CPF); documentos de duas pessoas não se misturam
+  const cad = (t) => E.CADASTROS.includes(t);
+  const pessoas = []; const semPessoa = [];
+  const juntar = (tipo, it) => {
+    const p = it.analise?.pessoa; if (!p) { semPessoa.push({ tipo, it }); return; }
+    const g = pessoas.find(x => E.mesmaPessoa(x.pessoa, p) === true);
+    if (g) { g.itens.push(it); if (!DOCS_NEUTROS.includes(it.documento)) g.tipo = tipo; } else pessoas.push({ tipo, pessoa: p, itens: [it] });
+  };
+  for (const [tipo, lista] of [...grupos]) if (cad(tipo)) { grupos.delete(tipo); lista.forEach(it => juntar(tipo, it)); }
+  const neutrosPessoa = neutros.filter(it => cad(it.analise?.tipoSugerido) && it.analise?.pessoa);
+  const distintas = neutrosPessoa.reduce((acc, it) => acc.some(p => E.mesmaPessoa(p, it.analise.pessoa) === true) ? acc : [...acc, it.analise.pessoa], []);
+  if (pessoas.length || distintas.length > 1) for (const it of neutrosPessoa) { neutros.splice(neutros.indexOf(it), 1); juntar(it.analise.tipoSugerido, it); }
+  if (semPessoa.length) { if (pessoas.length === 1) pessoas[0].itens.push(...semPessoa.map(x => x.it)); else pessoas.push({ tipo: semPessoa[0].tipo, pessoa: null, itens: semPessoa.map(x => x.it) }); }
+  // comprovante: vai para o cadastro de quem é o titular, quando há mais de um
+  if (pessoas.length > 1) for (const it of [...neutros]) { const tt = it.analise?.titular; const g = tt && pessoas.find(x => E.mesmaPessoa(x.pessoa, { nome: tt }) === true); if (g) { g.itens.push(it); neutros.splice(neutros.indexOf(it), 1); } }
+  for (const g of pessoas) pedidos.push({ tipo: g.tipo, itens: g.itens });
   // documento que acompanha um atestado (ex.: CAT da mesma data) entra na mesma solicitação
   const data = (it) => it.analise?.campos?.dataAfastamento?.valor || null;
   for (const [tipo, lista] of grupos) {
@@ -1342,8 +1358,14 @@ function renderFilesOnly() {
   el.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { const a = W.arquivos.find(x => x.id === b.dataset.rm); if (a) a.removido = true; renderFilesOnly(); updateChecks(); }));
   const outro = W.arquivos.find(a => a.outroTipo && !a.removido);
   const o = $('#outro-tipo');
+  // P5: documento de outra pessoa ficou de fora deste pedido — o cliente decide
+  const outraP = W.arquivos.find(a => a.outraPessoa && !a.removido);
   if (o) {
-    o.innerHTML = outro ? `<div class="note warn">${icon('alert')}<div>“${esc(outro.nome)}” combina mais com <b>${esc(S.rules.tipos[outro.outroTipo]?.nome)}</b>. <button class="btn btn-ghost btn-sm" id="switch-tipo">Mudar para lá</button></div></div>` : '';
+    o.innerHTML = (outro ? `<div class="note warn">${icon('alert')}<div>“${esc(outro.nome)}” combina mais com <b>${esc(S.rules.tipos[outro.outroTipo]?.nome)}</b>. <button class="btn btn-ghost btn-sm" id="switch-tipo">Mudar para lá</button></div></div>` : '')
+      + (outraP ? `<div class="note warn" id="outra-pessoa">${icon('alert')}<div>${esc((S.rules.mensagens?.documentoOutraPessoa || '“{arquivo}” é de outra pessoa ({nome}). Para não misturar dados de duas pessoas, não usei nada dele neste pedido.').replace('{arquivo}', outraP.nome).replace('{nome}', outraP.outraPessoa))}
+        <div class="actions" style="margin-top:6px"><button class="btn btn-sm" id="op-usar">Usar este no lugar</button><button class="btn btn-ghost btn-sm" id="op-tirar">Tirar da lista</button></div></div></div>` : '');
+    $('#op-usar')?.addEventListener('click', () => { usarDocumentoNoLugar(S.ctx.tipo, outraP); renderFilesOnly(); });
+    $('#op-tirar')?.addEventListener('click', () => { outraP.removido = true; renderFilesOnly(); updateChecks(); });
     $('#switch-tipo')?.addEventListener('click', async () => {
       const destino = outro.outroTipo;
       const W2 = w(destino); W2.arquivos.push(outro); W.arquivos = W.arquivos.filter(a => a !== outro);
@@ -1397,18 +1419,20 @@ function renderFieldsOnly() {
     const p = pf[k] || {}; const v = W.valores[k];
     const noPortal = p.valor || '';
     const nosso = noPortal && W.ultimoPreenchido?.[k] === noPortal;
-    const pendente = !noPortal && v?.valor;
+    const sugDoc = !noPortal && ehSugestao(v);      // lido com dúvida: o cliente usa ou não
+    const pendente = !noPortal && v?.valor && !sugDoc;
     const apx = noPortal && W.aproximadas?.[k] && E.norm(W.aproximadas[k].escolhida) === E.norm(noPortal) ? W.aproximadas[k] : null;
     const erro = erroDoPortal(k);
-    const estado = p.disabled ? ['muted', 'bloqueado'] : erro ? ['err', 'recusado'] : apx ? ['warn', 'confira'] : noPortal ? (nosso ? ['ok', 'Assistente'] : ['info', 'você']) : pendente ? ['warn', 'a preencher'] : obrig(k, c) ? ['err', 'vazio'] : ['muted', '—'];
+    const estado = p.disabled ? ['muted', 'bloqueado'] : erro ? ['err', 'recusado'] : apx ? ['warn', 'confira'] : noPortal ? (nosso ? ['ok', 'Assistente'] : ['info', 'você']) : pendente ? ['warn', 'a preencher'] : sugDoc ? ['warn', 'sugestão'] : obrig(k, c) ? ['err', 'vazio'] : ['muted', '—'];
     const fonte = nosso && v?.fonte ? v.fonte : '';
     const baixa = nosso && v?.conf != null && v.conf < 0.6;
     return `<div class="field frow${baixa ? ' low' : ''}">
       <button type="button" class="frow-b" data-k="${k}" title="${esc(fonte ? 'De: ' + fonte : 'Mostrar no portal')}">
         <span class="frow-l">${esc(c.rotulo)}${obrig(k, c) ? '<span class="req">*</span>' : ''}</span>
-        <span class="frow-v">${esc(noPortal || v?.valor || '')}${baixa ? ' <small class="chip warn">confira</small>' : ''}</span>
+        <span class="frow-v">${esc(noPortal || (sugDoc ? '' : v?.valor) || '')}${baixa ? ' <small class="chip warn">confira</small>' : ''}</span>
         <span class="chip ${estado[0]}">${estado[1]}</span>
       </button>
+      ${sugDoc ? htmlSugestao(k, v) : ''}
       ${k === 'empregado' && W.candidatos?.length && !noPortal ? `<div class="cands"><small>Qual deles?</small>${W.candidatos.map(n => `<button type="button" class="btn btn-sm" data-cand="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
       ${k === 'empregado' && W.pacienteLido && !noPortal && !W.candidatos?.length ? `<small class="hint">No documento: “${esc(W.pacienteLido)}” — não achei esse nome na lista. Escolha o funcionário no portal.</small>` : ''}
       ${apx ? `<small class="aprox">${esc(msgAproximada(apx))}</small>` : ''}
@@ -1423,8 +1447,8 @@ function renderFieldsOnly() {
     <small class="muted frows-nota">Para corrigir, mude direto no portal — eu acompanho e atualizo o assunto e a descrição.</small>
     ${extras.length || t.descricao?.length ? `<h2 class="sec">Só para a descrição</h2>
     <div class="fields">${extras.map(([k, c]) => {
-      const cur = W.valores[k];
-      return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}</div>`;
+      const cur0 = W.valores[k]; const sg = ehSugestao(cur0); const cur = sg ? undefined : cur0;
+      return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}${sg ? htmlSugestao(k, cur0) : ''}</div>`;
     }).join('')}
     ${t.descricao?.length ? `<div class="field"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(W.valores.observacoes?.valor || '')}</textarea></div>` : ''}
     ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID na descrição<small>${cidAtivo() && !S.prefs.incluirCid ? 'Ligado pelo escritório para esta empresa — você pode desligar.' : 'Dado de saúde (LGPD). Deixe desligado se não for necessário.'}</small></span></label>` : ''}
@@ -1445,6 +1469,7 @@ function renderFieldsOnly() {
     });
   });
   el.querySelectorAll('.frow-b').forEach(b => b.addEventListener('click', () => { const def = t.campos[b.dataset.k]; if (def) send({ type: 'highlight', locator: def }); }));
+  el.querySelectorAll('[data-usar-k]').forEach(b => b.addEventListener('click', () => usarSugestao(tipo, b.dataset.usarK)));
   $('#f-obs')?.addEventListener('input', (e) => { W.valores.observacoes = { valor: e.target.value, conf: 1, fonte: 'você' }; onInput(); });
   el.querySelectorAll('[data-cand]').forEach(b => b.addEventListener('click', () => {
     W.valores.empregado = { valor: b.dataset.cand, conf: 1, fonte: 'você' }; W.candidatos = null;
@@ -1475,6 +1500,7 @@ function valorPlat(tipo, k) {
   const W = w(tipo); const p = campoPortal(k); const cur = W.valores[k];
   if (W.fonteVerdade?.[k] === 'plataforma') return cur?.valor ?? '';
   if (W.pausarAuto && p.existe) return p.valor || '';
+  if (ehSugestao(cur)) return p.valor || '';          // lido com dúvida: aparece embaixo, com "Usar"
   return p.valor || cur?.valor || '';
 }
 const erroDoPortal = (k) => (S.ctx.form?.erros || []).find(e => e.k === k) || null;
@@ -1487,6 +1513,7 @@ function estadoCampoPlat(tipo, k, obrigatorio) {
   if (valor && E.norm(valor) !== E.norm(p.valor || '')) return ['warn', 'ainda não está no portal'];
   if (p.valor && W.aproximadas?.[k] && E.norm(W.aproximadas[k].escolhida) === E.norm(p.valor)) return ['warn', 'confira'];
   if (p.valor) return W.ultimoPreenchido?.[k] === p.valor && cur?.fonte && cur.fonte !== 'você' ? ['ok', 'lido pelo Assistente'] : ['info', 'no portal'];
+  if (ehSugestao(cur)) return ['warn', 'sugestão'];
   return obrigatorio ? ['err', 'obrigatório'] : ['', ''];
 }
 /** Enquanto o cliente digita no formulário, não redesenha os campos (perderia o cursor): só os estados. */
@@ -1523,7 +1550,8 @@ function renderFormularioProprio(el, tipo) {
     const valor = valorPlat(tipo, k);
     const estado = estadoCampoPlat(tipo, k, obrig(k, c));
     const fonte = cur?.fonte && !['você', 'gerado'].includes(cur.fonte) && !daqui ? cur.fonte : '';
-    const baixa = cur?.conf != null && cur.conf < 0.6 && !W.editados.has(k) && !daqui;
+    const sugDoc = !p.valor && !daqui && ehSugestao(cur);
+    const baixa = cur?.conf != null && cur.conf < 0.6 && !W.editados.has(k) && !daqui && !sugDoc;
     const erro = erroDoPortal(k);
     const apx = W.aproximadas?.[k] && E.norm(W.aproximadas[k].escolhida) === E.norm(p.valor || '') ? W.aproximadas[k] : null;
     const sug = !p.valor && W.sugestoes?.[k]?.length ? W.sugestoes[k] : null;
@@ -1533,6 +1561,7 @@ function renderFormularioProprio(el, tipo) {
       ${erro ? `<small class="portal-erro">${esc((M.portalAcusa || 'O portal acusa: {mensagem}').replace('{mensagem}', erro.mensagem))}</small>` : ''}
       ${p.disabled ? '<small class="hint">O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).</small>' : ''}
       ${baixa ? '<small class="hint">Leitura com dúvida: confira.</small>' : ''}
+      ${sugDoc ? htmlSugestao(k, cur) : ''}
       ${cur?.calculado && !daqui && !W.editados.has(k) && cur.explicacao ? `<small class="hint calc-hint">Calculado pelo Assistente: ${esc(cur.explicacao)} Confira.</small>` : ''}
       ${apx ? `<small class="aprox">${esc(msgAproximada(apx))}</small>` : ''}
       ${sug ? `<div class="cands"><small>Você quis dizer:</small>${sug.map(s => `<button type="button" class="btn btn-sm" data-sug-k="${esc(k)}" data-sug-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>` : ''}
@@ -1547,8 +1576,8 @@ function renderFormularioProprio(el, tipo) {
     ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" ${i === 0 || lista.some(([k, c]) => (obrig(k, c) && !(campoPortal(k).valor || W.valores[k]?.valor)) || erroDoPortal(k)) ? 'open' : ''}><summary>${esc(g)}</summary>${g === OUTROS ? '<small class="hint" style="margin:0 0 8px">Campos do portal que o escritório ainda não incluiu nas regras do Assistente. O que você preencher aqui também vai para o portal.</small>' : ''}<div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
       || '<p class="muted">Abrindo o formulário no portal…</p>'}
     ${extras.length || t.descricao?.length ? `<div class="pf-sec">Só para a descrição</div><div class="pf-grid">${extras.map(([k, c]) => {
-      const cur = W.valores[k];
-      return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}</div>`;
+      const cur0 = W.valores[k]; const sg = ehSugestao(cur0); const cur = sg ? undefined : cur0;
+      return `<div class="field"><label for="f-${k}">${esc(c.rotulo)}${c.sensivel ? ` <span class="chip warn" title="Dado sensível">sensível</span>` : ''}${cur?.fonte ? `<span class="src" title="${esc(cur.fonte)}">${esc(cur.fonte)}</span>` : ''}</label>${fieldInput(k, c, cur, W)}${sg ? htmlSugestao(k, cur0) : ''}</div>`;
     }).join('')}
       ${t.descricao?.length ? `<div class="field wide"><label for="f-obs">Observações para o analista</label><textarea id="f-obs" class="input" rows="2" data-obs="1" placeholder="Algo mais que o escritório precisa saber?">${esc(W.valores.observacoes?.valor || '')}</textarea></div>` : ''}</div>
       ${t.campos.cid ? `<label class="toggle"><input type="checkbox" id="tg-cid" ${cidAtivo() ? 'checked' : ''}><span>Incluir CID na descrição<small>${cidAtivo() && !S.prefs.incluirCid ? 'Ligado pelo escritório para esta empresa — você pode desligar.' : 'Dado de saúde (LGPD). Deixe desligado se não for necessário.'}</small></span></label>` : ''}` : ''}
@@ -1588,6 +1617,7 @@ function renderFormularioProprio(el, tipo) {
     gerarTextos(tipo); renderFieldsOnly(); updateChecks(); fillPortal(tipo, { daPlataforma: true, so: ['empregado'] });
   }));
   el.querySelectorAll('[data-sug-k]').forEach(b => b.addEventListener('click', () => escolherSugestao(tipo, b.dataset.sugK, b.dataset.sugV)));
+  el.querySelectorAll('[data-usar-k]').forEach(b => b.addEventListener('click', () => usarSugestao(tipo, b.dataset.usarK)));
   $('#tg-cid')?.addEventListener('change', (e) => { S.prefs.incluirCid = e.target.checked; S.prefs.cidEscolhido = true; savePrefs(); gerarTextos(tipo); atualizarTextoNoPortal(tipo); renderFieldsOnly(); });
 }
 function syncGenerated() {
@@ -1649,7 +1679,7 @@ function camposFaltando(tipo, list) {
     if (S.ctx.form?.campos?.[k]?.disabled) continue;
     out.set(k, true);
   }
-  return [...out.keys()].map(k => ({ k, def: t.campos[k], texto: leuDocumento ? 'Não encontrado no documento — preencha aqui' : 'Preencha este campo' }));
+  return [...out.keys()].map(k => ({ k, def: t.campos[k], texto: ehSugestao(W.valores[k]) ? 'Li com dúvida no documento — confira a sugestão' : leuDocumento ? 'Não encontrado no documento — preencha aqui' : 'Preencha este campo' }));
 }
 function marcarFaltando(tipo, list) {
   const falt = camposFaltando(tipo, list);
@@ -1800,6 +1830,7 @@ async function fillPortal(tipo, { silencioso = false, daPlataforma = false, so =
   for (const [k, v] of Object.entries(W.valores)) {
     const def = campoDef(tipo, k);
     if (!def || def.somenteAssistente || !v?.valor) continue;
+    if (ehSugestao(v)) continue;          // P1: lido com dúvida só vai quando o cliente toca em "Usar"
     if (parcial && !so.includes(k) && !TEXTOS.includes(k) && !(v.calculado && noPortal(k) !== v.valor)) continue;
     // o que o cliente escreveu direto no portal fica como está
     if (noPortal(k) && noPortal(k) !== (W.ultimoPreenchido?.[k] ?? null) && noPortal(k) !== v.valor && W.fonteVerdade?.[k] !== 'plataforma') continue;
