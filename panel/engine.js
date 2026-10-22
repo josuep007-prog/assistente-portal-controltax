@@ -238,6 +238,11 @@ export function analyzeText(text, rules, ctx = {}) {
     if (leitor.medico) put('medico', leitor.medico, 0.7, docRule?.nome || 'documento');
   } else if (docRule?.extrair) for (const [k, pats] of Object.entries(docRule.extrair)) { const v = runPatterns(text, pats); if (v) put(k, v, 0.7, docRule.nome); }
   if (docRule?.valores) for (const [k, v] of Object.entries(docRule.valores)) if (!k.startsWith('tipoAfastamentoSe') && !(k === 'tipoAfastamento' && tipo?.tipoAfastamentoAuto)) put(k, v, 0.65, docRule.nome);
+  // Solicitação Geral (alvará, CND…): departamento e assunto pelo catálogo; a descrição só do modelo do item
+  if (tipoKey === 'geral' && docRule) {
+    const g = assuntoGeral(text, rules, { docId: docRule.id, hoje: ctx.hoje || today() });
+    if (g) { put('departamento', g.departamento, 0.65, docRule.nome); put('assunto', g.assunto, 0.65, docRule.nome); if (g.descricao) put('descricao', g.descricao, 0.5, 'modelo do escritório'); }
+  }
   // opções escolhidas por palavras do documento (documentos[].opcoesPorPalavra; tipoCatPalavras é o formato antigo da CAT)
   for (const o of regrasDeOpcoes(docRule)) { const v = opcaoPorPalavra(text, o); if (v) put(o.campo, v, 0.6, docRule.nome); }
   // motivo da rescisão pela tabela das regras (config.motivoAuto): "término do contrato de experiência" no documento
@@ -745,7 +750,11 @@ export function suggestTipoByText(text, rules, atual) {
     const n = fichaColada(text, rules);
     if (n && (!l.length || l[0].pontos < n)) return { tipo: 'cadastroEmpregado', hits: n, pontos: n, ficha: true, intencao: (rules?.intencoes || []).find(i => i.tipo === 'cadastroEmpregado') || null };
   }
-  if (!l.length) return null;
+  if (!l.length) {
+    // nenhum pedido com aba própria: a Solicitação Geral, se o catálogo (tipos.geral.catalogo) reconhece o assunto
+    const g = atual !== 'geral' ? assuntoGeral(text, rules) : null;
+    return g ? { tipo: 'geral', hits: 1, pontos: 1, geral: g, intencao: (rules?.intencoes || []).find(i => i.tipo === 'geral') || null } : null;
+  }
   const best = l[0];
   const empate = l.filter(x => x !== best && Math.abs(x.pontos - best.pontos) < 0.01).map(x => x.tipo);
   return { tipo: best.tipo, hits: best.pontos, pontos: best.pontos, intencao: best.intencao, ...(empate.length ? { empate: [best.tipo, ...empate] } : {}) };
@@ -1119,6 +1128,38 @@ export function textoLinhasRubricas(linhas) {
   return (linhas || []).map(l => `• ${l.empregado || 'Funcionário a confirmar'} — ${l.rubrica}: ${v(l)}`).join('\n');
 }
 
+/* ---------- Solicitação Geral: departamento e assunto pelo catálogo (tipos.geral.catalogo) ---------- */
+/** "segunda via da guia do FGTS de setembro" → { departamento: 'Pessoal', assunto: 'Guia do FGTS – 2ª via – competência 09/2026',
+ *  descricao (do modelo do item, nunca o texto do cliente), competencia, id }. Ganha o item com mais palavras (as longas valem
+ *  mais); um documento listado no item (alvará, CND) ganha sempre. Sem nada no catálogo → null. */
+export function assuntoGeral(text, rules, { docId = null, hoje = today() } = {}) {
+  const cat = rules?.tipos?.geral?.catalogo; if (!cat?.itens?.length) return null;
+  const t = plain(String(text || '').normalize('NFC'));
+  let best = null;
+  for (const it of cat.itens) {
+    let pontos = 0;
+    if (docId && (it.documentos || []).includes(docId)) pontos += 1000;
+    for (const w of it.palavras || []) if (temTermo(t, [w])) pontos += 10 + plain(w).replace(/\*$/, '').length;
+    if (pontos && (!best || pontos > best.pontos)) best = { it, pontos };
+  }
+  if (!best) return null;
+  const it = best.it, porDoc = !!(docId && (it.documentos || []).includes(docId));
+  // competência só do que o cliente escreveu (num documento, datas de validade não são competência)
+  const competencia = porDoc ? '' : competenciaDoTexto(text, hoje, rules) || '';
+  const assunto = it.assunto + (competencia && cat.sufixoCompetencia ? cat.sufixoCompetencia.replace('{competencia}', competencia) : '');
+  const descricao = renderTemplate((porDoc && it.descricaoDocumento) || it.descricao || [], { competencia });
+  return { id: it.id, departamento: it.departamento, assunto, descricao, competencia, porDocumento: porDoc };
+}
+/** O departamento do catálogo na lista do portal (os nomes são os do escritório): o próprio nome ou um sinônimo de
+ *  catalogo.departamentos, igual primeiro e depois como palavra inteira dentro da opção. Sem lista ou sem par → null. */
+export function departamentoDaLista(nome, opcoes, rules) {
+  const ops = (opcoes || []).filter(Boolean); if (!nome || !ops.length) return null;
+  const sin = [nome, ...((rules?.tipos?.geral?.catalogo?.departamentos || {})[nome] || [])].map(norm).filter(Boolean);
+  for (const s of sin) { const o = ops.find(x => norm(x) === s); if (o) return o; }
+  for (const s of sin) { if (s.length < 3) continue; const o = ops.find(x => (' ' + norm(x) + ' ').includes(' ' + s + ' ')); if (o) return o; }
+  return null;
+}
+
 /* ---------- Pergunta e dúvidas ---------- */
 /** O texto é uma pergunta? (termina em "?" ou começa com como, posso, qual… — config.textoLivre.pergunta) */
 export function ehPergunta(text, rules) {
@@ -1271,6 +1312,12 @@ export function parseFreeText(text, rules, ctx = {}) {
     case 'cadastroEmpregado': case 'cadastroEstagiario': case 'cadastroContribuinte': {
       // ficha colada (mesma leitura dos documentos) e frases soltas: cada data com o seu papel
       for (const [k, v] of Object.entries(lerCadastroTexto(text, tipo, rules, { hoje, employees: ctx.employees || [] }))) campos[k] = v;
+      break;
+    }
+    case 'geral': {
+      // departamento e assunto curto pelo catálogo; a descrição só do modelo do item (o texto do cliente não é copiado)
+      const g = assuntoGeral(text, rules, { hoje });
+      if (g) { put('departamento', g.departamento); put('assunto', g.assunto); if (g.descricao) campos.descricao = { valor: g.descricao, conf: 0.5, fonte: 'modelo do escritório' }; }
       break;
     }
     default: break;

@@ -1836,7 +1836,40 @@
       "apiLista": "service-requesting/v1/tickets/generic",
       "apiExpand": "clientExpanded,staffResponsibleExpanded,requesterExpanded",
       "apiTramites": "service-requesting/v1/tickets",
-      "familiaStatus": "padrao"
+      "familiaStatus": "padrao",
+      "catalogo": {
+        "_comentario": "Solicitação Geral pelo texto livre e por documentos (alvará, CND): as palavras escolhem o departamento e um assunto curto. Ganha o item com mais palavras (as mais longas valem mais); documentos[].id em 'documentos' ganha sempre. O texto do cliente NUNCA vai para a descrição: ela sai do modelo do item (linhas com {competencia} só entram quando o texto diz a competência) ou fica para o cliente. O departamento casa com a lista do portal pelos sinônimos de 'departamentos' (o primeiro que existir na lista). A calibrar no Onvio real: os nomes dos departamentos são os do escritório (no simulador: MASTER, CONTÁBIL, PESSOAL, FINANCEIRO, ADMINISTRATIVO, TI, FISCAL, Patrimônio).",
+        "revisarComEscritorio": true,
+        "calibrar": true,
+        "sufixoCompetencia": " – competência {competencia}",
+        "departamentos": {
+          "Pessoal": ["PESSOAL", "DEPARTAMENTO PESSOAL", "DP", "RH", "RECURSOS HUMANOS", "FOLHA"],
+          "Fiscal": ["FISCAL", "TRIBUTÁRIO", "IMPOSTOS"],
+          "Contábil": ["CONTÁBIL", "CONTABILIDADE"],
+          "Financeiro": ["FINANCEIRO", "COBRANÇA", "FATURAMENTO"],
+          "Societário": ["SOCIETÁRIO", "LEGALIZAÇÃO", "LEGAL", "PARALEGAL", "ADMINISTRATIVO"],
+          "Administrativo": ["ADMINISTRATIVO", "ADM", "ATENDIMENTO"]
+        },
+        "itens": [
+          { "id": "fgts", "departamento": "Pessoal", "assunto": "Guia do FGTS – 2ª via", "palavras": ["fgts", "guia do fgts", "fgts digital", "guia de fgts"], "descricao": ["Por favor, enviem a 2ª via da guia do FGTS.", "Competência: {competencia}."] },
+          { "id": "inss", "departamento": "Pessoal", "assunto": "Guia do INSS (DCTFWeb) – 2ª via", "palavras": ["dctfweb", "guia do inss", "inss da folha", "darf do inss", "darf previdenciario"], "descricao": ["Por favor, enviem a 2ª via da guia do INSS da folha (DCTFWeb).", "Competência: {competencia}."] },
+          { "id": "holerite", "departamento": "Pessoal", "assunto": "Holerites / folha de pagamento", "palavras": ["holerite", "holerites", "contracheque", "contracheques", "folha de pagamento", "recibo de pagamento", "recibos de pagamento", "resumo da folha"], "descricao": ["Por favor, enviem os holerites / a folha de pagamento.", "Competência: {competencia}."] },
+          { "id": "informe", "departamento": "Pessoal", "assunto": "Informe de rendimentos", "palavras": ["informe de rendimentos", "informe de rendimento", "informes de rendimentos", "comprovante de rendimentos", "rendimentos"], "descricao": ["Por favor, enviem o informe de rendimentos."] },
+          { "id": "guia", "departamento": "Pessoal", "assunto": "Guia – 2ª via", "palavras": ["guia", "guias"], "descricao": ["Por favor, enviem a 2ª via da guia.", "Competência: {competencia}."] },
+          { "id": "das", "departamento": "Fiscal", "assunto": "Guia do DAS (Simples Nacional)", "palavras": ["guia do das", "o das", "do das", "pgdas", "simples nacional", "guia do simples", "das do simples"], "descricao": ["Por favor, enviem a guia do DAS (Simples Nacional).", "Competência: {competencia}."] },
+          { "id": "notas", "departamento": "Fiscal", "assunto": "Notas fiscais", "palavras": ["nota fiscal", "notas fiscais", "nf", "nfe", "nf-e", "nfs-e", "nfse", "nota de servico", "notas de servico", "xml das notas", "cancelar nota"], "descricao": [] },
+          { "id": "icms", "departamento": "Fiscal", "assunto": "ICMS", "palavras": ["icms", "difal", "guia do icms", "substituicao tributaria"], "descricao": [] },
+          { "id": "iss", "departamento": "Fiscal", "assunto": "ISS", "palavras": ["iss", "issqn", "guia do iss"], "descricao": [] },
+          { "id": "darf", "departamento": "Fiscal", "assunto": "DARF – 2ª via", "palavras": ["darf", "pis e cofins", "irpj", "csll"], "descricao": ["Por favor, enviem a 2ª via do DARF.", "Competência: {competencia}."] },
+          { "id": "cnd", "departamento": "Fiscal", "assunto": "Certidão negativa de débitos (CND)", "palavras": ["cnd", "certidao negativa", "certidao negativa de debitos", "certidao de regularidade", "certidao positiva com efeitos de negativa"], "documentos": ["cnd"], "descricao": [], "descricaoDocumento": ["Segue em anexo a certidão (CND)."] },
+          { "id": "parcelamento", "departamento": "Fiscal", "assunto": "Parcelamento de débitos", "palavras": ["parcelamento", "parcelar", "parcelamentos"], "descricao": [] },
+          { "id": "balancete", "departamento": "Contábil", "assunto": "Balancete / demonstrações contábeis", "palavras": ["balancete", "balanco", "balanco patrimonial", "dre", "demonstracao de resultado", "demonstracoes contabeis", "livro diario", "livro razao"], "descricao": ["Por favor, enviem o balancete / as demonstrações contábeis.", "Competência: {competencia}."] },
+          { "id": "extratos", "departamento": "Contábil", "assunto": "Extratos bancários", "palavras": ["extrato bancario", "extratos bancarios", "extrato do banco", "extratos", "conciliacao bancaria"], "descricao": ["Seguem os extratos bancários.", "Competência: {competencia}."] },
+          { "id": "honorarios", "departamento": "Financeiro", "assunto": "Boleto de honorários", "palavras": ["boleto", "boletos", "honorarios", "mensalidade do escritorio", "fatura do escritorio", "cobranca", "nota de honorarios"], "descricao": [] },
+          { "id": "alvara", "departamento": "Societário", "assunto": "Alvará de funcionamento", "palavras": ["alvara", "alvara de funcionamento", "licenca de funcionamento", "renovacao do alvara"], "documentos": ["alvara"], "descricao": [], "descricaoDocumento": ["Segue em anexo o alvará de funcionamento."] },
+          { "id": "contrato", "departamento": "Societário", "assunto": "Contrato social / alteração contratual", "palavras": ["contrato social", "alteracao contratual", "alteracao do contrato social", "cartao cnpj", "abertura de filial"], "descricao": [] }
+        ]
+      }
     },
     "afastamento": {
       "nome": "Afastamento de Empregado",
@@ -4723,6 +4756,51 @@
           "mensagem": "O holerite é feito pelo escritório. Se algum valor estiver errado, abra uma Solicitação Geral explicando o que mudou."
         }
       ]
+    },
+    {
+      "id": "alvara",
+      "nome": "Alvará de funcionamento",
+      "tipoSolicitacao": "geral",
+      "revisarComEscritorio": true,
+      "palavras": [
+        "alvará",
+        "alvará de funcionamento",
+        "licença de funcionamento",
+        "prefeitura",
+        "inscrição municipal",
+        "atividade",
+        "validade"
+      ],
+      "forte": [
+        "alvará de funcionamento",
+        "alvará de licença",
+        "licença de funcionamento"
+      ],
+      "minPalavras": 2,
+      "rotuloAssunto": "Alvará de funcionamento"
+    },
+    {
+      "id": "cnd",
+      "nome": "Certidão negativa de débitos (CND)",
+      "tipoSolicitacao": "geral",
+      "revisarComEscritorio": true,
+      "palavras": [
+        "certidão negativa",
+        "certidão positiva com efeitos de negativa",
+        "débitos relativos",
+        "tributos federais",
+        "dívida ativa",
+        "receita federal",
+        "procuradoria-geral da fazenda nacional",
+        "certidão de regularidade"
+      ],
+      "forte": [
+        "certidão negativa de débitos",
+        "certidão positiva com efeitos de negativa",
+        "certidão de regularidade do fgts"
+      ],
+      "minPalavras": 2,
+      "rotuloAssunto": "Certidão negativa de débitos"
     }
   ],
   "mensagens": {

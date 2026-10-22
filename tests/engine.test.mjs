@@ -816,7 +816,8 @@ t('pedido: radicais, erro de digitação, pesos, palavras que não contam e cart
   assert.equal(tp('fériaz do Ronaldo'), 'avisoFerias');
   assert.equal(tp('atestdo do Ronaldo de 2 dias'), 'afastamento');
   assert.equal(tp('contratar estagiária'), 'cadastroEstagiario');
-  assert.equal(tp('folha de pagamento de setembro'), undefined);
+  // "folha de pagamento" não é rubrica: desde o lote 6 vai para a Solicitação Geral (catálogo: holerites, Pessoal)
+  assert.equal(tp('folha de pagamento de setembro'), 'geral');
   assert.equal(L('calcular rescisão do Ronaldo, aviso indenizado, último dia 20/10').tipoSugerido, 'calculoRescisao');
   const res = E.escolhaPara('calcular rescisão do Ronaldo, aviso indenizado', rules);
   assert.equal(res.id, 'rescisao'); assert.equal(E.destaqueEscolha('calcular rescisão do Ronaldo, aviso indenizado', res), 'calculoRescisao');
@@ -1087,6 +1088,49 @@ t('empresas do login: as das solicitações, as já vistas e a aberta no portal,
   // um acesso com uma empresa só não tem o que escolher
   assert.equal(E.empresasParaEscolha([], 'EMPRESA EXEMPLO LTDA', []).length, 1);
   assert.equal(E.empresasParaEscolha([{ empresa: 'A LTDA' }, { empresa: 'A LTDA' }], 'A LTDA', []).length, 1);
+});
+
+/* ---- Lote 6 ---- */
+
+t('Solicitação Geral: o texto escolhe departamento e assunto pelo catálogo, sem copiar o texto', () => {
+  const cat = rules.tipos.geral.catalogo;
+  assert.equal(cat.revisarComEscritorio, true); assert.equal(cat.calibrar, true);
+  const txt = 'Oi, a Zuleica perdeu a segunda via da guia do FGTS de setembro, podem mandar?';
+  assert.equal(E.suggestTipoByText(txt, rules, null)?.tipo, 'geral', 'sem aba própria: Solicitação Geral');
+  const r = E.parseFreeText(txt, rules, { hoje });
+  assert.equal(r.tipoSugerido, 'geral');
+  assert.equal(r.campos.departamento.valor, 'Pessoal');
+  assert.equal(r.campos.assunto.valor, 'Guia do FGTS – 2ª via – competência 09/2026');
+  assert.match(r.campos.descricao.valor, /2ª via da guia do FGTS/);
+  assert.ok(!/zuleica|perdeu|podem mandar/i.test(r.campos.descricao.valor + r.campos.assunto.valor), 'o texto do cliente não vai para a descrição nem para o assunto');
+  // sem competência no texto: a linha da competência não entra
+  assert.ok(!/Competência/.test(E.parseFreeText('segunda via da guia do FGTS', rules, { hoje }).campos.descricao.valor));
+  const dep = (s) => E.parseFreeText(s, rules, { hoje }).campos.departamento?.valor;
+  assert.equal(dep('preciso cancelar uma nota fiscal'), 'Fiscal');
+  assert.equal(dep('a guia do DAS do simples nacional'), 'Fiscal');
+  assert.equal(dep('o balancete e a DRE de setembro'), 'Contábil');
+  assert.equal(dep('o boleto dos honorários veio errado'), 'Financeiro');
+  assert.equal(dep('quero o holerite do mês passado'), 'Pessoal');
+  assert.equal(dep('informe de rendimentos 2025'), 'Pessoal');
+  // nota fiscal sem modelo de descrição: fica para o cliente
+  assert.equal(E.parseFreeText('preciso cancelar uma nota fiscal', rules, { hoje }).campos.descricao, undefined);
+  // pedido com aba própria continua indo para ela (e a Geral avisa "aba errada")
+  assert.equal(E.suggestTipoByText('Ronaldo 10 horas extras', rules, null)?.tipo, 'rubricas');
+  assert.equal(E.suggestTipoByText('oi, tudo bem?', rules, null), null);
+});
+
+t('Solicitação Geral: departamento casa com a lista do portal pelos sinônimos; alvará e CND pelo documento', () => {
+  assert.equal(E.departamentoDaLista('Pessoal', ['MASTER', 'CONTÁBIL', 'PESSOAL', 'FISCAL'], rules), 'PESSOAL');
+  assert.equal(E.departamentoDaLista('Contábil', ['MASTER', 'CONTÁBIL', 'PESSOAL'], rules), 'CONTÁBIL');
+  assert.equal(E.departamentoDaLista('Pessoal', ['DEPTO. PESSOAL', 'FISCAL'], rules), 'DEPTO. PESSOAL', 'palavra inteira dentro da opção');
+  assert.equal(E.departamentoDaLista('Societário', ['MASTER', 'ADMINISTRATIVO', 'TI'], rules), 'ADMINISTRATIVO');
+  assert.equal(E.departamentoDaLista('Financeiro', ['MASTER', 'TI'], rules), null);
+  const a = E.analyzeText('PREFEITURA MUNICIPAL DE EXEMPLO\nALVARÁ DE FUNCIONAMENTO\nInscrição municipal 000\nAtividade: comércio varejista\nValidade: 12/2027', rules, {});
+  assert.equal(a.documento.id, 'alvara'); assert.equal(a.tipoSugerido, 'geral');
+  assert.equal(a.campos.departamento.valor, 'Societário'); assert.equal(a.campos.assunto.valor, 'Alvará de funcionamento');
+  assert.ok(!/12\/2027/.test(a.campos.assunto.valor), 'validade do documento não vira competência');
+  const c = E.analyzeText('CERTIDÃO NEGATIVA DE DÉBITOS RELATIVOS AOS TRIBUTOS FEDERAIS E À DÍVIDA ATIVA DA UNIÃO\nEmitida em 01/10/2026', rules, {});
+  assert.equal(c.documento.id, 'cnd'); assert.equal(c.campos.departamento.valor, 'Fiscal');
 });
 
 console.log(`\n${n} testes ok`);

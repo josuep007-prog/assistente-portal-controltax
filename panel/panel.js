@@ -474,6 +474,15 @@ function juntarCampos(tipo, campos, fonte) {
     if (k === 'empregado' && W.empregados.length) { const m = E.bestMatch(c.valor, W.empregados, 0.6); if (!m) continue; c.valor = m.option; }
     W.valores[k] = { valor: c.valor, conf: c.conf ?? 0.6, fonte: c.fonte || fonte };
   }
+  ajustarDepartamento(tipo);
+}
+/** Solicitação Geral: o departamento do catálogo das regras ("Pessoal") vira o nome da lista do portal ("DEPARTAMENTO PESSOAL"),
+ *  pelos sinônimos de tipos.geral.catalogo.departamentos. Sem a lista carregada, fica como está (o portal escolhe a parecida). */
+function ajustarDepartamento(tipo) {
+  const W = w(tipo); const v = W.valores.departamento;
+  if (tipo !== 'geral' || !v?.valor || W.editados.has('departamento') || !W.opcoes.departamento?.length) return;
+  const o = E.departamentoDaLista(v.valor, W.opcoes.departamento, S.rules);
+  if (o && o !== v.valor) W.valores.departamento = { ...v, valor: o };
 }
 function aplicarCampos(tipo, campos, fonte) {
   juntarCampos(tipo, campos, fonte);
@@ -1005,6 +1014,7 @@ function applyAnalysis(tipo, item, opts = {}) {
     const m = E.bestMatch(W.valores.empregado.valor, W.empregados, 0.7);
     if (m) W.valores.empregado.valor = m.option; else W.valores.empregado.conf = 0.3;
   }
+  ajustarDepartamento(tipo);
   // tabela de rubricas
   if (item.tabela && tipo === 'rubricas') W.valores.tabelaRubricas = { valor: tabelaRubricasTexto(item.tabela), conf: 0.9, fonte: item.nome };
   // sugere outro tipo
@@ -1752,6 +1762,7 @@ async function fillPortal(tipo, { silencioso = false, daPlataforma = false, so =
     for (const [k, v] of Object.entries(W.desfeitos || {})) if (!W.valores[k]?.valor && !W.editados.has(k)) W.valores[k] = v;
     W.desfeitos = null;
   } else if (silencioso && W.pausarAuto) return;       // o cliente desfez: só preenche de novo se ele pedir
+  ajustarDepartamento(tipo);
   gerarTextos(tipo);
   if (silencioso && telaDiferente(tipo) && !W.forcarPreenchimento) { renderModoSeguro(tipo); return; }
   const values = {};
