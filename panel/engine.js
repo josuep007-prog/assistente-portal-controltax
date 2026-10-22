@@ -518,7 +518,7 @@ export function notasDoDocumento(text, docRule) {
     let s = '';
     if (Array.isArray(n?.linhas)) {
       const ls = n.linhas.map(l => renderTemplate(l, vals)).filter(Boolean);
-      if (ls.length) s = `${renderTemplate(n.titulo || '', vals)} ${ls.join('; ')}`.trim();
+      if (ls.length) s = `${renderFirst(n.titulo || '', vals)} ${ls.join('; ')}`.trim();
     } else s = renderFirst(n?.texto ?? n, vals);
     if (s) out.push({ id: n?.id || docRule.id, texto: s, conf: n?.conf ?? 0.7, fonte: docRule.nome });
   }
@@ -567,6 +567,67 @@ export function lerCertidao(text) {
     out.data = dataPerto(/data\s+de\s+nascimento|nascid[oa]\s+em|nasceu\s+em/);
   }
   return out;
+}
+
+/**
+ * PDF com vários documentos: separa as páginas por documento (RG + comprovante + ASO num arquivo só). Uma página fraca
+ * (sem documento reconhecido com segurança) fica com a anterior, para não partir o verso de um RG. paginas: [texto].
+ * Devolve [{ documento, paginas: [índices], texto }] — mais de um só quando há documentos diferentes.
+ */
+export function separarDocumentos(paginas, rules, { minimo = 0.4 } = {}) {
+  const partes = [];
+  (paginas || []).forEach((tx, i) => {
+    const d = classifyDocument(tx || '', rules)[0];
+    const forte = d && d.bruto >= minimo ? d.id : null;
+    const ult = partes[partes.length - 1];
+    if (!ult || (forte && ult.documento && forte !== ult.documento)) partes.push({ documento: forte, paginas: [i], textos: [tx || ''] });
+    else { ult.paginas.push(i); ult.textos.push(tx || ''); if (!ult.documento && forte) ult.documento = forte; }
+  });
+  return partes.map(p => ({ documento: p.documento, paginas: p.paginas, texto: p.textos.join('\n\n') }));
+}
+
+/**
+ * Onde o valor está na foto: as palavras do OCR (só na memória: [{ t, conf 0–100, bbox: { x0, y0, x1, y1 }, pagina }]) que
+ * formam o valor, juntas (sem espaço e sem pontuação). Valores com menos de 3 letras/dígitos não são procurados (casariam
+ * em qualquer lugar). Achado mais de uma vez, vale a leitura melhor. Devolve { conf (média), min, bbox, pagina } ou null.
+ */
+export function localizarValor(valor, palavras) {
+  const alvo = norm(valor).replace(/ /g, '');
+  if (alvo.length < 3 || !palavras?.length) return null;
+  const P = palavras.map(p => ({ ...p, n: norm(p.t).replace(/ /g, '') }));
+  let melhor = null;
+  for (let i = 0; i < P.length; i++) {
+    if (!P[i].n || !alvo.startsWith(P[i].n)) continue;
+    let acc = ''; const usados = [];
+    for (let j = i; j < P.length; j++) {
+      if (!P[j].n) continue;
+      if ((P[j].pagina ?? 0) !== (P[i].pagina ?? 0)) break;
+      acc += P[j].n; usados.push(P[j]);
+      if (acc === alvo) {
+        const confs = usados.map(u => +u.conf || 0);
+        const r = { conf: Math.round(confs.reduce((a, b) => a + b, 0) / confs.length), min: Math.round(Math.min(...confs)), pagina: P[i].pagina ?? 0,
+          bbox: { x0: Math.min(...usados.map(u => u.bbox.x0)), y0: Math.min(...usados.map(u => u.bbox.y0)), x1: Math.max(...usados.map(u => u.bbox.x1)), y1: Math.max(...usados.map(u => u.bbox.y1)) } };
+        if (!melhor || r.conf > melhor.conf) melhor = r;
+        break;
+      }
+      if (!alvo.startsWith(acc)) break;
+    }
+  }
+  return melhor;
+}
+/** Confiança de cada valor pela leitura das palavras da foto (config.recorteLeitura): abaixo do limite, fica como sugestão
+ *  (não vai ao portal sem o cliente confirmar). Dados de saúde (sensivel, CID, médico) nunca ganham recorte. Muda `campos`. */
+export function aplicarLeituraDasPalavras(campos, palavras, tipoDef, rules) {
+  const R = { confiancaPalavraMinima: 70, ...(rules?.config?.recorteLeitura || {}) };
+  if (R.ativo === false || !palavras?.length) return campos;
+  for (const [k, c] of Object.entries(campos || {})) {
+    const def = tipoDef?.campos?.[k];
+    if (!def || def.sensivel || ['cid', 'medico'].includes(k) || c.confira === 'formato') continue;
+    const loc = localizarValor(c.valor, palavras); if (!loc) continue;
+    c.leitura = loc;
+    if (loc.conf < R.confiancaPalavraMinima && c.conf > Math.min(0.55, limiarPortal(rules) - 0.05)) { c.conf = Math.min(0.55, limiarPortal(rules) - 0.05); c.confira = c.confira || 'leitura'; c.validado = false; }
+  }
+  return campos;
 }
 
 /** CPFs válidos do texto que não estão junto de outro rótulo (registro, PIS, CNS, responsável, mãe…): [{ cpf, ancora }]. */
@@ -1633,6 +1694,9 @@ export function linhasDoTexto(texto) {
  *  (tipos.rubricas.planilha); sem cabeçalho, a ordem Empregado, Rubrica, Valor. */
 export function linhasDaPlanilha(rows, rules) {
   if (!rows?.length) return [];
+  // cabeçalho em qualquer das 10 primeiras linhas, formato longo ou largo (lerPlanilhaRubricas); sem cabeçalho, a ordem antiga
+  const lida = lerPlanilhaRubricas([{ nome: '', linhas: rows }], rules);
+  if (lida) return lida.linhas;
   const head = rows[0].map(h => norm(h));
   const P = rules?.tipos?.rubricas?.planilha || {};
   const find = (names) => head.findIndex(h => (names || []).some(n => h.includes(norm(n))));
@@ -1641,6 +1705,98 @@ export function linhasDaPlanilha(rows, rules) {
   if (!hasHeader) { iE = 0; iR = 1; iV = 2; }
   return (hasHeader ? rows.slice(1) : rows).filter(r => r.some(c => String(c).trim()))
     .map(r => ({ empregado: String(r[iE] ?? '').trim(), rubrica: String(r[iR] ?? '').trim(), valor: String(r[iV] ?? '').trim() }));
+}
+/* ---------- Planilha de rubricas em qualquer formato (lote 5, item 14) ---------- */
+const PLAN_IGNORAR = ['matricula', 'matrícula', 'cpf', 'cargo', 'função', 'funcao', 'setor', 'departamento', 'admissão', 'admissao', 'código', 'codigo', 'id', 'obs', 'observação', 'observações', 'total', 'situação', 'situacao', 'centro de custo', 'pis'];
+const PLAN_TIPOS = { ADIANTAMENTO: ['adiantamento', 'quinzena'], PLR: ['plr', 'participação nos lucros', 'participacao nos lucros'], MENSAL: ['mensal', 'folha mensal', 'folha do mês'] };
+const celulaVazia = (v) => { const s = String(v ?? '').trim(); return !s || /^[-–—]$/.test(s) || /^(?:r\$\s*)?0+(?:[.,]0+)?$/i.test(s) || /^0{1,2}:00$/.test(s); };
+const casaColuna = (h, nomes) => !!h && (nomes || []).some(n => { const N = norm(n); return N && (h === N || (' ' + h + ' ').includes(' ' + N + ' ') || h.startsWith(N + ' ')); });
+/**
+ * Planilha de rubricas: acha o cabeçalho nas 10 primeiras linhas da aba certa e entende os dois formatos — longo
+ * (Empregado | Rubrica | Valor) e largo (Nome | HE 50% | Faltas…, uma rubrica por coluna; células vazias ou zeradas ficam de
+ * fora). A competência e o tipo de lançamento saem do título, do nome da aba ou do nome do arquivo. Linhas de título e de
+ * total não viram lançamento. abas: [{ nome, linhas: [[…]] }]. Sem cabeçalho que bata → null (a planilha não vira rubricas).
+ * Devolve { formato, aba, linhas: [{ empregado, rubrica, valor }], totais: [{ rubrica, total }], competencia, tipoLancamento }.
+ */
+export function lerPlanilhaRubricas(abas, rules, { nomeArquivo = '', hoje = today() } = {}) {
+  const P = rules?.tipos?.rubricas?.planilha || {};
+  const dic = (rules?.tipos?.rubricas?.dicionarioRubricas?.itens || []).flatMap(i => [i.rubrica, ...(i.palavras || [])]);
+  const apel = (rules?.tipos?.rubricas?.apelidosEventos?.itens || []).flatMap(i => [i.evento, ...(i.apelidos || [])]);
+  const ehRubrica = (h) => !!h && [...dic, ...apel, ...(P.colunasRubricaLarga || [])].some(n => { const N = norm(n); return N.length >= 2 && (h === N || (' ' + h + ' ').includes(' ' + N + ' ')); });
+  const ignorar = [...PLAN_IGNORAR, ...(P.colunasIgnorar || [])];
+  for (const aba of abas || []) {
+    const rows = (aba?.linhas || []).filter(r => Array.isArray(r) && r.some(c => String(c ?? '').trim()));
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      const head = rows[i].map(h => norm(h));
+      const iE = head.findIndex(h => casaColuna(h, P.colunasEmpregado));
+      if (iE < 0) continue;
+      const iR = head.findIndex((h, j) => j !== iE && casaColuna(h, P.colunasRubrica));
+      const iV = head.findIndex((h, j) => j !== iE && j !== iR && casaColuna(h, P.colunasValor));
+      const corpo = rows.slice(i + 1).filter(r => { const e = String(r[iE] ?? '').trim(); return e && !/^(?:sub)?total\b/i.test(plain(e)); });
+      let linhas = [], formato = null;
+      if (iR >= 0 && iV >= 0) {
+        formato = 'longo';
+        linhas = corpo.filter(r => !celulaVazia(r[iV]) && String(r[iR] ?? '').trim()).map(r => ({ empregado: String(r[iE]).trim(), rubrica: String(r[iR]).trim(), valor: String(r[iV]).trim() }));
+      } else {
+        // largo: as outras colunas com nome são rubricas (pelo menos uma conhecida pelas regras)
+        const cols = head.map((h, j) => ({ h, j, rot: String(rows[i][j] ?? '').trim() })).filter(c => c.j !== iE && c.h && !casaColuna(c.h, ignorar));
+        if (!cols.some(c => ehRubrica(c.h))) continue;
+        formato = 'largo';
+        for (const r of corpo) for (const c of cols) if (!celulaVazia(r[c.j])) linhas.push({ empregado: String(r[iE]).trim(), rubrica: c.rot, valor: String(r[c.j]).trim() });
+      }
+      const titulo = rows.slice(0, i).map(r => r.join(' ')).join(' ');
+      const fontes = [titulo, aba.nome || '', String(nomeArquivo || '').replace(/\.[a-z0-9]+$/i, '').replace(/_+/g, ' ').replace(/(?<=\p{L})-(?=\p{L})/gu, ' ')];
+      const competencia = fontes.map(t => t && competenciaDoTexto(t.replace(/\b(?:passad[oa]|anterior|que vem|pr[oó]xim[oa]|atual|este|esse)\b/gi, ' '), hoje, rules)).find(Boolean) || null;
+      let tipoLancamento = null;
+      for (const t of fontes) { const T = ' ' + norm(t) + ' '; const k = Object.entries(P.tiposLancamento || PLAN_TIPOS).find(([, ws]) => !String(ws).startsWith('_') && [].concat(ws).some(w => T.includes(' ' + norm(w) + ' '))); if (k) { tipoLancamento = k[0]; break; } }
+      return { formato, aba: aba.nome || '', linhas, totais: totaisRubricas(linhas), competencia, tipoLancamento };
+    }
+  }
+  return null;
+}
+/** Soma por rubrica: horas (hh:mm) ou números (com vírgula); valores misturados ficam sem total. */
+export function totaisRubricas(linhas) {
+  const por = new Map();
+  for (const l of linhas || []) { if (!por.has(l.rubrica)) por.set(l.rubrica, []); por.get(l.rubrica).push(String(l.valor).trim()); }
+  const out = [];
+  for (const [rubrica, vs] of por) {
+    if (vs.every(v => /^\d{1,4}:\d{2}$/.test(v))) {
+      const min = vs.reduce((s, v) => { const [h, m] = v.split(':').map(Number); return s + h * 60 + m; }, 0);
+      out.push({ rubrica, total: `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`, n: vs.length });
+    } else {
+      const nums = vs.map(v => { const t = v.replace(/r\$\s*/i, '').replace(/\s*(?:horas?|h|dias?|d)$/i, '').trim(); return /^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$|^-?\d+(?:[.,]\d+)?$/.test(t) ? parseFloat(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t) : NaN; });
+      if (nums.some(isNaN)) continue;
+      const s = Math.round(nums.reduce((a, b) => a + b, 0) * 100) / 100;
+      const dinheiro = vs.some(v => /r\$|,\d{2}$/i.test(v));
+      out.push({ rubrica, total: dinheiro ? s.toFixed(2).replace('.', ',') : String(s).replace('.', ','), n: vs.length });
+    }
+  }
+  return out;
+}
+/** Texto dos totais para a descrição ("Totais: HE 50%: 12:30; Faltas: 3"). */
+export const textoTotaisRubricas = (totais) => (totais || []).length ? `Totais por rubrica: ${totais.map(t => `${t.rubrica}: ${t.total}`).join('; ')}` : '';
+/**
+ * Confere os nomes da planilha com a lista de funcionários: { naoAchados, desligados, repetidas: [{ empregado, rubrica }],
+ * nomes: { nome da planilha → nome da lista } (só com o nome inteiro batendo). Sem lista, não confere nada.
+ */
+export function conferirPlanilha(linhas, employees = [], desligados = []) {
+  const out = { naoAchados: [], desligados: [], repetidas: [], nomes: {} };
+  const vistos = new Set();
+  for (const l of linhas || []) {
+    const k = norm(l.empregado) + '|' + norm(l.rubrica);
+    if (vistos.has(k) && !out.repetidas.some(r => norm(r.empregado) + '|' + norm(r.rubrica) === k)) out.repetidas.push({ empregado: l.empregado, rubrica: l.rubrica });
+    vistos.add(k);
+  }
+  if (!employees?.length) return out;
+  for (const nome of [...new Set((linhas || []).map(l => l.empregado))]) {
+    const N = norm(nome); const ehDeslig = (n) => (desligados || []).some(d => norm(d) === norm(n));
+    const lista = [...new Set([...employees, ...(desligados || [])])];
+    if (lista.some(e => norm(e) === N)) { if (ehDeslig(nome)) out.desligados.push(nome); continue; }
+    const pm = empregadoPorNome(nome, lista);
+    if (pm?.option && !pm.contradiz && pm.score >= 0.9) { out.nomes[nome] = pm.option; if (ehDeslig(pm.option)) out.desligados.push(nome); continue; }
+    out.naoAchados.push(nome);
+  }
+  return out;
 }
 const semCodigo = (s) => String(s || '').replace(/^\s*\d+\s*[-–.:]\s*/, '');
 const nomeEvento = (s) => norm(semCodigo(s).replace(/\([^)]*\)/g, ' '));

@@ -1324,4 +1324,186 @@ t('leitor: CIN com rótulos bilíngues, órgão "SSP/ES" e sexo ao lado da nacio
   assert.equal(c.orgaoRg.valor, 'SSP'); assert.equal(c.ufRg.valor, 'ES');
 });
 
+/* ---------------- Lote 5 (dados inventados) ---------------- */
+const L5H = new Date(2026, 9, 18);
+const L5E = ['ANA PAULA FERREIRA', 'CARLOS EDUARDO MENDES', 'DANIELA SOUZA LIMA', 'RAFAEL NUNES BARBOSA', 'PATRICIA GOMES DIAS'];
+const A5 = (txt, tipo = null, ctx = {}) => E.analyzeText(txt, rules, { employees: tipo ? L5E : [], tipoAtual: tipo, hoje: L5H, ...ctx });
+
+t('lote 5 (5a): carta do INSS não é apólice de seguro; DIB e DCB vão para as notas, não para a data do afastamento', () => {
+  const txt = 'INSTITUTO NACIONAL DO SEGURO SOCIAL\nCOMUNICAÇÃO DE DECISÃO\nSegurado: RAFAEL NUNES BARBOSA\nNB: 123.456.789-0\nAuxílio por incapacidade temporária concedido a partir de 20/09/2026.\nDIB: 20/09/2026   DCB: 30/11/2026\nPerícia médica realizada em 25/09/2026.';
+  const a1 = A5(txt);
+  assert.equal(a1.documento.id, 'cartaInss'); assert.notEqual(a1.documento.id, 'seguro'); assert.equal(a1.tipoSugerido, 'afastamento');
+  const a = A5(txt, 'afastamento');
+  assert.equal(a.campos.dataAfastamento, undefined, 'a DIB (16º dia) não vira data do afastamento');
+  assert.equal(a.campos.empregado.valor, 'RAFAEL NUNES BARBOSA');
+  assert.ok(a.notas[0].texto.includes('20/09/2026') && a.notas[0].texto.includes('30/11/2026') && a.notas[0].texto.includes('123.456.789-0'), a.notas[0].texto);
+  assert.ok(a.avisos.some(x => x.id === 'cartaInss'));
+  // a apólice continua apólice
+  assert.equal(A5('APÓLICE DE SEGURO DE ACIDENTES PESSOAIS\nSeguradora Exemplo\nSegurado: FULANO DE TESTE').documento.id, 'seguro');
+  // OCR fraco: a nota fica abaixo do limiar (não vai ao texto sozinha)
+  assert.ok(A5(txt, 'afastamento', { metodo: 'ocr', confiancaOcr: 60 }).notas[0].conf < E.limiarPortal(rules));
+});
+
+t('lote 5 (5b): declaração de comparecimento reconhecida, sem dias nem tipo, com aviso educativo', () => {
+  const txt = 'Declaro para os devidos fins que PATRICIA GOMES DIAS esteve nesta unidade no dia 15/10/2026, das 08:00 às 10:30.\nUnidade de Saúde Exemplo';
+  const a = A5(txt, 'afastamento');
+  assert.equal(a.documento.id, 'comparecimento'); assert.equal(A5(txt).tipoSugerido, 'afastamento');
+  assert.equal(a.campos.dias, undefined); assert.equal(a.campos.tipoAfastamento, undefined);
+  assert.ok(a.avisos.some(x => x.id === 'comparecimento' && /não é afastamento/.test(x.mensagem)));
+  // atestado com dias continua atestado
+  assert.equal(A5('ATESTADO MÉDICO\nAtesto que o paciente esteve nesta unidade e necessita de 3 dias de afastamento.\nCRM 1234').documento.id, 'atestado');
+  assert.ok((rules.config.umPedidoPorDocumento || []).includes('comparecimento'));
+});
+
+t('lote 5 (5c): contrato de experiência vai para o Cadastro com admissão, salário, cargo e prazos', () => {
+  const txt = 'CONTRATO DE TRABALHO A TÍTULO DE EXPERIÊNCIA\nde um lado EMPRESA EXEMPLO LTDA, CNPJ 00.000.000/0001-91, e de outro lado FULANO DE TESTE SILVA, portador da CTPS nº 7654321 série 0099-SP, CPF 529.982.247-25, celebram o presente contrato de experiência.\n1. O EMPREGADO exercerá a função de VENDEDOR INTERNO, mediante salário mensal de R$ 2.300,00.\n2. Prazo de 30 (trinta) dias, com início em 03/11/2026, podendo ser prorrogado por mais 60 (sessenta) dias.';
+  const a = A5(txt);
+  assert.equal(a.documento.id, 'contratoExperiencia'); assert.equal(a.tipoSugerido, 'cadastroEmpregado');
+  const c = A5(txt, 'cadastroEmpregado').campos;
+  assert.equal(c.nome.valor, 'FULANO DE TESTE SILVA'); assert.equal(c.cargo.valor, 'VENDEDOR INTERNO'); assert.equal(c.salario.valor, '2.300,00');
+  assert.equal(c.dataAdmissao.valor, '03/11/2026'); assert.equal(c.contratoExperiencia.valor, '30'); assert.equal(c.prorrogacao.valor, '60');
+  assert.equal(c.ctpsNumero.valor, '7654321'); assert.equal(c.ctpsSerie.valor, '0099'); assert.equal(c.cpf.valor, '529.982.247-25');
+  assert.equal(c.cep, undefined, 'o endereço da empregadora não entra');
+});
+
+t('lote 5 (5d): certidão de casamento marca estado civil e cônjuge; de nascimento sugere dependente (sem dados do registrado)', () => {
+  const cas = 'REGISTRO CIVIL DAS PESSOAS NATURAIS\nCERTIDÃO DE CASAMENTO\nNOMES DOS CÔNJUGES\nFULANA DE TESTE SILVA E BELTRANO DE TESTE SOUZA\nDATA DO CASAMENTO\n12/06/2020\nCPF 529.982.247-25';
+  assert.deepEqual(E.lerCertidao(cas).nomes, ['FULANA DE TESTE SILVA', 'BELTRANO DE TESTE SOUZA']);
+  const a = A5(cas, 'cadastroEmpregado', { nome: 'Fulana de Teste Silva' });
+  assert.equal(a.documento.id, 'certidao'); assert.equal(a.campos.estadoCivil.valor, 'Casado'); assert.equal(a.campos.conjuge.valor, 'BELTRANO DE TESTE SOUZA');
+  assert.equal(a.campos.cpf, undefined, 'CPF da certidão não entra no cadastro'); assert.equal(a.pessoa, null);
+  const sem = A5(cas, 'cadastroEmpregado');
+  assert.equal(sem.campos.conjuge, undefined); assert.ok(sem.avisos.some(x => x.id === 'conjuge'));
+  const nas = 'CERTIDÃO DE NASCIMENTO\nNOME\nENZO DE TESTE\nCPF   DATA DE NASCIMENTO   SEXO\n529.982.247-25   14/09/2026   Masculino\nFILIAÇÃO\nANA PAULA FERREIRA e PAI DE TESTE\nCartório Exemplo, oficial';
+  const c = A5(nas, 'cadastroEmpregado');
+  assert.equal(c.campos.possuiDependentes.valor, 'Sim'); assert.ok(c.campos.possuiDependentes.conf < E.limiarPortal(rules), 'só sugestão');
+  assert.equal(c.campos.nome, undefined); assert.equal(c.campos.cpf, undefined); assert.equal(c.campos.nascimento, undefined);
+  assert.ok(c.avisos.some(x => x.id === 'dependente' && x.mensagem.includes('ENZO DE TESTE')));
+  const af = A5(nas, 'afastamento');
+  assert.equal(af.campos.dataAfastamento.valor, '14/09/2026'); assert.ok(af.campos.dataAfastamento.conf < E.limiarPortal(rules));
+  assert.equal(A5(nas).tipoSugerido, null, 'certidão sozinha não escolhe pedido');
+});
+
+t('lote 5 (5e): espelho de ponto vai para as variáveis da folha com competência e totais', () => {
+  const txt = 'ESPELHO DE PONTO\nFuncionário: CARLOS EDUARDO MENDES   Matrícula: 15\nPeríodo: 01/10/2026 a 31/10/2026\nEntrada  Saída  Entrada  Saída\nTotais\nHoras trabalhadas: 176:00\nHoras extras 50%: 10:30\nFaltas: 2\nAtrasos: 01:15';
+  const a = A5(txt);
+  assert.equal(a.documento.id, 'espelhoPonto'); assert.equal(a.tipoSugerido, 'rubricas');
+  const r = A5(txt, 'rubricas');
+  assert.equal(r.campos.competencia.valor, '10/2026');
+  assert.equal(r.notas[0].texto, 'Espelho de ponto de CARLOS EDUARDO MENDES — totais: horas extras 50% 10:30; faltas 2; atrasos 01:15');
+  assert.ok(rules.tipos.rubricas.descricao.includes('{notasDocumento}'));
+});
+
+t('lote 5 (35): ASO sozinho escolhe o pedido pelo exame; data pela pista; conferência do ASO', () => {
+  const aso = (ex, data = 'Data do exame: 10/10/2026') => `ATESTADO DE SAÚDE OCUPACIONAL\nNome: FULANO DE TESTE   CPF: 529.982.247-25\nData de nascimento: 01/01/1990   Admissão: 01/02/2020\n${['Admissional', 'Periódico', 'Demissional'].map(x => `(${x === ex ? 'X' : ' '}) ${x}`).join(' ')}\nParecer: (X) Apto ( ) Inapto\n${data}\nVitória/ES, 12/10/2026`;
+  assert.equal(A5(aso('Admissional')).tipoSugerido, 'cadastroEmpregado');
+  assert.equal(A5(aso('Demissional')).tipoSugerido, 'calculoRescisao');
+  assert.equal(A5(aso('Periódico')).tipoSugerido, null);
+  assert.equal(E.readASO(aso('Admissional')).data, '10/10/2026', 'pela pista "data do exame", não a última');
+  assert.equal(E.readASO(aso('Admissional', '')).data, '12/10/2026', 'sem pista: a da linha cidade/UF');
+  // no checklist só o ASO certo marca o item
+  const anexoAdm = rules.tipos.cadastroEmpregado.anexos.find(x => x.id === 'aso');
+  assert.equal(E.anexoCasa(anexoAdm, { documento: 'aso', aso: { tipo: 'periodico' } }), false);
+  assert.equal(E.anexoCasa(anexoAdm, { documento: 'aso', aso: { tipo: 'admissional' } }), true);
+  assert.equal(E.anexoCasa(anexoAdm, { documento: 'identidade', documentos: ['identidade', 'aso'] }), true, 'PDF com vários documentos');
+  // conferência: INAPTO é erro em qualquer pedido; exame trocado, admissional depois da admissão e demissional longe do término
+  const ver = (tipo, vals, a) => E.runChecks(tipo, vals, [{ nome: 'aso.pdf', documento: 'aso', aso: a }], rules, L5H).filter(i => i.grupo === 'Documento');
+  assert.ok(ver('calculoRescisao', {}, { tipo: 'demissional', resultado: 'INAPTO', data: '10/10/2026' }).some(i => i.nivel === 'erro'));
+  assert.ok(ver('cadastroEmpregado', {}, { tipo: 'demissional', resultado: 'APTO' }).some(i => i.nivel === 'atencao' && /demissional/.test(i.mensagem)));
+  assert.ok(ver('cadastroEmpregado', { dataAdmissao: '05/10/2026' }, { tipo: 'admissional', resultado: 'APTO', data: '10/10/2026' }).some(i => /depois da admissão/.test(i.mensagem)));
+  assert.ok(ver('calculoRescisao', { dataDemissao: '30/10/2026' }, { tipo: 'demissional', resultado: 'APTO', data: '10/10/2026' }).some(i => /NR-7/.test(i.mensagem)));
+  assert.equal(ver('calculoRescisao', { dataDemissao: '15/10/2026' }, { tipo: 'demissional', resultado: 'APTO', data: '10/10/2026' }).length, 0);
+});
+
+t('lote 5 (36): regra dos 60 dias — soma atestados do mesmo funcionário', () => {
+  const ant = [{ empregado: 'DANIELA SOUZA LIMA', data: '01/10/2026', dias: 10, origem: 'historico' }, { empregado: 'CARLOS EDUARDO MENDES', data: '05/10/2026', dias: 10 }];
+  const r = E.somaAtestados({ empregado: 'DANIELA SOUZA LIMA', data: '20/10/2026', dias: 8 }, ant, rules);
+  assert.equal(r.soma, 18); assert.equal(r.passa, true); assert.equal(r.tipoSugerido, 'Novo afast. mesma doença');
+  assert.ok(r.texto.includes('18 dias') && r.texto.includes('01/10'), r.texto);
+  assert.equal(E.somaAtestados({ empregado: 'DANIELA SOUZA LIMA', data: '20/12/2026', dias: 8 }, ant, rules), null, 'mais de 60 dias depois do retorno');
+  assert.equal(E.somaAtestados({ empregado: 'DANIELA SOUZA LIMA', data: '20/10/2026', dias: 3 }, [{ empregado: 'DANIELA SOUZA LIMA', data: '01/10/2026', dias: 5 }], rules).passa, false);
+  assert.equal(E.somaAtestados({ empregado: 'DANIELA SOUZA LIMA', data: '03/10/2026', dias: 3 }, ant, rules), null, 'sobreposto (repetido?) não soma');
+  // cadeia: 3 atestados
+  const c = E.somaAtestados({ empregado: 'X DE TESTE', data: '01/12/2026', dias: 2 }, [{ empregado: 'X DE TESTE', data: '01/10/2026', dias: 7 }, { empregado: 'X DE TESTE', data: '01/11/2026', dias: 7 }], rules);
+  assert.equal(c.soma, 16); assert.equal(c.anteriores.length, 2);
+  assert.equal(E.mesmaDoencaPeloCid('M54.5', 'M54.2'), true); assert.equal(E.mesmaDoencaPeloCid('M54', 'J06'), false); assert.equal(E.mesmaDoencaPeloCid('', 'J06'), null);
+  assert.equal(rules.config.regra60dias.revisarComEscritorio, true);
+});
+
+t('lote 5 (28): lote agrupado por tipo e por pessoa', () => {
+  const it = (documento, tipoSugerido, pessoa, extra = {}) => ({ documento, nome: `${documento}-${pessoa?.nome || pessoa?.cpf || 'x'}`, analise: { tipoSugerido, pessoa, campos: {}, ...extra } });
+  const dem1 = it('pedidoDemissao', 'avisoRescisao', null, { campos: { empregado: { valor: 'CARLOS EDUARDO MENDES', conf: 0.95 } } });
+  const dem2 = it('pedidoDemissao', 'avisoRescisao', null, { campos: { empregado: { valor: 'RAFAEL NUNES BARBOSA', conf: 0.95 } } });
+  let r = E.montarPedidosLote([dem1, dem2], rules);
+  assert.equal(r.pedidos.length, 2, 'dois pedidos de demissão de pessoas diferentes'); assert.equal(r.pessoas.length, 2);
+  // duas admissões: ficha + RG de cada pessoa, comprovante pelo titular, ASO sem nome fica para o cliente escolher
+  const A = { nome: 'FULANA DE TESTE', cpf: '52998224725' }, B = { nome: 'BELTRANO DE TESTE', cpf: '11144477735' };
+  const fichaA = it('fichaAdmissao', 'cadastroEmpregado', A), rgB = it('identidade', 'cadastroEmpregado', B), rgA = it('identidade', 'cadastroEmpregado', { nome: 'FULANA DE TESTE' });
+  const conta = it('comprovanteEndereco', 'cadastroEmpregado', null, { titular: 'BELTRANO DE TESTE' });
+  const aso = it('aso', 'cadastroEmpregado', null);
+  r = E.montarPedidosLote([fichaA, rgB, rgA, conta, aso], rules);
+  assert.equal(r.pedidos.length, 2);
+  const pa = r.pedidos.find(p => p.itens.includes(fichaA)), pb = r.pedidos.find(p => p.itens.includes(rgB));
+  assert.ok(pa.itens.includes(rgA) && pb.itens.includes(conta) && !pa.itens.includes(conta));
+  assert.deepEqual(r.fora, [aso], 'sem pessoa e com dois pedidos possíveis: o cliente escolhe');
+  // um só pedido: o neutro sem pessoa entra nele; atestado continua um pedido por documento
+  r = E.montarPedidosLote([fichaA, aso], rules); assert.equal(r.pedidos.length, 1); assert.equal(r.pedidos[0].itens.length, 2);
+  const at1 = it('atestado', 'afastamento', null, { paciente: 'DANIELA SOUZA LIMA' }), at2 = it('atestado', 'afastamento', null, { paciente: 'DANIELA SOUZA LIMA' });
+  assert.equal(E.montarPedidosLote([at1, at2], rules).pedidos.length, 2);
+  // RG de quem tem um atestado vai junto do atestado; o tipo do cartão é o mais frequente
+  const rgD = it('identidade', 'cadastroEmpregado', { nome: 'DANIELA SOUZA LIMA' });
+  r = E.montarPedidosLote([at1, rgD], rules); assert.equal(r.pedidos.length, 1); assert.ok(r.pedidos[0].itens.includes(rgD));
+  assert.equal(E.tipoMaisFrequente([rgD, at1, at2], rules), 'afastamento');
+  assert.ok(E.docsNeutros(rules).includes('aso') && !E.docsNeutros(rules).includes('atestado') && E.docsSemPessoa(rules).includes('comprovanteEndereco'));
+});
+
+t('lote 5 (14): planilha de rubricas — cabeçalho em qualquer linha, formato largo, competência do título, totais e nomes', () => {
+  const largo = [['Lançamentos da folha — outubro/2026'], [''], ['Nome', 'Matrícula', 'HE 50%', 'Faltas', 'Comissão'], ['JOAO DA SILVA', '12', '10:30', '0', ''], ['JOANA FONSECA', '13', '02:00', '1', 'R$ 350,00'], ['Total', '', '12:30', '1', '350,00']];
+  const p = E.lerPlanilhaRubricas([{ nome: 'Plan1', linhas: largo }], rules, { hoje: L5H });
+  assert.equal(p.formato, 'largo'); assert.equal(p.competencia, '10/2026');
+  assert.deepEqual(p.linhas, [{ empregado: 'JOAO DA SILVA', rubrica: 'HE 50%', valor: '10:30' }, { empregado: 'JOANA FONSECA', rubrica: 'HE 50%', valor: '02:00' }, { empregado: 'JOANA FONSECA', rubrica: 'Faltas', valor: '1' }, { empregado: 'JOANA FONSECA', rubrica: 'Comissão', valor: 'R$ 350,00' }]);
+  assert.deepEqual(p.totais.map(x => `${x.rubrica}=${x.total}`), ['HE 50%=12:30', 'Faltas=1', 'Comissão=350,00']);
+  // aba certa (a 1ª é uma capa) e tipo/competência pelo nome do arquivo
+  const longo = [['Empregado', 'Rubrica', 'Valor'], ['JOAO DA SILVA', 'Horas extras 50%', '5']];
+  const q = E.lerPlanilhaRubricas([{ nome: 'Capa', linhas: [['Empresa Exemplo']] }, { nome: 'Dados', linhas: longo }], rules, { nomeArquivo: 'adiantamento-11-2026.xlsx', hoje: L5H });
+  assert.equal(q.aba, 'Dados'); assert.equal(q.formato, 'longo'); assert.equal(q.tipoLancamento, 'ADIANTAMENTO'); assert.equal(q.competencia, '11/2026');
+  // planilha solta (sem cabeçalho de rubricas) não vira rubricas
+  assert.equal(E.lerPlanilhaRubricas([{ nome: 'x', linhas: [['Produto', 'Preço'], ['Caneta', '2,00']] }], rules), null);
+  // nomes conferidos com a lista
+  const cf = E.conferirPlanilha([...p.linhas, { empregado: 'JOAO DA SILVA', rubrica: 'HE 50%', valor: '1:00' }, { empregado: 'FULANO INEXISTENTE', rubrica: 'Faltas', valor: '1' }, { empregado: 'OTAVIO RANGEL', rubrica: 'Faltas', valor: '1' }], ['JOAO DA SILVA', 'JOANA FONSECA'], ['OTAVIO RANGEL']);
+  assert.deepEqual(cf.naoAchados, ['FULANO INEXISTENTE']); assert.deepEqual(cf.desligados, ['OTAVIO RANGEL']); assert.equal(cf.repetidas.length, 1);
+  assert.ok(E.textoTotaisRubricas(p.totais).startsWith('Totais por rubrica: HE 50%: 12:30'));
+  assert.ok(rules.tipos.rubricas.descricao.includes('{totaisRubricas}'));
+});
+
+t('lote 5 (29): PDF com vários documentos — páginas separadas por documento; página fraca fica com a anterior', () => {
+  const rg = 'REPÚBLICA FEDERATIVA DO BRASIL\nCARTEIRA DE IDENTIDADE\nREGISTRO GERAL 1.234.567\nNOME FULANA DE TESTE\nFILIAÇÃO\nMAE DE TESTE\nNATURALIDADE VITORIA/ES';
+  const verso = 'assinatura do titular';
+  const conta = 'CONTA DE LUZ — FATURA DE ENERGIA\nVencimento 10/11/2026\nConsumo 210 kWh\nRUA DAS FLORES, 10 - CENTRO - CEP 29000-000';
+  const aso = 'ATESTADO DE SAÚDE OCUPACIONAL\nClínica Exemplo, Av. Central, 900\n(X) Admissional\n(X) Apto';
+  const p = E.separarDocumentos([rg, verso, conta, aso], rules);
+  assert.deepEqual(p.map(x => x.documento), ['identidade', 'comprovanteEndereco', 'aso']); assert.deepEqual(p[0].paginas, [0, 1]);
+  assert.equal(E.separarDocumentos([rg, verso], rules).length, 1);
+});
+
+t('lote 5 (42): confiança das palavras da foto — valor mal lido vira sugestão; nunca para CID', () => {
+  const pal = [{ t: 'Nome:', conf: 95, bbox: { x0: 0, y0: 0, x1: 50, y1: 10 } }, { t: 'FULANA', conf: 92, bbox: { x0: 60, y0: 0, x1: 120, y1: 10 } }, { t: 'DE', conf: 90, bbox: { x0: 125, y0: 0, x1: 140, y1: 10 } }, { t: 'TESTE', conf: 88, bbox: { x0: 145, y0: 0, x1: 200, y1: 12 } },
+    { t: 'CPF:', conf: 95, bbox: { x0: 0, y0: 20, x1: 40, y1: 30 } }, { t: '529.982.247-25', conf: 41, bbox: { x0: 45, y0: 20, x1: 160, y1: 30 } }, { t: 'J06.9', conf: 30, bbox: { x0: 0, y0: 40, x1: 40, y1: 50 } }];
+  const l = E.localizarValor('FULANA DE TESTE', pal);
+  assert.equal(l.conf, 90); assert.deepEqual(l.bbox, { x0: 60, y0: 0, x1: 200, y1: 12 });
+  assert.equal(E.localizarValor('3', pal), null, 'valor curto não é procurado');
+  const campos = { nome: { valor: 'FULANA DE TESTE', conf: 0.75 }, cpf: { valor: '529.982.247-25', conf: 0.95, ancora: true, validado: true } };
+  E.aplicarLeituraDasPalavras(campos, pal, rules.tipos.cadastroEmpregado, rules);
+  assert.ok(campos.nome.conf >= 0.6 && campos.nome.leitura); assert.ok(campos.cpf.conf < E.limiarPortal(rules) && campos.cpf.confira === 'leitura');
+  const af = { cid: { valor: 'J06.9', conf: 0.7 } };
+  E.aplicarLeituraDasPalavras(af, pal, E.resolveTipo(rules, 'afastamento'), rules);
+  assert.equal(af.cid.leitura, undefined); assert.equal(af.cid.conf, 0.7);
+});
+
+t('lote 5 (23): CPFs do documento (sem os de outro rótulo) para achar o funcionário', () => {
+  const r = E.cpfsDoTexto('Paciente: FULANA DE TESTE CPF 529.982.247-25\nRegistro da CNH: 111.444.777-35\nCNPJ 00.000.000/0001-91', rules);
+  assert.deepEqual(r.map(x => x.cpf), ['52998224725']);
+  assert.deepEqual(A5('ATESTADO MÉDICO\nAtesto que FULANA DE TESTE, CPF 529.982.247-25, necessita de 2 dias de repouso.\nCRM 1234', 'afastamento').cpfs, ['52998224725']);
+});
+
 console.log(`\n${n} testes ok`);
