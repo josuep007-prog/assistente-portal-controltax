@@ -1492,9 +1492,11 @@ t('lote 5 (42): confiança das palavras da foto — valor mal lido vira sugestã
   const l = E.localizarValor('FULANA DE TESTE', pal);
   assert.equal(l.conf, 90); assert.deepEqual(l.bbox, { x0: 60, y0: 0, x1: 200, y1: 12 });
   assert.equal(E.localizarValor('3', pal), null, 'valor curto não é procurado');
-  const campos = { nome: { valor: 'FULANA DE TESTE', conf: 0.75 }, cpf: { valor: '529.982.247-25', conf: 0.95, ancora: true, validado: true } };
+  const campos = { nome: { valor: 'FULANA DE TESTE', conf: 0.75 }, cpf: { valor: '529.982.247-25', conf: 0.95, ancora: true, validado: true }, rg: { valor: '529.982.247-25', conf: 0.75, ancora: true } };
   E.aplicarLeituraDasPalavras(campos, pal, rules.tipos.cadastroEmpregado, rules);
-  assert.ok(campos.nome.conf >= 0.6 && campos.nome.leitura); assert.ok(campos.cpf.conf < E.limiarPortal(rules) && campos.cpf.confira === 'leitura');
+  assert.ok(campos.nome.conf >= 0.6 && campos.nome.leitura, 'palavras bem lidas: segue');
+  assert.ok(campos.rg.conf < E.limiarPortal(rules) && campos.rg.confira === 'leitura', 'palavras mal lidas: sugestão');
+  assert.equal(campos.cpf.conf, 0.95, 'CPF com dígito verificador conferido não é rebaixado');
   const af = { cid: { valor: 'J06.9', conf: 0.7 } };
   E.aplicarLeituraDasPalavras(af, pal, E.resolveTipo(rules, 'afastamento'), rules);
   assert.equal(af.cid.leitura, undefined); assert.equal(af.cid.conf, 0.7);
@@ -1504,6 +1506,44 @@ t('lote 5 (23): CPFs do documento (sem os de outro rótulo) para achar o funcion
   const r = E.cpfsDoTexto('Paciente: FULANA DE TESTE CPF 529.982.247-25\nRegistro da CNH: 111.444.777-35\nCNPJ 00.000.000/0001-91', rules);
   assert.deepEqual(r.map(x => x.cpf), ['52998224725']);
   assert.deepEqual(A5('ATESTADO MÉDICO\nAtesto que FULANA DE TESTE, CPF 529.982.247-25, necessita de 2 dias de repouso.\nCRM 1234', 'afastamento').cpfs, ['52998224725']);
+});
+
+t('lote 5 (19): texto de Word e LibreOffice pelo XML; mensagens de falha nas regras', () => {
+  const docx = '<w:document><w:body><w:p><w:r><w:t>PEDIDO DE DEMISS&#xC3;O</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Nome:</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>FULANO &amp; CIA</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>';
+  assert.equal(E.xmlParaTexto(docx, 'docx'), 'PEDIDO DE DEMISSÃO\nNome:   FULANO & CIA');
+  const odt = '<office:text><text:h>FICHA DE ADMISSÃO</text:h><text:p>CPF:<text:s text:c="2"/>529.982.247-25<text:tab/>fim</text:p></office:text>';
+  assert.equal(E.xmlParaTexto(odt, 'odt'), 'FICHA DE ADMISSÃO\nCPF:  529.982.247-25\tfim');
+  for (const k of ['leituraHeic', 'leituraTiff', 'leituraPdfSenha', 'leituraImagem', 'leituraFalhou', 'leituraPaginas']) assert.ok(rules.mensagens[k], k);
+  assert.match(rules.mensagens.leituraHeic, /Ctrl\+V/); assert.match(rules.mensagens.leituraPdfSenha, /Salvar como PDF/);
+  assert.equal(rules.config.ocrMaxPaginas, 8);
+});
+
+t('lote 5 (23): o CPF do documento acha o funcionário na lista (só o nome volta) e resolve homônimos', () => {
+  const emp = ['MARIA APARECIDA SANTOS', 'MARIA EDUARDA SANTOS', 'JOAO DA SILVA'];
+  const txt = 'ATESTADO MÉDICO\nAtesto que MARIA SANTOS, CPF 529.982.247-25, necessita de 2 dias de repouso a partir de 05/10/2026.\nCRM 1234';
+  const sem = E.analyzeText(txt, rules, { employees: emp, tipoAtual: 'afastamento', hoje: L5H });
+  assert.ok(sem.candidatos || sem.campos.empregado?.conf < 0.85, 'sem o CPF, o nome é ambíguo');
+  const com = E.analyzeText(txt, rules, { employees: emp, tipoAtual: 'afastamento', hoje: L5H, cpfNomes: { '52998224725': 'MARIA EDUARDA SANTOS' }, cpfListaTemCpf: true });
+  assert.equal(com.campos.empregado.valor, 'MARIA EDUARDA SANTOS'); assert.ok(com.campos.empregado.conf >= 0.95); assert.equal(com.candidatos, null);
+  // CPF que não é de ninguém da lista, com nome diferente: reforça o aviso de outro nome
+  const outro = 'ATESTADO MÉDICO\nAtesto que MARIA EDUARDA COSTA, CPF 529.982.247-25, necessita de 2 dias de repouso a partir de 05/10/2026.\nCRM 1234';
+  const r = E.analyzeText(outro, rules, { employees: ['MARIA EDUARDA SANTOS'], tipoAtual: 'afastamento', hoje: L5H, cpfNomes: { '52998224725': null }, cpfListaTemCpf: true });
+  assert.ok(r.avisos.some(x => x.id === 'cpfOutraPessoa') && r.avisos.some(x => x.id === 'outroNome'));
+  // lista sem CPF (campo a calibrar): nada muda
+  const nulo = E.analyzeText(outro, rules, { employees: ['MARIA EDUARDA SANTOS'], tipoAtual: 'afastamento', hoje: L5H, cpfNomes: { '52998224725': null }, cpfListaTemCpf: false });
+  assert.ok(!nulo.avisos.some(x => x.id === 'cpfOutraPessoa'));
+});
+
+t('lote 5 (29): cada trecho do PDF preenche só o que o seu documento traz (endereço do comprovante, não da clínica)', () => {
+  const rg = 'CARTEIRA DE IDENTIDADE\nREGISTRO GERAL 1.234.567\nNOME FULANA DE TESTE\nCPF 529.982.247-25\nFILIAÇÃO\nMAE DE TESTE\nNATURALIDADE VITORIA/ES';
+  const conta = 'CONTA DE LUZ — FATURA DE ENERGIA\nDADOS DO CLIENTE\nNome: FULANA DE TESTE\nRUA DAS FLORES, 10 - CENTRO\nVila Velha/ES CEP 29101-450\nVencimento 10/11/2026\nConsumo 210 kWh';
+  const aso = 'ATESTADO DE SAÚDE OCUPACIONAL\nClínica Exemplo, Av. Central, 900 - Praia - Vitória/ES - CEP 29010-500\nParecer: (X) Apto ( ) Inapto\n(X) Admissional ( ) Demissional';
+  const partes = E.separarDocumentos([rg, conta, aso], rules);
+  assert.deepEqual(partes.map(x => x.documento), ['identidade', 'comprovanteEndereco', 'aso']);
+  const a = E.analisarPartes(partes, rules, { tipoAtual: 'cadastroEmpregado', employees: [], hoje: L5H });
+  assert.deepEqual(a.documentos, ['identidade', 'comprovanteEndereco', 'aso']);
+  assert.equal(a.campos.cep.valor, '29101-450', 'o CEP é o da conta, não o da clínica'); assert.equal(a.campos.cpf.valor, '529.982.247-25');
+  assert.ok(!Object.values(a.campos).some(c => String(c.valor).includes('29010')));
 });
 
 console.log(`\n${n} testes ok`);

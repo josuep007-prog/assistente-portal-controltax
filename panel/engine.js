@@ -450,6 +450,20 @@ export function analyzeText(text, rules, ctx = {}) {
       } else if (m) put('empregado', m.option, m.score, 'nome encontrado no documento', { validado: m.score >= 0.95 });
     }
   }
+  // funcionário pelo CPF do documento: o painel perguntou à aba do portal de quem é cada CPF (ctx.cpfNomes = { cpf: nome | null };
+  // ctx.cpfListaTemCpf: a lista traz CPF). O nome achado pelo CPF vale mais que o nome lido e resolve o "Qual deles?".
+  if (tipo?.campos?.empregado && ctx.cpfNomes && ctx.employees?.length) {
+    const doc_ = cpfsDoTexto(text, rules);
+    const achados = doc_.map(c => ({ ...c, nome: ctx.cpfNomes[c.cpf] })).filter(c => c.nome && ctx.employees.some(e => norm(e) === norm(c.nome)));
+    const nomes = [...new Set(achados.map(c => norm(c.nome)))];
+    if (nomes.length === 1) {
+      const c = achados.find(x => x.ancora) || achados[0];
+      campos.empregado = { valor: ctx.employees.find(e => norm(e) === norm(c.nome)), conf: c.ancora ? 0.97 : Math.min(0.55, LC.semAncora), fonte: 'CPF do documento', ancora: c.ancora, validado: true };
+      candidatos = null;
+    } else if (!nomes.length && ctx.cpfListaTemCpf && doc_.length && pacienteOutro) {
+      avisosExtra.push({ nivel: 'atencao', id: 'cpfOutraPessoa', mensagem: (rules.mensagens?.cpfDeOutraPessoa || 'O CPF do documento ({cpf}) não é de nenhum funcionário da lista — pode ser de um dependente. Confira de quem é o documento.').replace('{cpf}', fmtCPF(doc_[0].cpf)) });
+    }
+  }
   // atestado de outra pessoa (dependente): o tipo de afastamento fica com o cliente
   if (pacienteOutro && campos.tipoAfastamento) delete campos.tipoAfastamento;
   if (tipo?.campos?.nome && !campos.nome && !(docRule?.naoPreenche || []).includes('nome')) {
@@ -498,6 +512,28 @@ export function analyzeText(text, rules, ctx = {}) {
   const pessoa = pessoaDaAnalise({ campos, paciente: leitor?.paciente?.nome || null });
   const avisos = [...avisosDoDocumento(text, docRule || (leitor ? (rules.documentos || []).find(d => d.id === 'atestado') : null), campos), ...avisosExtra, ...avisosMotivo];
   return { documento: doc, alternativas: docs.slice(1, 4), tipoSugerido: tipoKey, campos, avisos, paciente: leitor?.paciente?.nome || null, candidatos, titular, filiacao: pessoal?.filiacao || null, layout: pessoal?.layout || null, pessoa, fotoRuim, confiancaOcr: ocrConf, notas, cpfs, exameAso, certidao: certidao ? { tipo: certidao.tipo } : null };
+}
+
+/**
+ * PDF com vários documentos (RG + comprovante + ASO): cada trecho é lido com o que o SEU documento pode trazer (o endereço só
+ * sai do comprovante, nunca da clínica do ASO) e os resultados se juntam — o campo de maior confiança fica (empate: o do
+ * trecho mais antigo). partes: [{ documento, texto }]. Devolve a análise do 1º trecho com os campos, avisos e notas de todos,
+ * mais `documentos` (ids reconhecidos) e `partes` (análise de cada um).
+ */
+export function analisarPartes(partes, rules, ctx = {}) {
+  const lista = (partes || []).map(p => ({ p, a: analyzeText(p.texto, rules, ctx) }));
+  if (!lista.length) return analyzeText('', rules, ctx);
+  const principal = lista.find(x => x.a.tipoSugerido && x.a.documento && !docsNeutros(rules).includes(x.a.documento.id)) || lista.find(x => x.a.tipoSugerido) || lista[0];
+  const base = principal.a;
+  const campos = {};
+  for (const { a } of lista) for (const [k, c] of Object.entries(a.campos)) if (!campos[k] || campos[k].conf < c.conf) campos[k] = c;
+  const tipoKey = ctx.tipoAtual || base.tipoSugerido;
+  const ids = [...new Set(lista.map(x => x.a.documento?.id).filter(Boolean))];
+  const cpfs = [...new Set(lista.flatMap(x => x.a.cpfs || []))];
+  const pessoa = pessoaDaAnalise({ campos, paciente: base.paciente });
+  return { ...base, tipoSugerido: tipoKey, campos, avisos: lista.flatMap(x => x.a.avisos), notas: lista.flatMap(x => x.a.notas || []), cpfs, pessoa,
+    candidatos: base.candidatos || lista.find(x => x.a.candidatos)?.a.candidatos || null, titular: base.titular || lista.find(x => x.a.titular)?.a.titular || null,
+    documentos: ids, partes: lista.map(x => ({ documento: x.a.documento?.id || null, paginas: x.p.paginas || null })) };
 }
 
 /* ---------------- Notas, certidão e CPFs do documento ---------------- */
@@ -623,11 +659,22 @@ export function aplicarLeituraDasPalavras(campos, palavras, tipoDef, rules) {
   for (const [k, c] of Object.entries(campos || {})) {
     const def = tipoDef?.campos?.[k];
     if (!def || def.sensivel || ['cid', 'medico'].includes(k) || c.confira === 'formato') continue;
+    if (c.ancora && c.validado && ['cpf', 'pis'].includes(k)) continue;   // o dígito verificador já confere o valor (mesma exceção do P2)
     const loc = localizarValor(c.valor, palavras); if (!loc) continue;
     c.leitura = loc;
     if (loc.conf < R.confiancaPalavraMinima && c.conf > Math.min(0.55, limiarPortal(rules) - 0.05)) { c.conf = Math.min(0.55, limiarPortal(rules) - 0.05); c.confira = c.confira || 'leitura'; c.validado = false; }
   }
   return campos;
+}
+
+/** Texto de um documento do Word (document.xml) ou do LibreOffice (content.xml): um parágrafo por linha; as células de uma
+ *  tabela ficam na mesma linha, separadas por espaços (rótulo e valor como num formulário). Sem biblioteca: só o XML. */
+export function xmlParaTexto(xml, tipo = 'docx') {
+  const dec = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n)).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&amp;/g, '&');
+  let x = String(xml || '');
+  if (tipo === 'docx') x = x.replace(/<\/w:p>(?=\s*<\/w:tc>)/g, '').replace(/<w:tab\s*\/>/g, '\t').replace(/<w:(?:br|cr)\s*\/>/g, '\n').replace(/<\/w:tc>/g, '   ').replace(/<\/w:p>/g, '\n').replace(/<\/w:tr>/g, '\n');
+  else x = x.replace(/<\/text:p>(?=\s*<\/table:table-cell>)/g, '').replace(/<text:tab\s*\/>/g, '\t').replace(/<text:line-break\s*\/>/g, '\n').replace(/<text:s(?:\s+text:c="(\d+)")?\s*\/>/g, (_, n) => ' '.repeat(+n || 1)).replace(/<\/table:table-cell>/g, '   ').replace(/<\/text:(?:p|h)>/g, '\n').replace(/<\/table:table-row>/g, '\n');
+  return dec(x.replace(/<[^>]+>/g, '')).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').split('\n').map(l => l.replace(/[ \t]+$/, '')).join('\n').trim();
 }
 
 /** CPFs válidos do texto que não estão junto de outro rótulo (registro, PIS, CNS, responsável, mãe…): [{ cpf, ancora }]. */

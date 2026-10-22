@@ -1,5 +1,6 @@
 // Leitura de arquivos 100% local: PDF (texto), OCR (imagens/PDF escaneado), planilhas e texto.
 // pdf.js é carregado só quando um PDF é lido: se a pasta lib/ faltar, o painel continua funcionando.
+import { xmlParaTexto } from './engine.js';
 let pdfjsLib = null;
 async function getPdfjs() {
   if (pdfjsLib) return pdfjsLib;
@@ -14,9 +15,13 @@ export async function libsPresentes() {
 }
 
 const ext = (name) => (String(name).toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || '';
-const isImage = (f) => /^image\//.test(f.type) || ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tif', 'tiff'].includes(ext(f.name));
+// HEIC e TIFF o navegador não abre: a leitura devolve motivo 'heic'/'tiff' e a tela explica o que fazer (regras.mensagens.leitura*)
+const isHeic = (f) => /heic|heif/.test(f.type) || ['heic', 'heif'].includes(ext(f.name));
+const isTiff = (f) => /tiff?$/.test(f.type) || ['tif', 'tiff'].includes(ext(f.name));
+const isImage = (f) => !isHeic(f) && !isTiff(f) && (/^image\//.test(f.type) || ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'].includes(ext(f.name)));
 const isPdf = (f) => f.type === 'application/pdf' || ext(f.name) === 'pdf';
 const isSheet = (f) => ['xlsx', 'xls', 'csv', 'ods'].includes(ext(f.name));
+const isDoc = (f) => ['docx', 'odt'].includes(ext(f.name));
 const isText = (f) => /^text\//.test(f.type) || ['txt', 'md'].includes(ext(f.name));
 
 function loadScript(src) {
@@ -92,7 +97,9 @@ async function ocrImage(source, onProgress) {
   ocrProgress = onProgress || (() => {});
   const w = await getOcr();
   const { data } = await w.recognize(source, { rotateAuto: true });
-  return { texto: data.text || '', conf: data.confidence || 0 };
+  // palavras com a posição e a confiança de cada uma: só na memória (recorte da foto nos campos com dúvida)
+  const palavras = (data.words || []).filter(x => x?.text && x.bbox).map(x => ({ t: x.text, conf: Math.round(x.confidence || 0), bbox: { x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1 } }));
+  return { texto: data.text || '', conf: data.confidence || 0, palavras };
 }
 
 /** Nota de uma leitura: palavras de documento reconhecidas + confiança do OCR. */
@@ -106,7 +113,7 @@ export function notaLeitura(r) {
 
 /** OCR com segunda chance: se a leitura sai fraca, tenta a imagem girada e/ou com limiar adaptativo. */
 async function ocrMelhor(source, onProgress, faixa = [0, 1]) {
-  const bmp = await createImageBitmap(source);
+  let bmp; try { bmp = await createImageBitmap(source); } catch { const e = new Error('imagem'); e.motivo = 'imagem'; throw e; }
   const deitada = bmp.width > bmp.height * 1.1;
   const tentativas = [{ rot: 0 }, ...(deitada ? [{ rot: 90 }, { rot: 270 }] : []), { rot: 0, binarizar: true }, ...(deitada ? [] : [{ rot: 90 }, { rot: 270 }]), { rot: 180 }];
   const [a, b] = faixa; const n = tentativas.length;
@@ -114,8 +121,9 @@ async function ocrMelhor(source, onProgress, faixa = [0, 1]) {
   for (let i = 0; i < n; i++) {
     const t = tentativas[i];
     const etapa = i === 0 ? 'Reconhecendo texto (OCR)' : t.rot ? 'Tentando a imagem em outra posição' : 'Tentando melhorar a imagem';
-    const r = await ocrImage(await prepImage(bmp, t), (p) => onProgress?.(a + (b - a) * Math.min(0.95, (i + p) / Math.min(n, i + 2)), etapa));
-    r.rot = t.rot; r.binarizar = !!t.binarizar; r.nota = notaLeitura(r);
+    const prep = await prepImage(bmp, t);
+    const r = await ocrImage(prep, (p) => onProgress?.(a + (b - a) * Math.min(0.95, (i + p) / Math.min(n, i + 2)), etapa));
+    r.rot = t.rot; r.binarizar = !!t.binarizar; r.nota = notaLeitura(r); r.imagem = prep;   // a imagem em que as palavras foram achadas (coordenadas do recorte)
     self.__ctOcrLog?.push({ rot: t.rot, bin: !!t.binarizar, nota: Math.round(r.nota), conf: Math.round(r.conf) });
     if (!melhor || r.nota > melhor.nota) melhor = r;
     if (melhor.nota >= 75) break;                 // leitura boa: para aqui
@@ -144,63 +152,95 @@ function pageTextToLines(content) {
   }).filter(Boolean).join('\n');
 }
 
-async function readPdf(file, onProgress, { ocr = true } = {}) {
+/** PDF: o texto de cada página; o OCR é decidido página por página (uma digital e outra escaneada: só a escaneada vai ao OCR),
+ *  até opts.ocrMaxPaginas (regras: config.ocrMaxPaginas). Devolve também paginasTexto (para separar os documentos), paginasLidas
+ *  (quantas foram lidas de verdade), ocrCortado (páginas que precisavam de OCR e ficaram de fora) e, das páginas lidas por OCR,
+ *  as palavras com posição e a imagem (só na memória). A memória do PDF é liberada ao terminar. */
+async function readPdf(file, onProgress, { ocr = true, ocrMaxPaginas = 8 } = {}) {
   const data = new Uint8Array(await file.arrayBuffer());
-  const pdf = await (await getPdfjs()).getDocument({ data, isEvalSupported: false }).promise;
-  const pages = [];
-  const maxPages = Math.min(pdf.numPages, 15);
-  for (let i = 1; i <= maxPages; i++) {
-    const page = await pdf.getPage(i);
-    pages.push(pageTextToLines(await page.getTextContent()));
-    onProgress?.(i / maxPages * 0.3, 'Lendo PDF');
-  }
-  let text = pages.join('\n\n');
-  let metodo = 'pdf-texto';
-  const confs = [], rots = [];
-  const poor = text.replace(/\s+/g, '').length < 40 * maxPages;
-  // PDF escaneado com um rodapé de texto ("Digitalizado com o aplicativo…"): tem texto, mas nenhuma palavra de documento
-  const semPalavras = palavrasDoc(text, PALAVRAS_GERAIS) < 2 && text.replace(/\s+/g, '').length < 400 * maxPages;
-  if ((poor || semPalavras) && ocr) {
-    const ocrPages = [];
-    const n = Math.min(maxPages, 5);
-    for (let i = 1; i <= n; i++) {
+  let pdf;
+  try { pdf = await (await getPdfjs()).getDocument({ data, isEvalSupported: false }).promise; }
+  catch (e) { if (e?.name === 'PasswordException') { const er = new Error('senha'); er.motivo = 'senha'; throw er; } throw e; }
+  try {
+    const pages = [];
+    const maxPages = Math.min(pdf.numPages, 15);
+    for (let i = 1; i <= maxPages; i++) {
       const page = await pdf.getPage(i);
+      pages.push(pageTextToLines(await page.getTextContent()));
+      onProgress?.(i / maxPages * 0.3, 'Lendo PDF');
+    }
+    const confs = [], rots = []; const imagens = {}; let palavras = [];
+    const ocrPages = pages.slice();
+    // a página precisa de OCR quando quase não tem texto, ou só um rodapé ("Digitalizado com o aplicativo…") sem palavra de documento
+    // (o rodapé de aplicativo de digitalização conta sozinho; um texto curto sem palavra de documento só conta quando o arquivo todo não tem nenhuma)
+    const semPalavrasNoArquivo = palavrasDoc(pages.join('\n'), PALAVRAS_GERAIS) < 2;
+    const precisa = pages.map(t => { const n = t.replace(/\s+/g, '').length; return n < 40 || (palavrasDoc(t, PALAVRAS_GERAIS) < 2 && n < 400 && (semPalavrasNoArquivo || /digitalizad|camscanner|adobe scan|scanned|escaneado/i.test(t))); });
+    const alvo = ocr ? precisa.map((p, i) => p ? i : -1).filter(i => i >= 0) : [];
+    const lista = alvo.slice(0, Math.max(1, ocrMaxPaginas));
+    const ocrCortado = alvo.length - lista.length;
+    let metodo = 'pdf-texto';
+    for (let k = 0; k < lista.length; k++) {
+      const i = lista[k];
+      const page = await pdf.getPage(i + 1);
       const vp = page.getViewport({ scale: 2.2 });
       const canvas = new OffscreenCanvas(vp.width, vp.height);
       await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
       const blob = await canvas.convertToBlob({ type: 'image/png' });
-      const r = await ocrMelhor(blob, onProgress, [0.3 + ((i - 1) / n) * 0.7, 0.3 + (i / n) * 0.7]);
-      ocrPages.push(r.texto); confs.push(r.conf); rots.push(r.rot);
+      const r = await ocrMelhor(blob, onProgress, [0.3 + (k / lista.length) * 0.7, 0.3 + ((k + 1) / lista.length) * 0.7]);
+      // fica com o OCR quando a página não tinha texto ou quando ele lê mais palavras de documento
+      const poor = pages[i].replace(/\s+/g, '').length < 40;
+      if (poor || palavrasDoc(r.texto, PALAVRAS_GERAIS) > palavrasDoc(pages[i], PALAVRAS_GERAIS)) {
+        ocrPages[i] = r.texto; metodo = 'ocr'; confs.push(r.conf); rots.push(r.rot);
+        if (r.imagem) imagens[i] = r.imagem;
+        palavras = palavras.concat((r.palavras || []).map(w => ({ ...w, pagina: i })));
+      }
     }
-    const textoOcr = ocrPages.join('\n\n');
-    // fica com o OCR quando ele lê mais palavras de documento (ou quando o PDF não tinha texto)
-    if (poor || palavrasDoc(textoOcr, PALAVRAS_GERAIS) > palavrasDoc(text, PALAVRAS_GERAIS)) { text = textoOcr; metodo = 'ocr'; }
-    else confs.length = 0;
-  }
-  return { texto: text, paginas: pdf.numPages, metodo, confianca: confs.length ? Math.round(Math.min(...confs)) : 100, rotacao: metodo === 'ocr' ? rots.find(Boolean) || 0 : 0 };
+    return { texto: ocrPages.join('\n\n'), paginasTexto: ocrPages, paginas: pdf.numPages, paginasLidas: Math.min(pdf.numPages, maxPages) - ocrCortado, ocrCortado, limitePaginas: maxPages < pdf.numPages ? maxPages : null,
+      metodo, confianca: confs.length ? Math.round(Math.min(...confs)) : 100, rotacao: metodo === 'ocr' ? rots.find(Boolean) || 0 : 0, palavras: metodo === 'ocr' ? palavras : null, imagens: metodo === 'ocr' ? imagens : null };
+  } finally { try { await pdf.destroy(); } catch { /* já liberado */ } }
+}
+
+/* ---------- Word e LibreOffice (.docx, .odt): o texto vem do XML do arquivo (SheetJS lê o zip; sem biblioteca nova) ---------- */
+async function readDoc(file) {
+  await loadScript(chrome.runtime.getURL('lib/xlsx/xlsx.full.min.js'));
+  const XLSX = self.XLSX;
+  const cfb = XLSX.CFB.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+  const docx = ext(file.name) === 'docx';
+  const entrada = XLSX.CFB.find(cfb, docx ? 'word/document.xml' : 'content.xml') || XLSX.CFB.find(cfb, docx ? '/word/document.xml' : '/content.xml');
+  if (!entrada?.content) { const er = new Error('doc'); er.motivo = 'doc'; throw er; }
+  const xml = new TextDecoder('utf-8').decode(entrada.content instanceof Uint8Array ? entrada.content : new Uint8Array(entrada.content));
+  return { texto: xmlParaTexto(xml, docx ? 'docx' : 'odt'), metodo: 'texto', paginas: 1 };
 }
 
 /* ---------- Planilhas ---------- */
 async function readSheet(file) {
   await loadScript(chrome.runtime.getURL('lib/xlsx/xlsx.full.min.js'));
   const XLSX = self.XLSX;
-  const wb = ext(file.name) === 'csv'
-    ? XLSX.read(await file.text(), { type: 'string', raw: false })
-    : XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' }).filter(r => r.some(c => String(c).trim()));
-  return { texto: rows.map(r => r.join(' | ')).join('\n'), tabela: rows, metodo: 'planilha', paginas: 1 };
+  let wb;
+  if (ext(file.name) === 'csv') {
+    // CSV salvo pelo Excel em português vem em windows-1252 (acentos quebrados em UTF-8): tenta UTF-8 e, se não serve, windows-1252
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let texto; try { texto = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { texto = new TextDecoder('windows-1252').decode(bytes); }
+    wb = XLSX.read(texto.replace(/^\uFEFF/, ''), { type: 'string', raw: false });
+  } else wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellDates: true });
+  // todas as abas (a certa é a que tem o cabeçalho de rubricas); tabela/texto são os da primeira aba com dados
+  const abas = wb.SheetNames.map(nome => ({ nome, linhas: XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, raw: false, defval: '' }).filter(r => r.some(c => String(c).trim())) })).filter(a => a.linhas.length);
+  const rows = abas[0]?.linhas || [];
+  return { texto: rows.map(r => r.join(' | ')).join('\n'), tabela: rows, abas, metodo: 'planilha', paginas: 1 };
 }
 
 export async function readFile(file, onProgress, opts = {}) {
   if (isPdf(file)) return readPdf(file, onProgress, opts);
+  if (isHeic(file)) return { texto: '', metodo: 'nao-suportado', motivo: 'heic', paginas: 0 };
+  if (isTiff(file)) return { texto: '', metodo: 'nao-suportado', motivo: 'tiff', paginas: 0 };
   if (isImage(file)) {
     if (opts.ocr === false) return { texto: '', metodo: 'imagem', paginas: 1 };
     onProgress?.(0.05, 'Melhorando a imagem');
     const r = await ocrMelhor(file, onProgress);
-    return { texto: r.texto, metodo: 'ocr', paginas: 1, confianca: Math.round(r.conf), rotacao: r.rot };
+    return { texto: r.texto, metodo: 'ocr', paginas: 1, confianca: Math.round(r.conf), rotacao: r.rot, palavras: (r.palavras || []).map(w => ({ ...w, pagina: 0 })), imagens: r.imagem ? { 0: r.imagem } : null };
   }
   if (isSheet(file)) return readSheet(file);
+  if (isDoc(file)) return readDoc(file);
   if (isText(file)) return { texto: await file.text(), metodo: 'texto', paginas: 1 };
   return { texto: '', metodo: 'nao-suportado', paginas: 0 };
 }
