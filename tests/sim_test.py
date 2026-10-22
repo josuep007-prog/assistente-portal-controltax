@@ -129,6 +129,25 @@ async def teste_plataforma(b):
     check(await pn.locator('#free-txt').count() == 0 and await pn.locator('#intents').count() == 0, 'Hoje sem a parte de criar solicitações (fica no Novo pedido)')
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(400)
     check(await pn.locator('#free-txt').count() == 1 and await pn.locator('#q').count() == 1 and await pn.locator('.pd-escolha .intent').count() >= 5, 'Novo pedido: escolha do tipo, texto livre, documento e dúvidas')
+    # lote 6 (16): a leitura aparece no Novo pedido; documento não reconhecido + tipo escolhido → o arquivo vai junto
+    await pg.evaluate("""() => { const f = new File(['Lembrete interno: conferir o estoque da loja na segunda-feira.'], 'anotacoes-loja.txt', { type: 'text/plain' }); window.__ctSim.hooks().sendFiles([f]); }""")
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('.v-preencher #sug-escolha')?.innerText || '').includes('Escolha abaixo')"), 15)
+    check(ok and await pn.locator('#rail [data-mod="preencher"].on').count() == 1, 'Novo pedido: documento não reconhecido aparece ali mesmo ("Escolha abaixo")')
+    await pn.click('.pd-escolha .intent[data-tipo="geral"]')
+    ok = await espera(lambda: pg.evaluate("[...document.querySelectorAll('.p-chip')].some(c => c.textContent.includes('anotacoes-loja.txt'))"), 25)
+    check(ok and '/general-requests/add' in await pg.evaluate("window.__ctPlatform.path()"), 'tipo escolhido: o pedido abre e o arquivo vai junto (anexado no portal)')
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/general-requests')"); await pg.wait_for_timeout(1500)
+    # lote 6 (24): texto livre da Solicitação Geral → departamento da lista e assunto do catálogo (o texto não é copiado)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.fill('#free-txt', 'preciso da segunda via da guia do FGTS de setembro'); await pn.click('#free-go')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('.v-preencher #sugestao')?.innerText || '').includes('Entendi assim')"), 10)
+    sug = await pn.locator('#sugestao').inner_text()
+    check(ok and 'Pessoal' in sug and 'Guia do FGTS' in sug, 'Novo pedido: texto livre mostra o cartão ali mesmo (Geral: departamento e assunto)')
+    await pn.click('#sug-go')
+    ok = await espera(portal_com(department='PESSOAL'), 25)
+    v = await portal()
+    check(ok and 'Guia do FGTS' in (v.get('subject') or '') and 'setembro' not in (v.get('description') or '').lower(), f"Solicitação Geral: departamento da lista do portal e assunto do catálogo ({v.get('department')!r}, {v.get('subject')!r})")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/general-requests')"); await pg.wait_for_timeout(1500)
     await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(400)
     await pg.mouse.move(1200, 600)
     await pg.screenshot(path='/tmp/sim-20-painel.png')
@@ -171,6 +190,23 @@ async def teste_plataforma(b):
     check(not await pn.evaluate("document.body.classList.contains('plat')") and '1041' in await pg.evaluate("document.querySelector('#p-main').innerText"), 'Ver no portal: abre a solicitação no portal, com o painel ao lado')
     await pn.click('#btn-plat'); await pg.wait_for_timeout(800)
     check(await pn.evaluate("document.body.classList.contains('plat')"), 'volta para a tela cheia')
+    # lote 6 (39): "Pedir de novo" no detalhe: mesmo tipo, com os valores do portal, sem datas, sem CID e (cadastro) sem a pessoa
+    async def pedir_de_novo(numero):
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
+        await pn.click('[data-vis-sol="tabela"]'); await pn.fill('#sol-q', numero); await pg.wait_for_timeout(500)
+        await pn.click('#sol-grupos [data-card]'); await pg.wait_for_timeout(800)
+        await pn.click('#modal .dt-pedir-novo')
+    await pedir_de_novo('1039')
+    ok = await espera(portal_com(selectedEmployee='JOANA FONSECA', selectedLeaveType='Licença maternidade'), 30)
+    v = await portal()
+    check(ok and not v.get('leaveDate') and 'Z76' not in (v.get('description') or ''), f"Pedir de novo: afastamento com a funcionária e o tipo do portal, sem a data e sem CID ({v.get('selectedEmployee')!r}, {v.get('selectedLeaveType')!r}, data {v.get('leaveDate')!r})")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave')"); await pg.wait_for_timeout(1500)
+    await pedir_de_novo('957')
+    ok = await espera(portal_com(jobPositionExpanded='VENDEDOR'), 30)
+    v = await portal()
+    check(ok and not v.get('name') and not v.get('nationalIdentity') and not v.get('motherName') and not v.get('admissionDate'), f"Pedir de novo num cadastro: só as escolhas da empresa (cargo {v.get('jobPositionExpanded')!r}), nada da pessoa")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-registration')"); await pg.wait_for_timeout(1500)
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(500); await pn.fill('#sol-q', ''); await pg.wait_for_timeout(400)
     # Funcionários: experiência e atalho com o funcionário escolhido
     await pn.click('#rail [data-mod="funcionarios"]'); await pg.wait_for_timeout(800)
     check(await pn.evaluate("getComputedStyle(document.querySelector('#emp-list')).overflowY === 'auto' && !!document.querySelector('#emp-q')"), 'funcionários: a lista rola e a busca fica à vista')
@@ -759,8 +795,144 @@ async def teste_cadastro(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_lote6(b):
+    """Lote 6: variáveis da folha no Hoje (38), grade de rubricas (45) e resposta preparada no portal (46)."""
+    import datetime
+    print('\n[lote 6] variáveis da folha, grade de rubricas e resposta no portal')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    # a janela do aviso fica sempre aberta no teste (o dia de hoje não decide): avisa desde o dia 1, limite no dia 28
+    async def regras(route):
+        resp = await route.fetch(); j = await resp.json()
+        j['config']['variaveisFolha'].update({'avisarAPartirDoDia': 1, 'diaLimite': 28})
+        await route.fulfill(response=resp, json=j)
+    await ctx.route('**/rules/regras.json', regras)
+    # no simulador a planilha (SheetJS) vem da CDN: no teste, a cópia empacotada na extensão (nada sai do computador)
+    xlsx = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'lib', 'xlsx', 'xlsx.full.min.js')
+    async def sheetjs(route): await route.fulfill(path=xlsx, content_type='text/javascript')
+    await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/xlsx/**', sheetjs)
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    def painel(): return next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto_empresa():   # três empresas no acesso: confirma a que já vem marcada (a do portal)
+        while True:
+            try:
+                f = painel()
+                if f and await f.locator('.ee-lista').count(): await f.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa_emp = asyncio.create_task(_auto_empresa())
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    async def celula(ev, emp):
+        return await pg.evaluate("""([ev, emp]) => { const t = document.querySelector("table[aria-label='Rubricas']"); if (!t) return null;
+          const hs = [...t.querySelectorAll('thead th')].map(h => h.innerText.trim()); const tr = [...t.querySelectorAll('tbody tr')].find(r => r.cells[0].innerText.trim() === emp);
+          return tr ? (tr.cells[hs.indexOf(ev)]?.querySelector('input')?.value ?? null) : null; }""", [ev, emp])
+    def celula_e(ev, emp, v):
+        async def f(): return await celula(ev, emp) == v
+        return f
+    async def lancar():
+        # o painel pode redesenhar o cartão enquanto termina um preenchimento: clica de novo se o clique não pegou
+        for _ in range(4):
+            await pn.click('#grade-lancar')
+            if await espera(lambda: pn.evaluate("/Lançando|lançado|Não consegui/.test(document.querySelector('#grade-rub')?.innerText || '')"), 4): return
+    hoje = datetime.date.today()
+    m, a = (hoje.month - 1, hoje.year) if hoje.day <= 28 else (hoje.month, hoje.year)
+    if m == 0: m, a = 12, a - 1
+    comp = f'{m:02d}/{a}'
+    pn = painel()
+    # 38: o Hoje lembra das variáveis da folha do mês
+    ok = await espera(lambda: pn.evaluate("(c) => (document.querySelector('#eq-folha')?.innerText || '').includes('Variáveis da folha de ' + c)", comp), 25)
+    check(ok, f'Hoje: "Variáveis da folha de {comp}" ainda não enviadas')
+    await pn.click('#eq-folha [data-folha="nada"]')
+    ok = await espera(lambda: pn.evaluate("!document.querySelector('#eq-folha')"), 6)
+    guardado = await pg.evaluate("(JSON.parse(localStorage.getItem('ct-sim-storage') || '{}').folhaNada || []).join('|')")
+    check(ok and comp in guardado, '"Nada a lançar este mês" esconde o aviso daquele mês (guardado neste computador)')
+    await pg.evaluate("(() => { const s = JSON.parse(localStorage.getItem('ct-sim-storage') || '{}'); s.folhaNada = []; localStorage.setItem('ct-sim-storage', JSON.stringify(s)); })()")
+    await pg.reload(); await pg.wait_for_timeout(3500); pn = painel()
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#eq-folha')"), 25)
+    check(ok, 'sem a dispensa, o aviso volta')
+    # "Usar o lançamento do mês passado": tipo e linhas do último lançamento no portal (lido na hora), com a competência deste mês
+    await pn.click('#eq-folha [data-folha="passado"]')
+    ok = await espera(lambda: pg.evaluate("(c) => window.__ctPlatform.path().endsWith('/payroll-entries/add') && document.querySelector('[formcontrolname=basisDate]')?.value === c", comp), 30)
+    check(ok and await pg.evaluate("document.querySelector('#radioBasic-1').checked"), f'"Usar o lançamento do mês passado": abre o lançamento MENSAL com a competência deste mês ({comp})')
+    check(await pn.locator('#modal #mh').count() == 0, 'não abre o resumo de envio sozinho (faltam as variáveis)')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#grade-rub')?.innerText || '').includes('3 valor')"), 15)
+    check(ok, 'as linhas do mês passado ficam prontas para a grade')
+    # 45: lançar na grade (a calibrar no Onvio real) — o mês passado nos eventos da empresa
+    await lancar()
+    ok = await espera(celula_e('0020 - COMISSÕES', 'RONALDO DE SOUZA', '420,00'), 25)
+    ok = ok and await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA') == '08:00' and await celula('0010 - FALTAS', 'RONALDO DE SOUZA') == '1'
+    check(ok, 'grade: as linhas vão para as células dos eventos da empresa' + ('' if ok else f" ({(await pn.locator('#grade-rub').inner_text())!r}, {await celula('0020 - COMISSÕES', 'RONALDO DE SOUZA')!r})"))
+    await pn.click('#btn-undo')
+    ok = await espera(celula_e('0020 - COMISSÕES', 'RONALDO DE SOUZA', ''), 15)
+    check(ok and await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA') == '', 'Desfazer volta as células da grade')
+    # planilha arrastada no pedido: nomes das rubricas casados pelos apelidos das regras ("HE 50" → 0001 - HORAS EXTRAS 50%)
+    csv = 'Empregado;Rubrica;Valor\nJOAO DA SILVA;HE 50;10:30\nJORGE OLIVEIRA ALVES;Faltas (dias);2\nRONALDO DE SOUZA;Comissão;350,00\nRONALDO DE SOUZA;Bônus de Natal;100\n'
+    await pg.evaluate("(t) => window.__ctSim.hooks().sendFiles([new File([t], 'variaveis-mes.csv', { type: 'text/csv' })])", csv)
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#grade-rub')?.innerText || '').includes('4 valor')"), 30)
+    check(ok, 'planilha lida: 4 valores para a grade')
+    await lancar()
+    async def planilha_na_grade():
+        return await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA') == '10:30' and await celula('0010 - FALTAS', 'JORGE OLIVEIRA ALVES') == '2' and await celula('0020 - COMISSÕES', 'RONALDO DE SOUZA') == '350,00'
+    ok = await espera(planilha_na_grade, 25)
+    check(ok, 'planilha → grade: "HE 50", "Faltas (dias)" e "Comissão" nos eventos da empresa' + ('' if ok else f" ({(await pn.locator('#grade-rub').inner_text())!r}, HE {await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA')!r})"))
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#grade-rub')?.innerText || '').includes('Bônus de Natal')"), 5)
+    check(ok, 'rubrica sem evento na empresa fica para o cliente (com aviso)')
+    # envio: só pelo botão do portal, depois do resumo; o aviso do Hoje some com o lançamento da competência no portal
+    await pn.click('#btn-send'); await pg.wait_for_timeout(1500)
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    ok = await espera(lambda: pg.evaluate("window.__ctPlatform.path().endsWith('/payroll-entries')"), 15)
+    check(ok, 'Lançamento de Rubricas enviado pelo botão do portal')
+    await pn.click('#rail [data-mod="inicio"]')
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.hj-hero[data-pronto]') && !document.querySelector('#eq-folha')"), 30)
+    check(ok, f'o aviso some quando o portal já tem o lançamento de {comp}')
+    # 46: "Responder no portal" procura o nº na lista e abre a solicitação certa
+    async def detalhe(numero):
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(800)
+        await pn.click('[data-vis-sol="tabela"]'); await pn.fill('#sol-q', numero); await pg.wait_for_timeout(500)
+        await pn.click('#sol-grupos [data-card]'); await pg.wait_for_timeout(800)
+    await detalhe('1041')
+    await pn.click('#modal .dlg-actions .btn-primary')
+    async def no_detalhe():
+        return await pg.evaluate("window.__ctPlatform.path().endsWith('/vacation-notice/1041') && !!document.querySelector('[data-resposta] textarea')") and not await pn.evaluate("document.body.classList.contains('plat')")
+    ok = await espera(no_detalhe, 20)
+    check(ok, '"Responder no portal": procura o nº na lista e abre a solicitação certa, com o painel ao lado' + ('' if ok else f" ({await pg.evaluate('window.__ctPlatform.path()')})"))
+    await pn.click('#btn-plat')
+    await espera(lambda: pn.evaluate("document.body.classList.contains('plat')"), 10)
+    # arquivo solto (arrastado na plataforma, sem pedido) e "Preparar resposta": mensagem das regras e o arquivo na resposta
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1200)
+    await pg.evaluate("() => window.__ctSim.hooks().sendFiles([new File(['Arquivo de exemplo do simulador.'], 'dados-pedidos.txt', { type: 'text/plain' })])")
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#sugestao .card')"), 15)
+    await detalhe('1041')
+    await pn.click('#modal .dt-responder'); await pg.wait_for_timeout(700)
+    dlg = await pn.locator('#modal').inner_text()
+    ok = ok and 'Envio do que foi pedido' in dlg and 'dados-pedidos.txt' in dlg and 'RESPONDER' in dlg
+    check(ok, 'Preparar resposta: mensagens das regras e o arquivo solto já marcado' + ('' if ok else f' ({dlg[:300]!r})'))
+    check(await pn.locator('#modal textarea').count() == 0, 'Preparar resposta: sem texto livre (a mensagem vem das regras)')
+    await pn.click('#modal .rp-ir')
+    ok = await espera(lambda: pg.evaluate("(document.querySelector('[data-resposta] textarea')?.value || '').includes('Segue em anexo') && [...document.querySelectorAll('[data-resposta] .p-chip')].some(c => c.textContent.includes('dados-pedidos.txt'))"), 25)
+    check(ok, 'a resposta fica preparada no portal: mensagem das regras e o arquivo anexado')
+    st = await pg.evaluate("JSON.parse(localStorage.getItem('ct-sim-portal')).items['vacation-notice'].find(x => x.id === 1041).status")
+    check(st == 'Aguardando o cliente' and await pg.evaluate("window.__ctPlatform.path().endsWith('/vacation-notice/1041')"), f'o clique em RESPONDER fica com o cliente (situação: {st})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    tarefa_emp.cancel()
+    await ctx.close()
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_lote6(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
@@ -1144,6 +1316,7 @@ async def main():
         await teste_mecanica(b)
         await teste_cadastro(b)
         await teste_lote4(b)
+        await teste_lote6(b)
         await teste_sugestao(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))

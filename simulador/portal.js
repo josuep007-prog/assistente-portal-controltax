@@ -25,6 +25,8 @@
     'Bahia': ['Salvador', 'Feira de Santana', 'Vitória da Conquista']
   };
   var LEAVE = ['Afastamento direitos integrais', 'Acid. Trabalho período superior a 15 dias', 'Serviço militar', 'Licença maternidade', 'Doença período superior a 15 dias', 'Licença sem vencimento', 'Novo afast. mesmo acid. Trabalho', 'Antecipação e/ou prorrogação Licença Maternidade', 'Novo afast. mesma doença', 'Exercício de mandato sindical', 'Aposent. por invalid. Acidente de trabalho', 'Aposent. por invalid. doença profissional', 'Aposent. por invalid. exceto acidente e doença profissional', 'Acid. Trabalho período igual ou inferior a 15 dias', 'Doença período igual ou inferior a 15 dias', 'Aborto não criminoso', 'Licença maternidade adoção 1 ano', 'Licença maternidade adoção 1 até 4 anos', 'Licença maternidade adoção 4 até 8 anos', 'Outros motivos de afastamento', 'Prorrogação licença maternidade 60 dias', 'Prorrogação licença maternidade 60 dias adoção 1 ano', 'Prorrogação licença maternidade 30 dias adoção 1 até 4 anos', 'Prorrogação licença maternidade 15 dias adoção 4 até 8 anos', 'Recesso Estagiário', 'Falecimento do contribuinte', 'Licença paternidade', 'Afastamento por irregularidade no FGTS', 'Cárcere', 'Participação de curso ou programa de qualificação', 'Ausência justificada', 'Encerramento de estágio', 'Licença maternidade por morte da genitora', 'Acid. Trabalho período superior a 30 dias', 'Doença período superior a 30 dias', 'Acid. Trabalho período igual ou inferior a 30 dias', 'Doença período igual ou inferior a 30 dias', 'Doença profissional período igual ou inferior a 15 dias', 'Doença profissional superior a 15 dias'];
+  // eventos da empresa na grade do Lançamento de Rubricas (inventados; nomes um pouco diferentes dos da planilha de exemplo)
+  var EVENTOS = ['0001 - HORAS EXTRAS 50%', '0002 - HORAS EXTRAS 100%', '0010 - FALTAS', '0011 - ATRASOS', '0020 - COMISSÕES', '0030 - ADICIONAL NOTURNO'];
   var MOTIVOS = ['Demitido SEM justa causa', 'Demitido COM justa causa', 'Pedido de demissão SEM justa causa', 'Cessão de empregado', 'Rescisão contrato experiência antecipado pelo empregador', 'Rescisão contrato experiência antecipado pelo empregado', 'Término de contrato de trabalho por tempo determinado', 'Antecipado pelo empregador (tempo determinado)', 'Antecipado pelo empregado (tempo determinado)', 'Culpa recíproca', 'Extinção da empresa'];
   var L = {
     dept: ['MASTER', 'CONTÁBIL', 'PESSOAL', 'FINANCEIRO', 'ADMINISTRATIVO', 'TI', 'FISCAL', 'Patrimônio'],
@@ -111,7 +113,7 @@
 
   /* ---------- Dados (só neste navegador) ---------- */
   var SKEY = 'ct-sim-portal';
-  var SEED_V = 8;
+  var SEED_V = 9;
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
     var items = {
@@ -132,7 +134,9 @@
     items['termination-notice'] = [{ id: seq++, status: 'Em andamento', empregado: 'MARCOS VIEIRA', assunto: 'Pedido de demissão – MARCOS VIEIRA', tramite: 'Escritório: aviso emitido, aguardando assinatura.', data: d(4), anexos: ['Aviso prévio - MARCOS VIEIRA.pdf'], anexosAbertura: ['carta-de-demissao.jpg'] }];
     items['employee-registration'] = [{ id: seq++, status: 'Concluída', empregado: 'VANESSA PRADO', assunto: 'Admissão – VANESSA PRADO', tramite: 'Escritório: registro concluído.', data: d(41), anexosAbertura: ['RG - VANESSA PRADO.pdf', 'Comprovante de endereço.png', 'Ficha de admissão.xlsx'] },
       { id: seq++, status: 'Concluída', empregado: 'WAGNER SOUSA', assunto: 'Admissão – WAGNER SOUSA', tramite: 'Escritório: registro concluído.', data: d(86) }];
-    items['payroll-entries'] = [{ id: seq++, status: 'Concluída', empregado: '', assunto: 'Variáveis da folha – competência anterior', tramite: 'Escritório: lançado.', data: d(20) }];
+    // competência de uns dois meses e meio atrás: o lançamento do mês (e o do mês anterior) ainda não foi feito — o Hoje lembra das variáveis da folha
+    var antes = new Date(hoje); antes.setDate(antes.getDate() - 75);
+    items['payroll-entries'] = [{ id: seq++, status: 'Concluída', empregado: '', assunto: 'Variáveis da folha – competência anterior', tramite: 'Escritório: lançado.', data: d(20), competencia: String(antes.getMonth() + 1).padStart(2, '0') + '/' + antes.getFullYear() }];
     // o mesmo login vê outras duas empresas (inventadas): para escolher uma, várias ou todas na plataforma
     items['general-requests'].push({ id: seq++, status: 'Aguardando o cliente', empregado: '', assunto: 'Alvará de funcionamento 2026', tramite: 'Escritório: envie o alvará renovado, por favor.', data: d(5), empresa: OUTRA, apelido: 'MODELO' },
       { id: seq++, status: 'Em andamento', empregado: '', assunto: 'Certidão negativa de débitos', tramite: 'Cliente: aguardo a certidão.', data: d(3), empresa: OUTRA, apelido: 'MODELO' },
@@ -197,9 +201,22 @@
       if (r.inicio) { it.vacationStartDate = dia(r.inicio, 0); it.paymentDate = dia(r.inicio, 2); it.vacationDays = r.dias || 30; }
       if (r.abono != null) it.bonusDays = r.abono;   // dias de abono do aviso (para o "Pedir o cálculo")
       if (slug === 'termination-notice') { it.adviceDate = dia(r.data, 0); it.reason = 'ApprenticeContractTermination'; it.grantedBy = 'EMPLOYEE'; }   // como o Onvio manda (em inglês)
+      // para o "Pedir de novo" (lote 6): o tipo de afastamento e dados de saúde inventados (que nunca podem ir para o pedido novo),
+      // o cálculo de férias com as escolhas, e o cadastro com dados da pessoa e da empresa (só os da empresa podem ir) — a calibrar
+      if (slug === 'employee-leave') { it.leaveDate = dia(r.data, 0); it.employeeLeaveTypeExpanded = { description: /maternidade/i.test(r.assunto || '') ? 'Licença maternidade' : 'Doença período igual ou inferior a 15 dias' }; it.cid = 'Z76'; it.doctorName = 'DR. MEDICO DE EXEMPLO'; it.crm = '00000'; }
+      if (slug === 'vacation-calculation') { it.initialDate = it.vacationStartDate || dia(r.data, -10); it.payBonusDays = false; it.payFirstInstallmentEarlier = true; }
+      if (FAMILIA[slug] === 'cadastro') { it.admissionDate = dia(r.data, 3); it.nationalIdentity = '000.000.000-00'; it.motherName = 'MAE DE EXEMPLO'; it.jobPositionExpanded = { description: 'VENDEDOR' }; it.employeeRegistrationProfessionalExpanded = { departmentExpanded: { description: 'ESCRITÓRIO' } }; it.daysExperience = 45; it.extensionDays = 45; }
+      if (slug === 'general-requests') it.departmentExpanded = { name: 'CONTÁBIL' };
+      // lançamento de rubricas já feito (formato inventado, a calibrar: a empresa de teste do Onvio não tem eventos)
+      if (slug === 'payroll-entries') {
+        it.entryType = 'MONTHLY';
+        it.payrollEntryClientEmployeeExpanded = [
+          { clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, payrollEntryItems: [{ eventExpanded: { description: '0001 - HORAS EXTRAS 50%' }, value: '08:00' }] },
+          { clientEmployeeExpanded: { name: 'RONALDO DE SOUZA' }, payrollEntryItems: [{ eventExpanded: { description: '0020 - COMISSÕES' }, value: '420,00' }, { eventExpanded: { description: '0010 - FALTAS' }, value: '1' }] }];
+      }
       return Promise.resolve(it);
     },
-    detalhe: true,
+    // sem rota direta do detalhe (como no Onvio real, até ser mapeada): "Ver/Responder no portal" procura o nº na lista
     rotaDocumentos: '/clientcenter/pt/documents',
     // documentos que o escritório publica (inventados): guias e holerites
     documentos: function () { return Promise.resolve(DOCS.map(function (x) { return { id: x.id, nome: x.nome, categoria: x.cat, competencia: x.comp, data: x.data }; })); },
@@ -237,6 +254,7 @@
     var cod = codigoDe(slug, r.status), quando = isoDe(r.data, 0);
     var it = { id: guidDe(r.id), identifier: r.id, genericStatus: cod, created: isoDe(r.data, 2), subject: r.assunto, clientExpanded: r.empresa ? { code: r.empresa.length, name: r.empresa, nickname: r.apelido || '' } : { code: 1, name: EMPRESA_BASE, nickname: 'EXEMPLO' } };
     if (FAMILIA[slug] === 'rubricas') it.genericLastUpdated = quando; else it.lastUpdated = quando;
+    if (r.competencia) { var cm = String(r.competencia).match(/(\d{2})\/(\d{4})/); if (cm) it.effectiveDate = cm[2] + '-' + cm[1] + '-01T00:00:00'; }   // competência (Rubricas)
     if (FAMILIA[slug] === 'cadastro') { it.name = r.empregado; it.clientStatus = cod; }
     else if (r.empregado) it.clientEmployeeExpanded = { name: r.empregado };
     if (cod !== 1 && cod !== 5 && cod !== 6 && cod !== 8) it.staffResponsibleExpanded = { name: 'ANA ANALISTA' };
@@ -418,9 +436,13 @@
     row.appendChild(tl); row.appendChild(comp); box.appendChild(row);
     var grid = h('div', { class: 'p-grid' });
     grid.innerHTML = '<div class="p-grid-h"><b>Rubricas</b><bento-toolbar><button type="button" data-all>Adicionar todos os funcionários</button><button type="button" data-one>Adicionar funcionários</button></bento-toolbar></div><div class="p-grid-b"><p>Não existem rubricas lançadas.<br>Adicione um funcionário para começar.</p></div>';
+    // grade plausível (A CALIBRAR: a grade real não foi mapeada — a empresa de teste do Onvio não tem eventos): o funcionário na
+    // 1ª coluna e um evento da empresa (código - nome) por coluna, um campo por célula
     grid.querySelector('[data-all]').addEventListener('click', function () {
       if (!ci.value) { ci.classList.add('p-invalid'); toast('Informe a competência antes de adicionar funcionários.', 'err'); return; }
-      grid.querySelector('.p-grid-b').innerHTML = '<table class="p-table"><thead><tr><th>Empregado</th><th>Horas extras 50%</th><th>Faltas (dias)</th><th>Comissão</th></tr></thead><tbody>' + EMP3.map(function (e) { return '<tr><td>' + e + '</td><td><input aria-label="Horas extras de ' + e + '"></td><td><input aria-label="Faltas de ' + e + '"></td><td><input aria-label="Comissão de ' + e + '"></td></tr>'; }).join('') + '</tbody></table><small class="p-help">Grade ilustrativa: no portal real as colunas vêm dos eventos cadastrados para a empresa.</small>';
+      grid.querySelector('.p-grid-b').innerHTML = '<table class="p-table p-grade" role="grid" aria-label="Rubricas"><thead><tr><th>Empregado</th>' + EVENTOS.map(function (ev) { return '<th>' + esc(ev) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        EMP3.map(function (e) { return '<tr><td>' + esc(e) + '</td>' + EVENTOS.map(function (ev) { return '<td><input type="text" class="p-grade-v" inputmode="decimal" aria-label="' + esc(ev + ' de ' + e) + '"></td>'; }).join('') + '</tr>'; }).join('') +
+        '</tbody></table><small class="p-help">Grade do simulador (a calibrar): no portal real as colunas vêm dos eventos cadastrados para a empresa.</small>';
     });
     grid.querySelector('[data-one]').addEventListener('click', function () { grid.querySelector('[data-all]').click(); });
     box.appendChild(grid);
@@ -471,10 +493,12 @@
     main.innerHTML = '<h2 class="p-h">Solicitações de ' + esc(T.nome.replace(/^Solicitação /, '')) + '</h2>' +
       '<div class="p-tablewrap"><bento-toolbar class="p-toolbar"><button type="button" data-add>⊕ Adicionar</button><button type="button" data-ref>↻ Atualizar</button><span class="sp"></span><label class="p-chk"><input type="checkbox" id="onlyPending"> Apenas pendentes</label></bento-toolbar>' +
       '<div class="p-scroll"><table class="p-table"><thead><tr><th>ID</th><th>Situação</th><th>Último Trâmite</th><th>Empregado</th><th>Assunto</th><th>Data</th></tr></thead><tbody>' +
-      (items.length ? items.map(function (r) { return '<tr><td>' + r.id + '</td><td><span class="p-st ' + (/aguard/i.test(r.status) ? 'warn' : /conclu/i.test(r.status) ? 'ok' : '') + '">' + esc(r.status) + '</span></td><td>' + esc(r.tramite || '') + '</td><td>' + esc(r.empregado || '—') + '</td><td>' + esc(r.assunto || '') + '</td><td class="num">' + esc(r.data) + '</td></tr>'; }).join('') : '<tr><td colspan="6" class="p-none">Você ainda não possui solicitações. Por favor clique em adicionar para começar.</td></tr>') +
+      (items.length ? items.map(function (r) { return '<tr data-id="' + r.id + '" style="cursor:pointer"><td>' + r.id + '</td><td><span class="p-st ' + (/aguard/i.test(r.status) ? 'warn' : /conclu/i.test(r.status) ? 'ok' : '') + '">' + esc(r.status) + '</span></td><td>' + esc(r.tramite || '') + '</td><td>' + esc(r.empregado || '—') + '</td><td>' + esc(r.assunto || '') + '</td><td class="num">' + esc(r.data) + '</td></tr>'; }).join('') : '<tr><td colspan="6" class="p-none">Você ainda não possui solicitações. Por favor clique em adicionar para começar.</td></tr>') +
       '</tbody></table></div></div>';
     main.querySelector('[data-add]').addEventListener('click', function () { go(SR + slug + '/add'); });
     main.querySelector('[data-ref]').addEventListener('click', function () { renderList(slug); });
+    // clicar na linha abre a solicitação (a rota do detalhe no Onvio real é a calibrar)
+    main.querySelectorAll('tr[data-id]').forEach(function (tr) { tr.addEventListener('click', function () { go(SR + slug + '/' + tr.dataset.id); }); });
   }
   function renderForm(slug) {
     var T = TYPES[slug];
@@ -552,7 +576,7 @@
       var empregado = ctx.value('selectedEmployee') || ctx.value('employee') || ctx.value('name') || '';
       var assunto = ctx.value('subject') || ctx.value('Assunto') || T.nome;
       db.seq += 1;
-      (db.items[slug] = db.items[slug] || []).unshift({ id: db.seq, status: 'Aberta', empregado: empregado, assunto: assunto, tramite: 'Cliente: solicitação incluída' + (ctx.files().length ? ' com ' + ctx.files().length + ' anexo(s)' : '') + '.', data: new Date().toLocaleDateString('pt-BR') });
+      (db.items[slug] = db.items[slug] || []).unshift({ id: db.seq, status: 'Aberta', empregado: empregado, assunto: assunto, tramite: 'Cliente: solicitação incluída' + (ctx.files().length ? ' com ' + ctx.files().length + ' anexo(s)' : '') + '.', data: new Date().toLocaleDateString('pt-BR'), competencia: ctx.value('basisDate') || undefined });
       persist();
       go(SR + slug);
       toast('Solicitação incluída nesta simulação. Nada foi enviado ao escritório.', 'ok');
@@ -565,8 +589,28 @@
     var T = TYPES[slug]; var r = (db.items[slug] || []).filter(function (x) { return String(x.id) === String(id); })[0];
     if (!r) { renderList(slug); return; }
     main.innerHTML = '<h2 class="p-h">Solicitação nº ' + esc(r.id) + ' — ' + esc(T.nome) + '</h2><div class="p-detail"><dl><dt>Situação</dt><dd>' + esc(r.status) + '</dd><dt>Empregado</dt><dd>' + esc(r.empregado || '—') + '</dd><dt>Assunto</dt><dd>' + esc(r.assunto) + '</dd><dt>Data</dt><dd>' + esc(r.data) + '</dd></dl>' +
-      '<h3 class="p-sub">Trâmites</h3><p>' + esc(r.tramite || '') + '</p><button type="button" class="p-btn-dark" data-back>VOLTAR</button></div>';
-    main.querySelector('[data-back]').addEventListener('click', function () { go(SR + slug); });
+      '<h3 class="p-sub">Trâmites</h3><p>' + esc(r.tramite || '') + '</p></div>';
+    // caixa de resposta (plausível, A CALIBRAR: a tela do detalhe do Onvio real não foi mapeada) — sem <form>, como um bloco do detalhe
+    var resp = h('section', { class: 'p-detail p-resposta', 'data-resposta': true });
+    resp.innerHTML = '<h3 class="p-sub">Responder</h3>';
+    var campo = h('div', { class: 'p-field wide' });
+    var txt = h('textarea', { id: 'resp-' + r.id, formcontrolname: 'topicDescription', rows: 4 });
+    campo.appendChild(h('label', { for: txt.id, class: 'p-label' }, 'Mensagem')); campo.appendChild(txt); resp.appendChild(campo);
+    var fctx = { files: function () { return []; } };
+    resp.appendChild(fileSel(fctx));
+    var btns = h('div', { class: 'p-form-btns' });
+    var responder = h('button', { type: 'button', class: 'p-btn-dark', 'data-responder': true }, 'RESPONDER');
+    var voltar = h('button', { type: 'button', class: 'btn btn-outline', 'data-back': true }, 'VOLTAR');
+    btns.appendChild(responder); btns.appendChild(voltar); resp.appendChild(btns);
+    main.appendChild(resp);
+    responder.addEventListener('click', function () {
+      if (!txt.value.trim() && !fctx.files().length) { toast('Escreva a resposta ou anexe um arquivo.', 'err'); return; }
+      r.status = 'Em andamento'; r.data = new Date().toLocaleDateString('pt-BR');
+      r.tramite = 'Cliente: ' + txt.value.trim() + (fctx.files().length ? ' (' + fctx.files().length + ' anexo(s))' : '');
+      persist(); go(SR + slug);
+      toast('Resposta incluída nesta simulação. Nada foi enviado ao escritório.', 'ok');
+    });
+    voltar.addEventListener('click', function () { go(SR + slug); });
   }
   function renderDocs() {
     main.innerHTML = '<h2 class="p-h">Documentos</h2><div class="p-scroll"><table class="p-table"><thead><tr><th>Documento</th><th>Competência</th><th>Publicado</th></tr></thead><tbody>' +

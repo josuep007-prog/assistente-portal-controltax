@@ -28,6 +28,30 @@
       "calculo": 5
     },
     "diaLimiteRubricas": null,
+    "variaveisFolha": {
+      "_comentario": "Cartão do Hoje 'Variáveis da folha de MM/AAAA ainda não enviadas' (lote 6). Aparece do dia 'avisarAPartirDoDia' do mês da competência até o 'diaLimite' do mês seguinte (num dia útil; se cair em feriado ou fim de semana, antecipa). A competência é a do mês anterior até o dia limite; depois, a do mês atual. Some quando o portal já tem um Lançamento de Rubricas dessa competência (effectiveDate da lista; sem ela, vale um lançamento criado desde o início do aviso — 'semCompetenciaPelaData', a calibrar no Onvio real) ou quando o cliente clica 'Nada a lançar este mês' (fica guardado neste computador, só para aquele mês). 'Preparar' abre o pedido com o tipo e a competência como sugestão; 'Usar o lançamento do mês passado' leva o tipo e as linhas do último lançamento (deste computador ou do portal), sem a competência antiga.",
+      "revisarComEscritorio": true,
+      "calibrar": true,
+      "ativo": true,
+      "avisarAPartirDoDia": 20,
+      "diaLimite": 3,
+      "tipoLancamento": "MENSAL",
+      "semCompetenciaPelaData": true
+    },
+    "respostaPortal": {
+      "_comentario": "'Responder no portal' e 'Preparar resposta' no detalhe de uma solicitação (lote 6). O Assistente abre a lista do tipo, procura o nº e abre a solicitação (como o Control Onvio). 'Preparar resposta': o cliente escolhe uma destas mensagens (nunca texto livre, nunca CID; {anexos} = nomes dos arquivos, {numero} = nº da solicitação) e os arquivos; o Assistente deixa a mensagem na caixa de resposta (só se estiver vazia) e anexa os arquivos. O clique em responder fica SEMPRE com o cliente, no portal; nada é escrito pela API. A calibrar no Onvio real: a tela do detalhe, a caixa de resposta ('caixa': seletores, o primeiro que existir) e o nome do botão.",
+      "revisarComEscritorio": true,
+      "calibrar": true,
+      "caixa": ["[data-resposta] textarea", "textarea[formcontrolname=topicDescription]", "textarea[formcontrolname=answer]"],
+      "botaoResponder": "RESPONDER",
+      "seEscritorioPede": "informacao",
+      "textos": [
+        { "id": "anexo", "rotulo": "Envio do que foi pedido", "comAnexo": true, "texto": "Olá! Segue em anexo o que foi pedido: {anexos}. Obrigado!" },
+        { "id": "informacao", "rotulo": "Resposta ao que foi pedido", "texto": "Olá! Respondendo ao que foi pedido: as informações estão nesta resposta. Qualquer dúvida, estamos à disposição." },
+        { "id": "ciente", "rotulo": "Ciente, pode concluir", "texto": "Olá! Recebemos, obrigado. Pode concluir a solicitação." },
+        { "id": "conferir", "rotulo": "Vamos conferir", "texto": "Olá! Vamos conferir e respondemos em seguida. Obrigado!" }
+      ]
+    },
     "intervaloAtualizacaoRegrasMin": 30,
     "experienciaDias": [
       45,
@@ -306,6 +330,10 @@
         "contratoExperiencia",
         "prorrogacao"
       ]
+    },
+    "pedirDeNovo": {
+      "_comentario": "Botão 'Pedir de novo' no detalhe de uma solicitação do portal (lote 6): abre o mesmo tipo com os valores do detalhe ({lista}/{id}?expand=all). Cada campo diz onde está no detalhe em campos.*.api (um caminho com pontos ou uma lista de caminhos; o primeiro com valor vale) e apiValores traduz os códigos do Onvio. Nunca vão datas, competência, assunto, descrição, observações nem CID, médico e CRM; nos cadastros, só os campos de camposDaEmpresa. Código técnico sem tradução fica de fora (o cliente escolhe na lista). O 'Histórico deste computador' segue a regra do Repetir (sem datas); 'Começou e não enviou' leva tudo.",
+      "calibrar": true
     },
     "experienciaSugerida": {
       "_comentario": "Sugestão (confiança baixa, o cliente confere) para o contrato de experiência de um cadastro novo com os campos vazios.",
@@ -1883,6 +1911,7 @@
       "complexidade": "simples",
       "campos": {
         "departamento": {
+          "api": ["departmentExpanded.name", "departmentExpanded.description", "department.name", "department"],
           "fc": "department",
           "tipo": "combo",
           "rotulo": "Departamento",
@@ -1920,7 +1949,40 @@
       "apiLista": "service-requesting/v1/tickets/generic",
       "apiExpand": "clientExpanded,staffResponsibleExpanded,requesterExpanded",
       "apiTramites": "service-requesting/v1/tickets",
-      "familiaStatus": "padrao"
+      "familiaStatus": "padrao",
+      "catalogo": {
+        "_comentario": "Solicitação Geral pelo texto livre e por documentos (alvará, CND): as palavras escolhem o departamento e um assunto curto. Ganha o item com mais palavras (as mais longas valem mais); documentos[].id em 'documentos' ganha sempre. O texto do cliente NUNCA vai para a descrição: ela sai do modelo do item (linhas com {competencia} só entram quando o texto diz a competência) ou fica para o cliente. O departamento casa com a lista do portal pelos sinônimos de 'departamentos' (o primeiro que existir na lista). A calibrar no Onvio real: os nomes dos departamentos são os do escritório (no simulador: MASTER, CONTÁBIL, PESSOAL, FINANCEIRO, ADMINISTRATIVO, TI, FISCAL, Patrimônio).",
+        "revisarComEscritorio": true,
+        "calibrar": true,
+        "sufixoCompetencia": " – competência {competencia}",
+        "departamentos": {
+          "Pessoal": ["PESSOAL", "DEPARTAMENTO PESSOAL", "DP", "RH", "RECURSOS HUMANOS", "FOLHA"],
+          "Fiscal": ["FISCAL", "TRIBUTÁRIO", "IMPOSTOS"],
+          "Contábil": ["CONTÁBIL", "CONTABILIDADE"],
+          "Financeiro": ["FINANCEIRO", "COBRANÇA", "FATURAMENTO"],
+          "Societário": ["SOCIETÁRIO", "LEGALIZAÇÃO", "LEGAL", "PARALEGAL", "ADMINISTRATIVO"],
+          "Administrativo": ["ADMINISTRATIVO", "ADM", "ATENDIMENTO"]
+        },
+        "itens": [
+          { "id": "fgts", "departamento": "Pessoal", "assunto": "Guia do FGTS – 2ª via", "palavras": ["fgts", "guia do fgts", "fgts digital", "guia de fgts"], "descricao": ["Por favor, enviem a 2ª via da guia do FGTS.", "Competência: {competencia}."] },
+          { "id": "inss", "departamento": "Pessoal", "assunto": "Guia do INSS (DCTFWeb) – 2ª via", "palavras": ["dctfweb", "guia do inss", "inss da folha", "darf do inss", "darf previdenciario"], "descricao": ["Por favor, enviem a 2ª via da guia do INSS da folha (DCTFWeb).", "Competência: {competencia}."] },
+          { "id": "holerite", "departamento": "Pessoal", "assunto": "Holerites / folha de pagamento", "palavras": ["holerite", "holerites", "contracheque", "contracheques", "folha de pagamento", "recibo de pagamento", "recibos de pagamento", "resumo da folha"], "descricao": ["Por favor, enviem os holerites / a folha de pagamento.", "Competência: {competencia}."] },
+          { "id": "informe", "departamento": "Pessoal", "assunto": "Informe de rendimentos", "palavras": ["informe de rendimentos", "informe de rendimento", "informes de rendimentos", "comprovante de rendimentos", "rendimentos"], "descricao": ["Por favor, enviem o informe de rendimentos."] },
+          { "id": "guia", "departamento": "Pessoal", "assunto": "Guia – 2ª via", "palavras": ["guia", "guias"], "descricao": ["Por favor, enviem a 2ª via da guia.", "Competência: {competencia}."] },
+          { "id": "das", "departamento": "Fiscal", "assunto": "Guia do DAS (Simples Nacional)", "palavras": ["guia do das", "o das", "do das", "pgdas", "simples nacional", "guia do simples", "das do simples"], "descricao": ["Por favor, enviem a guia do DAS (Simples Nacional).", "Competência: {competencia}."] },
+          { "id": "notas", "departamento": "Fiscal", "assunto": "Notas fiscais", "palavras": ["nota fiscal", "notas fiscais", "nf", "nfe", "nf-e", "nfs-e", "nfse", "nota de servico", "notas de servico", "xml das notas", "cancelar nota"], "descricao": [] },
+          { "id": "icms", "departamento": "Fiscal", "assunto": "ICMS", "palavras": ["icms", "difal", "guia do icms", "substituicao tributaria"], "descricao": [] },
+          { "id": "iss", "departamento": "Fiscal", "assunto": "ISS", "palavras": ["iss", "issqn", "guia do iss"], "descricao": [] },
+          { "id": "darf", "departamento": "Fiscal", "assunto": "DARF – 2ª via", "palavras": ["darf", "pis e cofins", "irpj", "csll"], "descricao": ["Por favor, enviem a 2ª via do DARF.", "Competência: {competencia}."] },
+          { "id": "cnd", "departamento": "Fiscal", "assunto": "Certidão negativa de débitos (CND)", "palavras": ["cnd", "certidao negativa", "certidao negativa de debitos", "certidao de regularidade", "certidao positiva com efeitos de negativa"], "documentos": ["cnd"], "descricao": [], "descricaoDocumento": ["Segue em anexo a certidão (CND)."] },
+          { "id": "parcelamento", "departamento": "Fiscal", "assunto": "Parcelamento de débitos", "palavras": ["parcelamento", "parcelar", "parcelamentos"], "descricao": [] },
+          { "id": "balancete", "departamento": "Contábil", "assunto": "Balancete / demonstrações contábeis", "palavras": ["balancete", "balanco", "balanco patrimonial", "dre", "demonstracao de resultado", "demonstracoes contabeis", "livro diario", "livro razao"], "descricao": ["Por favor, enviem o balancete / as demonstrações contábeis.", "Competência: {competencia}."] },
+          { "id": "extratos", "departamento": "Contábil", "assunto": "Extratos bancários", "palavras": ["extrato bancario", "extratos bancarios", "extrato do banco", "extratos", "conciliacao bancaria"], "descricao": ["Seguem os extratos bancários.", "Competência: {competencia}."] },
+          { "id": "honorarios", "departamento": "Financeiro", "assunto": "Boleto de honorários", "palavras": ["boleto", "boletos", "honorarios", "mensalidade do escritorio", "fatura do escritorio", "cobranca", "nota de honorarios"], "descricao": [] },
+          { "id": "alvara", "departamento": "Societário", "assunto": "Alvará de funcionamento", "palavras": ["alvara", "alvara de funcionamento", "licenca de funcionamento", "renovacao do alvara"], "documentos": ["alvara"], "descricao": [], "descricaoDocumento": ["Segue em anexo o alvará de funcionamento."] },
+          { "id": "contrato", "departamento": "Societário", "assunto": "Contrato social / alteração contratual", "palavras": ["contrato social", "alteracao contratual", "alteracao do contrato social", "cartao cnpj", "abertura de filial"], "descricao": [] }
+        ]
+      }
     },
     "afastamento": {
       "nome": "Afastamento de Empregado",
@@ -1932,6 +1994,7 @@
       "complexidade": "simples",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "selectedEmployee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -1939,6 +2002,7 @@
           "fonte": "empregado"
         },
         "tipoAfastamento": {
+          "api": ["employeeLeaveTypeExpanded.description", "employeeLeaveTypeExpanded.name", "leaveTypeExpanded.description", "selectedLeaveType.description", "leaveType"],
           "fc": "selectedLeaveType",
           "tipo": "combo",
           "rotulo": "Tipo de afastamento",
@@ -2279,6 +2343,7 @@
       "complexidade": "simples",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "selectedEmployee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2298,6 +2363,7 @@
           ]
         },
         "diasGozo": {
+          "api": ["vacationDays"],
           "fc": "vacationDays",
           "tipo": "numero",
           "rotulo": "Dias de gozo",
@@ -2309,6 +2375,7 @@
           ]
         },
         "diasAbono": {
+          "api": ["bonusDays"],
           "fc": "bonusDays",
           "tipo": "numero",
           "rotulo": "Dias de abono",
@@ -2481,6 +2548,7 @@
       "complexidade": "calculo",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "selectedEmployee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2499,6 +2567,7 @@
           ]
         },
         "diasGozo": {
+          "api": ["vacationDays"],
           "fc": "vacationDays",
           "tipo": "numero",
           "rotulo": "Dias de gozo",
@@ -2509,6 +2578,8 @@
           ]
         },
         "abono": {
+          "api": ["payBonusDays", "bonus"],
+          "apiValores": {"true": "SIM", "false": "NÃO", "YES": "SIM", "NO": "NÃO"},
           "tipo": "radio",
           "rotulo": "Abono pecuniário",
           "seletores": {
@@ -2522,6 +2593,8 @@
           }
         },
         "adiantar13": {
+          "api": ["payFirstInstallmentEarlier", "anticipate13th"],
+          "apiValores": {"true": "SIM", "false": "NÃO", "YES": "SIM", "NO": "NÃO"},
           "tipo": "radio",
           "rotulo": "Adiantar 13º salário",
           "seletores": {
@@ -2627,6 +2700,7 @@
       "complexidade": "simples",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "employee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2634,12 +2708,15 @@
           "fonte": "empregado"
         },
         "motivo": {
+          "api": ["terminationMotiveExpanded.description", "terminationReasonExpanded.description", "terminationMotive", "terminationReason", "reason"],
           "fc": "terminationMotive",
           "tipo": "combo",
           "rotulo": "Motivo de rescisão",
           "obrigatorio": true
         },
         "avisoDadoPor": {
+          "api": ["grantedBy"],
+          "apiValores": {"EMPLOYEE": "EMPREGADO", "EMPLOYER": "EMPREGADOR"},
           "tipo": "radio",
           "rotulo": "Aviso dado pelo",
           "obrigatorio": true,
@@ -2797,6 +2874,7 @@
       "complexidade": "calculo",
       "campos": {
         "empregado": {
+          "api": ["clientEmployeeExpanded.name", "employeeExpanded.name", "employee.name", "selectedEmployee.name"],
           "fc": "employee",
           "tipo": "combo",
           "rotulo": "Empregado",
@@ -2816,6 +2894,7 @@
           ]
         },
         "motivo": {
+          "api": ["terminationReasonExpanded.description", "terminationMotiveExpanded.description", "terminationReason", "reason"],
           "fc": "terminationReason",
           "tipo": "combo",
           "rotulo": "Motivo da rescisão",
@@ -2830,6 +2909,8 @@
           ]
         },
         "tipoAviso": {
+          "api": ["priorNoticeType", "noticeType", "grantedBy"],
+          "apiValores": {"WORKED": "TRABALHADO", "INDEMNIFIED": "INDENIZADO", "ABSENSE_DISPENSATION": "AUSÊNCIA/DISPENSA", "ABSENCE_DISPENSATION": "AUSÊNCIA/DISPENSA"},
           "tipo": "radio",
           "rotulo": "Aviso prévio",
           "seletores": {
@@ -3050,6 +3131,8 @@
       "botaoEnviar": "SALVAR E ENVIAR",
       "campos": {
         "tipoLancamento": {
+          "api": ["entryType", "payrollEntryType", "type"],
+          "apiValores": {"WAGE_ADVANCE": "ADIANTAMENTO", "ADVANCE": "ADIANTAMENTO", "MONTHLY": "MENSAL", "PRS": "PLR", "PLR": "PLR"},
           "tipo": "radio",
           "rotulo": "Tipo de lançamento",
           "obrigatorio": true,
@@ -3115,6 +3198,31 @@
           "referencia"
         ]
       },
+      "apelidosEventos": {
+        "_comentario": "Nome da rubrica na planilha (ou no texto) → evento da empresa na grade do portal (lote 6). Primeiro o nome igual (sem o código '0001 -' e sem parênteses), depois estes apelidos (e as palavras de dicionarioRubricas), depois o único bem parecido. O que não casar fica para o cliente lançar. Os eventos são de cada empresa: revisar com o escritório.",
+        "revisarComEscritorio": true,
+        "calibrar": true,
+        "itens": [
+          { "evento": "Horas extras 50%", "apelidos": ["HE 50", "HE50", "HE 50%", "hora extra 50", "horas extras 50", "hora extra 50%", "extra 50%", "horas extras", "hora extra", "HE"] },
+          { "evento": "Horas extras 100%", "apelidos": ["HE 100", "HE100", "HE 100%", "hora extra 100", "horas extras 100", "hora extra 100%", "extra 100%"] },
+          { "evento": "Faltas", "apelidos": ["falta", "faltas (dias)", "dias de falta", "faltas injustificadas", "falta injustificada", "faltas no mês"] },
+          { "evento": "Atrasos", "apelidos": ["atraso", "atrasos (horas)", "horas de atraso"] },
+          { "evento": "Adicional noturno", "apelidos": ["ad noturno", "adic noturno", "adicional noturno (horas)", "hora noturna", "horas noturnas"] },
+          { "evento": "Comissões", "apelidos": ["comissão", "comissao", "comissoes", "comissão sobre vendas", "comissões sobre vendas"] },
+          { "evento": "DSR", "apelidos": ["descanso semanal remunerado", "reflexo dsr", "dsr sobre horas extras"] },
+          { "evento": "Gratificação", "apelidos": ["gratificacao", "prêmio", "premio", "bônus", "bonus"] },
+          { "evento": "Vale-transporte", "apelidos": ["vt", "vale transporte", "desconto de vale-transporte", "desconto vt"] },
+          { "evento": "Adiantamento salarial", "apelidos": ["adiantamento", "vale salarial", "adiantamento de salário"] }
+        ]
+      },
+      "grade": {
+        "_comentario": "Grade 'Rubricas' do Lançamento de Rubricas (lote 6). A grade real NÃO foi mapeada (a empresa de teste não tem eventos): o simulador reproduz uma grade plausível — tabela com o funcionário na 1ª coluna e um evento por coluna, um campo por célula — e o Assistente só preenche quando o cliente clica 'Lançar na grade', com Desfazer; o envio é sempre pelo botão do portal. A calibrar no Chrome do Josué numa empresa com eventos (seletores, se a lista é paginada/virtualizada, máscara dos valores).",
+        "calibrar": true,
+        "ativo": true,
+        "tabela": "table[aria-label='Rubricas'], [role=grid][aria-label='Rubricas']",
+        "botaoAdicionarTodos": "Adicionar todos os funcionários",
+        "colunaEmpregado": 0
+      },
       "dicas": [
         "Arraste uma planilha (Excel ou CSV) com as colunas Empregado, Rubrica e Valor: eu monto o resumo e confiro os nomes.",
         "Use 'Adicionar funcionários' no portal para lançar os valores na grade."
@@ -3168,6 +3276,7 @@
           "grupo": "Geral"
         },
         "cargo": {
+          "api": ["jobPositionExpanded.description", "jobPositionExpanded.name"],
           "fc": "jobPositionExpanded",
           "tipo": "combo",
           "rotulo": "Cargo",
@@ -3177,6 +3286,7 @@
           "grupo": "Geral"
         },
         "funcao": {
+          "api": ["occupationExpanded.description", "occupationExpanded.name"],
           "fc": "occupationExpanded",
           "tipo": "combo",
           "rotulo": "Função",
@@ -3193,6 +3303,7 @@
           "calibrar": true
         },
         "servico": {
+          "api": ["serviceExpanded.name", "serviceExpanded.description"],
           "fc": "serviceExpanded",
           "tipo": "combo",
           "rotulo": "Serviço (sede onde ficará alocado)",
@@ -3200,6 +3311,7 @@
           "calibrar": true
         },
         "departamento": {
+          "api": ["departmentExpanded.description", "departmentExpanded.name"],
           "fc": "departmentExpanded",
           "tipo": "combo",
           "rotulo": "Departamento",
@@ -3210,12 +3322,14 @@
           "grupo": "Geral"
         },
         "centroCusto": {
+          "api": ["costCenterExpanded.description", "costCenterExpanded.name"],
           "fc": "costCenterExpanded",
           "tipo": "combo",
           "rotulo": "Centro de custo",
           "grupo": "Geral"
         },
         "sindicato": {
+          "api": ["laborUnionClientExpanded.name", "laborUnionClientExpanded.description"],
           "fc": "laborUnionClientExpanded",
           "tipo": "combo",
           "rotulo": "Sindicato",
@@ -3235,6 +3349,7 @@
           "grupo": "Geral"
         },
         "categoria": {
+          "api": ["category"],
           "fc": "category",
           "tipo": "combo",
           "rotulo": "Categoria",
@@ -3253,6 +3368,7 @@
           "grupo": "Geral"
         },
         "vinculo": {
+          "api": ["employmentRelationship"],
           "fc": "employmentRelationship",
           "tipo": "combo",
           "rotulo": "Vínculo empregatício",
@@ -3279,6 +3395,7 @@
           "calibrar": true
         },
         "contratoExperiencia": {
+          "api": ["daysExperience"],
           "fc": "daysExperience",
           "tipo": "numero",
           "rotulo": "Contrato de experiência (dias)",
@@ -3292,6 +3409,7 @@
           "prorrogacaoEm": "prorrogacao"
         },
         "prorrogacao": {
+          "api": ["extensionDays"],
           "fc": "extensionDays",
           "tipo": "numero",
           "rotulo": "Dias de prorrogação",
@@ -3309,6 +3427,7 @@
           "calibrar": true
         },
         "jornada": {
+          "api": ["workDayExpanded.description", "workDayExpanded.name"],
           "fc": "workDayExpanded",
           "tipo": "combo",
           "rotulo": "Jornada",
@@ -3319,6 +3438,7 @@
           "grupo": "Geral"
         },
         "cargaHoraria": {
+          "api": ["monthlyHours"],
           "fc": "monthlyHours",
           "tipo": "numero",
           "rotulo": "Carga horária mensal",
@@ -3969,6 +4089,7 @@
           "grupo": "Geral"
         },
         "categoriaEsocial": {
+          "api": ["eSocialCategory"],
           "fc": "eSocialCategory",
           "tipo": "combo",
           "rotulo": "Categoria eSocial",
@@ -3986,6 +4107,7 @@
           "sinonimosSoEm": {"instituição": ["tce", "fichaAdmissao", "texto"], "faculdade": ["tce", "fichaAdmissao", "texto"], "escola": ["tce", "fichaAdmissao", "texto"]}
         },
         "agenteIntegracao": {
+          "api": ["integrationAgentExpanded.name", "integrationAgentExpanded.description"],
           "fc": "integrationAgentExpanded",
           "tipo": "combo",
           "rotulo": "Agente de integração",
@@ -4106,11 +4228,13 @@
           ]
         },
         "categoriaSefip": {
+          "api": ["sefipCategory"],
           "fc": "sefipCategory",
           "tipo": "combo",
           "rotulo": "Categoria SEFIP"
         },
         "tipoContribuinte": {
+          "api": ["taxpayerType"],
           "fc": "taxpayerType",
           "tipo": "combo",
           "rotulo": "Tipo",
@@ -4128,6 +4252,7 @@
           "sinonimosSoEm": {"valor": ["texto"]}
         },
         "categoriaEsocial": {
+          "api": ["eSocialCategory"],
           "fc": "eSocialCategory",
           "tipo": "combo",
           "rotulo": "Categoria eSocial",
@@ -4837,6 +4962,51 @@
           "mensagem": "O holerite é feito pelo escritório. Se algum valor estiver errado, abra uma Solicitação Geral explicando o que mudou."
         }
       ]
+    },
+    {
+      "id": "alvara",
+      "nome": "Alvará de funcionamento",
+      "tipoSolicitacao": "geral",
+      "revisarComEscritorio": true,
+      "palavras": [
+        "alvará",
+        "alvará de funcionamento",
+        "licença de funcionamento",
+        "prefeitura",
+        "inscrição municipal",
+        "atividade",
+        "validade"
+      ],
+      "forte": [
+        "alvará de funcionamento",
+        "alvará de licença",
+        "licença de funcionamento"
+      ],
+      "minPalavras": 2,
+      "rotuloAssunto": "Alvará de funcionamento"
+    },
+    {
+      "id": "cnd",
+      "nome": "Certidão negativa de débitos (CND)",
+      "tipoSolicitacao": "geral",
+      "revisarComEscritorio": true,
+      "palavras": [
+        "certidão negativa",
+        "certidão positiva com efeitos de negativa",
+        "débitos relativos",
+        "tributos federais",
+        "dívida ativa",
+        "receita federal",
+        "procuradoria-geral da fazenda nacional",
+        "certidão de regularidade"
+      ],
+      "forte": [
+        "certidão negativa de débitos",
+        "certidão positiva com efeitos de negativa",
+        "certidão de regularidade do fgts"
+      ],
+      "minPalavras": 2,
+      "rotuloAssunto": "Certidão negativa de débitos"
     }
   ],
   "mensagens": {

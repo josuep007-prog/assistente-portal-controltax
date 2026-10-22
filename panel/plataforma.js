@@ -17,6 +17,9 @@ export function montarPlataforma(A) {
     agenda: { ano: hoje0.getFullYear(), mes: hoje0.getMonth(), filtro: '' }, docAba: 'solicitacoes', enviado: null
   };
   chrome.storage.local.get('lembretes').then(({ lembretes }) => { S.plat.lembretes = Array.isArray(lembretes) ? lembretes : []; }).catch(() => {});
+  // "Nada a lançar este mês" (variáveis da folha): 'empresa|MM/AAAA', só neste computador
+  S.plat.folhaNada = [];
+  chrome.storage.local.get('folhaNada').then(({ folhaNada }) => { S.plat.folhaNada = Array.isArray(folhaNada) ? folhaNada : []; }).catch(() => {});
 
   const MODULOS = [
     ['inicio', 'Hoje', 'home'], ['pendencias', 'Solicitações', 'list'], ['preencher', 'Novo pedido', 'fill'],
@@ -505,6 +508,108 @@ export function montarPlataforma(A) {
     await P.novoPedido(vv.tipo, { empregado: i.empregado, sugeridos: vv.valores, fonte: vv.fonte });
     const W = A.w(vv.tipo); W.avisoUsado = true;
   }
+  /** "Pedir de novo" no detalhe de uma solicitação do portal (feita aqui, direto no portal ou em outra máquina): um pedido do
+   *  mesmo tipo, para a mesma empresa, com os valores lidos do detalhe (regras: campos.*.api) — sem datas, sem assunto e
+   *  descrição, sem dados de saúde; num cadastro, só os campos da empresa. Tudo entra como sugestão "da solicitação nº X". */
+  async function pedirDeNovo(i, bruto = null) {
+    const t = S.rules.tipos[i.tipo]; if (!t) return;
+    if (!bruto && i.id && (t.apiDetalhe || t.apiLista)) bruto = (await request({ type: 'detalheCompleto', lista: t.apiDetalhe || t.apiLista, solicitacao: i.id }, 20000))?.dados || null;
+    const vals = E.valoresDoDetalhe(i.tipo, bruto || {}, S.rules);
+    // o funcionário da lista, se o detalhe não trouxe (num cadastro, a pessoa é outra: nunca vai)
+    if (!vals.empregado && i.empregado && E.resolveTipo(S.rules, i.tipo)?.campos?.empregado) vals.empregado = i.empregado;
+    const { empregado, ...resto } = vals;
+    await P.novoPedido(i.tipo, { empregado, sugeridos: resto, fonte: i.numero ? `da solicitação nº ${i.numero}` : 'da solicitação no portal', empresa: i.empresa || undefined });
+  }
+  /* Preparar a resposta (lote 6, regras: config.respostaPortal): o cliente escolhe uma das mensagens das regras (nunca texto
+     livre, nunca CID) e os arquivos — os soltos, que ele arrastou na plataforma, já vêm marcados. O Assistente abre a solicitação
+     certa no portal (procura o nº na lista), deixa a mensagem na caixa de resposta e anexa os arquivos. O clique em responder é
+     sempre do cliente, no portal; nada vai pela API. A tela do detalhe do Onvio real ainda não foi mapeada: a calibrar. */
+  function prepararResposta(i) {
+    const t = S.rules.tipos[i.tipo]; const cfg = S.rules.config?.respostaPortal || {};
+    const textos = (cfg.textos || []).filter(x => x?.id && x.texto);
+    if (!t || !textos.length) return;
+    const s = S.sugestao;
+    const soltos = s?.item ? [s.item, ...(s.extras || [])].filter(x => x?.file) : [];
+    const arquivos = soltos.map(x => ({ file: x.file, nome: x.file.name, levar: true, solto: true }));
+    const comArquivo = () => arquivos.some(a => a.levar);
+    const padrao = () => (comArquivo() ? textos.find(x => x.comAnexo) : null) || (i.veredito?.pede ? textos.find(x => x.id === (cfg.seEscritorioPede || 'informacao')) : null) || textos.find(x => !x.comAnexo) || textos[0];
+    let escolhido = padrao().id, mexeu = false;
+    const textoDe = (x) => String(x.texto).replace(/\{anexos\}/g, arquivos.filter(a => a.levar).map(a => a.nome).join(', ') || 'os arquivos').replace(/\{numero\}/g, i.numero || '');
+    const botao = esc(cfg.botaoResponder || 'RESPONDER');
+    const dlg = dialogo({
+      titulo: `${icon('chat')} Preparar resposta${i.numero ? ` <span class="mono" style="font-size:13px;color:var(--ink-3)">nº ${esc(i.numero)}</span>` : ''}`,
+      corpo: `<p class="muted" style="margin:0 0 10px">Eu abro esta solicitação no portal e deixo a mensagem e os arquivos na resposta. Você confere e clica em <b>${botao}</b> no próprio portal.</p>
+        ${i.veredito?.pede && i.veredito.frase ? `<div class="note" style="margin:0 0 10px">${icon('info')}<div><b>O escritório pediu:</b> “${esc(i.veredito.frase)}”</div></div>` : ''}
+        <div class="rp-lista rp-textos" role="radiogroup" aria-label="Mensagem">${textos.map(x => `<label class="ee-li"><input type="radio" name="rp-t" value="${esc(x.id)}"${x.id === escolhido ? ' checked' : ''}><span class="es-tx"><b>${esc(x.rotulo || x.id)}</b><small data-prev="${esc(x.id)}"></small></span></label>`).join('')}</div>
+        <h4 class="rp-h">Arquivos da resposta</h4><div class="list rp-arqs" id="rp-arqs"></div>
+        <div class="drop compact" id="rp-drop" role="button" tabindex="0">${icon('upload')}<div><b>Arraste os arquivos aqui</b><small>Ou clique para escolher. Eles vão anexados na resposta, no portal.</small></div></div>
+        <input type="file" id="rp-file" multiple hidden>`,
+      acoes: [{ rotulo: 'Cancelar' }, '|', { rotulo: `${icon('external', 'ic-sm')} Preparar no portal`, cls: 'btn-primary rp-ir', fn: () => { enviar(); } }]
+    });
+    const el = dlg.el;
+    const desenhar = () => {
+      if (!mexeu) { escolhido = padrao().id; el.querySelectorAll('input[name="rp-t"]').forEach(r => { r.checked = r.value === escolhido; }); }
+      el.querySelectorAll('[data-prev]').forEach(x => { x.textContent = textoDe(textos.find(y => y.id === x.dataset.prev)); });
+      el.querySelector('#rp-arqs').innerHTML = arquivos.length ? arquivos.map((a, n) => `<label class="li"><input type="checkbox" data-rp-arq="${n}"${a.levar ? ' checked' : ''}><div class="main"><b>${esc(a.nome)}</b><small>${a.solto ? 'arquivo que você arrastou na plataforma' : 'escolhido agora'}</small></div></label>`).join('') : '<p class="muted" style="margin:0">Nenhum arquivo (a resposta pode ir só com a mensagem).</p>';
+      el.querySelectorAll('[data-rp-arq]').forEach(c => c.addEventListener('change', () => { arquivos[+c.dataset.rpArq].levar = c.checked; desenhar(); }));
+    };
+    const juntar = (fs) => { for (const f of fs || []) if (!arquivos.some(a => a.nome === f.name && a.file.size === f.size)) arquivos.push({ file: f, nome: f.name, levar: true }); desenhar(); };
+    el.querySelectorAll('input[name="rp-t"]').forEach(r => r.addEventListener('change', () => { escolhido = r.value; mexeu = true; }));
+    const drop = el.querySelector('#rp-drop'), inp = el.querySelector('#rp-file');
+    drop.addEventListener('click', () => inp.click());
+    drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inp.click(); } });
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); drop.classList.remove('over'); juntar([...(e.dataTransfer?.files || [])]); });
+    inp.addEventListener('change', () => { juntar([...inp.files]); inp.value = ''; });
+    desenhar();
+    async function enviar() {
+      const x = textos.find(y => y.id === escolhido) || padrao();
+      const levar = arquivos.filter(a => a.levar).map(a => a.file);
+      const packed = await A.packFiles(levar);
+      const r = await request({ type: 'prepararResposta', slug: t.slug, numero: i.numero || '', texto: textoDe(x), files: packed }, 45000, packed.map(p => p.buf));
+      // os arquivos soltos foram para a resposta: o cartão do documento sai do Novo pedido
+      if (r?.ok && s && S.sugestao === s && arquivos.some(a => a.solto && a.levar)) { S.sugestao = null; }
+      if (!r?.ok) toast(`Não consegui preparar a resposta${r?.motivo ? ` (${r.motivo})` : ''}. Responda direto no portal.`);
+      else if (r.recusados?.length) toast(`O portal não aceitou: ${r.recusados.join(', ')}. Confira os anexos antes de responder.`);
+    }
+  }
+  /* Variáveis da folha do mês (regras: config.variaveisFolha): "Preparar" abre o Lançamento de Rubricas com o tipo e a
+     competência como sugestão (com a planilha, se foi arrastada no cartão); "Usar o lançamento do mês passado" leva o tipo e as
+     linhas do último lançamento (deste computador ou, lido na hora, do portal), sem a competência antiga; "Nada a lançar este mês"
+     só esconde o aviso daquele mês (guardado neste computador). Quem envia é sempre o cliente. */
+  async function prepararFolha(f, arquivos = null) {
+    await P.novoPedido('rubricas', { sugeridos: { tipoLancamento: f.tipoLancamento, competencia: f.competencia }, fonte: 'sugestão: competência do mês', semResumo: true });
+    if (arquivos?.length && S.ctx.route?.mode === 'form' && S.ctx.tipo === 'rubricas') A.handleFiles(arquivos, 'arrastar');
+  }
+  async function usarMesPassado(f) {
+    const emp = S.ctx.empresa, t = S.rules.tipos.rubricas;
+    const h = (S.historico || []).find(x => x.status === 'enviado' && x.tipo === 'rubricas' && x.empresa === emp);
+    let vals = h ? E.valoresParaRepetir('rubricas', h.valores, S.rules) : {}, linhas = null;
+    let fonte = h ? `do lançamento de ${new Date(h.quando).toLocaleDateString('pt-BR')}` : '';
+    if (!h) {
+      const ult = E.filtrarPorEmpresa(S.plat.sol?.itens || [], '', emp).filter(i => i.tipo === 'rubricas' && !['cancelada', 'prescrita'].includes(i.estado))
+        .sort((a, b) => (b.criado?.getTime() || 0) - (a.criado?.getTime() || 0))[0];
+      if (ult?.id && t) {
+        const r = await request({ type: 'detalheCompleto', lista: t.apiDetalhe || t.apiLista, solicitacao: ult.id }, 20000);   // só na memória
+        if (r?.dados) { vals = E.valoresDoDetalhe('rubricas', r.dados, S.rules); linhas = E.linhasDoLancamento(r.dados); }
+        fonte = ult.numero ? `do lançamento nº ${ult.numero}` : 'do último lançamento no portal';
+      }
+    }
+    const { tabelaRubricas, competencia: _velha, ...resto } = vals;
+    if (!linhas?.length && tabelaRubricas) linhas = E.linhasDoTexto(tabelaRubricas);
+    const texto = tabelaRubricas || (linhas?.length ? E.textoLinhasRubricas(linhas) : '');
+    if (!Object.keys(resto).length && !texto) { toast('Não achei um lançamento anterior desta empresa. Use “Preparar” e arraste a planilha.'); return; }
+    await P.novoPedido('rubricas', { sugeridos: { tipoLancamento: f.tipoLancamento, ...resto, competencia: f.competencia }, fonte, semResumo: true,
+      extras: texto ? { tabelaRubricas: { valor: texto, conf: 0.6, fonte } } : null, linhas });
+    toast('Usei o lançamento do mês passado, com a competência deste mês. Confira os valores antes de enviar.');
+  }
+  async function nadaALancar(f) {
+    S.plat.folhaNada = [...new Set([...(S.plat.folhaNada || []), `${S.ctx.empresa}|${f.competencia}`])].slice(-60);
+    try { await chrome.storage.local.set({ folhaNada: S.plat.folhaNada }); } catch { /* sem armazenamento: vale nesta visita */ }
+    toast(`Combinado: sem variáveis da folha de ${f.competencia}. O aviso volta no mês que vem.`);
+    if (S.view === 'inicio') renderPainel();
+  }
   /** "Programar" férias a vencer: o aviso já com a 1ª data de início que vale (30 dias de antecedência, fora de sexta e véspera de feriado). */
   function programarFerias(nome) {
     const ini = E.primeiroInicioFerias(E.addDays(E.today(), +S.rules.config?.avisoFeriasDias || 30), S.rules);
@@ -591,6 +696,9 @@ export function montarPlataforma(A) {
     const casos = lido ? E.casosCliente(base, R) : [];
     const legais = lido ? E.prazosLegaisCliente(base, hoje, R) : [];
     const equipe = E.equipeVencendo(empregadosAtivos(), base, hoje, R);
+    // variáveis da folha do mês da empresa aberta no portal (some quando o portal já tem o lançamento ou o cliente dispensou)
+    const emp = S.ctx.empresa || '';
+    const folha = lido && R.tipos?.rubricas ? E.variaveisDoMes(hoje, R, E.filtrarPorEmpresa(sol.itens, '', emp), (S.plat.folhaNada || []).filter(k => k.startsWith(`${emp}|`)).map(k => k.slice(emp.length + 1))) : null;
     const acoesEq = [];
     const quandoLido = sol?.quando ? new Date(sol.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -601,7 +709,6 @@ export function montarPlataforma(A) {
     viewEl.innerHTML = `
       <div id="avisos-esc"></div>
       <div id="lote"></div>
-      <div id="sugestao"></div>
       ${enviado}${aviso}<div id="proximo"></div>
       <p class="hj-saud"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</p>
       <div class="dp-toolbar hj-barra">
@@ -664,6 +771,7 @@ export function montarPlataforma(A) {
       for (const x of avisos.filter(x => x.falta != null && x.falta <= 10)) passo('', 'var(--viz-crit)', `Pedir o cálculo ${x.tipo === 'ferias' ? 'de férias' : 'da rescisão'} · pagamento até ${fmt(x.pagamento)}`, [A.nomeCurto(x.item.empregado), x.enviarAte ? `envie até ${fmt(x.enviarAte)}` : ''].filter(Boolean).join(' · '), () => pedirCalculoDoAviso(x.item));
       for (const p of prio.filter(p => p.motivo === 'respondida').slice(0, 4)) { const i = p.item; passo('', cor(MOT.respondida.cor), E.acaoCliente(i, 'respondida'), [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
       for (const x of legais.filter(x => x.falta <= 5)) passo('', 'var(--viz-crit)', `${x.titulo} até ${fmt(x.alvo)}`, [x.item.empregado, x.ref].filter(Boolean).join(' · '), () => abrirDetalhe(x.item, { aba: 'observar' }));
+      if (folha && folha.falta <= 3) passo('', 'var(--hj-today)', `Enviar as variáveis da folha de ${folha.competencia} até ${fmt(folha.limite)}`, 'Preparar o Lançamento de Rubricas', () => prepararFolha(folha));
       for (const l of lems) passo(' n-lem', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)));
       for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${e.pedir ? 'Fazer agora · ' : ''}${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, e.pedir ? () => fazerAgora(e.pedir) : () => abrirDia(E.iso(e.d))); }
       passosHtml.acoes = acoes;
@@ -692,7 +800,16 @@ export function montarPlataforma(A) {
       const leg = legais.map(x => linha(x.item.empregado || x.item.assunto || nomeTipo(x.item.tipo), `${x.titulo} até ${fmt(x.alvo)} · ${x.ref}${x.retroativa ? ' · pedido depois do início' : ''}`, pillQ(x.alvo), null, () => abrirDetalhe(x.item, { aba: 'observar' })));
       // o que foi preenchido e não enviado nos últimos 7 dias e os rascunhos da empresa
       const term = paraTerminar().map(x => linha(x.titulo, x.sub, `<span class="pill pill-today">${x.quando}</span>`, { rotulo: 'Continuar', cls: 'btn-primary', fn: x.fn }));
+      // variáveis da folha: Preparar, Usar o lançamento do mês passado, Nada a lançar este mês (e soltar a planilha no cartão)
+      const folhaCard = () => {
+        if (!folha) return '';
+        const n = (fn) => { acoesEq.push({ acao: fn }); return acoesEq.length - 1; };
+        return `<section class="pn-card hj-folha" id="eq-folha"><div class="pn-card-head"><h3>Variáveis da folha de ${esc(folha.competencia)}</h3><small>Ainda não enviadas · envie até ${fmt(folha.limite)}</small></div>
+          <div class="pn-card-body eq-body"><div class="pn-li eq-li folha-drop"><div class="main"><b>Horas extras, faltas, comissões… do mês</b><small>Arraste a planilha aqui ou prepare o lançamento (${esc(folha.tipoLancamento)}, competência ${esc(folha.competencia)}, para você conferir).</small></div><div class="eq-acoes">${pillQ(folha.limite)}</div></div>
+          <div class="eq-acoes folha-acoes"><button type="button" class="btn btn-sm btn-primary" data-eq="${n(() => prepararFolha(folha))}" data-folha="preparar">Preparar</button><button type="button" class="btn btn-sm" data-eq="${n(() => usarMesPassado(folha))}" data-folha="passado">Usar o lançamento do mês passado</button><button type="button" class="btn btn-sm btn-ghost" data-eq="${n(() => nadaALancar(folha))}" data-folha="nada">Nada a lançar este mês</button></div></div></section>`;
+      };
       return `<div class="hj-equipe">
+        ${folhaCard()}
         ${term.length ? card('eq-terminar', 'Para terminar', 'Pedidos começados e não enviados (7 dias, neste computador).', term, '') : ''}
         ${card('eq-legais', 'Prazos legais', 'Pagamento dos cálculos em aberto e eSocial das admissões.', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…')}
         ${card('eq-avisos', 'Aviso sem cálculo', 'Férias e rescisões perto do pagamento com só o aviso no portal.', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
@@ -708,7 +825,7 @@ export function montarPlataforma(A) {
           const i = c.item;
           const acao = c.tipo === 'abaErrada' ? { rotulo: `Pedir em ${S.rules.tipos[c.aba]?.nome || 'outra aba'}`, fn: () => P.novoPedido(c.aba) }
             : c.tipo === 'duplicada' ? { rotulo: `Ver a nº ${c.outra.numero}`, fn: () => abrirDetalhe(c.outra) }
-            : { rotulo: 'Anexar no portal', fn: () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, id: i.numero || i.id }) };
+            : { rotulo: 'Anexar no portal', fn: () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, numero: i.numero }, 30000) };
           acoesEq.push({ acao: acao.fn, abrir: () => abrirDetalhe(i) });
           const n = acoesEq.length - 1;
           return `<div class="pn-li eq-li caso-${c.tipo}" data-eq-abrir="${n}"><span class="pill pill-${c.tipo === 'anexo' ? 'late' : 'today'}">${ROT_CASO[c.tipo]}</span><div class="main"><b>${esc([i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '))}</b><small>${esc(c.porque)}</small></div><div class="eq-acoes"><button type="button" class="btn btn-sm" data-eq="${n}">${esc(acao.rotulo)}</button></div></div>`;
@@ -723,6 +840,13 @@ export function montarPlataforma(A) {
     // a rosca leva às Solicitações já filtradas por aquela situação (como no Control Onvio)
     viewEl.querySelectorAll('.an-f[data-motivo]').forEach(b => b.addEventListener('click', () => { Object.assign(S.plat.filtroSol, { motivo: b.dataset.motivo, tipo: '', q: '' }); A.setView('pendencias'); }));
     $('#hj-lembrete').addEventListener('click', () => editarLembrete(null, E.iso(E.today())));
+    // a planilha solta no cartão da folha abre o lançamento já com ela
+    const fd = $('#eq-folha');
+    if (fd && folha) {
+      fd.addEventListener('dragover', (e) => { e.preventDefault(); fd.classList.add('over'); });
+      fd.addEventListener('dragleave', () => fd.classList.remove('over'));
+      fd.addEventListener('drop', (e) => { e.preventDefault(); fd.classList.remove('over'); const fs = [...(e.dataTransfer?.files || [])]; if (fs.length) prepararFolha(folha, fs); });
+    }
     $('#hj-tentar')?.addEventListener('click', () => { S.plat.sol = null; renderPainel(); P.carregarSolicitacoes(true); });
     ligarSeletorEmpresa(viewEl);
     ligarDicas(viewEl);
@@ -733,7 +857,7 @@ export function montarPlataforma(A) {
     viewEl.querySelectorAll('.eq-lista').forEach(l => { limitarCinco(l); marcarRolagem(l); });   // até 5 itens à vista; o resto rola
 
     ligarIr(viewEl);
-    A.renderSugestao(); A.renderLote(); A.renderAvisosInicio();
+    A.renderLote(); A.renderAvisosInicio();   // o cartão do documento/texto fica no Novo pedido (mostrarSugestao)
   }
   // Carrossel: um aviso por vez. A barra invisível é o relógio (5 s por volta); passar o mouse ou focar pausa.
   function iniciarCarrossel(raiz) {
@@ -908,7 +1032,7 @@ export function montarPlataforma(A) {
     if (!i) return;
     const t = S.rules.tipos[i.tipo];
     const mo = E.motivoCliente(i, E.today(), S.rules);
-    const st = { aba, trs: null, trsErro: false, dados: null, dadosErro: false, datas: { ...(i.datas || {}) } };
+    const st = { aba, trs: null, trsErro: false, dados: null, dadosErro: false, bruto: null, datas: { ...(i.datas || {}) } };
     const topo = [['Responsável no escritório', i.responsavel], ['Aberta em', fmt(i.criado)], ['Atualizada', fmt(i.atualizado)], ['Expectativa', i.expectativa ? fmt(i.expectativa) : ''],
       ['Prescreve em', i.prescreveEm != null ? `${i.prescreveEm} dia(s)` : ''], ['Empresa', variasEmpresas(S.plat.sol?.itens) ? i.empresa : '']].filter(([, v]) => v && v !== '—');
     const dlg = dialogo({
@@ -920,7 +1044,9 @@ export function montarPlataforma(A) {
         <div class="dp-tabs dt-tabs" role="tablist">${[['conversa', 'Conversa'], ['dados', 'Dados'], ['observar', 'O que observar']].map(([k, r]) => `<button type="button" role="tab" class="dp-tab" data-dt="${k}">${r}</button>`).join('')}</div>
         <div class="dt-body" id="dt-body"></div>`,
       acoes: [...(['avisoFerias', 'avisoRescisao'].includes(i.tipo) && !['cancelada', 'prescrita'].includes(i.estado) ? [{ rotulo: `${icon('calc', 'ic-sm')} Pedir o cálculo`, cls: 'dt-pedir-calc', fn: () => { pedirCalculoDoAviso(i, st.datas); } }] : []),
-        { rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, id: i.numero || i.id }) },
+        ...(t ? [{ rotulo: `${icon('refresh', 'ic-sm')} Pedir de novo`, cls: 'dt-pedir-novo', fn: () => { pedirDeNovo(i, st.bruto); } }] : []),
+        ...(t && i.aguardando && (S.rules.config?.respostaPortal?.textos || []).length ? [{ rotulo: `${icon('chat', 'ic-sm')} Preparar resposta`, cls: 'dt-responder', fn: () => { setTimeout(() => prepararResposta(i), 0); } }] : []),
+        { rotulo: `${icon('external', 'ic-sm')} ${i.aguardando ? 'Responder no portal' : 'Ver no portal'}`, cls: 'btn-primary', fn: () => request({ type: 'abrirNoPortal', slug: t?.slug, numero: i.numero }, 30000) },
         { rotulo: `${icon('copy', 'ic-sm')} Copiar observações`, cls: 'btn-ghost dt-copiar', fn: async () => { const o = E.observacoesCliente(i, st.datas, S.rules); try { await navigator.clipboard.writeText(o.map(x => `• ${x.texto}`).join('\n')); toast('Observações copiadas.'); } catch { toast('Não consegui copiar.'); } return false; } },
         '|', { rotulo: 'Fechar' }]
     });
@@ -983,6 +1109,7 @@ export function montarPlataforma(A) {
     if (lista && i.id) request({ type: 'detalheCompleto', lista, solicitacao: i.id }, 20000).then((r) => {
       if (!r?.dados) st.dadosErro = true;
       else {
+        st.bruto = r.dados;   // só na memória, enquanto o detalhe está aberto (para o "Pedir de novo")
         st.dados = D.camposDetalhe(r.dados);
         const d = E.datasDoAviso(r.dados);
         for (const [k, v] of Object.entries(d)) if (v != null) st.datas[k] = v;
@@ -1045,13 +1172,16 @@ export function montarPlataforma(A) {
    *  valores: o que o cliente escolheu na outra tela (vale como digitado por ele); sugeridos: dados do aviso, 1ª data que vale…
    *  entram para conferir ("do aviso nº X"), e um documento arrastado depois ainda pode corrigi-los; observacoes: vão para a
    *  descrição (ex.: a linha da simulação); empresa: a do pedido (vários CNPJs no mesmo acesso). Terminando sem falta nada, abre o resumo do "Conferir e enviar". */
-  P.novoPedido = async (tipo, { empregado, valores = {}, sugeridos = {}, fonte = 'sugestão do Assistente', observacoes = '', empresa } = {}) => {
+  P.novoPedido = async (tipo, { empregado, valores = {}, sugeridos = {}, fonte = 'sugestão do Assistente', observacoes = '', empresa, extras = null, linhas = null, semResumo = false } = {}) => {
     A.comecarDoZeroSeAbandonado(tipo);
     const W = A.w(tipo);
     const dados = { ...(empregado ? { empregado } : {}), ...Object.fromEntries(Object.entries(valores).filter(([k, v]) => v != null && v !== '' && S.rules.tipos[tipo]?.campos?.[k])) };
     for (const [k, v] of Object.entries(dados)) { W.valores[k] = { valor: String(v), conf: 1, fonte: 'você' }; W.editados.add(k); W.fonteVerdade[k] = 'plataforma'; }
     A.aplicarSugestoes(tipo, Object.fromEntries(Object.entries(sugeridos || {}).filter(([k]) => !(k in dados))), fonte);
     if (observacoes) W.valores.observacoes = { valor: observacoes, conf: 1, fonte: 'você' };
+    // o que não é campo do portal mas entra no texto (ex.: as linhas das variáveis da folha) e as linhas para a grade
+    for (const [k, v] of Object.entries(extras || {})) if (v?.valor) W.valores[k] = v;
+    if (linhas?.length) W.linhasRubricas = linhas;
     W.rascunhoVisto = true;
     A.gerarTextos(tipo);
     // com funcionário escolhido a empresa já está definida (a lista dele é a da empresa aberta ou a da solicitação de origem)
@@ -1061,7 +1191,7 @@ export function montarPlataforma(A) {
     for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
     if ((Object.keys(dados).length || Object.keys(sugeridos || {}).length) && S.ctx.tipo === tipo) {
       await A.loadEmpregados(tipo); await A.fillPortal(tipo, { daPlataforma: true });
-      await A.abrirResumoSePronto(tipo);
+      if (!semResumo) await A.abrirResumoSePronto(tipo);
     }
   };
 
@@ -1325,8 +1455,9 @@ export function montarPlataforma(A) {
   async function reaproveitar(h, outroPedido = false) {
     if (!h) return;
     const W = A.w(h.tipo);
-    // outro pedido a partir do histórico: num cadastro, só os campos da empresa (nada da pessoa anterior)
-    const vals = outroPedido ? E.valoresReaproveitaveis(h.tipo, h.valores, S.rules) : h.valores || {};
+    // outro pedido a partir do histórico: a regra do Repetir (sem datas; num cadastro, só os campos da empresa).
+    // "Começou e não enviou" continua levando tudo
+    const vals = outroPedido ? E.valoresParaRepetir(h.tipo, h.valores, S.rules) : h.valores || {};
     for (const [k, v] of Object.entries(vals)) if (!['assunto', 'descricao'].includes(k)) W.valores[k] = { valor: v, conf: 1, fonte: 'histórico' };
     W.rascunhoVisto = true;
     A.gerarTextos(h.tipo, true);
@@ -1470,7 +1601,7 @@ export function montarPlataforma(A) {
         const abrir = (e) => { if (e.target.closest('button')) return; abrirDetalhe(vis[+r.dataset.arq].item, { aba: 'conversa' }); };
         r.addEventListener('click', abrir); r.addEventListener('keydown', (e) => { if (e.key === 'Enter') abrir(e); });
       });
-      lista.querySelectorAll('[data-arq-portal]').forEach(b => b.addEventListener('click', () => { const i = vis[+b.dataset.arqPortal].item; request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, id: i.numero || i.id }); }));
+      lista.querySelectorAll('[data-arq-portal]').forEach(b => b.addEventListener('click', () => { const i = vis[+b.dataset.arqPortal].item; request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, numero: i.numero }, 30000); }));
       lista.querySelector('#arq-mais')?.addEventListener('click', () => { F.limite += LOTE_ARQ; ler(); });
       const n = viewEl.querySelector('[data-doc-aba="solicitacoes"]');
       if (n && arquivosLidos.size) { const t = n.querySelector('.tab-n') || n.appendChild(Object.assign(document.createElement('span'), { className: 'tab-n' })); t.textContent = todos.length; }
