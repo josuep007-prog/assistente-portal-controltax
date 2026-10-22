@@ -1178,6 +1178,78 @@
         "redutor": { "isentoAte": 5000.00, "ate": 7350.00, "a": 978.62, "b": 0.133145 },
         "redutorNo13": true
       }
+    },
+    "leitor": {
+      "_comentario": "Precisão acima de tudo (vazio é melhor que errado). confiancaMinimaPortal: abaixo disso o valor lido NÃO vai ao portal sozinho — aparece como sugestão com o botão Usar. semAncora: teto do valor sem rótulo junto (1º CPF/PIS/e-mail do texto). ocrBaixo/ocrTetoBaixo: foto com confiança do OCR abaixo de ocrBaixo fica no máximo em ocrTetoBaixo (menos o valor validado e junto do rótulo); ocrTetoNomes: nomes (sem dígito verificador) de foto abaixo dessa confiança ficam como sugestão. ocrRuim: abaixo disso não preenche nada e pede outra foto (mensagens.leituraRuimOutraFoto). contextoCpfDescarta: palavras que, mais perto do número do que o rótulo CPF, dizem que é outro número (registro da CNH, RENACH, PIS, CNS) ou de outra pessoa. formatos: o valor tem de ter esse formato para ir ao portal (senão vira 'confira'). Valores calibrados com o corpus fictício (tools/auditar-leitor.py); a calibrar com documentos reais (sem guardá-los).",
+      "confiancaMinimaPortal": 0.6,
+      "semAncora": 0.5,
+      "ocrBaixo": 75,
+      "ocrTetoBaixo": 0.55,
+      "ocrTetoNomes": 85,
+      "ocrRuim": 45
+    },
+    "leitorEndereco": {
+      "_comentario": "Endereço por blocos (comprovante e ficha). rotulosTitular: o bloco logo abaixo de um destes rótulos (ou do nome do titular) é o do cliente. rebaixar: bloco com estas palavras (ou nas 2 primeiras linhas) é da empresa emissora. palavrasDeConta: onde cortar a linha do endereço quando o OCR junta colunas ('APTO 302 Consumo: 210 kWh'). Escrever sem acento. A calibrar com contas reais.",
+      "rotulosTitular": [
+        "dados do cliente",
+        "unidade consumidora",
+        "dados do consumidor",
+        "dados do titular",
+        "local de instalacao",
+        "endereco de instalacao",
+        "endereco da instalacao",
+        "endereco do imovel",
+        "endereco de entrega",
+        "endereco de correspondencia",
+        "endereco do cliente",
+        "endereco do titular",
+        "cliente",
+        "titular",
+        "consumidor",
+        "destinatario"
+      ],
+      "rebaixar": [
+        "cnpj",
+        "cnp\\)",
+        "s\\.a\\.?",
+        "s\\/a",
+        "ltda",
+        "eireli",
+        "sac",
+        "central de atendimento",
+        "atendimento ao cliente",
+        "ouvidoria",
+        "www",
+        "inscricao estadual",
+        "companhia",
+        "cia\\."
+      ],
+      "palavrasDeConta": [
+        "consumo",
+        "leitura",
+        "instalacao",
+        "matricula",
+        "hidrometro",
+        "medidor",
+        "vencimento",
+        "referencia",
+        "plano",
+        "periodo",
+        "telefone",
+        "fatura",
+        "nota fiscal",
+        "kwh",
+        "total",
+        "valor",
+        "conta",
+        "codigo",
+        "cliente",
+        "classe",
+        "tarifa",
+        "ligacao",
+        "rota",
+        "emissao"
+      ]
     }
   },
   "feriados": [
@@ -1842,7 +1914,22 @@
             "por estar acompanhando",
             "acompanhando o paciente",
             "acompanhar paciente",
-            "acompanhante"
+            "acompanhante",
+            "a menor",
+            "o menor",
+            "sob os cuidados",
+            "sob cuidados",
+            "responsável:",
+            "responsavel:",
+            "genitora",
+            "genitor:",
+            "sob responsabilidade de",
+            "acompanhado da mãe",
+            "acompanhada da mãe",
+            "acompanhado do pai",
+            "acompanhada do pai",
+            "acompanhado(a) de",
+            "filho(a) de"
           ],
           "nenhum": true
         },
@@ -2195,9 +2282,9 @@
           "rotulo": "Data do aviso",
           "obrigatorio": true,
           "sinonimos": [
-            "data do aviso",
-            "data"
-          ]
+            "data do aviso"
+          ],
+          "sinonimosSoEm": {"data": ["pedidoDemissao", "avisoEmpregador"]}
         },
         "anosEmpresa": {
           "tipo": "numero",
@@ -2725,10 +2812,9 @@
           "rotulo": "Data de admissão",
           "obrigatorio": true,
           "sinonimos": [
-            "data de admissão",
-            "admissão",
-            "início"
+            "data de admissão"
           ],
+          "sinonimosSoEm": {"admissão": ["fichaAdmissao", "texto"], "início": ["fichaAdmissao", "texto"]},
           "grupo": "Geral"
         },
         "vinculo": {
@@ -2869,18 +2955,16 @@
           "fc": "paymentBankExpanded",
           "tipo": "combo",
           "rotulo": "Banco",
-          "sinonimos": [
-            "banco"
-          ],
+          "sinonimos": [],
+          "sinonimosSoEm": {"banco": ["fichaAdmissao", "bancario", "texto"]},
           "grupo": "Profissional"
         },
         "agencia": {
           "fc": "paymentBankAgencyDescription",
           "tipo": "texto",
           "rotulo": "Agência",
-          "sinonimos": [
-            "agência"
-          ],
+          "sinonimos": [],
+          "sinonimosSoEm": {"agência": ["fichaAdmissao", "bancario", "texto"]},
           "grupo": "Profissional"
         },
         "conta": {
@@ -2888,9 +2972,9 @@
           "tipo": "texto",
           "rotulo": "Conta",
           "sinonimos": [
-            "conta corrente",
-            "conta"
+            "conta corrente"
           ],
+          "sinonimosSoEm": {"conta": ["fichaAdmissao", "bancario", "texto"]},
           "grupo": "Profissional"
         },
         "digitoConta": {
@@ -2932,9 +3016,9 @@
           "tipo": "texto",
           "rotulo": "Número",
           "sinonimos": [
-            "número",
-            "nº"
+            "número"
           ],
+          "sinonimosSoEm": {"nº": ["fichaAdmissao", "comprovanteEndereco", "texto"]},
           "grupo": "Pessoal"
         },
         "complemento": {
@@ -3075,7 +3159,8 @@
             "raça",
             "cor"
           ],
-          "grupo": "Pessoal"
+          "grupo": "Pessoal",
+          "valoresAceitos": ["Branca", "Preta", "Parda", "Amarela", "Indígena", "Não informado"]
         },
         "grauInstrucao": {
           "fc": "schoolingLevel",
@@ -3094,7 +3179,8 @@
           "sinonimos": [
             "estado civil"
           ],
-          "grupo": "Pessoal"
+          "grupo": "Pessoal",
+          "valoresAceitos": ["Solteiro", "Solteira", "Casado", "Casada", "Divorciado", "Divorciada", "Viúvo", "Viúva", "Separado", "Separada", "Separado judicialmente", "União estável"]
         },
         "conjuge": {
           "fc": "spouseName",
@@ -3205,9 +3291,9 @@
           "rotulo": "Emissão do RG",
           "sinonimos": [
             "data de expedição",
-            "data de emissão",
             "expedição"
           ],
+          "sinonimosSoEm": {"data de emissão": ["identidade", "fichaAdmissao", "texto"]},
           "grupo": "Documentos"
         },
         "titulo": {
@@ -3224,18 +3310,16 @@
           "fc": "electoralWard",
           "tipo": "texto",
           "rotulo": "Zona eleitoral",
-          "sinonimos": [
-            "zona"
-          ],
+          "sinonimos": [],
+          "sinonimosSoEm": {"zona": ["titulo", "fichaAdmissao", "texto"]},
           "grupo": "Documentos"
         },
         "secao": {
           "fc": "pollingStation",
           "tipo": "texto",
           "rotulo": "Seção eleitoral",
-          "sinonimos": [
-            "seção"
-          ],
+          "sinonimos": [],
+          "sinonimosSoEm": {"seção": ["titulo", "fichaAdmissao", "texto"]},
           "grupo": "Documentos"
         },
         "reservista": {
@@ -3244,9 +3328,9 @@
           "rotulo": "Reservista",
           "sinonimos": [
             "reservista",
-            "certificado de reservista",
-            "RA"
+            "certificado de reservista"
           ],
+          "sinonimosSoEm": {"RA": ["texto"]},
           "grupo": "Documentos"
         },
         "cnh": {
@@ -3255,10 +3339,9 @@
           "rotulo": "CNH — número",
           "sinonimos": [
             "CNH",
-            "nº registro",
-            "carteira de motorista",
-            "registro"
+            "carteira de motorista"
           ],
+          "sinonimosSoEm": {"nº registro": ["identidade"], "registro": ["identidade"]},
           "grupo": "Documentos"
         },
         "cnhCategoria": {
@@ -3266,18 +3349,17 @@
           "tipo": "texto",
           "rotulo": "CNH — categoria",
           "sinonimos": [
-            "cat. hab.",
-            "categoria"
+            "cat. hab."
           ],
+          "sinonimosSoEm": {"categoria": ["identidade"]},
           "grupo": "Documentos"
         },
         "cnhValidade": {
           "fc": "driverLicenseDueDate",
           "tipo": "data",
           "rotulo": "CNH — validade",
-          "sinonimos": [
-            "validade"
-          ],
+          "sinonimos": [],
+          "sinonimosSoEm": {"validade": ["identidade"]},
           "grupo": "Documentos"
         },
         "observacoes": {
@@ -3464,11 +3546,9 @@
           "tipo": "combo",
           "rotulo": "Instituição de ensino",
           "sinonimos": [
-            "instituição de ensino",
-            "instituição",
-            "faculdade",
-            "escola"
-          ]
+            "instituição de ensino"
+          ],
+          "sinonimosSoEm": {"instituição": ["tce", "fichaAdmissao", "texto"], "faculdade": ["tce", "fichaAdmissao", "texto"], "escola": ["tce", "fichaAdmissao", "texto"]}
         },
         "agenteIntegracao": {
           "fc": "integrationAgentExpanded",
@@ -3496,19 +3576,19 @@
           "tipo": "texto",
           "rotulo": "Área de atuação",
           "sinonimos": [
-            "área de atuação",
-            "área"
-          ]
+            "área de atuação"
+          ],
+          "sinonimosSoEm": {"área": ["tce", "fichaAdmissao", "texto"]}
         },
         "nivel": {
           "fc": "schoolarLevel",
           "tipo": "combo",
           "rotulo": "Nível",
           "sinonimos": [
-            "nível",
             "nível de escolaridade",
             "nível do curso"
-          ]
+          ],
+          "sinonimosSoEm": {"nível": ["tce", "fichaAdmissao", "texto"]}
         },
         "salario": {
           "fc": "wage",
@@ -3599,9 +3679,8 @@
           "fc": "taxpayerType",
           "tipo": "combo",
           "rotulo": "Tipo",
-          "sinonimos": [
-            "tipo"
-          ]
+          "sinonimos": [],
+          "sinonimosSoEm": {"tipo": ["fichaAdmissao", "texto"]}
         },
         "salario": {
           "fc": "wage",
@@ -3609,9 +3688,9 @@
           "rotulo": "Pró-labore",
           "sinonimos": [
             "pró-labore",
-            "valor",
             "remuneração"
-          ]
+          ],
+          "sinonimosSoEm": {"valor": ["texto"]}
         },
         "categoriaEsocial": {
           "fc": "eSocialCategory",
@@ -3763,6 +3842,28 @@
           "semCampo": "dias",
           "nivel": "info",
           "mensagem": "Parece uma declaração de comparecimento (horas), sem dias de afastamento. Se for isso, ela serve para justificar as horas: informe o horário na descrição."
+        },
+        {
+          "id": "dependente",
+          "palavras": [
+            "a menor",
+            "o menor",
+            "sob os cuidados",
+            "sob cuidados",
+            "responsável:",
+            "responsavel:",
+            "genitora",
+            "genitor:",
+            "sob responsabilidade de",
+            "acompanhado da mãe",
+            "acompanhada da mãe",
+            "acompanhado do pai",
+            "acompanhada do pai",
+            "acompanhado(a) de",
+            "filho(a) de"
+          ],
+          "nivel": "atencao",
+          "mensagem": "Este atestado parece ser de um dependente (criança ou pessoa sob os cuidados do funcionário). Quem se afasta é o responsável: confira o funcionário e confirme com o escritório como lançar — deixei o tipo de afastamento para você escolher."
         }
       ],
       "negativas": [
@@ -4226,7 +4327,11 @@
         "Se continuar, clique em Copiar diagnóstico e mande ao escritório."
       ]
     },
-    "plataformaSemAcesso": "O portal não liberou a leitura desta lista agora. Abra qualquer solicitação no portal (Ver no portal) e volte — ou clique em Tentar de novo. Se continuar, use “Copiar diagnóstico” nas Configurações e mande ao escritório."
+    "plataformaSemAcesso": "O portal não liberou a leitura desta lista agora. Abra qualquer solicitação no portal (Ver no portal) e volte — ou clique em Tentar de novo. Se continuar, use “Copiar diagnóstico” nas Configurações e mande ao escritório.",
+    "leituraRuimOutraFoto": "Não consegui ler este arquivo com segurança (foto tremida, escura, cortada ou com reflexo). Para não preencher nada errado, deixei os campos em branco. Se puder, mande outra foto: o documento inteiro, de frente, com boa luz e sem reflexo — ou o PDF original.",
+    "documentoOutroNome": "O documento está em nome de {nome}, que não é exatamente {funcionario}. Confira se é do funcionário (pode ser de um dependente) e escolha a pessoa certa.",
+    "sugestaoLeitura": "Li no documento, mas com dúvida — confira e toque em Usar.",
+    "documentoOutraPessoa": "“{arquivo}” é de outra pessoa ({nome}). Para não misturar dados de duas pessoas, não usei nada dele neste pedido."
   },
   "avisosEscritorio": [
     {
