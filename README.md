@@ -25,6 +25,13 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.12 — plataforma ao vivo
+
+- **Escrita ao vivo:** no formulário da plataforma, o que você digita nos campos de texto vai ao portal por baixo enquanto escreve (`config.escritaAoVivo`: `esperaMs`, `tipos`; `ativo: false` volta a enviar só ao sair do campo).
+- **Responder ao escritório:** na aba **Conversa** de uma solicitação que aguarda você, escreva a resposta; ela aparece na caixa de resposta do portal enquanto você digita. **Enviar resposta** mostra o resumo e só o **Confirmar e enviar** clica em RESPONDER no portal (conferindo que o portal concluiu). Anexos entram só nessa hora. Se você escrever direto no portal, o Assistente não mexe no seu texto; fechar sem enviar limpa só o que ele pôs.
+- **Privacidade:** o texto da resposta fica só na memória (nada em rascunho, histórico ou log). Mensagem com CID não vai ao portal e bloqueia o envio (`config.respostaPortal.livre.bloquear`, decisão do escritório). `livre.ativo: false` esconde a caixa e fica só "Preparar resposta".
+- **A calibrar no Onvio real:** a caixa de resposta e o botão RESPONDER (seletores em `config.respostaPortal.caixa`/`botaoResponder`) e se o Angular aceita o preenchimento com a plataforma cobrindo o portal (primeiro teste a fazer no Chrome do Josué, parando antes de enviar).
+
 ## Novidades da 2.10 — rotinas do mês e respostas
 
 - **Novo pedido:** a leitura (arrastar/colar/escrever) aparece ali mesmo; o tipo escolhido leva os arquivos e relê com a lista de funcionários.
