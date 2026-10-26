@@ -3488,3 +3488,48 @@ export function situacaoEmpregado(e, hoje = today(), regras = {}) {
   else if (out.ferias && out.ferias.falta <= 90) out.proxima = { d: out.ferias.limite, titulo: 'Conceder férias até (estimativa)', nivel: out.ferias.falta <= 30 ? 'late' : 'soon', falta: out.ferias.falta };
   return out;
 }
+
+/** Documentos que o escritório publica (área Documentos do Onvio): resposta crua da API → itens do painel.
+ *  A forma real da resposta ainda está sendo calibrada: os nomes dos campos vêm de config.documentosPortal (vale o primeiro
+ *  que existir) e a competência também é procurada em customFields. Só os NOMES dos campos vão para o diagnóstico. */
+export function documentosDoPortal(json, rules) {
+  const cfg = rules?.config?.documentosPortal || {};
+  const caminho = (o, p) => String(p).split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+  const primeiro = (o, lista) => { for (const p of lista || []) { const v = caminho(o, p); if (v != null && v !== '' && typeof v !== 'object') return v; } return undefined; };
+  let lista = Array.isArray(json) ? json : null;
+  if (!lista && json && typeof json === 'object') {
+    for (const k of cfg.listaEm || []) if (Array.isArray(json[k])) { lista = json[k]; break; }
+    if (!lista) lista = Object.values(json).find(Array.isArray) || null;
+  }
+  if (!lista) return { itens: [], total: null, campos: [], reconhecido: false };
+  const total = (() => { const v = json && !Array.isArray(json) ? primeiro(json, cfg.total || ['totalItems', 'total']) : undefined; return Number.isFinite(+v) ? +v : null; })();
+  const dataBr = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const competenciaDe = (v) => {
+    const t = String(v ?? '').trim(); let m;
+    if ((m = /^(\d{4})-(\d{2})(?:-\d{2})?/.exec(t))) return `${m[2]}/${m[1]}`;
+    if ((m = /^(\d{2})[/-](\d{4})$/.exec(t))) return `${m[1]}/${m[2]}`;
+    if ((m = /^(\d{4})(\d{2})$/.exec(t))) return `${m[2]}/${m[1]}`;
+    return '';
+  };
+  const reComp = new RegExp(`^(${(cfg.competencia || ['competence']).map(x => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`, 'i');
+  const doCustom = (raw) => {
+    const cf = raw?.customFields ?? raw?.CustomFields;
+    if (Array.isArray(cf)) { const c = cf.find(x => reComp.test(String(x?.Name ?? x?.name ?? ''))); return c ? competenciaDe(c.Value ?? c.value) : ''; }
+    if (cf && typeof cf === 'object') { const k = Object.keys(cf).find(x => reComp.test(x)); return k ? competenciaDe(cf[k]) : ''; }
+    return '';
+  };
+  const itens = [];
+  for (const raw of lista) {
+    if (!raw || typeof raw !== 'object' || raw.isFolder === true) continue;
+    const id = primeiro(raw, cfg.campos?.id), nome = primeiro(raw, cfg.campos?.nome);
+    if (id == null || !nome) continue;
+    const c = primeiro(raw, cfg.campos?.criado); const d = c ? new Date(c) : null;
+    const diretaComp = primeiro(raw, cfg.competencia);
+    itens.push({
+      id: String(id), nome: String(nome), arquivo: String(nome), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''),
+      competencia: doCustom(raw) || competenciaDe(diretaComp), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
+    });
+  }
+  const campos = Object.keys(lista.find(x => x && typeof x === 'object') || {}).slice(0, 40);
+  return { itens, total, campos, reconhecido: itens.length > 0 || lista.length === 0 };
+}

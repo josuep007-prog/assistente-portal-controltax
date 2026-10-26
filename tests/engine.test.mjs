@@ -1546,4 +1546,29 @@ t('lote 5 (29): cada trecho do PDF preenche só o que o seu documento traz (ende
   assert.ok(!Object.values(a.campos).some(c => String(c.valor).includes('29010')));
 });
 
+t('documentos do escritório (2.13): a lista do portal vira itens do painel, com formas diferentes de resposta', () => {
+  const docs = [
+    { id: 'A1', name: 'Folha 09-2026.pdf', createdDate: '2026-10-05T12:00:00Z', parent: { name: 'Folha de pagamento' }, customFields: [{ Name: 'competence', Value: '2026-09' }, { Name: 'clientId', Value: 'XXXX' }] },
+    { id: 'A2', name: 'Guia FGTS.pdf', createdDate: '2026-10-07T12:00:00Z', parentName: 'Guias', competence: '10/2026' },
+    { id: 'A3', name: 'Pasta de testes', isFolder: true },
+    { id: 'A4' }
+  ];
+  const a = E.documentosDoPortal({ items: docs, totalItems: 2 }, rules);
+  assert.equal(a.reconhecido, true); assert.equal(a.total, 2); assert.equal(a.itens.length, 2, 'pasta e item sem nome ficam de fora');
+  assert.deepEqual(a.itens.map(x => [x.id, x.nome, x.categoria, x.competencia]), [['A1', 'Folha 09-2026.pdf', 'Folha de pagamento', '09/2026'], ['A2', 'Guia FGTS.pdf', 'Guias', '10/2026']]);
+  assert.match(a.itens[0].data, /^\d{2}\/10\/2026$/); assert.ok(a.itens[0].criado > 0);
+  assert.ok(a.campos.includes('id') && a.campos.includes('name') && !a.campos.some(c => /Folha|Guia/.test(c)), 'o diagnóstico leva só os nomes dos campos');
+  // lista solta e outra chave
+  assert.equal(E.documentosDoPortal(docs, rules).itens.length, 2);
+  assert.equal(E.documentosDoPortal({ data: docs, total: 9 }, rules).total, 9);
+  assert.equal(E.documentosDoPortal({ qualquerCoisa: docs }, rules).itens.length, 2, 'primeira lista da resposta, se a chave for outra');
+  // campos com outros nomes (candidatos das regras) e competência em outro formato
+  const b = E.documentosDoPortal({ documents: [{ documentId: 7, fileName: 'Recibo.pdf', createdAt: '2026-10-01', folderName: 'Recibos', period: '202609' }] }, rules);
+  assert.deepEqual(b.itens.map(x => [x.id, x.nome, x.categoria, x.competencia]), [['7', 'Recibo.pdf', 'Recibos', '09/2026']]);
+  // vazio é reconhecido; forma estranha não
+  assert.equal(E.documentosDoPortal({ items: [] }, rules).reconhecido, true);
+  assert.equal(E.documentosDoPortal({ items: [{ x: 1 }] }, rules).reconhecido, false, 'itens sem id/nome: não reconheceu os campos');
+  assert.equal(E.documentosDoPortal('texto', rules).reconhecido, false); assert.equal(E.documentosDoPortal(null, rules).itens.length, 0);
+});
+
 console.log(`\n${n} testes ok`);
