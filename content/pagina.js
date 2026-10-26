@@ -3,14 +3,14 @@
  * A API do portal (/api/br-payroll-sr/…) não aceita só o cookie: o próprio portal manda um
  * cabeçalho de acesso em cada chamada. Este ajudante observa as chamadas que o PORTAL faz,
  * guarda esses cabeçalhos só na memória desta página e faz as leituras que o Assistente pede
- * (só GET, só no mesmo site, só /api/br-payroll-sr/ e /api/service-requesting/) com o mesmo acesso.
+ * (só GET, só no mesmo site, só /api/br-payroll-sr/, /api/service-requesting/ e /api/storage/) com o mesmo acesso.
  * O valor do acesso nunca sai daqui: não vai para a extensão, para o armazenamento nem para logs.
  * Para o diagnóstico, informa apenas os NOMES dos cabeçalhos. */
 (() => {
   if (window.__ctPagina) return;
   window.__ctPagina = true;
 
-  const PREFIXOS = ['/api/br-payroll-sr/', '/api/service-requesting/'];   // listas, trâmites e funcionários
+  const PREFIXOS = ['/api/br-payroll-sr/', '/api/service-requesting/', '/api/storage/'];   // listas, trâmites, funcionários e documentos do escritório
   const acesso = new Map();          // nome do cabeçalho → valor (memória da página)
   let clienteId = '';
   const ignorar = /^(content-type|content-length|accept|accept-language|cache-control|pragma)$/i;

@@ -1724,15 +1724,28 @@ export function montarPlataforma(A) {
     el.querySelectorAll('[data-arq-lado]').forEach(b => b.addEventListener('click', () => { F.lado = b.dataset.arqLado; el.querySelectorAll('[data-arq-lado]').forEach(x => x.setAttribute('aria-pressed', x === b)); desenhar(); }));
     ler();
   }
+  /** O que dizer quando a lista de documentos do escritório não veio (sem culpar o cliente). */
+  const motivoDocs = (D) => ({
+    'sem acesso': 'O portal não deixou a extensão ler essa lista agora. Abra Documentos no portal uma vez e tente de novo.',
+    'sem cliente': 'Abra a tela Documentos do portal uma vez e volte aqui: é dela que a extensão pega o código da empresa.',
+    'forma': 'Consegui ler a lista do portal, mas ainda não reconheci os campos. Em Configurações, “Copiar diagnóstico” traz o que foi visto (só os nomes dos campos): mande ao escritório.',
+    'resposta ilegível': 'O portal respondeu algo que não consegui ler. Tente de novo mais tarde.'
+  }[D?.motivo] || S.rules.mensagens?.plataformaCalibrar || '');
   async function docsEscritorio(el) {
     if (!S.plat.docs) {
       el.innerHTML = loading('Procurando os documentos no portal…');
-      S.plat.docs = await request({ type: 'documentos' }, 20000) || { disponivel: false };
+      let r = await request({ type: 'documentos' }, 20000) || { disponivel: false };
+      if (r.disponivel && r.bruto !== undefined) {   // área Documentos do Onvio real: resposta crua da API, normalizada aqui (nada é guardado)
+        const n = E.documentosDoPortal(r.bruto, S.rules);
+        S.plat.docsDiag = { itens: n.itens.length, total: n.total, campos: n.campos, reconhecido: n.reconhecido };
+        r = n.reconhecido ? { disponivel: true, itens: n.itens.sort((x, y) => y.criado - x.criado), total: n.total, baixar: r.baixar } : { disponivel: false, motivo: 'forma' };
+      } else S.plat.docsDiag = { codigo: r.codigo, motivo: r.motivo };
+      S.plat.docs = r;
       if (S.view !== 'documentos' || S.plat.docAba !== 'escritorio') return;
     }
     const D = S.plat.docs;
     if (!D.disponivel) {
-      el.innerHTML = `<div class="note">${icon('info')}<div><b>Guias, holerites e recibos que o escritório publica.</b> ${esc(S.rules.mensagens?.plataformaCalibrar || '')} Enquanto isso, os arquivos que o escritório manda nas solicitações estão em <a href="#" id="doc-ir-sol">Nas solicitações</a>.<div class="actions" style="margin-top:8px"><button class="btn btn-sm btn-primary" id="doc-portal">${icon('external', 'ic-sm')} Abrir Documentos no portal</button></div></div></div>`;
+      el.innerHTML = `<div class="note">${icon('info')}<div><b>Guias, holerites e recibos que o escritório publica.</b> ${esc(motivoDocs(D))} Enquanto isso, os arquivos que o escritório manda nas solicitações estão em <a href="#" id="doc-ir-sol">Nas solicitações</a>.<div class="actions" style="margin-top:8px"><button class="btn btn-sm btn-primary" id="doc-portal">${icon('external', 'ic-sm')} Abrir Documentos no portal</button></div></div></div>`;
       $('#doc-portal').addEventListener('click', () => request({ type: 'abrirNoPortal', area: 'documentos' }));
       $('#doc-ir-sol').addEventListener('click', (e) => { e.preventDefault(); S.plat.docAba = 'solicitacoes'; renderDocumentos(); });
       return;
@@ -1744,8 +1757,11 @@ export function montarPlataforma(A) {
         <input type="search" id="pub-q" placeholder="Buscar documento ou competência…" value="${esc(F.q)}" autocomplete="off">
         <div class="seg" role="group" aria-label="Categoria">${[['', 'Todas']].concat(cats.map(c => [c, c])).map(([k, r]) => `<button type="button" data-pub-cat="${esc(k)}" aria-pressed="${F.cat === k}">${esc(r)} <span class="mono arq-n">${k ? itens.filter(x => (x.categoria || 'Outros') === k).length : itens.length}</span></button>`).join('')}</div>
         <span class="spacer"></span>
+        ${D.total && D.total > itens.length ? `<span class="muted">Mostrando os ${itens.length} mais recentes de ${D.total}</span>` : ''}
+        <button class="btn btn-sm btn-ghost" id="pub-ref">${icon('refresh', 'ic-sm')} Atualizar</button>
         <button class="btn btn-sm" id="doc-portal">${icon('external', 'ic-sm')} Ver no portal</button>
       </div><div id="pub-lista"></div>`;
+    $('#pub-ref')?.addEventListener('click', () => { S.plat.docs = null; docsEscritorio(el); });
     const desenhar = () => {
       const q = E.norm(F.q);
       const vis = itens.map((x, n) => ({ x, n })).filter(({ x }) => (!F.cat || (x.categoria || 'Outros') === F.cat) && (!q || E.norm(`${x.nome} ${x.categoria} ${x.competencia}`).includes(q)));
@@ -1755,9 +1771,10 @@ export function montarPlataforma(A) {
       vis.sort((a, b) => chave(b.x.competencia).localeCompare(chave(a.x.competencia))).forEach(v => { const k = v.x.competencia || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(v); });
       const rotComp = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); return m ? cap(new Date(+m[2], +m[1] - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })) : 'Sem competência'; };
       $('#pub-lista').innerHTML = `<div class="list-card"><div class="dp-listhead doc-cols"><span>Documento</span><span>Categoria</span><span>Competência</span><span>Publicado</span><span></span></div>
-        ${[...grupos].map(([k, vs]) => `<div class="arq-mes">${esc(rotComp(k))}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b></span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${icon('download', 'ic-sm')} Baixar</button></span></div>`; }).join('')}`).join('')
+        ${[...grupos].map(([k, vs]) => `<div class="arq-mes">${esc(rotComp(k))}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b></span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
           || `<div class="list-vazio">${itens.length ? 'Nenhum documento com esse filtro.' : 'Nenhum documento publicado.'}</div>`}</div>`;
       $('#pub-lista').querySelectorAll('[data-baixar]').forEach(b => b.addEventListener('click', async () => {
+        if (D.baixar === false) { request({ type: 'abrirNoPortal', area: 'documentos' }, 30000); return; }   // o caminho do download ainda não foi mapeado
         const x = itens[+b.dataset.baixar]; b.disabled = true;
         const r = await request({ type: 'baixarDocumento', docId: x.id }, 30000); b.disabled = false;
         if (!r?.arquivo) { toast('Não consegui baixar. Abra no portal.'); return; }
