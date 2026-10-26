@@ -63,7 +63,7 @@ function requestFill(msg, transfer = [], aoAvancar = null, inatividade = 25000) 
   });
 }
 // agir no portal (abrir, preencher, enviar) com uma janela do portal aberta: a plataforma avisa por cima (S.antesDeAgir)
-const AGIR_NO_PORTAL = new Set(['navigate', 'fill', 'requestSubmit', 'preencherGrade', 'prepararResposta']);
+const AGIR_NO_PORTAL = new Set(['navigate', 'fill', 'requestSubmit', 'preencherGrade', 'prepararResposta', 'respostaAbrir', 'respostaTexto', 'respostaArquivos', 'respostaEnviar']);
 const send = (msg, transfer) => { if (AGIR_NO_PORTAL.has(msg?.type)) S.antesDeAgir?.(msg); S.port?.postMessage(msg, transfer || []); };
 const packFiles = async (files) => Promise.all(files.map(async f => ({ name: f.name, type: f.type, lastModified: f.lastModified, buf: await f.arrayBuffer() })));
 const toast = (text) => send({ type: 'toast', text });
@@ -1589,7 +1589,8 @@ const envioPendente = new Map();   // tipo → { t, campos: Set } (só os campos
 function agendarEnvioPortal(tipo, k) {
   const p = envioPendente.get(tipo) || { campos: new Set() };
   clearTimeout(p.t); if (k) p.campos.add(k);
-  p.t = setTimeout(() => { envioPendente.delete(tipo); if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: [...p.campos] }); }, 500);
+  const esperaMs = Math.max(150, S.rules.config?.escritaAoVivo?.esperaMs || 500);
+  p.t = setTimeout(() => { envioPendente.delete(tipo); if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: [...p.campos] }); }, esperaMs);
   envioPendente.set(tipo, p);
 }
 async function enviarPendenteAgora(tipo) {
@@ -1697,7 +1698,9 @@ function renderFormularioProprio(el, tipo) {
   };
   el.querySelectorAll('input[data-k], textarea[data-k]').forEach(inp => {
     const k = inp.dataset.k; const c = campoDef(tipo, k);
-    inp.addEventListener('input', () => { maskInput(inp); marcar(k, inp.value); inp.classList.remove('found', 'low'); aoDigitar(); });
+    const vivo = S.rules.config?.escritaAoVivo || {};
+    const aoVivo = vivo.ativo !== false && !c?.somenteAssistente && (vivo.tipos || ['texto', 'textarea']).includes(c?.tipo);   // vai ao portal enquanto escreve
+    inp.addEventListener('input', () => { maskInput(inp); marcar(k, inp.value); inp.classList.remove('found', 'low'); aoDigitar(); if (aoVivo) agendarEnvioPortal(tipo, k); });
     inp.addEventListener('change', () => { if (c?.somenteAssistente) atualizarTextoNoPortal(tipo); else agendarEnvioPortal(tipo, k); });
     // listas do portal (motivos, cargos…): busca as opções quando o campo ganha o foco; se a busca falhou, tenta de novo na próxima vez
     if (c?.tipo === 'combo' && c.fc) inp.addEventListener('focus', async () => {

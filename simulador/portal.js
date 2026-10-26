@@ -229,7 +229,7 @@
     modoInicial: function () { return /[?&]modo=painel/.test(location.search) ? 'painel' : 'plataforma'; },
     expose: function (h) { hooks = h; document.dispatchEvent(new CustomEvent('ct-sim-ready')); }
   };
-  window.__ctSim = { hooks: function () { return hooks; }, reset: function () { db = seed(); persist(); go(BASE); }, go: function (p) { go(p); },
+  window.__ctSim = { hooks: function () { return hooks; }, item: function (slug, id) { return JSON.parse(JSON.stringify((db.items[slug] || []).filter(function (x) { return x.id === id; })[0] || null)); }, reset: function () { db = seed(); persist(); go(BASE); }, go: function (p) { go(p); },
     // o escritório responde uma solicitação (para testar a leitura automática da plataforma)
     escritorioResponde: function (id, texto) {
       Object.keys(db.items).forEach(function (k) { (db.items[k] || []).forEach(function (x) { if (x.id === id) { x.status = 'Aguardando o cliente'; x.data = new Date().toLocaleDateString('pt-BR'); x.tramite = 'Escritório: ' + (texto || 'precisamos de uma informação.'); } }); });

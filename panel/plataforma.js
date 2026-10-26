@@ -437,14 +437,22 @@ export function montarPlataforma(A) {
   };
 
   /* =================== Diálogo genérico =================== */
-  function dialogo({ titulo, corpo, acoes = [], largo = false }) {
+  let fecharAnterior = null;
+  function dialogo({ titulo, corpo, acoes = [], largo = false, aoFechar = null }) {
+    fecharAnterior?.();
     const m = $('#modal'); m.hidden = false;
     m.innerHTML = `<div class="sheet dlg${largo ? ' dlg-lg' : ''}" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
       <div class="dlg-head"><h3 id="dlg-t">${titulo}</h3><button type="button" class="icon-btn dlg-x" aria-label="Fechar">${icon('x')}</button></div>
       <div class="dlg-body">${corpo}</div>
       ${acoes.length ? `<div class="dlg-actions">${acoes.map((a, i) => a === '|' ? '<span class="sp"></span>' : `<button type="button" class="btn ${a.cls || ''}" data-acao="${i}">${a.rotulo}</button>`).join('')}</div>` : ''}</div>`;
     const tecla = (e) => { if (e.key === 'Escape') fechar(); };
-    const fechar = () => { m.hidden = true; m.innerHTML = ''; m.onclick = null; document.removeEventListener('keydown', tecla); };
+    let fechado = false;
+    const fechar = () => {
+      if (fechado) return; fechado = true; if (fecharAnterior === fechar) fecharAnterior = null;
+      m.hidden = true; m.innerHTML = ''; m.onclick = null; document.removeEventListener('keydown', tecla);
+      try { aoFechar?.(); } catch { /* o aviso de fechar não derruba nada */ }
+    };
+    fecharAnterior = fechar;
     m.querySelector('.dlg-x').addEventListener('click', fechar);
     m.onclick = (e) => { if (e.target === m) fechar(); };
     document.addEventListener('keydown', tecla);
@@ -1033,6 +1041,12 @@ export function montarPlataforma(A) {
     const t = S.rules.tipos[i.tipo];
     const mo = E.motivoCliente(i, E.today(), S.rules);
     const st = { aba, trs: null, trsErro: false, dados: null, dadosErro: false, bruto: null, datas: { ...(i.datas || {}) } };
+    // resposta ao vivo (2.12, regras: config.respostaPortal.livre): só em solicitação que aguarda o cliente; o texto fica só na memória
+    const livre = S.rules.config?.respostaPortal?.livre || {};
+    const podeResponder = !!(t && i.numero && i.aguardando && livre.ativo !== false);
+    const resp = { texto: '', arquivos: [], aberta: false, escrito: '', fila: null, esperando: null, confirmando: false, enviando: false, estado: ['', ''] };
+    const bloqueios = (livre.bloquear || []).map(x => { try { return new RegExp(x, 'i'); } catch { return null; } }).filter(Boolean);
+    const bloqueada = () => bloqueios.some(r => r.test(resp.texto));
     const topo = [['Responsável no escritório', i.responsavel], ['Aberta em', fmt(i.criado)], ['Atualizada', fmt(i.atualizado)], ['Expectativa', i.expectativa ? fmt(i.expectativa) : ''],
       ['Prescreve em', i.prescreveEm != null ? `${i.prescreveEm} dia(s)` : ''], ['Empresa', variasEmpresas(S.plat.sol?.itens) ? i.empresa : '']].filter(([, v]) => v && v !== '—');
     const dlg = dialogo({
@@ -1042,7 +1056,9 @@ export function montarPlataforma(A) {
         <div class="dt-meta">${topo.map(([k, v]) => `<span><small>${esc(k)}</small><b>${esc(v)}</b></span>`).join('')}</div>
         <div class="dt-dq" id="dt-dq"></div>
         <div class="dp-tabs dt-tabs" role="tablist">${[['conversa', 'Conversa'], ['dados', 'Dados'], ['observar', 'O que observar']].map(([k, r]) => `<button type="button" role="tab" class="dp-tab" data-dt="${k}">${r}</button>`).join('')}</div>
-        <div class="dt-body" id="dt-body"></div>`,
+        <div class="dt-body" id="dt-body"></div>
+        <div class="dt-resp" id="dt-resp" hidden></div>`,
+      aoFechar: () => { if (resp.escrito) request({ type: 'respostaLimpar' }, 5000); },
       acoes: [...(['avisoFerias', 'avisoRescisao'].includes(i.tipo) && !['cancelada', 'prescrita'].includes(i.estado) ? [{ rotulo: `${icon('calc', 'ic-sm')} Pedir o cálculo`, cls: 'dt-pedir-calc', fn: () => { pedirCalculoDoAviso(i, st.datas); } }] : []),
         ...(t ? [{ rotulo: `${icon('refresh', 'ic-sm')} Pedir de novo`, cls: 'dt-pedir-novo', fn: () => { pedirDeNovo(i, st.bruto); } }] : []),
         ...(t && i.aguardando && (S.rules.config?.respostaPortal?.textos || []).length ? [{ rotulo: `${icon('chat', 'ic-sm')} Preparar resposta`, cls: 'dt-responder', fn: () => { setTimeout(() => prepararResposta(i), 0); } }] : []),
@@ -1089,6 +1105,7 @@ export function montarPlataforma(A) {
       if (!el.isConnected) return;
       el.querySelectorAll('[data-dt]').forEach(b => { const on = b.dataset.dt === st.aba; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
       body.innerHTML = { conversa, dados, observar }[st.aba]();
+      el.querySelector('#dt-resp').hidden = !(podeResponder && st.aba === 'conversa');
       const dq = st.dados?.grupos.flatMap(g => g.campos).filter(c => c.destaque && !c.longo && c.k !== 'Assunto').slice(0, 6) || [];
       el.querySelector('#dt-dq').innerHTML = dq.map(c => `<span class="dq"><small>${esc(c.k)}</small><b>${esc(c.v)}</b></span>`).join('');
       el.querySelector('.dt-copiar').hidden = !E.observacoesCliente(i, st.datas, S.rules).length;
@@ -1100,11 +1117,97 @@ export function montarPlataforma(A) {
     };
     el.querySelectorAll('[data-dt]').forEach(b => b.addEventListener('click', () => { st.aba = b.dataset.dt; desenhar(); }));
     desenhar();
-    if (t?.apiTramites && i.id) request({ type: 'tramites', base: t.apiTramites, solicitacao: i.id }, 20000).then((r) => {
-      if (!r || r.erro) st.trsErro = true;
-      else { st.trs = E.tramitesDe(r.itens, i.tipo, S.rules); i.veredito = E.vereditoConversa(st.trs, S.rules) || i.veredito; }
-      desenhar();
-    }); else { st.trs = []; desenhar(); }
+    /* A caixa de resposta: o texto vai ao portal por baixo enquanto o cliente escreve (a caixa do portal só recebe o que o
+       Assistente pôs; se o cliente escreveu algo direto lá, não mexo). Enviar = dois passos: o resumo e o "Confirmar e enviar". */
+    const rl = el.querySelector('#dt-resp');
+    const rlEstado = (cls, txt) => { resp.estado = [cls, txt]; const c = rl.querySelector('#rl-st'); if (c) { c.className = `chip ${cls}`; c.textContent = txt; c.hidden = !txt; } };
+    const rlBotoes = () => {
+      const vazio = !resp.texto.trim(), bloq = bloqueada();
+      rl.querySelector('#rl-bloq').hidden = !bloq;
+      const b = rl.querySelector('#rl-enviar'); b.disabled = vazio || bloq || resp.enviando;
+      rl.querySelector('#rl-resumo').hidden = !resp.confirmando;
+      rl.querySelector('#rl-acoes').hidden = resp.confirmando;
+      if (resp.confirmando) {
+        rl.querySelector('#rl-resumo-t').textContent = resp.texto.trim().length > 220 ? `${resp.texto.trim().slice(0, 220)}…` : resp.texto.trim();
+        rl.querySelector('#rl-resumo-a').textContent = resp.arquivos.length ? `${resp.arquivos.length} arquivo(s): ${resp.arquivos.map(a => a.name).join(', ')}` : 'Sem arquivos.';
+      }
+    };
+    const rlArquivos = () => {
+      rl.querySelector('#rl-arqs').innerHTML = resp.arquivos.map((a, n) => `<span class="tr-arq">${icon('clip', 'ic-sm')}<span>${esc(a.name)}</span><button type="button" class="icon-btn" data-rl-x="${n}" aria-label="Tirar ${esc(a.name)}">${icon('x', 'ic-sm')}</button></span>`).join('');
+      rl.querySelectorAll('[data-rl-x]').forEach(b => b.addEventListener('click', () => { resp.arquivos.splice(+b.dataset.rlX, 1); rlArquivos(); rlBotoes(); }));
+    };
+    /** Põe no portal o texto de agora (uma escrita por vez, na ordem; abre a solicitação na primeira). */
+    const escreverUma = async () => {
+      const texto = resp.texto;
+      if (bloqueada()) return { ok: false, bloqueada: true };
+      if (!resp.aberta) {
+        if (!texto.trim()) return { ok: true };
+        rlEstado('info', 'abrindo a resposta no portal…');
+        const r = await request({ type: 'respostaAbrir', slug: t.slug, numero: i.numero }, 30000);
+        if (!r?.ok) { rlEstado('err', 'não consegui abrir a resposta no portal'); return { ok: false, motivo: r?.motivo || 'sem resposta do portal' }; }
+        resp.aberta = true;
+        if (r.portalTem) { rlEstado('warn', 'o portal já tem texto na resposta — não mexi'); return { ok: false, portalTem: true }; }
+      }
+      if (resp.escrito === texto) return { ok: true };
+      const r = await request({ type: 'respostaTexto', texto }, 10000);
+      if (r?.ok) { resp.escrito = texto; rlEstado(texto.trim() ? 'ok' : '', texto.trim() ? 'no portal' : ''); }
+      else if (r?.portalTem) rlEstado('warn', 'você escreveu direto no portal — não mexi no texto de lá');
+      else { rlEstado('err', 'não consegui escrever no portal'); if (/sumiu/.test(r?.motivo || '')) resp.aberta = false; }
+      return r || { ok: false };
+    };
+    const rlFila = () => (resp.fila = (resp.fila || Promise.resolve()).then(escreverUma, escreverUma));
+    const rlAoDigitar = () => {
+      rlBotoes();
+      clearTimeout(resp.esperando);
+      if (bloqueada()) { rlEstado('warn', 'não vai ao portal'); return; }
+      rlEstado('info', 'a enviar ao portal…');
+      resp.esperando = setTimeout(rlFila, Math.max(150, livre.esperaMs || 600));
+    };
+    const rlEnviar = async () => {
+      clearTimeout(resp.esperando); resp.enviando = true; rlBotoes();
+      rl.querySelector('#rl-confirmar').disabled = true;
+      try {
+        const g = await rlFila();
+        if (!g?.ok) { rlEstado('err', 'não deu para escrever a resposta no portal'); toast(`Não enviei: ${g?.portalTem ? 'há texto escrito direto no portal; limpe-o ou use “Responder no portal”' : (g?.motivo || 'o portal não respondeu')}.`); return; }
+        if (resp.arquivos.length) {
+          const packed = await A.packFiles(resp.arquivos);
+          const a = await request({ type: 'respostaArquivos', files: packed }, 45000, packed.map(p => p.buf));
+          if (!a?.ok || a.recusados?.length) { toast(`O portal não aceitou ${a?.recusados?.length ? a.recusados.join(', ') : 'os arquivos'}. Tire-os e tente de novo, ou responda direto no portal.`); return; }
+        }
+        const r = await request({ type: 'respostaEnviar', texto: resp.texto }, 20000);
+        if (!r?.ok) { rlEstado('err', 'o portal não confirmou o envio'); toast(`Não consegui enviar a resposta (${r?.motivo || 'sem resposta do portal'}). Confira no portal.`, 8000); return; }
+        resp.texto = ''; resp.escrito = ''; resp.aberta = false; resp.arquivos = [];
+        rl.querySelector('#rl-texto').value = ''; rlArquivos(); rlEstado('ok', 'enviada');
+        toast('Resposta enviada ao escritório.');
+        carregarTramites();
+        P.carregarSolicitacoes(true, { silencioso: true });
+      } finally { resp.enviando = false; resp.confirmando = false; rl.querySelector('#rl-confirmar').disabled = false; rlBotoes(); }
+    };
+    if (podeResponder) {
+      rl.innerHTML = `<div class="rl-head">${icon('chat')}<b>Responder ao escritório</b><span class="chip" id="rl-st" hidden></span></div>
+        <textarea id="rl-texto" rows="3" maxlength="${+livre.maximo || 2000}" aria-label="Sua resposta" placeholder="Escreva sua resposta. Ela aparece no portal enquanto você escreve, mas só é enviada quando você confirmar."></textarea>
+        <div class="rl-bloq note" id="rl-bloq" hidden>${icon('alert')}<div>${esc(livre.mensagemBloqueio || 'Há um trecho que não pode ir na mensagem. Tire-o para enviar.')}</div></div>
+        <div class="tr-anexos" id="rl-arqs"></div>
+        <div class="rl-acoes" id="rl-acoes"><button type="button" class="btn btn-ghost" id="rl-anexar">${icon('clip', 'ic-sm')} Anexar arquivo</button><input type="file" id="rl-file" multiple hidden><span class="sp"></span><button type="button" class="btn rl-prim" id="rl-enviar" disabled>Enviar resposta</button></div>
+        <div class="rl-resumo note" id="rl-resumo" hidden>${icon('arrow')}<div><b>Vou enviar ao escritório, pelo portal:</b><div class="rl-t" id="rl-resumo-t"></div><small id="rl-resumo-a"></small><div class="rl-acoes"><button type="button" class="btn btn-ghost" id="rl-voltar">Voltar</button><span class="sp"></span><button type="button" class="btn rl-prim" id="rl-confirmar">Confirmar e enviar</button></div></div></div>`;
+      const ta = rl.querySelector('#rl-texto'), fi = rl.querySelector('#rl-file');
+      ta.addEventListener('input', () => { resp.texto = ta.value; rlAoDigitar(); });
+      rl.querySelector('#rl-anexar').addEventListener('click', () => fi.click());
+      fi.addEventListener('change', () => { for (const f of fi.files) if (!resp.arquivos.some(a => a.name === f.name && a.size === f.size)) resp.arquivos.push(f); fi.value = ''; rlArquivos(); rlBotoes(); });
+      rl.querySelector('#rl-enviar').addEventListener('click', () => { resp.confirmando = true; rlBotoes(); });
+      rl.querySelector('#rl-voltar').addEventListener('click', () => { resp.confirmando = false; rlBotoes(); });
+      rl.querySelector('#rl-confirmar').addEventListener('click', rlEnviar);
+      rlBotoes();
+    }
+    const carregarTramites = () => {
+      if (t?.apiTramites && i.id) return request({ type: 'tramites', base: t.apiTramites, solicitacao: i.id }, 20000).then((r) => {
+        if (!r || r.erro) st.trsErro = true;
+        else { st.trsErro = false; st.trs = E.tramitesDe(r.itens, i.tipo, S.rules); i.veredito = E.vereditoConversa(st.trs, S.rules) || i.veredito; }
+        desenhar();
+      });
+      st.trs = []; desenhar();
+    };
+    carregarTramites();
     const lista = t?.apiDetalhe || t?.apiLista;
     if (lista && i.id) request({ type: 'detalheCompleto', lista, solicitacao: i.id }, 20000).then((r) => {
       if (!r?.dados) st.dadosErro = true;

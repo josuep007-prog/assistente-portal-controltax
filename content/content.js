@@ -264,6 +264,11 @@
         }
         case 'abrirNoPortal': { const ok = await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id, ok }); break; }
         case 'prepararResposta': post({ type: 'respostaPreparada', id: m.id, ...(await prepararResposta(m)) }); break;
+        case 'respostaAbrir': post({ type: 'respostaAbriu', id: m.id, ...(await respostaAbrir(m)) }); break;
+        case 'respostaTexto': post({ type: 'respostaEscrita', id: m.id, ...respostaTexto(m) }); break;
+        case 'respostaArquivos': post({ type: 'respostaAnexada', id: m.id, ...(await respostaArquivos(m)) }); break;
+        case 'respostaEnviar': post({ type: 'respostaEnviada', id: m.id, ...(await respostaEnviar(m)) }); break;
+        case 'respostaLimpar': post({ type: 'respostaLimpa', id: m.id, ...respostaLimpar() }); break;
         case 'setBadge': setBadge(m.n); break;
         // "Ver no portal" no aviso: o portal fica coberto pela plataforma, o botão mostra a página com o painel ao lado
         case 'toast': toast(m.text, m.ms || 2600, m.acao === 'verPortal' ? { rotulo: 'Ver no portal', fn: () => setModo('painel') } : null); break;
@@ -1149,7 +1154,7 @@
         if (!rota && numero) toast(`Abri a lista: procure a solicitação nº ${numero}.`, 6000);
       }
     }
-    setModo('painel');
+    if (!m.semModo) setModo('painel');   // semModo: a plataforma segue na frente (resposta ao vivo)
     return aberta;
   }
   /** Abre a solicitação pelo nº: abre a lista do tipo e clica na célula com o número (nunca em botões da linha).
@@ -1192,6 +1197,65 @@
     sendContext();
     toast(`Resposta preparada: confira e clique em ${rules?.config?.respostaPortal?.botaoResponder || 'RESPONDER'} no portal.`, 9000);
     return { ok: true, textoPosto: !atual && !!m.texto, anexados: anexos?.aceitos || [], recusados: anexos?.recusados || [] };
+  }
+  /* Resposta ao vivo (2.12): o cliente escreve a resposta na plataforma (aba Conversa) e o texto aparece na caixa de resposta do
+     portal por baixo, enquanto ele digita. Nada é enviado até o painel mandar `respostaEnviar`, que o painel só manda depois do
+     "Confirmar e enviar" do cliente (é o único clique em RESPONDER do Assistente). O texto só passa pela memória: nada vai pela API.
+     Regra de ouro: texto que o cliente escreveu direto no portal nunca é sobrescrito (só mexe no que ele mesmo pôs ali).
+     A tela do detalhe do Onvio real não foi mapeada: a calibrar (regras: config.respostaPortal). */
+  let respostaEscrita = '';   // o último texto que o Assistente pôs na caixa
+  async function respostaAbrir(m) {
+    const aberta = await abrirNoPortal({ slug: m.slug, numero: m.numero, semModo: true });
+    if (!aberta) return { ok: false, motivo: 'não achei a solicitação na lista do portal' };
+    let caixa = null;
+    for (let i = 0; i < 24 && !(caixa = caixaResposta()); i++) await sleep(250);
+    if (!caixa) return { ok: false, motivo: 'não achei a caixa de resposta' };
+    respostaEscrita = '';
+    return { ok: true, portalTem: !!(caixa.value || '').trim() };
+  }
+  function respostaTexto(m) {
+    const caixa = caixaResposta();
+    if (!caixa) return { ok: false, motivo: 'a caixa de resposta sumiu do portal' };
+    const atual = caixa.value || '';
+    if (atual.trim() && atual !== respostaEscrita) return { ok: false, portalTem: true, motivo: 'o portal já tem outro texto na resposta' };
+    const novo = String(m.texto || '');
+    if (atual !== novo) setNative(caixa, novo);
+    respostaEscrita = novo;
+    return { ok: true };
+  }
+  async function respostaArquivos(m) {
+    const caixa = caixaResposta();
+    if (!caixa) return { ok: false, motivo: 'a caixa de resposta sumiu do portal' };
+    const r = await attachFiles(unpackFiles(m.files));
+    return { ok: true, anexados: r?.aceitos || [], recusados: r?.recusados || [] };
+  }
+  async function respostaEnviar(m) {
+    const caixa = caixaResposta();
+    if (!caixa) return { ok: false, motivo: 'a caixa de resposta sumiu do portal' };
+    if ((caixa.value || '').trim() !== String(m.texto || '').trim()) return { ok: false, motivo: 'o texto no portal é diferente do que você confirmou' };
+    const nome = String(rules?.config?.respostaPortal?.botaoResponder || 'RESPONDER');
+    const re = new RegExp('^\\s*' + nome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i');
+    let btn = null;
+    for (let cont = caixa.parentElement, n = 0; cont && !btn && n < 8; cont = cont.parentElement, n++) {
+      btn = [...cont.querySelectorAll('button')].find(b => re.test(b.innerText || '') && !b.disabled && !b.closest('#ct-assistente-host')) || null;
+    }
+    if (!btn) return { ok: false, motivo: `não achei o botão ${nome}` };
+    const onde = currentPath();
+    btn.click();
+    respostaEscrita = '';
+    for (let i = 0; i < 24; i++) {
+      await sleep(250);
+      const c = caixaResposta();
+      if (!c || !(c.value || '').trim() || currentPath() !== onde) return { ok: true };
+    }
+    return { ok: false, motivo: 'o portal não concluiu o envio' };
+  }
+  /** O cliente fechou sem enviar: tira da caixa o que o Assistente pôs (e só isso). */
+  function respostaLimpar() {
+    const caixa = caixaResposta();
+    if (caixa && respostaEscrita && caixa.value === respostaEscrita) setNative(caixa, '');
+    respostaEscrita = '';
+    return { ok: true };
   }
   /* O portal abriu uma janela (ou a sessão expirou) enquanto está coberto pela plataforma */
   let atencaoVista = '';
