@@ -106,6 +106,7 @@ async function loadRules() {
 async function loadPrefs() {
   const { prefs } = await chrome.storage.local.get('prefs');
   S.prefs = { ...DEFAULT_PREFS, ...(prefs || {}) };
+  chrome.runtime.sendMessage({ type: 'manutencao' }).then(avisarAtualizacao).catch(() => {});   // versão nova da extensão? (aviso único por versão)
 }
 const savePrefs = () => chrome.storage.local.set({ prefs: S.prefs });
 /** Ajustes por empresa (regras.empresas: { "trecho do nome": { config: {…}, avisos: […] } }). */
@@ -121,7 +122,7 @@ function aplicarTamanhoTexto() {
   const z = { normal: '', grande: '1.12', maior: '1.25' }[S.prefs.tamanhoTexto] || '';
   document.documentElement.style.zoom = z;
 }
-chrome.runtime.onMessage.addListener((m) => { if (m.type === 'rulesUpdated') { loadRules().then(render); } });
+chrome.runtime.onMessage.addListener((m) => { if (m.type === 'rulesUpdated') { loadRules().then(render); } if (m.type === 'manutencao') avisarAtualizacao(m.info); });
 
 /* =================== Contexto da página =================== */
 let lastKey = '';
@@ -2827,6 +2828,26 @@ function renderFerramentas() {
 }
 
 /* =================== Configurações =================== */
+/** Dois em dois dias o service worker guarda um retrato das regras (backup) e vê se há versão nova da extensão. */
+async function desenharManutencao() {
+  const el = $('#man-card'); if (!el) return;
+  const info = await chrome.runtime.sendMessage({ type: 'manutencao' }).catch(() => null);
+  if (!el.isConnected) return;
+  if (!info) { el.innerHTML = '<div class="muted">Indisponível neste modo.</div>'; return; }
+  const dt = (x) => x ? new Date(x).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  const a = info.atualizacao;
+  el.innerHTML = `${a ? `<div class="note warn">${icon('info')}<div><b>Há uma versão nova da extensão: ${esc(a.versao)}.</b> ${esc(a.mensagem || 'Baixe o ZIP, troque a pasta e recarregue a extensão em chrome://extensions.')}${a.url ? ` <a href="${esc(a.url)}" target="_blank" rel="noopener">Baixar</a>` : ''}</div></div>` : `<p class="muted" style="margin:0 0 8px">A extensão confere, a cada 2 dias, se há versão nova e guarda um retrato das regras (backup).</p>`}
+    <dl class="kv"><dt>Instalada</dt><dd>${esc(chrome.runtime.getManifest?.().version || '?')}</dd><dt>Última conferência</dt><dd>${dt(info.em)}</dd>
+      <dt>Backups das regras</dt><dd>${info.backups.length ? info.backups.map(b => `${esc(b.versao)} (${dt(b.quando)})`).join(' · ') : 'ainda não há'}</dd></dl>
+    <div class="actions" style="margin-top:10px"><button class="btn" id="man-agora">${icon('refresh', 'ic-sm')} Conferir agora</button></div>`;
+  $('#man-agora').addEventListener('click', async () => { $('#man-agora').disabled = true; await chrome.runtime.sendMessage({ type: 'manutencao', agora: true }).catch(() => null); desenharManutencao(); });
+}
+/** Aviso único por versão: o cliente fica sabendo sem repetir a mensagem a cada abertura. */
+function avisarAtualizacao(info) {
+  const a = info?.atualizacao; if (!a || S.prefs.avisoVersao === a.versao) return;
+  S.prefs.avisoVersao = a.versao; savePrefs();
+  toast(`Há uma versão nova da extensão (${a.versao}). Veja em Configurações → Atualizações e backup.`);
+}
 async function renderConfig() {
   const info = await chrome.runtime.sendMessage({ type: 'getSettings' });
   const pack = await chrome.runtime.sendMessage({ type: 'getRules' });
@@ -2862,6 +2883,8 @@ async function renderConfig() {
         <button class="btn" id="refresh-rules">${icon('refresh', 'ic-sm')} Atualizar agora</button>
       </div>
     </div>
+    <h2 class="sec">Atualizações e backup</h2>
+    <div class="card" id="man-card"><div class="muted">Lendo…</div></div>
     <h2 class="sec dev-only">Desenvolvimento</h2>
     <div class="card pad dev-only">
       <dl class="kv"><dt>Instalada como</dt><dd>${info.unpacked ? 'pasta (modo desenvolvedor)' : 'loja / pacote'}</dd>
@@ -2878,6 +2901,7 @@ async function renderConfig() {
   viewEl.querySelectorAll('[data-abrir]').forEach(b => b.addEventListener('click', () => { S.prefs.abrirComo = b.dataset.abrir; savePrefs(); renderConfig(); }));
   $('#diag').addEventListener('click', copiarDiagnostico);
   $('#save-url').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'setSettings', settings: { rulesUrl: $('#rules-url').value.trim() } }); await loadRules(); renderConfig(); });
+  desenharManutencao();
   $('#refresh-rules').addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'refreshRules' }); await loadRules(); renderConfig(); });
   viewEl.querySelectorAll('[data-dev]').forEach(b => b.addEventListener('click', async () => { await chrome.runtime.sendMessage({ type: 'setSettings', settings: { devMode: b.dataset.dev } }); renderConfig(); }));
   $('#reload-ext')?.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'reloadExtension' }));

@@ -1,6 +1,6 @@
 # Chrome Web Store — Assistente do Portal do Cliente — ControlTax
 
-> Última atualização: 2026-10-26 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
+> Última atualização: 2026-10-27 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
 
 ## Ficha
 
@@ -58,6 +58,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.14.0 | 2026-10-27 | **Backup e aviso de versão a cada 2 dias.** A cada 2 dias a extensão guarda um retrato das regras (os 2 últimos, usados se o arquivo remoto e o cache falharem) e confere se há versão nova da extensão (as regras publicadas anunciam `config.atualizacaoExtensao`); se houver, avisa uma vez por versão, e Configurações → "Atualizações e backup" mostra o link, a última conferência e os backups, com "Conferir agora". A instalação por pasta continua sem se atualizar sozinha (só a Chrome Web Store faz isso). |
 | 2.13.2 | 2026-10-27 | **Bolinha em anel.** Anel branco mais fino (60 px) com o círculo preto por dentro, halo suave e selo de avisos no canto, no formato de anel pedido. |
 | 2.13.1 | 2026-10-27 | **Bolinha ajustada.** Círculo branco maior (68 px) com o círculo preto menor (46 px) e a logo centralizada dentro dele. |
 | 2.13.0 | 2026-10-26 | **Documentos do escritório.** A aba Documentos → "Do escritório" lê a lista de documentos que o escritório publica na área Documentos do Onvio (só leitura, com o acesso do próprio portal): nome, pasta, competência e data, com busca, filtro por categoria e "Atualizar". O botão leva ao portal para baixar (o caminho do download ainda não foi mapeado). Se a lista vier numa forma que a extensão não reconhece, a aba avisa e "Copiar diagnóstico" mostra só os nomes dos campos. Regras: `config.documentosPortal` (campos candidatos, a calibrar). |
