@@ -25,6 +25,12 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.14 — backup e aviso de versão a cada 2 dias
+
+- A cada 2 dias (`chrome.alarms` + conferência ao abrir o Chrome) o service worker guarda um **retrato das regras** (os 2 últimos; usados se o arquivo remoto e o cache falharem) e confere se há **versão nova da extensão**: as regras publicadas anunciam `config.atualizacaoExtensao` (`versao`, `url`, `mensagem`). Se for maior que a instalada, o cliente recebe um aviso único por versão e vê o link em Configurações → Atualizações e backup (com "Conferir agora").
+- Para anunciar uma versão nova: suba `atualizacaoExtensao.versao` nas regras **publicadas** (repositório `assistente-portal-regras`).
+- Limite do Chrome: extensão instalada por pasta não se substitui sozinha; só a Chrome Web Store atualiza sozinha.
+
 ## Novidades da 2.13 — documentos do escritório
 
 - **Documentos → Do escritório** lê a área Documentos do Onvio (`GET /api/storage/v1/containers/documents`, só leitura, com o acesso do portal; `config.documentosPortal`): nome, pasta, competência e data, com busca, categorias e Atualizar. O download ainda leva ao portal (`documentosPortal.download` vazio até mapear). A forma da resposta é candidata (a calibrar): se não reconhecer, a aba avisa e o diagnóstico traz só os nomes dos campos.
