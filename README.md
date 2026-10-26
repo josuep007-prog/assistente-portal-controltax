@@ -25,6 +25,10 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.12.1 — bolinha no canto
+
+- **Ver no portal recolhe a extensão:** qualquer "Ver no portal" (plataforma ou painel) fecha a extensão e deixa só a bolinha no canto (redonda, preta por dentro com a logo, anel branco por fora, contador de avisos). Clicar na bolinha abre a extensão de novo, no último modo usado.
+
 ## Novidades da 2.12 — plataforma ao vivo
 
 - **Escrita ao vivo:** no formulário da plataforma, o que você digita nos campos de texto vai ao portal por baixo enquanto escreve (`config.escritaAoVivo`: `esperaMs`, `tipos`; `ativo: false` volta a enviar só ao sair do campo).
