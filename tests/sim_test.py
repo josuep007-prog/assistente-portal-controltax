@@ -187,9 +187,9 @@ async def teste_plataforma(b):
     ok = await espera(lambda: pn.evaluate("(document.querySelector('#modal')?.innerText || '').includes('falta informar a data do pagamento')"), 10)
     check(ok, 'detalhe mostra o último trâmite')
     await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(1800)
-    check(not await pn.evaluate("document.body.classList.contains('plat')") and '1041' in await pg.evaluate("document.querySelector('#p-main').innerText"), 'Ver no portal: abre a solicitação no portal, com o painel ao lado')
-    await pn.click('#btn-plat'); await pg.wait_for_timeout(800)
-    check(await pn.evaluate("document.body.classList.contains('plat')"), 'volta para a tela cheia')
+    check(await pg.evaluate("window.__ctSim.hooks().modoAtual()") == 'fechado' and '1041' in await pg.evaluate("document.querySelector('#p-main').innerText"), 'Ver no portal: abre a solicitação no portal e a extensão se recolhe (só a bolinha fica no canto)')
+    await pg.evaluate("window.__ctSim.hooks().openPanel()"); await pg.wait_for_timeout(800)
+    check(await pg.evaluate("window.__ctSim.hooks().modoAtual()") == 'plataforma' and await pn.evaluate("document.body.classList.contains('plat')"), 'clicar na bolinha reabre a plataforma em tela cheia')
     # lote 6 (39): "Pedir de novo" no detalhe: mesmo tipo, com os valores do portal, sem datas, sem CID e (cadastro) sem a pessoa
     async def pedir_de_novo(numero):
         await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
@@ -513,8 +513,8 @@ async def teste_mecanica(b):
     check('O portal acusa' in await pn.locator('#modal').inner_text(), '"Conferir e enviar" mostra o que o portal ainda acusa')
     await pn.click('#m-fix'); await pg.wait_for_timeout(300)
     await pn.click('#fr-ver-portal'); await pg.wait_for_timeout(800)
-    check(not await pn.evaluate("document.body.classList.contains('plat')"), '"Ver no portal" mostra a página do portal')
-    await pn.click('#btn-plat'); await pg.wait_for_timeout(800)
+    check(await pg.evaluate("window.__ctSim.hooks().modoAtual()") == 'fechado', '"Ver no portal" mostra a página do portal, com só a bolinha da extensão no canto')
+    await pg.evaluate("window.__ctSim.hooks().openPanel()"); await pg.wait_for_timeout(800)
 
     # 18 e 22: atestado → Desfazer → mudar outro campo; anexos conferidos um a um
     await abrir('employee-leave')
@@ -901,10 +901,10 @@ async def teste_lote6(b):
     await detalhe('1041')
     await pn.click('#modal .dlg-actions .btn-primary')
     async def no_detalhe():
-        return await pg.evaluate("window.__ctPlatform.path().endsWith('/vacation-notice/1041') && !!document.querySelector('[data-resposta] textarea')") and not await pn.evaluate("document.body.classList.contains('plat')")
+        return await pg.evaluate("window.__ctPlatform.path().endsWith('/vacation-notice/1041') && !!document.querySelector('[data-resposta] textarea')") and await pg.evaluate("window.__ctSim.hooks().modoAtual()") == 'fechado'
     ok = await espera(no_detalhe, 20)
-    check(ok, '"Responder no portal": procura o nº na lista e abre a solicitação certa, com o painel ao lado' + ('' if ok else f" ({await pg.evaluate('window.__ctPlatform.path()')})"))
-    await pn.click('#btn-plat')
+    check(ok, '"Responder no portal": procura o nº na lista e abre a solicitação certa, com só a bolinha da extensão' + ('' if ok else f" ({await pg.evaluate('window.__ctPlatform.path()')})"))
+    await pg.evaluate("window.__ctSim.hooks().openPanel()")
     await espera(lambda: pn.evaluate("document.body.classList.contains('plat')"), 10)
     # arquivo solto (arrastado na plataforma, sem pedido) e "Preparar resposta": mensagem das regras e o arquivo na resposta
     await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1200)

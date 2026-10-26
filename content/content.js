@@ -36,14 +36,15 @@
       @font-face{font-family:'IBM Plex Sans';font-weight:500;src:url('${chrome.runtime.getURL('fonts/ibm-plex-sans-latin-500-normal.woff2')}') format('woff2')}
       :host{all:initial}
       *{box-sizing:border-box}
-      .launcher{position:fixed;right:20px;bottom:22px;display:flex;align-items:center;gap:10px;height:46px;padding:0 16px 0 8px;border:0;border-radius:23px;
-        background:#0E151B;color:#E9EEF2;font:500 13px 'IBM Plex Sans',system-ui,sans-serif;cursor:pointer;
-        box-shadow:0 2px 6px rgba(16,24,32,.18),0 14px 32px rgba(16,24,32,.22);transition:transform .15s ease, box-shadow .15s ease}
-      .launcher:hover{transform:translateY(-2px)}
-      .launcher:focus-visible{outline:2px solid #6BAAC9;outline-offset:3px}
-      .launcher .mark{width:32px;height:32px;border-radius:16px;background:#fff;display:grid;place-items:center}
-      .launcher .mark img{width:20px;height:20px}
-      .launcher .badge{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#C2000C;color:#fff;font:600 11px 'Archivo',sans-serif;display:grid;place-items:center}
+      .launcher{position:fixed;right:20px;bottom:22px;width:56px;height:56px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;
+        background:#0E151B;cursor:pointer;
+        box-shadow:0 0 0 3px #fff,0 4px 10px rgba(16,24,32,.28),0 14px 32px rgba(16,24,32,.28);transition:transform .15s ease, box-shadow .15s ease}
+      .launcher:hover{transform:scale(1.06)}
+      .launcher:focus-visible{outline:2px solid #6BAAC9;outline-offset:6px}
+      .launcher .mark{display:grid;place-items:center}
+      .launcher .mark img{height:28px;width:auto;display:block}
+      .launcher .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+      .launcher .badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#C2000C;color:#fff;box-shadow:0 0 0 2px #fff;font:600 11px 'Archivo',sans-serif;display:grid;place-items:center}
       .launcher .badge[hidden]{display:none}
       .launcher.hidden{display:none}
       .frame-wrap{position:fixed;top:0;right:0;height:100vh;width:min(420px,100vw);transform:translateX(105%);transition:transform .22s cubic-bezier(.2,.7,.2,1);
@@ -69,7 +70,7 @@
       .toast .t-btn:focus-visible{outline:2px solid #6BAAC9;outline-offset:2px}
     </style>
     <button class="launcher" part="launcher" type="button" aria-label="Abrir o Assistente ControlTax">
-      <span class="mark"><img alt="" src="${chrome.runtime.getURL('icons/icon-32.png')}"></span>
+      <span class="mark"><img alt="" src="${chrome.runtime.getURL('icons/logo.svg')}"></span>
       <span class="lbl">Assistente</span><span class="badge" hidden></span>
     </button>
     <div class="frame-wrap" aria-hidden="true"></div>
@@ -176,6 +177,7 @@
       switch (m.type) {
         case 'close': setModo('fechado'); break;
         case 'modo': setModo(m.modo); break;
+        case 'verPortal': setModo('fechado'); break;   // todo "Ver no portal" do painel: só a bolinha fica no canto
         case 'getContext': sendContext(); break;
         case 'navigate': while (navInterna) await sleep(150); await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
         case 'trocarEmpresa': { const r = await trocarEmpresa(m.nome); post({ type: 'empresaTrocada', id: m.id, ...r }); sendContext(); break; }
@@ -271,7 +273,7 @@
         case 'respostaLimpar': post({ type: 'respostaLimpa', id: m.id, ...respostaLimpar() }); break;
         case 'setBadge': setBadge(m.n); break;
         // "Ver no portal" no aviso: o portal fica coberto pela plataforma, o botão mostra a página com o painel ao lado
-        case 'toast': toast(m.text, m.ms || 2600, m.acao === 'verPortal' ? { rotulo: 'Ver no portal', fn: () => setModo('painel') } : null); break;
+        case 'toast': toast(m.text, m.ms || 2600, m.acao === 'verPortal' ? { rotulo: 'Ver no portal', fn: () => setModo('fechado') } : null); break;
         default: break;
       }
     } catch (err) {
@@ -1154,7 +1156,7 @@
         if (!rota && numero) toast(`Abri a lista: procure a solicitação nº ${numero}.`, 6000);
       }
     }
-    if (!m.semModo) setModo('painel');   // semModo: a plataforma segue na frente (resposta ao vivo)
+    if (!m.semModo) setModo('fechado');   // "ver no portal": a extensão se recolhe na bolinha (semModo: a plataforma segue na frente, resposta ao vivo)
     return aberta;
   }
   /** Abre a solicitação pelo nº: abre a lista do tipo e clica na célula com o número (nunca em botões da linha).
@@ -1398,7 +1400,7 @@
     modoAberto = inicial;
     if (inicial === 'plataforma') setModo('plataforma');
     // ganchos para o simulador (soltar exemplos, abrir o painel, trocar o modo)
-    plat.expose?.({ openPanel: () => setPanel(true), modo: (m) => setModo(m), sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); },
+    plat.expose?.({ openPanel: () => setPanel(true), modo: (m) => setModo(m), modoAtual: () => modo, sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); },
       // testes do simulador: o mesmo preenchimento que o painel pede (nunca envia)
       preencher: (tipo, values, opts) => comboLock(() => fillForm(tipo, values || {}, [], opts || {})) });
   });

@@ -1338,7 +1338,7 @@ function renderPreencher() {
     ${dicas}
     ${dock}
   `;
-  $('#ver-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
+  $('#ver-portal')?.addEventListener('click', () => send({ type: 'verPortal' }));
   $('#pd-voltar')?.addEventListener('click', () => P.voltarEscolha());
   $('#pd-emp')?.addEventListener('click', () => P.trocarEmpresaDoPedido());
   bindDrop($('#drop-form'));
@@ -2138,7 +2138,7 @@ function renderFillResult() {
       ${linhas.length ? `<ul class="tips" style="margin-top:6px">${linhas.join('')}</ul>` : ''}</div></div>`);
   }
   el.innerHTML = partes.join('');
-  $('#fr-ver-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
+  $('#fr-ver-portal')?.addEventListener('click', () => send({ type: 'verPortal' }));
   el.querySelectorAll('[data-sug-k]').forEach(b => b.addEventListener('click', () => escolherSugestao(tipo, b.dataset.sugK, b.dataset.sugV)));
 }
 /** "Você quis dizer": o cliente escolheu uma das opções parecidas da lista do portal. */
