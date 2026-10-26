@@ -25,6 +25,10 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.13 — documentos do escritório
+
+- **Documentos → Do escritório** lê a área Documentos do Onvio (`GET /api/storage/v1/containers/documents`, só leitura, com o acesso do portal; `config.documentosPortal`): nome, pasta, competência e data, com busca, categorias e Atualizar. O download ainda leva ao portal (`documentosPortal.download` vazio até mapear). A forma da resposta é candidata (a calibrar): se não reconhecer, a aba avisa e o diagnóstico traz só os nomes dos campos.
+
 ## Novidades da 2.12.1 — bolinha no canto
 
 - **Ver no portal recolhe a extensão:** qualquer "Ver no portal" (plataforma ou painel) fecha a extensão e deixa só a bolinha no canto (redonda, preta por dentro com a logo, anel branco por fora, contador de avisos). Clicar na bolinha abre a extensão de novo, no último modo usado.
