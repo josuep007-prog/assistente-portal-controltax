@@ -36,13 +36,13 @@
       @font-face{font-family:'IBM Plex Sans';font-weight:500;src:url('${chrome.runtime.getURL('fonts/ibm-plex-sans-latin-500-normal.woff2')}') format('woff2')}
       :host{all:initial}
       *{box-sizing:border-box}
-      .launcher{position:fixed;right:20px;bottom:22px;width:56px;height:56px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;
-        background:#0E151B;cursor:pointer;
-        box-shadow:0 0 0 3px #fff,0 4px 10px rgba(16,24,32,.28),0 14px 32px rgba(16,24,32,.28);transition:transform .15s ease, box-shadow .15s ease}
+      .launcher{position:fixed;right:20px;bottom:22px;width:68px;height:68px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;
+        background:#fff;cursor:pointer;
+        box-shadow:0 2px 6px rgba(16,24,32,.22),0 12px 28px rgba(16,24,32,.26);transition:transform .15s ease, box-shadow .15s ease}
       .launcher:hover{transform:scale(1.06)}
-      .launcher:focus-visible{outline:2px solid #6BAAC9;outline-offset:6px}
-      .launcher .mark{display:grid;place-items:center}
-      .launcher .mark img{height:28px;width:auto;display:block}
+      .launcher:focus-visible{outline:2px solid #6BAAC9;outline-offset:4px}
+      .launcher .mark{width:46px;height:46px;border-radius:50%;background:#0E151B;display:flex;align-items:center;justify-content:center}
+      .launcher .mark img{height:26px;width:auto;display:block;transform:translateX(2px)}
       .launcher .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
       .launcher .badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#C2000C;color:#fff;box-shadow:0 0 0 2px #fff;font:600 11px 'Archivo',sans-serif;display:grid;place-items:center}
       .launcher .badge[hidden]{display:none}
