@@ -689,3 +689,19 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .ee-li[hidden] { display: none; }
 .pd-emp { gap: 6px; max-width: 100%; }
 .pd-emp span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+
+/* Resposta ao vivo no detalhe (2.12): caixa de texto da aba Conversa, que aparece no portal por baixo enquanto se escreve */
+.dt-resp { display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.rl-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.rl-head .chip { margin-left: auto; }
+.dt-resp textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px; max-height: 180px; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; }
+.dt-resp textarea:focus { outline: 2px solid var(--blue-deep); outline-offset: 1px; }
+.rl-acoes { display: flex; align-items: center; gap: 8px; }
+.rl-acoes .sp { flex: 1 1 auto; }
+.rl-resumo .rl-t { margin: 6px 0 4px; padding: 6px 8px; border-left: 3px solid var(--blue-deep); background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rl-resumo .rl-acoes { margin-top: 8px; }
+.tr-arq .icon-btn { width: 18px; height: 18px; }
+.rl-prim { background: var(--blue-deep); border-color: var(--blue-deep); color: #fff; }
+.rl-prim:hover:not(:disabled) { background: color-mix(in srgb, var(--blue-deep) 88%, #000); }
+:root[data-theme="dark"] .rl-prim { color: #0B1015; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .rl-prim { color: #0B1015; } }
