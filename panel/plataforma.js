@@ -114,7 +114,7 @@ export function montarPlataforma(A) {
     }));
     document.querySelectorAll('#rail [data-acao]').forEach(b => b.addEventListener('click', () => {
       const a = b.dataset.acao;
-      if (a === 'portal') send({ type: 'modo', modo: 'painel' });
+      if (a === 'portal') send({ type: 'verPortal' });
       else if (a === 'minimizar') send({ type: 'modo', modo: 'fechado' });
       else if (a === 'tema') A.alternarTema();
       else if (a === 'config') A.setView('config');
@@ -352,7 +352,7 @@ export function montarPlataforma(A) {
       titulo: `${icon('alert')} ${esc(S.rules?.mensagens?.plataformaAtencao || 'O portal mostrou um aviso')}`,
       corpo: `<div class="dlg-atencao"><p class="muted" style="margin:0 0 8px">O portal abriu esta mensagem por baixo da plataforma:</p><blockquote class="at-txt">${esc(a.texto)}</blockquote>
         ${dica ? `<div class="note" style="margin:10px 0 0">${icon('info')}<div>${esc(dica.dica)}</div></div>` : ''}</div>`,
-      acoes: [{ rotulo: 'Fechar' }, '|', { rotulo: `${icon('external', 'ic-sm')} Ver no portal`, cls: 'btn-primary', fn: () => send({ type: 'modo', modo: 'painel' }) }]
+      acoes: [{ rotulo: 'Fechar' }, '|', { rotulo: `${icon('external', 'ic-sm')} Ver no portal`, cls: 'btn-primary', fn: () => send({ type: 'verPortal' }) }]
     });
   }
   /* O único aviso fixo: quando o Assistente não consegue ler o portal, com as causas prováveis e o que fazer. */
@@ -367,7 +367,7 @@ export function montarPlataforma(A) {
         ${(L.causas || []).length ? `<details class="leit-causas" open><summary>Possíveis causas e o que fazer</summary><ol>${L.causas.map(c => `<li>${esc(c)}</li>`).join('')}</ol></details>` : ''}
         <div class="actions" style="margin-top:8px"><button class="btn btn-sm btn-primary" id="leit-tentar">${icon('refresh', 'ic-sm')} Tentar de novo</button><button class="btn btn-sm" id="leit-portal">${icon('external', 'ic-sm')} Ver no portal</button><button class="btn btn-sm btn-ghost" id="leit-diag">${icon('copy', 'ic-sm')} Copiar diagnóstico</button></div></div></div>`;
     $('#leit-tentar').addEventListener('click', () => { S.plat.falhaLeitura = 0; P.carregarSolicitacoes(true); });
-    $('#leit-portal').addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
+    $('#leit-portal').addEventListener('click', () => send({ type: 'verPortal' }));
     $('#leit-diag').addEventListener('click', () => A.copiarDiagnostico?.());
   }
   P.aoEnviar = (tipo, valores = {}) => {
@@ -1028,7 +1028,7 @@ export function montarPlataforma(A) {
     ligarSeletorEmpresa(viewEl);
     $('#sol-ref').addEventListener('click', () => { S.plat.sol = null; renderSolicitacoes(); P.carregarSolicitacoes(true); });
     $('#sol-tentar')?.addEventListener('click', () => { S.plat.sol = null; renderSolicitacoes(); P.carregarSolicitacoes(true); });
-    $('#sol-portal')?.addEventListener('click', () => send({ type: 'modo', modo: 'painel' }));
+    $('#sol-portal')?.addEventListener('click', () => send({ type: 'verPortal' }));
     $('#sol-geral')?.addEventListener('click', () => request({ type: 'abrirNoPortal', slug: R.tipos[sol.calibrar[0]]?.slug }));
     ligarIr(viewEl);
   }
@@ -1346,7 +1346,7 @@ export function montarPlataforma(A) {
       titulo: 'Não consegui trocar de empresa',
       corpo: `<p>Não consegui trocar para <b>${esc(apelidoDe(alvo))}</b> no portal${motivo ? ` (${esc(motivo)})` : ''}. Por segurança, não abri nenhum pedido: ele iria para a empresa errada.</p>
         <p class="muted">Troque a empresa pelo seletor do próprio portal (o botão “Ver no portal” mostra a tela original) e peça de novo.</p>`,
-      acoes: [{ rotulo: `${icon('external', 'ic-sm')} Ver no portal`, fn: () => send({ type: 'modo', modo: 'painel' }) }, '|', { rotulo: 'Fechar', cls: 'btn-primary' }]
+      acoes: [{ rotulo: `${icon('external', 'ic-sm')} Ver no portal`, fn: () => send({ type: 'verPortal' }) }, '|', { rotulo: 'Fechar', cls: 'btn-primary' }]
     });
   }
   /** Troca a empresa no portal e confirma vendo o nome novo. `manter` = o pedido (tipo) cujos dados seguem com o cliente. */
