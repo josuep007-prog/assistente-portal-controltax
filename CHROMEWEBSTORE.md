@@ -58,6 +58,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.13.2 | 2026-10-27 | **Bolinha em anel.** Anel branco mais fino (60 px) com o círculo preto por dentro, halo suave e selo de avisos no canto, no formato de anel pedido. |
 | 2.13.1 | 2026-10-27 | **Bolinha ajustada.** Círculo branco maior (68 px) com o círculo preto menor (46 px) e a logo centralizada dentro dele. |
 | 2.13.0 | 2026-10-26 | **Documentos do escritório.** A aba Documentos → "Do escritório" lê a lista de documentos que o escritório publica na área Documentos do Onvio (só leitura, com o acesso do próprio portal): nome, pasta, competência e data, com busca, filtro por categoria e "Atualizar". O botão leva ao portal para baixar (o caminho do download ainda não foi mapeado). Se a lista vier numa forma que a extensão não reconhece, a aba avisa e "Copiar diagnóstico" mostra só os nomes dos campos. Regras: `config.documentosPortal` (campos candidatos, a calibrar). |
 | 2.12.1 | 2026-10-26 | **Bolinha no canto.** "Ver no portal" (em qualquer lugar da plataforma e do painel) agora recolhe a extensão: o Onvio fica livre e só a bolinha da extensão fica no canto; clicar nela abre a extensão de novo. A bolinha é redonda, preta por dentro com a logo, com um anel branco por fora e o contador de avisos no canto. |
