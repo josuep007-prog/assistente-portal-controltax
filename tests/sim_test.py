@@ -926,6 +926,115 @@ async def teste_lote6(b):
     await ctx.close()
 
 
+async def teste_vivo(b):
+    """2.12: escrita ao vivo no formulário próprio e resposta em texto livre na aba Conversa (portal por baixo)."""
+    print('\n[2.12] escrita ao vivo e resposta ao escritório')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def _auto_empresa():   # três empresas no acesso: confirma a que já vem marcada
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa_emp = asyncio.create_task(_auto_empresa())
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    caixa = lambda: pg.evaluate("document.querySelector('[data-resposta] textarea')?.value ?? null")
+    # --- fase 1: o texto digitado chega ao portal sem sair do campo ---
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.click('.pd-escolha .intent[data-tipo="geral"]')
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#f-assunto')"), 25)
+    check(ok, 'Solicitação Geral: o formulário próprio abre')
+    if ok:
+        await pg.wait_for_timeout(2000)   # o formulário termina de se montar (o preenchimento inicial redesenha uma vez)
+        await pn.click('#f-assunto')
+        await pn.type('#f-assunto', 'Segunda via da guia', delay=20)
+        ok = await espera(lambda: _igual(portal, 'subject', 'Segunda via da guia'), 8)
+        v = (await portal()).get('subject')
+        foco = await pn.evaluate("document.activeElement && document.activeElement.id")
+        check(v == 'Segunda via da guia', f'o texto vai ao portal enquanto escreve, sem sair do campo ({v!r})')
+        check(foco == 'f-assunto', f'o foco continua no campo (foco: {foco})')
+        await pn.type('#f-assunto', ' do FGTS', delay=20)
+        await pg.wait_for_timeout(1800)
+        v = (await portal()).get('subject'); mine = await pn.input_value('#f-assunto')
+        check(mine == 'Segunda via da guia do FGTS' and v == mine, f'continuar digitando não perde nada ({mine!r} / {v!r})')
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/general-requests')"); await pg.wait_for_timeout(1500)
+    # --- fase 2: resposta em texto livre na aba Conversa ---
+    async def detalhe(numero):
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(800)
+        await pn.click('[data-vis-sol="tabela"]'); await pn.fill('#sol-q', numero); await pg.wait_for_timeout(500)
+        await pn.click('#sol-grupos [data-card]'); await pg.wait_for_timeout(800)
+    await detalhe('1041')
+    ok = await pn.locator('#dt-resp:visible #rl-texto').count() == 1
+    check(ok, 'solicitação que aguarda o cliente: a aba Conversa tem a caixa "Responder ao escritório"')
+    await pn.click('#rl-texto')
+    await pn.type('#rl-texto', 'Segue a informação pedida.', delay=15)
+    ok = await espera(lambda: _igual(caixa, None, 'Segue a informação pedida.'), 15)
+    check(ok, f'o texto aparece na caixa de resposta do portal por baixo ({await caixa()!r})')
+    check(await pn.evaluate("document.body.classList.contains('plat')") and '/vacation-notice/1041' in await pg.evaluate("window.__ctPlatform.path()"),
+          'a plataforma continua na frente enquanto o portal abre a solicitação por baixo')
+    st = await pg.evaluate("window.__ctSim.item('vacation-notice', 1041).status")
+    check(st == 'Aguardando o cliente', f'escrever ao vivo não envia nada (situação: {st})')
+    # dado de saúde (CID) não vai ao portal e bloqueia o envio
+    await pn.fill('#rl-texto', 'Segue o atestado, CID M54.5'); await pn.dispatch_event('#rl-texto', 'input'); await pg.wait_for_timeout(1500)
+    check(await pn.locator('#rl-bloq:visible').count() == 1 and await pn.locator('#rl-enviar').is_disabled(), 'CID na mensagem: aviso educativo e o envio fica bloqueado')
+    check('M54.5' not in (await caixa() or ''), 'o texto com CID não é escrito no portal')
+    await pn.fill('#rl-texto', 'Segue o atestado.'); await pn.dispatch_event('#rl-texto', 'input')
+    ok = await espera(lambda: _igual(caixa, None, 'Segue o atestado.'), 10)
+    check(ok and await pn.locator('#rl-enviar').is_enabled(), 'tirando o CID, volta a escrever no portal e libera o envio')
+    # fechou sem enviar: tira do portal o que o Assistente pôs
+    await pn.click('#modal .dlg-x')
+    ok = await espera(lambda: _igual(caixa, None, ''), 10)
+    check(ok, f'fechar sem enviar limpa a caixa do portal ({await caixa()!r})')
+    # texto escrito direto no portal nunca é sobrescrito
+    await detalhe('1041')
+    await pn.click('#rl-texto'); await pn.type('#rl-texto', 'Primeira parte', delay=15)
+    await espera(lambda: _igual(caixa, None, 'Primeira parte'), 10)
+    await pg.evaluate("""() => { const t = document.querySelector('[data-resposta] textarea'); t.value = 'anotei aqui no portal'; t.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    await pn.type('#rl-texto', ' e mais um pouco', delay=15)
+    await pg.wait_for_timeout(2200)
+    check(await caixa() == 'anotei aqui no portal' and 'não mexi' in await pn.locator('#rl-st').inner_text(), f'o que o cliente escreveu direto no portal não é sobrescrito (e ele é avisado): {await caixa()!r}')
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(600)
+    check(await caixa() == 'anotei aqui no portal', 'ao fechar, o texto que o cliente pôs no portal também fica como está')
+    await pg.evaluate("""() => { const t = document.querySelector('[data-resposta] textarea'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    # enviar: resumo primeiro, clique em RESPONDER só depois de confirmar
+    await detalhe('1041')
+    await pn.click('#rl-texto'); await pn.type('#rl-texto', 'Olá! Segue a informação que vocês pediram.', delay=10)
+    await espera(lambda: _igual(caixa, None, 'Olá! Segue a informação que vocês pediram.'), 10)
+    await pn.click('#rl-enviar'); await pg.wait_for_timeout(500)
+    st = await pg.evaluate("window.__ctSim.item('vacation-notice', 1041).status")
+    check(await pn.locator('#rl-resumo:visible').count() == 1 and 'Segue a informação' in await pn.locator('#rl-resumo-t').inner_text() and st == 'Aguardando o cliente',
+          f'"Enviar resposta" só abre o resumo: nada foi enviado ainda (situação: {st})')
+    await pn.click('#rl-voltar'); await pg.wait_for_timeout(300)
+    check(await pn.locator('#rl-resumo:visible').count() == 0, '"Voltar" fecha o resumo sem enviar')
+    await pn.click('#rl-enviar'); await pn.click('#rl-confirmar')
+    ok = await espera(lambda: pg.evaluate("window.__ctSim.item('vacation-notice', 1041).status === 'Em andamento'"), 20)
+    tr = await pg.evaluate("window.__ctSim.item('vacation-notice', 1041).tramite")
+    check(ok and 'Segue a informação que vocês pediram' in tr, f'"Confirmar e enviar" clica em RESPONDER no portal e a resposta chega ({tr!r})')
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#rl-texto')?.value || '') === ''"), 10)
+    check(ok, 'depois de enviar, a caixa da plataforma esvazia')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    tarefa_emp.cancel()
+    await ctx.close()
+
+
+async def _igual(f, k, esperado):
+    v = await f()
+    if k is not None: v = (v or {}).get(k)
+    return v == esperado
+
+
 async def teste_lote5(b):
     """Lote 5: CPF acha o funcionário, lote por pessoa, regra dos 60 dias, planilha larga, Word/HEIC e recorte da foto."""
     import datetime, zipfile, io
@@ -1092,6 +1201,12 @@ async def teste_lote5(b):
 
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'viv':   # SIM_SO=viv roda só a escrita ao vivo e a resposta ao escritório (2.12)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_vivo(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
@@ -1488,6 +1603,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
+        await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
         await b.close()
