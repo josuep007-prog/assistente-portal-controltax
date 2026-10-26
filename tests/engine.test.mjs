@@ -4,6 +4,7 @@ import * as C from '../panel/calculos.js';
 import * as D from '../panel/dados.js';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import '../background/manutencao.js';   // define globalThis.CtManutencao (backup das regras e aviso de versão, de 2 em 2 dias)
 import '../content/opcoes.js';   // define globalThis.CtOpcoes (escolha de opção nas listas do portal)
 
 const rules = JSON.parse(fs.readFileSync(new URL('../rules/regras.json', import.meta.url), 'utf8'));
@@ -1569,6 +1570,26 @@ t('documentos do escritório (2.13): a lista do portal vira itens do painel, com
   assert.equal(E.documentosDoPortal({ items: [] }, rules).reconhecido, true);
   assert.equal(E.documentosDoPortal({ items: [{ x: 1 }] }, rules).reconhecido, false, 'itens sem id/nome: não reconheceu os campos');
   assert.equal(E.documentosDoPortal('texto', rules).reconhecido, false); assert.equal(E.documentosDoPortal(null, rules).itens.length, 0);
+});
+
+t('manutenção de 2 em 2 dias (2.14): versões por número, prazo, retratos das regras e aviso de versão nova', () => {
+  const M = globalThis.CtManutencao;
+  assert.equal(M.compararVersoes('2.13.10', '2.13.9'), 1, 'por número, não por texto'); assert.equal(M.compararVersoes('2026.10.27-1', '2026.10.26-10'), 1);
+  assert.equal(M.compararVersoes('2.14.0', '2.14'), 0); assert.equal(M.compararVersoes('2.13.2', '2.14.0'), -1);
+  const agora = Date.parse('2026-10-27T12:00:00Z');
+  assert.equal(M.vencido(null, agora), true, 'sem data guardada, confere'); assert.equal(M.vencido('2026-10-26T12:00:00Z', agora), false, '1 dia: ainda não');
+  assert.equal(M.vencido('2026-10-25T12:00:00Z', agora), true, '2 dias: confere'); assert.equal(M.vencido('2027-01-01T00:00:00Z', agora), true, 'data no futuro (relógio mudou): confere');
+  let l = M.guardarRetrato([], { rulesJson: 'A', versao: '1' });
+  l = M.guardarRetrato(l, { rulesJson: 'A', versao: '1' }); assert.equal(l.length, 1, 'retrato igual não se repete');
+  l = M.guardarRetrato(l, { rulesJson: 'B', versao: '2' }); l = M.guardarRetrato(l, { rulesJson: 'C', versao: '3' });
+  assert.deepEqual(l.map(x => x.versao), ['3', '2'], 'só os 2 últimos, o mais novo primeiro');
+  assert.deepEqual(M.guardarRetrato(l, null), l);
+  const regras = (v) => ({ config: { atualizacaoExtensao: { versao: v, url: 'https://exemplo/zip', mensagem: 'Baixe.' } } });
+  assert.equal(M.atualizacaoDisponivel(regras('2.14.0'), '2.14.0'), null); assert.equal(M.atualizacaoDisponivel(regras('2.13.0'), '2.14.0'), null);
+  assert.deepEqual(M.atualizacaoDisponivel(regras('2.15.0'), '2.14.0'), { versao: '2.15.0', url: 'https://exemplo/zip', mensagem: 'Baixe.' });
+  assert.equal(M.atualizacaoDisponivel({}, '2.14.0'), null); assert.equal(M.atualizacaoDisponivel(null, '2.14.0'), null);
+  assert.equal(JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8')).version.length > 0, true);
+  assert.ok(rules.config.atualizacaoExtensao?.versao, 'as regras trazem a versão anunciada');
 });
 
 console.log(`\n${n} testes ok`);

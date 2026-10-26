@@ -1,4 +1,5 @@
 // Service worker: regras (remotas/cache/embutidas), modo dev com recarga automática, atalhos e selo.
+importScripts('manutencao.js');   // backup das regras e aviso de versão nova, de dois em dois dias
 const DEV_PORT = 35729;
 const DEV_HTTP = `http://localhost:${DEV_PORT}`;
 const DEV_WS = `ws://localhost:${DEV_PORT}/ws`;
@@ -54,6 +55,10 @@ async function refreshRules(reason = 'manual') {
     const cache = await readCache();
     if (cache?.rules && validRules(cache.rules) && cache.origem !== 'embutida' && s.rulesUrl) { rules = cache.rules; origem = 'cache'; }
   }
+  if (!rules) {   // sem rede e sem cache: o último retrato guardado (backup de dois em dois dias)
+    const b = (await retratos())[0];
+    try { const r = b && JSON.parse(b.rulesJson); if (validRules(r)) { rules = r; origem = 'backup'; } } catch { /* retrato ilegível */ }
+  }
   // regras embutidas mais novas que as remotas/cache (extensão atualizada antes da publicação) prevalecem
   const embutidas = await bundledRules();
   if (!rules || (origem !== 'dev' && String(embutidas.versao || '') > String(rules.versao || ''))) { rules = embutidas; origem = 'embutida'; }
@@ -64,6 +69,31 @@ async function refreshRules(reason = 'manual') {
   const min = Math.max(5, rules.config?.intervaloAtualizacaoRegrasMin || 30);
   chrome.alarms.create('rules', { periodInMinutes: min });
   return pack;
+}
+
+/* ---------- Manutenção de dois em dois dias: backup das regras e aviso de versão nova ---------- */
+const { compararVersoes, vencido, guardarRetrato, atualizacaoDisponivel } = globalThis.CtManutencao;
+async function retratos() { const { rulesBackups } = await chrome.storage.local.get('rulesBackups'); return Array.isArray(rulesBackups) ? rulesBackups : []; }
+/** `forcar`: ignora o prazo (botão "Verificar agora"). Guarda um retrato das regras válidas (as 2 últimas) e vê se as regras
+ *  publicadas anunciam uma versão da extensão mais nova que a instalada (instalação por pasta não se atualiza sozinha). */
+async function manutencao(motivo = 'agendada', forcar = false) {
+  const { manutencaoEm } = await chrome.storage.local.get('manutencaoEm');
+  if (!forcar && !vencido(manutencaoEm)) return manutencaoInfo();
+  const cache = await readCache();
+  if (cache?.rules && validRules(cache.rules) && cache.origem !== 'embutida') {
+    const lista = guardarRetrato(await retratos(), { rulesJson: JSON.stringify(cache.rules), versao: cache.versao || cache.rules.versao || '?', origem: cache.origem, quando: new Date().toISOString() });
+    await chrome.storage.local.set({ rulesBackups: lista });
+  }
+  const nova = atualizacaoDisponivel(cache?.rules, chrome.runtime.getManifest().version);
+  if (nova) await chrome.storage.local.set({ atualizacaoExt: nova }); else await chrome.storage.local.remove('atualizacaoExt');
+  await chrome.storage.local.set({ manutencaoEm: new Date().toISOString() });
+  const info = await manutencaoInfo();
+  await broadcast({ type: 'manutencao', info, motivo });
+  return info;
+}
+async function manutencaoInfo() {
+  const { manutencaoEm, atualizacaoExt } = await chrome.storage.local.get(['manutencaoEm', 'atualizacaoExt']);
+  return { em: manutencaoEm || null, atualizacao: atualizacaoExt || null, backups: (await retratos()).map(b => ({ versao: b.versao, quando: b.quando, origem: b.origem })) };
 }
 
 async function readCache() {
@@ -134,12 +164,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
   connectDev();
   chrome.alarms.create('dev', { periodInMinutes: 0.5 });
+  chrome.alarms.create('manutencao', { periodInMinutes: 2 * 24 * 60 });
+  await manutencao('instalação');
 });
-chrome.runtime.onStartup.addListener(async () => { await refreshRules('inicialização'); connectDev(); chrome.alarms.create('dev', { periodInMinutes: 0.5 }); });
+chrome.runtime.onStartup.addListener(async () => { await refreshRules('inicialização'); connectDev(); chrome.alarms.create('dev', { periodInMinutes: 0.5 }); chrome.alarms.create('manutencao', { periodInMinutes: 2 * 24 * 60 }); await manutencao('inicialização'); });
 
 chrome.alarms.onAlarm.addListener(async (a) => {
   if (a.name === 'rules') await refreshRules('agendada');
   if (a.name === 'dev') connectDev();
+  if (a.name === 'manutencao') await manutencao('agendada');
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
@@ -159,6 +192,7 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
     switch (m.type) {
       case 'getRules': sendResponse(await getRules()); break;
       case 'refreshRules': sendResponse(await refreshRules('manual')); break;
+      case 'manutencao': sendResponse(m.agora ? await manutencao('manual', true) : await manutencaoInfo()); break;
       case 'getSettings': sendResponse({ settings: await getSettings(), unpacked: isUnpacked(), dev: await devEnabled(), devConectado: ws?.readyState === WebSocket.OPEN, versaoExtensao: chrome.runtime.getManifest().version }); break;
       case 'setSettings': {
         const cur = await getSettings();
