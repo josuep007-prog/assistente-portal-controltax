@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.26-1",
+  "versao": "2026.10.26-2",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -19,6 +19,23 @@
   "config": {
     "bloquearEnvioComPendencias": false,
     "confirmarAntesDeEnviar": true,
+    "documentosPortal": {
+      "_comentario": "Documentos que o escritório publica (área Documentos do Onvio). Endereço visto no portal real em 26/10/2026: GET /api/storage/v1/containers/documents?from=1&pageSize=10&loadParent=true&sort=createdDate:desc&loadMetadata=false&loadLock=false&customFields=[{Name:clientId,Value:<id da empresa>,IgnoreCase:true}] (a tela 'Não lidos' acrescenta readByClientUser=false; aqui lemos todos). A FORMA DA RESPOSTA ainda não foi vista: os nomes dos campos abaixo são candidatos (vale o primeiro que existir) e a aba mostra o que foi lido; 'Copiar diagnóstico' traz só os NOMES dos campos. 'download': caminhos para baixar o arquivo, com {id} — vazio até mapear (hoje o botão leva ao portal). Só leitura (GET).",
+      "calibrar": true,
+      "api": "/api/storage/v1/containers/documents",
+      "pageSize": 100,
+      "ordem": "createdDate:desc",
+      "listaEm": ["items", "data", "documents", "results", "content", "value"],
+      "total": ["totalItems", "total", "totalCount", "count"],
+      "campos": {
+        "id": ["id", "documentId", "uid"],
+        "nome": ["name", "fileName", "displayName", "title"],
+        "criado": ["createdDate", "createdAt", "created", "uploadDate"],
+        "pasta": ["parent.name", "parentName", "folder.name", "folderName", "category"]
+      },
+      "competencia": ["competence", "competencia", "period", "periodo", "reference", "referencia", "month"],
+      "download": []
+    },
     "escritaAoVivo": {
       "_comentario": "Plataforma em tela cheia: o que o cliente digita nos campos de texto vai para o portal enquanto ele escreve (esperaMs depois da última tecla), não só ao sair do campo. Só os tipos de campo listados; listas, datas e números continuam indo ao escolher/sair do campo. ativo: false volta ao comportamento antigo.",
       "ativo": true,

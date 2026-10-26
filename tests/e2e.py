@@ -28,6 +28,14 @@ async def abrir(p, tmp, plataforma=False, url=URL):
         if u.startswith('https://raw.githubusercontent.com/') and u.split('?')[0].endswith('/regras.json'):
             # testa sempre as regras desta pasta (não as publicadas)
             await r.fulfill(status=200, content_type='application/json', body=open(os.path.join(ROOT, 'rules', 'regras.json'), encoding='utf-8').read())
+        elif '/api/storage/v1/containers/documents' in u:
+            # documentos que o escritório publica: também só com o cabeçalho de acesso do portal (forma da resposta: candidata, a calibrar)
+            if r.request.headers.get('authorization') != 'Bearer teste-123' or 'clientId' not in u:
+                await r.fulfill(status=401, content_type='application/json', body='{"message":"Unauthorized"}')
+            else:
+                docs = [{'id': 'd1', 'name': 'Folha de pagamento 09-2026.pdf', 'createdDate': '2026-10-05T12:00:00Z', 'parent': {'name': 'Folha'}, 'customFields': [{'Name': 'competence', 'Value': '2026-09'}]},
+                        {'id': 'd2', 'name': 'Guia do FGTS.pdf', 'createdDate': '2026-10-07T12:00:00Z', 'parent': {'name': 'Guias'}}]
+                await r.fulfill(status=200, content_type='application/json', body=json.dumps({'items': docs, 'totalItems': 2}))
         elif '/api/br-payroll-sr/' in u:
             # como o Onvio real: sem o cabeçalho de acesso que o portal usa, 401 (o cookie não basta)
             if r.request.headers.get('authorization') != 'Bearer teste-123':
@@ -120,6 +128,11 @@ async def cenario_plataforma(p):
     check(await pn.locator('#plat-sync .sync-d.st-parcial').count() == 1 and 'Solicitação Geral' in await pn.evaluate("document.querySelector('.sync-pop').textContent"), 'tipo não lido aparece só no indicador (em parte)')
     await pn.click('#rail [data-mod="funcionarios"]'); await page.wait_for_timeout(1500)
     check('MARIA SOUZA' in await pn.locator('#emp-list').inner_text(), 'funcionários lidos pela API do portal')
+    await pn.click('#rail [data-mod="documentos"]'); await page.wait_for_timeout(800)
+    await pn.click('[data-doc-aba="escritorio"]'); await page.wait_for_timeout(4000)
+    lista = await pn.locator('#pub-lista').inner_text()
+    check('Folha de pagamento 09-2026.pdf' in lista and 'Guia do FGTS.pdf' in lista and 'Guias' in lista and '09/2026' in lista, 'Documentos do escritório: lista lida da API do portal (com o acesso do portal)')
+    check(await pn.locator('#pub-lista [data-baixar]').count() == 2 and 'No portal' in await pn.locator('#pub-lista [data-baixar]').first.inner_text(), 'sem o caminho do download mapeado, o botão leva ao portal')
     await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(500)
     await pn.set_input_files('#file-input', os.path.join(FIX, 'atestado.pdf'))
     for _ in range(60):

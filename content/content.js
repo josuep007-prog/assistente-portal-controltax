@@ -257,7 +257,7 @@
         case 'datasAviso': post({ type: 'datasAviso', id: m.id, ...(await fetchDatasAviso(m.lista, m.solicitacao)) }); break;
         case 'detalheCompleto': post({ type: 'detalheCompleto', id: m.id, ...(await fetchDetalhe(m.lista, m.solicitacao)) }); break;
         case 'portalInfo': await estadoAcesso(); post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos, acesso: { visto: apiEstado.visto, nomes: apiEstado.nomes }, status: { ...ultimosStatus } }); break;
-        case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : { disponivel: false, motivo: 'calibrar' }) }); break;
+        case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : await fetchDocumentos()) }); break;
         case 'baixarDocumento': {
           const f = plat.baixarDocumento ? await plat.baixarDocumento(m.docId) : null;
           const packed = f ? (await packFiles([f]))[0] : null;
@@ -1011,6 +1011,26 @@
     if (apiEstado.clienteId) return apiEstado.clienteId;
     const e = performance.getEntriesByType('resource').filter(x => x.startTime >= empresaDesde - 2000).map(x => x.name.match(/\/api\/br-payroll-sr\/v1\/clients\/([^/?#]+)/)).filter(Boolean).pop();
     return e ? decodeURIComponent(e[1]) : '';
+  }
+  /* Documentos que o escritório publica (área Documentos do Onvio; endereço visto em 26/10/2026, regras: config.documentosPortal).
+     Só leitura (GET) com o acesso do próprio portal. Devolve a resposta crua: o painel normaliza (E.documentosDoPortal) e não guarda nada.
+     O id da empresa vem da chamada que o próprio portal fez ao abrir Documentos; senão, do id das outras listas. */
+  function clienteDosDocumentos() {
+    const n = performance.getEntriesByType('resource').map(x => x.name).filter(u => /\/containers\/documents\?/.test(u)).pop();
+    if (n) { try { const v = JSON.parse(new URL(n).searchParams.get('customFields') || '[]').find(c => /^clientid$/i.test(c?.Name || ''))?.Value; if (v) return String(v); } catch { /* endereço estranho */ } }
+    return clientId();
+  }
+  async function fetchDocumentos() {
+    const cfg = rules?.config?.documentosPortal;
+    if (!cfg?.api) return { disponivel: false, motivo: 'sem regra' };
+    const id = clienteDosDocumentos();
+    if (!id) return { disponivel: false, motivo: 'sem cliente' };
+    const cf = encodeURIComponent(JSON.stringify([{ Name: 'clientId', Value: id, IgnoreCase: true }])).replace(/%3A/g, ':').replace(/%2C/g, ',');
+    const q = [`from=1`, `pageSize=${+cfg.pageSize || 100}`, 'loadParent=true', `sort=${cfg.ordem || 'createdDate:desc'}`, 'loadMetadata=false', 'loadLock=false', `customFields=${cf}`].join('&');
+    const r = await apiGet(`${cfg.api}?${q}`);
+    if (!r.ok) return { disponivel: false, motivo: r.status === 401 || r.status === 403 ? 'sem acesso' : `erro ${r.status}`, codigo: r.status };
+    let bruto = null; try { bruto = await r.json(); } catch { return { disponivel: false, motivo: 'resposta ilegível', codigo: r.status }; }
+    return { disponivel: true, bruto, baixar: false };
   }
   /* ============ Leituras da API com o mesmo acesso que o portal usa (ajudante content/pagina.js) ============ */
   /* O cookie sozinho recebe 401 no Onvio real: o portal manda um cabeçalho de acesso em cada chamada.
