@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.22-4",
+  "versao": "2026.10.26-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -19,6 +19,12 @@
   "config": {
     "bloquearEnvioComPendencias": false,
     "confirmarAntesDeEnviar": true,
+    "escritaAoVivo": {
+      "_comentario": "Plataforma em tela cheia: o que o cliente digita nos campos de texto vai para o portal enquanto ele escreve (esperaMs depois da última tecla), não só ao sair do campo. Só os tipos de campo listados; listas, datas e números continuam indo ao escolher/sair do campo. ativo: false volta ao comportamento antigo.",
+      "ativo": true,
+      "esperaMs": 600,
+      "tipos": ["texto", "textarea"]
+    },
     "incluirCidNaDescricao": false,
     "ocrAutomatico": true,
     "usarIaDoChromeQuandoDisponivel": true,
@@ -44,6 +50,15 @@
       "calibrar": true,
       "caixa": ["[data-resposta] textarea", "textarea[formcontrolname=topicDescription]", "textarea[formcontrolname=answer]"],
       "botaoResponder": "RESPONDER",
+      "livre": {
+        "_comentario": "Resposta em texto livre dentro da aba Conversa (só em solicitações que aguardam o cliente): o texto aparece na caixa de resposta do portal enquanto o cliente escreve, mas só é enviado depois do 'Confirmar e enviar' dele. O texto fica só na memória (nunca em rascunho, histórico ou log). 'bloquear' = expressões (regex, sem diferenciar maiúsculas) que impedem o envio: dados de saúde (CID) não vão na mensagem. Decisão do escritório: o que bloquear; ativo: false esconde a caixa (fica 'Preparar resposta' com as mensagens prontas).",
+        "revisarComEscritorio": true,
+        "ativo": true,
+        "esperaMs": 600,
+        "maximo": 2000,
+        "bloquear": ["\\bCID(\\s*-?\\s*10)?\\b", "\\b[A-TV-Z]\\d{2}\\.\\d{1,2}\\b"],
+        "mensagemBloqueio": "Parece haver um código de doença (CID) na mensagem. Dados de saúde não devem ir na resposta: tire esse trecho. Se o escritório precisa dele, ele pede pelo canal certo."
+      },
       "seEscritorioPede": "informacao",
       "textos": [
         { "id": "anexo", "rotulo": "Envio do que foi pedido", "comAnexo": true, "texto": "Olá! Segue em anexo o que foi pedido: {anexos}. Obrigado!" },
