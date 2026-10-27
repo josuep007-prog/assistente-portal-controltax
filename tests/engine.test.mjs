@@ -4,6 +4,10 @@ import * as C from '../panel/calculos.js';
 import * as D from '../panel/dados.js';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import { criarZip, crc32, nomeNoZip } from '../panel/zip.js';
+import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
 import '../background/manutencao.js';   // define globalThis.CtManutencao (backup das regras e aviso de versão, de 2 em 2 dias)
 import '../content/opcoes.js';   // define globalThis.CtOpcoes (escolha de opção nas listas do portal)
 
@@ -1590,6 +1594,22 @@ t('manutenção de 2 em 2 dias (2.14): versões por número, prazo, retratos das
   assert.equal(M.atualizacaoDisponivel({}, '2.14.0'), null); assert.equal(M.atualizacaoDisponivel(null, '2.14.0'), null);
   assert.equal(JSON.parse(fs.readFileSync(new URL('../manifest.json', import.meta.url), 'utf8')).version.length > 0, true);
   assert.ok(rules.config.atualizacaoExtensao?.versao, 'as regras trazem a versão anunciada');
+});
+
+t('ZIP simples (2.15): CRC, nomes repetidos e arquivo válido', () => {
+  assert.equal(crc32(new TextEncoder().encode('123456789')), 0xCBF43926, 'CRC-32 padrão');
+  assert.equal(nomeNoZip('a/b\\c:d*.pdf'), 'a_b_c_d_.pdf'); assert.equal(nomeNoZip('..'), 'arquivo');
+  const enc = (x) => new TextEncoder().encode(x);
+  const zip = criarZip([{ nome: 'Guia.pdf', bytes: enc('um') }, { nome: 'Guia.pdf', bytes: enc('dois') }, { nome: 'Relatório ç.txt', bytes: enc('três') }, { nome: 'vazio', bytes: new Uint8Array(0) }]);
+  const f = path.join(os.tmpdir(), `ct-zip-${process.pid}.zip`); fs.writeFileSync(f, zip);
+  try {
+    const out = execFileSync('python3', ['-I', '-c', 'import zipfile,sys;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print("|".join(n+"="+z.read(n).decode() for n in z.namelist()))', f]).toString().trim();
+    assert.equal(out, 'Guia.pdf=um|Guia (2).pdf=dois|Relatório ç.txt=três|vazio=');
+  } finally { fs.rmSync(f, { force: true }); }
+});
+t('documentos do escritório (2.15): o código do projeto vem do item', () => {
+  const a = E.documentosDoPortal({ items: [{ id: 'x', name: 'A.pdf', projectId: 'P9' }, { id: 'y', name: 'B.pdf', project: { id: 'P8' } }, { id: 'z', name: 'C.pdf' }] }, rules);
+  assert.deepEqual(a.itens.map(i => i.projeto), ['P9', 'P8', '']);
 });
 
 console.log(`\n${n} testes ok`);

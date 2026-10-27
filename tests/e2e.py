@@ -6,7 +6,7 @@ Requisitos (uma vez):  pip install -r tests/requirements.txt  &&  python -m play
 Rodar:                 python tests/e2e.py
 No Linux sem tela:     xvfb-run -a python tests/e2e.py
 """
-import asyncio, json, os, sys, tempfile, shutil
+import asyncio, json, os, re, sys, tempfile, shutil, zipfile
 os.environ.setdefault('PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS', '1')  # para interceptar o que o service worker baixa
 from playwright.async_api import async_playwright
 
@@ -28,13 +28,24 @@ async def abrir(p, tmp, plataforma=False, url=URL):
         if u.startswith('https://raw.githubusercontent.com/') and u.split('?')[0].endswith('/regras.json'):
             # testa sempre as regras desta pasta (não as publicadas)
             await r.fulfill(status=200, content_type='application/json', body=open(os.path.join(ROOT, 'rules', 'regras.json'), encoding='utf-8').read())
+        elif '/api/storage/v1/projects/' in u:
+            # download de documento em dois passos, como o portal real (ids e token inventados): 1) endereço de download; 2) o arquivo
+            sem = r.request.headers.get('authorization') != 'Bearer teste-123'
+            m = re.search(r'/documents/([^/?]+)', u); did = m.group(1) if m else ''
+            if sem: await r.fulfill(status=401, content_type='application/json', body='{"message":"Unauthorized"}')
+            elif 'includeDownloadUrl=true' in u:
+                await r.fulfill(status=200, content_type='application/json', body=json.dumps({'id': did, 'downloadUrl': f'/api/storage/v1/projects/p1/documents/{did}?Token=tokenfalso'}))
+            elif 'Token=' in u:
+                await r.fulfill(status=200, content_type='application/pdf', body=f'%PDF-FAKE-{did}'.encode())
+            else:
+                await r.fulfill(status=404, body='')
         elif '/api/storage/v1/containers/documents' in u:
             # documentos que o escritório publica: também só com o cabeçalho de acesso do portal (forma da resposta: candidata, a calibrar)
             if r.request.headers.get('authorization') != 'Bearer teste-123' or 'clientId' not in u:
                 await r.fulfill(status=401, content_type='application/json', body='{"message":"Unauthorized"}')
             else:
-                docs = [{'id': 'd1', 'name': 'Folha de pagamento 09-2026.pdf', 'createdDate': '2026-10-05T12:00:00Z', 'parent': {'name': 'Folha'}, 'customFields': [{'Name': 'competence', 'Value': '2026-09'}]},
-                        {'id': 'd2', 'name': 'Guia do FGTS.pdf', 'createdDate': '2026-10-07T12:00:00Z', 'parent': {'name': 'Guias'}}]
+                docs = [{'id': 'd1', 'projectId': 'p1', 'name': 'Folha de pagamento 09-2026.pdf', 'createdDate': '2026-10-05T12:00:00Z', 'parent': {'name': 'Folha'}, 'customFields': [{'Name': 'competence', 'Value': '2026-09'}]},
+                        {'id': 'd2', 'projectId': 'p1', 'name': 'Guia do FGTS.pdf', 'createdDate': '2026-10-07T12:00:00Z', 'parent': {'name': 'Guias'}}]
                 await r.fulfill(status=200, content_type='application/json', body=json.dumps({'items': docs, 'totalItems': 2}))
         elif '/api/br-payroll-sr/' in u:
             # como o Onvio real: sem o cabeçalho de acesso que o portal usa, 401 (o cookie não basta)
@@ -136,7 +147,17 @@ async def cenario_plataforma(p):
     await pn.click('[data-doc-aba="escritorio"]'); await page.wait_for_timeout(4000)
     lista = await pn.locator('#pub-lista').inner_text()
     check('Folha de pagamento 09-2026.pdf' in lista and 'Guia do FGTS.pdf' in lista and 'Guias' in lista and '09/2026' in lista, 'Documentos do escritório: lista lida da API do portal (com o acesso do portal)')
-    check(await pn.locator('#pub-lista [data-baixar]').count() == 2 and 'No portal' in await pn.locator('#pub-lista [data-baixar]').first.inner_text(), 'sem o caminho do download mapeado, o botão leva ao portal')
+    check(await pn.locator('#pub-lista [data-baixar]').count() == 2 and 'Baixar' in await pn.locator('#pub-lista [data-baixar]').first.inner_text(), 'com o download mapeado, o botão baixa o arquivo')
+    async with page.expect_download(timeout=20000) as dl:
+        await pn.locator('#pub-lista [data-baixar]').first.click()
+    d1 = await dl.value; conteudo = open(await d1.path(), 'rb').read()
+    check(d1.suggested_filename.endswith('.pdf') and conteudo.startswith(b'%PDF-FAKE-'), f'Baixar entrega o arquivo inteiro, pelos dois passos do portal ({d1.suggested_filename}, {len(conteudo)} bytes)')
+    async with page.expect_download(timeout=30000) as dz:
+        await pn.locator('#pub-lista [data-zip]').first.click()
+    zf = await dz.value; zp = await zf.path()
+    with zipfile.ZipFile(zp) as z:
+        nomes = z.namelist()
+        check(z.testzip() is None and len(nomes) >= 1 and all(z.read(n).startswith(b'%PDF-FAKE-') for n in nomes), f'Baixar tudo (ZIP) entrega um ZIP válido com os arquivos do grupo ({nomes})')
     await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(500)
     await pn.set_input_files('#file-input', os.path.join(FIX, 'atestado.pdf'))
     for _ in range(60):

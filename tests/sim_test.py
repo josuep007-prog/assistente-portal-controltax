@@ -230,7 +230,8 @@ async def teste_plataforma(b):
     # Calcular (2.3): simulação de rescisão e de férias, e o pedido do cálculo já com as datas
     print('[2.3] calcular: simulações')
     await pn.click('#rail [data-mod="ferramentas"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(500)
-    for k, v in [('sim-quem', 'VANESSA PRADO'), ('sim-desligamento', '15102026'), ('sim-salario', '3.000,00')]:
+    # a admissão da Vanessa no simulador é relativa a hoje: fixa a data para o líquido não mudar de um dia para o outro
+    for k, v in [('sim-quem', 'VANESSA PRADO'), ('sim-admissao', '16092026'), ('sim-desligamento', '15102026'), ('sim-salario', '3.000,00')]:
         await pn.fill('#' + k, v); await pn.dispatch_event('#' + k, 'input')
     await pg.wait_for_timeout(300)
     res = (await pn.locator('#sim-res').inner_text()).replace('\xa0', ' ')
