@@ -58,6 +58,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.15.0 | 2026-10-27 | **Central de downloads.** Em Documentos → "Do escritório", o botão **Baixar** entrega o arquivo (dois passos como o portal: pede o endereço de download e baixa, só leitura e com o acesso do próprio portal; o token temporário nunca é guardado nem mostrado) e **Baixar tudo (ZIP)** junta os documentos de cada competência num ZIP montado no computador, com progresso e lista do que não baixou. Regras: `config.documentosPortal.download` (limite de 25 MB por arquivo). |
 | 2.14.0 | 2026-10-27 | **Backup e aviso de versão a cada 2 dias.** A cada 2 dias a extensão guarda um retrato das regras (os 2 últimos, usados se o arquivo remoto e o cache falharem) e confere se há versão nova da extensão (as regras publicadas anunciam `config.atualizacaoExtensao`); se houver, avisa uma vez por versão, e Configurações → "Atualizações e backup" mostra o link, a última conferência e os backups, com "Conferir agora". A instalação por pasta continua sem se atualizar sozinha (só a Chrome Web Store faz isso). |
 | 2.13.2 | 2026-10-27 | **Bolinha em anel.** Anel branco mais fino (60 px) com o círculo preto por dentro, halo suave e selo de avisos no canto, no formato de anel pedido. |
 | 2.13.1 | 2026-10-27 | **Bolinha ajustada.** Círculo branco maior (68 px) com o círculo preto menor (46 px) e a logo centralizada dentro dele. |

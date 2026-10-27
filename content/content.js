@@ -259,9 +259,10 @@
         case 'portalInfo': await estadoAcesso(); post({ type: 'portalInfo', id: m.id, empresa: companyName(), route: routeInfo(), temCliente: !!clientId(), documentos: !!plat.documentos, acesso: { visto: apiEstado.visto, nomes: apiEstado.nomes }, status: { ...ultimosStatus } }); break;
         case 'documentos': post({ type: 'documentos', id: m.id, ...(plat.documentos ? { disponivel: true, itens: await plat.documentos() } : await fetchDocumentos()) }); break;
         case 'baixarDocumento': {
-          const f = plat.baixarDocumento ? await plat.baixarDocumento(m.docId) : null;
+          const real = plat.baixarDocumento ? { file: await plat.baixarDocumento(m.docId) } : await baixarDocumentoReal(m);
+          const f = real.file;
           const packed = f ? (await packFiles([f]))[0] : null;
-          post({ type: 'arquivo', id: m.id, arquivo: packed }, packed ? [packed.buf] : []);
+          post({ type: 'arquivo', id: m.id, arquivo: packed, motivo: real.motivo }, packed ? [packed.buf] : []);
           break;
         }
         case 'abrirNoPortal': { const ok = await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id, ok }); break; }
@@ -1020,6 +1021,39 @@
     if (n) { try { const v = JSON.parse(new URL(n).searchParams.get('customFields') || '[]').find(c => /^clientid$/i.test(c?.Name || ''))?.Value; if (v) return String(v); } catch { /* endereço estranho */ } }
     return clientId();
   }
+  /** Baixa um documento do escritório (só leitura, com o acesso do próprio portal). Dois passos, como o portal faz:
+   *  1) GET {download.api} (…/projects/<projeto>/documents/<id>?includeDownloadUrl=true) → endereço de download (com um token
+   *  temporário, que só passa pela memória: nunca é guardado nem mostrado); 2) GET desse endereço → bytes. Só /api/storage/. */
+  function projetoDosDocumentos() {
+    const n = performance.getEntriesByType('resource').map(x => x.name).map(u => /\/api\/storage\/v1\/projects\/([^/?#]+)\//.exec(u)).filter(Boolean).pop();
+    return n ? decodeURIComponent(n[1]) : '';
+  }
+  async function apiGetBinario(url, maxBytes) {
+    const st = await estadoAcesso();
+    if (st) { const d = await pedirPagina({ tipo: 'get', url, binario: true, maxBytes }, 60000); if (d) return d; }
+    return { status: 0, erro: 'sem ajudante' };
+  }
+  async function baixarDocumentoReal(m) {
+    const cfg = rules?.config?.documentosPortal?.download;
+    if (!cfg?.api) return { motivo: 'sem regra' };
+    const projeto = m.projeto || projetoDosDocumentos();
+    if (!projeto || !m.docId) return { motivo: 'sem projeto' };
+    const caminho = (o, p) => String(p).split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+    const r = await apiGet(String(cfg.api).replace('{projeto}', encodeURIComponent(projeto)).replace('{id}', encodeURIComponent(m.docId)));
+    if (!r.ok) return { motivo: r.status === 401 || r.status === 403 ? 'sem acesso' : `erro ${r.status}` };
+    let j = null; try { j = await r.json(); } catch { return { motivo: 'resposta ilegível' }; }
+    let url = ''; for (const k of cfg.url || ['downloadUrl']) { const v = caminho(j, k); if (typeof v === 'string' && v) { url = v; break; } }
+    if (!url) return { motivo: 'sem endereço de download', campos: Object.keys(j || {}).slice(0, 30) };
+    let u; try { u = new URL(url, location.href); } catch { return { motivo: 'endereço inválido' }; }
+    if (u.origin !== location.origin || !u.pathname.startsWith('/api/storage/')) return { motivo: 'endereço fora do portal' };
+    const max = (+cfg.maxMB || 25) * 1048576;
+    const d = await apiGetBinario(u.pathname + u.search, max);
+    if (d.erro === 'grande') return { motivo: 'arquivo grande demais' };
+    if (!d.status || d.status >= 400 || !d.texto64) return { motivo: d.status === 401 || d.status === 403 ? 'sem acesso' : `erro ${d.status || 'de rede'}` };
+    const bin = atob(d.texto64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const tipo = (d.tipoConteudo || '').split(';')[0] || 'application/octet-stream';
+    return { file: new File([bytes], String(m.nome || j?.name || 'documento'), { type: tipo }) };
+  }
   async function fetchDocumentos() {
     const cfg = rules?.config?.documentosPortal;
     if (!cfg?.api) return { disponivel: false, motivo: 'sem regra' };
@@ -1030,7 +1064,7 @@
     const r = await apiGet(`${cfg.api}?${q}`);
     if (!r.ok) return { disponivel: false, motivo: r.status === 401 || r.status === 403 ? 'sem acesso' : `erro ${r.status}`, codigo: r.status };
     let bruto = null; try { bruto = await r.json(); } catch { return { disponivel: false, motivo: 'resposta ilegível', codigo: r.status }; }
-    return { disponivel: true, bruto, baixar: false };
+    return { disponivel: true, bruto, baixar: !!cfg.download?.api };
   }
   /* ============ Leituras da API com o mesmo acesso que o portal usa (ajudante content/pagina.js) ============ */
   /* O cookie sozinho recebe 401 no Onvio real: o portal manda um cabeçalho de acesso em cada chamada.

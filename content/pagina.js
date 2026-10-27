@@ -63,6 +63,15 @@
       const headers = { accept: 'application/json, text/plain, */*' };
       acesso.forEach((v, k) => { headers[k] = v; });
       const r = await buscar.call(window, u.href, { method: 'GET', credentials: 'include', headers, __ctNosso: true });
+      if (p.binario) {   // arquivo (download de documento): volta em base64, só se couber no limite pedido
+        if (!r.ok) { responder({ id: p.id, status: r.status, comAcesso: acesso.size > 0 }); return; }
+        const buf = await r.arrayBuffer();
+        if (p.maxBytes && buf.byteLength > p.maxBytes) { responder({ id: p.id, status: r.status, erro: 'grande', bytes: buf.byteLength }); return; }
+        const u8 = new Uint8Array(buf); let bin = '';
+        for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+        responder({ id: p.id, status: r.status, texto64: btoa(bin), tipoConteudo: r.headers.get('content-type') || '', comAcesso: acesso.size > 0 });
+        return;
+      }
       responder({ id: p.id, status: r.status, texto: r.ok ? await r.text() : '', comAcesso: acesso.size > 0 });
     } catch (err) { responder({ id: p.id, status: 0, erro: String(err?.message || err) }); }
   });

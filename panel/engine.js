@@ -3526,7 +3526,7 @@ export function documentosDoPortal(json, rules) {
     const c = primeiro(raw, cfg.campos?.criado); const d = c ? new Date(c) : null;
     const diretaComp = primeiro(raw, cfg.competencia);
     itens.push({
-      id: String(id), nome: String(nome), arquivo: String(nome), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''),
+      id: String(id), nome: String(nome), arquivo: String(nome), projeto: String(primeiro(raw, cfg.campos?.projeto) ?? ''), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''),
       competencia: doCustom(raw) || competenciaDe(diretaComp), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
     });
   }

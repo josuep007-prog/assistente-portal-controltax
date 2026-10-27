@@ -25,6 +25,10 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.15 — central de downloads
+
+- **Documentos → Do escritório:** **Baixar** (um arquivo) e **Baixar tudo (ZIP)** (por competência, ZIP montado no computador, um arquivo por vez, com os que falharem listados). O download segue o portal real: `GET …/projects/<projeto>/documents/<id>?includeDownloadUrl=true` devolve o endereço (com token temporário, que só passa pela memória) e o arquivo vem desse endereço. Regras: `config.documentosPortal.download` (`api`, `url`, `maxMB`). O nome do campo com o endereço é candidato (a calibrar).
+
 ## Novidades da 2.14 — backup e aviso de versão a cada 2 dias
 
 - A cada 2 dias (`chrome.alarms` + conferência ao abrir o Chrome) o service worker guarda um **retrato das regras** (os 2 últimos; usados se o arquivo remoto e o cache falharem) e confere se há **versão nova da extensão**: as regras publicadas anunciam `config.atualizacaoExtensao` (`versao`, `url`, `mensagem`). Se for maior que a instalada, o cliente recebe um aviso único por versão e vê o link em Configurações → Atualizações e backup (com "Conferir agora").

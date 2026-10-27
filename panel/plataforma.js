@@ -6,6 +6,7 @@ import * as E from './engine.js';
 import { anel, anelProgresso, animarNumeros, ligarDicas, cor } from './graficos.js';
 import { prepararSimulacao } from './calcular.js';
 import * as D from './dados.js';
+import { criarZip, nomeNoZip } from './zip.js';
 
 export function montarPlataforma(A) {
   const { S, $, esc, icon, request, send, toast, viewEl } = A;
@@ -1771,16 +1772,39 @@ export function montarPlataforma(A) {
       vis.sort((a, b) => chave(b.x.competencia).localeCompare(chave(a.x.competencia))).forEach(v => { const k = v.x.competencia || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(v); });
       const rotComp = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); return m ? cap(new Date(+m[2], +m[1] - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })) : 'Sem competência'; };
       $('#pub-lista').innerHTML = `<div class="list-card"><div class="dp-listhead doc-cols"><span>Documento</span><span>Categoria</span><span>Competência</span><span>Publicado</span><span></span></div>
-        ${[...grupos].map(([k, vs]) => `<div class="arq-mes">${esc(rotComp(k))}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b></span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
+        ${[...grupos].map(([k, vs]) => `<div class="arq-mes"><span>${esc(rotComp(k))}</span>${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-zip="${esc(k)}" title="Baixa todos os documentos deste grupo num arquivo ZIP">${icon('download', 'ic-sm')} Baixar tudo (ZIP)</button>`}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b></span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
           || `<div class="list-vazio">${itens.length ? 'Nenhum documento com esse filtro.' : 'Nenhum documento publicado.'}</div>`}</div>`;
-      $('#pub-lista').querySelectorAll('[data-baixar]').forEach(b => b.addEventListener('click', async () => {
-        if (D.baixar === false) { request({ type: 'abrirNoPortal', area: 'documentos' }, 30000); return; }   // o caminho do download ainda não foi mapeado
-        const x = itens[+b.dataset.baixar]; b.disabled = true;
-        const r = await request({ type: 'baixarDocumento', docId: x.id }, 30000); b.disabled = false;
-        if (!r?.arquivo) { toast('Não consegui baixar. Abra no portal.'); return; }
-        const url = URL.createObjectURL(new Blob([r.arquivo.buf], { type: r.arquivo.type || 'application/pdf' }));
-        const a = document.createElement('a'); a.href = url; a.download = r.arquivo.name || 'documento.pdf'; document.body.appendChild(a); a.click(); a.remove();
+      const motivos = { 'sem acesso': 'o portal não deixou ler o arquivo', 'sem projeto': 'não achei o código do projeto', 'arquivo grande demais': 'o arquivo é grande demais', 'sem endereço de download': 'o portal não trouxe o endereço do arquivo', 'sem regra': 'download não configurado' };
+      const baixarUm = async (x) => {
+        const r = await request({ type: 'baixarDocumento', docId: x.id, projeto: x.projeto, nome: x.nome }, 90000);
+        if (!r?.arquivo) return { ok: false, motivo: motivos[r?.motivo] || r?.motivo || 'sem resposta do portal' };
+        return { ok: true, arquivo: r.arquivo };
+      };
+      const entregar = (bytes, nome, tipo) => {
+        const url = URL.createObjectURL(new Blob([bytes], { type: tipo || 'application/octet-stream' }));
+        const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
+      };
+      $('#pub-lista').querySelectorAll('[data-baixar]').forEach(b => b.addEventListener('click', async () => {
+        if (D.baixar === false) { request({ type: 'abrirNoPortal', area: 'documentos' }, 30000); return; }   // download não configurado nas regras
+        const x = itens[+b.dataset.baixar]; b.disabled = true;
+        const r = await baixarUm(x); b.disabled = false;
+        if (!r.ok) { toast(`Não consegui baixar: ${r.motivo}. Você pode abrir no portal.`); return; }
+        entregar(r.arquivo.buf, r.arquivo.name || x.nome, r.arquivo.type);
+      }));
+      // todos os documentos de um grupo (competência) num ZIP, montado no computador do cliente; um por vez, os que falharem são listados
+      $('#pub-lista').querySelectorAll('[data-zip]').forEach(b => b.addEventListener('click', async () => {
+        const lista = (grupos.get(b.dataset.zip) || []).map(v => v.x); if (!lista.length) return;
+        b.disabled = true; const falhas = []; const arqs = [];
+        for (let n = 0; n < lista.length; n++) {
+          b.textContent = `Baixando ${n + 1} de ${lista.length}…`;
+          const r = await baixarUm(lista[n]);
+          if (r.ok) arqs.push({ nome: r.arquivo.name || lista[n].nome, bytes: new Uint8Array(r.arquivo.buf) }); else falhas.push(`${lista[n].nome} (${r.motivo})`);
+        }
+        b.disabled = false; b.innerHTML = `${icon('download', 'ic-sm')} Baixar tudo (ZIP)`;
+        if (!arqs.length) { toast(`Não consegui baixar: ${falhas[0] || 'sem resposta do portal'}.`); return; }
+        entregar(criarZip(arqs), `Documentos ${nomeNoZip(rotComp(b.dataset.zip)).replace(/\s+/g, ' ')}.zip`, 'application/zip');
+        toast(falhas.length ? `ZIP com ${arqs.length} arquivo(s). Não baixei ${falhas.length}: ${falhas.slice(0, 3).join('; ')}${falhas.length > 3 ? '…' : ''}.` : `ZIP com ${arqs.length} arquivo(s) baixado.`);
       }));
     };
     let t0;

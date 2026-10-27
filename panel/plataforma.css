@@ -705,3 +705,6 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .rl-prim:hover:not(:disabled) { background: color-mix(in srgb, var(--blue-deep) 88%, #000); }
 :root[data-theme="dark"] .rl-prim { color: #0B1015; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .rl-prim { color: #0B1015; } }
+
+.arq-mes { display: flex; align-items: center; gap: 8px; }
+.arq-mes .btn { margin-left: auto; }
