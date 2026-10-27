@@ -1738,7 +1738,7 @@ export function montarPlataforma(A) {
       let r = await request({ type: 'documentos' }, 20000) || { disponivel: false };
       if (r.disponivel && r.bruto !== undefined) {   // área Documentos do Onvio real: resposta crua da API, normalizada aqui (nada é guardado)
         const n = E.documentosDoPortal(r.bruto, S.rules);
-        S.plat.docsDiag = { itens: n.itens.length, total: n.total, campos: n.campos, reconhecido: n.reconhecido };
+        S.plat.docsDiag = { itens: n.itens.length, total: n.total, campos: n.campos, reconhecido: n.reconhecido, forma: n.forma };
         r = n.reconhecido ? { disponivel: true, itens: n.itens.sort((x, y) => y.criado - x.criado), total: n.total, baixar: r.baixar } : { disponivel: false, motivo: 'forma' };
       } else S.plat.docsDiag = { codigo: r.codigo, motivo: r.motivo };
       S.plat.docs = r;
