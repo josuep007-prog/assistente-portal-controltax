@@ -3496,12 +3496,19 @@ export function documentosDoPortal(json, rules) {
   const cfg = rules?.config?.documentosPortal || {};
   const caminho = (o, p) => String(p).split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
   const primeiro = (o, lista) => { for (const p of lista || []) { const v = caminho(o, p); if (v != null && v !== '' && typeof v !== 'object') return v; } return undefined; };
-  let lista = Array.isArray(json) ? json : null;
-  if (!lista && json && typeof json === 'object') {
-    for (const k of cfg.listaEm || []) if (Array.isArray(json[k])) { lista = json[k]; break; }
-    if (!lista) lista = Object.values(json).find(Array.isArray) || null;
-  }
-  if (!lista) return { itens: [], total: null, campos: [], reconhecido: false };
+  // a lista pode estar na raiz, numa chave conhecida ou mais adentro (até 3 níveis): vale a primeira de objetos
+  const acharLista = (o, prof = 0) => {
+    if (Array.isArray(o)) return o;
+    if (!o || typeof o !== 'object' || prof > 3) return null;
+    for (const k of cfg.listaEm || []) if (Array.isArray(o[k])) return o[k];
+    const arr = Object.values(o).find(v => Array.isArray(v) && (!v.length || (v[0] && typeof v[0] === 'object')));
+    if (arr) return arr;
+    for (const v of Object.values(o)) { const r = acharLista(v, prof + 1); if (r) return r; }
+    return null;
+  };
+  const lista = acharLista(json);
+  const forma = formaDaResposta(json);
+  if (!lista) return { itens: [], total: null, campos: [], reconhecido: false, forma };
   const total = (() => { const v = json && !Array.isArray(json) ? primeiro(json, cfg.total || ['totalItems', 'total']) : undefined; return Number.isFinite(+v) ? +v : null; })();
   const dataBr = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   const competenciaDe = (v) => {
@@ -3531,5 +3538,17 @@ export function documentosDoPortal(json, rules) {
     });
   }
   const campos = Object.keys(lista.find(x => x && typeof x === 'object') || {}).slice(0, 40);
-  return { itens, total, campos, reconhecido: itens.length > 0 || lista.length === 0 };
+  return { itens, total, campos, forma, reconhecido: itens.length > 0 || lista.length === 0 };
+}
+
+/** Só a FORMA de uma resposta (nomes das chaves e tipos, até 3 níveis; nenhum valor): para o diagnóstico. Chaves que parecem
+ *  código (32 letras/números) viram <id>. Ex.: {data:{items:[{id,name}],total}}. */
+export function formaDaResposta(o, prof = 0) {
+  if (o == null) return 'null';
+  if (Array.isArray(o)) return o.length ? `[${prof >= 4 ? '…' : formaDaResposta(o[0], prof + 1)}]` : '[]';
+  if (typeof o !== 'object') return typeof o;
+  if (prof >= 4) return '{…}';
+  const chave = (k) => (/^[0-9a-f]{32}$/i.test(k) ? '<id>' : String(k).slice(0, 40));
+  const ks = Object.keys(o).slice(0, 25);
+  return `{${ks.map(k => `${chave(k)}${prof >= 3 || o[k] == null || typeof o[k] !== 'object' ? '' : ':' + formaDaResposta(o[k], prof + 1)}`).join(',')}${Object.keys(o).length > 25 ? ',…' : ''}}`.slice(0, 600);
 }

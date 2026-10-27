@@ -1612,4 +1612,14 @@ t('documentos do escritório (2.15): o código do projeto vem do item', () => {
   assert.deepEqual(a.itens.map(i => i.projeto), ['P9', 'P8', '']);
 });
 
+t('documentos do escritório (2.15.1): lista mais adentro na resposta e diagnóstico só com a forma', () => {
+  const doc = { id: 'x1', name: 'Guia.pdf', createdDate: '2026-10-01T00:00:00Z' };
+  const a = E.documentosDoPortal({ result: { page: { rows: [doc] }, paging: { total: 7 } } }, rules);
+  assert.equal(a.itens.length, 1, 'acha a lista em result.page.rows'); assert.equal(a.reconhecido, true);
+  assert.match(a.forma, /^\{result:\{page:\{rows:\[/);
+  const f = E.formaDaResposta({ items: [{ id: 'SEGREDO', name: 'Folha da Maria.pdf' }], total: 3, ['A'.repeat(32)]: 1 });
+  assert.ok(!/SEGREDO|Maria/.test(f), 'nenhum valor na forma'); assert.ok(f.includes('items:[{id,name}]') && f.includes('<id>'), f);
+  assert.equal(E.formaDaResposta(null), 'null'); assert.equal(E.formaDaResposta([]), '[]');
+});
+
 console.log(`\n${n} testes ok`);
