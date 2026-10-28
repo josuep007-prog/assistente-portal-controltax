@@ -25,6 +25,10 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.16 — documentos novos
+
+- **Publicados pelo escritório** lista os documentos (forma real da API: `data.items`, `isReadByClientUser`, `containerId`; `config.documentosPortal`): etiqueta **Novo**, filtro **Não lidos (n)**, número no menu lateral e aviso quando chega documento novo (relê a cada ~5 min junto da leitura automática). Várias páginas (`paginacao`, `hasMore`). A extensão só lê: não marca como lido.
+
 ## Novidades da 2.15 — central de downloads
 
 - **Documentos → Do escritório:** **Baixar** (um arquivo) e **Baixar tudo (ZIP)** (por competência, ZIP montado no computador, um arquivo por vez, com os que falharem listados). O download segue o portal real: `GET …/projects/<projeto>/documents/<id>?includeDownloadUrl=true` devolve o endereço (com token temporário, que só passa pela memória) e o arquivo vem desse endereço. Regras: `config.documentosPortal.download` (`api`, `url`, `maxMB`). O nome do campo com o endereço é candidato (a calibrar).
