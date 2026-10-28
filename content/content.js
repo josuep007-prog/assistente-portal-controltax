@@ -1036,10 +1036,15 @@
   async function baixarDocumentoReal(m) {
     const cfg = rules?.config?.documentosPortal?.download;
     if (!cfg?.api) return { motivo: 'sem regra' };
-    const projeto = m.projeto || projetoDosDocumentos();
-    if (!projeto || !m.docId) return { motivo: 'sem projeto' };
+    // o código do projeto: o do item (containerId) e, se esse não servir, o que o próprio portal usou nas chamadas dele
+    const projetos = [...new Set([m.projeto, projetoDosDocumentos()].filter(Boolean))];
+    if (!projetos.length || !m.docId) return { motivo: 'sem projeto' };
     const caminho = (o, p) => String(p).split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
-    const r = await apiGet(String(cfg.api).replace('{projeto}', encodeURIComponent(projeto)).replace('{id}', encodeURIComponent(m.docId)));
+    let r = null;
+    for (const projeto of projetos) {
+      r = await apiGet(String(cfg.api).replace('{projeto}', encodeURIComponent(projeto)).replace('{id}', encodeURIComponent(m.docId)));
+      if (r.ok) break;
+    }
     if (!r.ok) return { motivo: r.status === 401 || r.status === 403 ? 'sem acesso' : `erro ${r.status}` };
     let j = null; try { j = await r.json(); } catch { return { motivo: 'resposta ilegível' }; }
     let url = ''; for (const k of cfg.url || ['downloadUrl']) { const v = caminho(j, k); if (typeof v === 'string' && v) { url = v; break; } }
@@ -1064,6 +1069,23 @@
     const r = await apiGet(`${cfg.api}?${q}`);
     if (!r.ok) return { disponivel: false, motivo: r.status === 401 || r.status === 403 ? 'sem acesso' : `erro ${r.status}`, codigo: r.status };
     let bruto = null; try { bruto = await r.json(); } catch { return { disponivel: false, motivo: 'resposta ilegível', codigo: r.status }; }
+    // mais páginas (config.documentosPortal.paginacao): junta as listas na primeira resposta; para se uma página não traz nada novo
+    const pg = cfg.paginacao;
+    if (pg?.lista) {
+      const caminho = (o, p) => String(p).split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+      const pai = (o, p) => { const ks = String(p).split('.'); const ult = ks.pop(); return [ks.reduce((a, k) => (a == null ? undefined : a[k]), o), ult]; };
+      const [dono, chave] = pai(bruto, pg.lista);
+      const todos = Array.isArray(dono?.[chave]) ? dono[chave] : null;
+      let atual = +caminho(bruto, pg.pagina) || 1, mais = caminho(bruto, pg.mais) === true;
+      for (let n = 1; todos && mais && n < (+pg.max || 5); n++) {
+        const rr = await apiGet(`${cfg.api}?${q.replace(/^from=\d+/, `from=${atual + 1}`)}`);
+        if (!rr.ok) break;
+        let j; try { j = await rr.json(); } catch { break; }
+        const novos = (caminho(j, pg.lista) || []).filter(x => x && !todos.some(y => y?.id === x.id));
+        if (!novos.length) break;
+        todos.push(...novos); atual = +caminho(j, pg.pagina) || atual + 1; mais = caminho(j, pg.mais) === true;
+      }
+    }
     return { disponivel: true, bruto, baixar: !!cfg.download?.api };
   }
   /* ============ Leituras da API com o mesmo acesso que o portal usa (ajudante content/pagina.js) ============ */
