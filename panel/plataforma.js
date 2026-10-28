@@ -214,6 +214,7 @@ export function montarPlataforma(A) {
     const ass = assinatura(S.plat.sol);
     if (ass !== desenhada && seguroRedesenhar()) P.render(S.view);
   }
+  let cicloDocs = 0;
   function iniciarLeituraAutomatica() {
     if (relogio) return;
     const seg = Math.max(15, +S.rules?.config?.leituraAutomaticaSegundos || 30);
@@ -222,6 +223,7 @@ export function montarPlataforma(A) {
       S.plat.proximaLeitura = Date.now() + seg * 1000;
       if (document.hidden || S.plat.carregandoSol || S.preenchendo || !S.plat.sol) { redesenharSePreciso(); return; }
       P.carregarSolicitacoes(true, { silencioso: true });
+      if (++cicloDocs % 10 === 0 && S.plat.docs?.disponivel) P.carregarDocumentos(true, { silencioso: true });   // documentos novos do escritório (~a cada 5 min)
     }, seg * 1000);
   }
   P.carregarSolicitacoes = (force = false, { silencioso = false } = {}) => {
@@ -251,6 +253,7 @@ export function montarPlataforma(A) {
       else if (['inicio', 'pendencias'].includes(S.view) && document.body.classList.contains('plat')) P.render(S.view);
       carregarDatasAvisos(); carregarVereditos();
       iniciarLeituraAutomatica();
+      if (!S.plat.docs) P.carregarDocumentos().catch(() => {});   // documentos novos do escritório (número no menu)
       return S.plat.sol;
     })().finally(() => { S.plat.carregandoSol = null; });
     return S.plat.carregandoSol;
@@ -1732,16 +1735,39 @@ export function montarPlataforma(A) {
     'forma': 'Consegui ler a lista do portal, mas ainda não reconheci os campos. Em Configurações, “Copiar diagnóstico” traz o que foi visto (só os nomes dos campos): mande ao escritório.',
     'resposta ilegível': 'O portal respondeu algo que não consegui ler. Tente de novo mais tarde.'
   }[D?.motivo] || S.rules.mensagens?.plataformaCalibrar || '');
-  async function docsEscritorio(el) {
-    if (!S.plat.docs) {
-      el.innerHTML = loading('Procurando os documentos no portal…');
-      let r = await request({ type: 'documentos' }, 20000) || { disponivel: false };
+  /** Lê (e normaliza) os documentos que o escritório publica; guarda só na memória. Também alimenta o número do menu e o aviso de novos. */
+  P.carregarDocumentos = async (force = false, { silencioso = false } = {}) => {
+    if (S.plat.docs && !force) return S.plat.docs;
+    if (S.plat.carregandoDocs) return S.plat.carregandoDocs;
+    S.plat.carregandoDocs = (async () => {
+      let r = await request({ type: 'documentos' }, 30000) || { disponivel: false };
       if (r.disponivel && r.bruto !== undefined) {   // área Documentos do Onvio real: resposta crua da API, normalizada aqui (nada é guardado)
         const n = E.documentosDoPortal(r.bruto, S.rules);
         S.plat.docsDiag = { itens: n.itens.length, total: n.total, campos: n.campos, reconhecido: n.reconhecido, forma: n.forma };
         r = n.reconhecido ? { disponivel: true, itens: n.itens.sort((x, y) => y.criado - x.criado), total: n.total, baixar: r.baixar } : { disponivel: false, motivo: 'forma' };
       } else S.plat.docsDiag = { codigo: r.codigo, motivo: r.motivo };
-      S.plat.docs = r;
+      // novos: documentos não lidos que ainda não vi nesta sessão (a primeira leitura só conta, não avisa)
+      if (r.disponivel) {
+        const nl = r.itens.filter(x => x.lido === false);
+        const vistos = S.plat.docsVistos;
+        if (vistos && silencioso) { const novos = nl.filter(x => !vistos.has(x.id)); if (novos.length) toast(novos.length === 1 ? 'O escritório publicou um documento novo.' : `O escritório publicou ${novos.length} documentos novos.`); }
+        S.plat.docsVistos = new Set(r.itens.map(x => x.id));
+      }
+      S.plat.docs = r; S.plat.carregandoDocs = null;
+      atualizarBadgeDocs();
+      return r;
+    })();
+    return S.plat.carregandoDocs;
+  };
+  const atualizarBadgeDocs = () => {
+    const b = document.querySelector('[data-badge="documentos"]'); if (!b) return;
+    const n = S.plat.docs?.disponivel ? S.plat.docs.itens.filter(x => x.lido === false).length : 0;
+    b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
+  };
+  async function docsEscritorio(el) {
+    if (!S.plat.docs) {
+      el.innerHTML = loading('Procurando os documentos no portal…');
+      await P.carregarDocumentos();
       if (S.view !== 'documentos' || S.plat.docAba !== 'escritorio') return;
     }
     const D = S.plat.docs;
@@ -1751,11 +1777,12 @@ export function montarPlataforma(A) {
       $('#doc-ir-sol').addEventListener('click', (e) => { e.preventDefault(); S.plat.docAba = 'solicitacoes'; renderDocumentos(); });
       return;
     }
-    const F = S.plat.filtroPub || (S.plat.filtroPub = { q: '', cat: '' });
+    const F = S.plat.filtroPub || (S.plat.filtroPub = { q: '', cat: '', nl: false });
     const itens = D.itens || [];
     const cats = [...new Set(itens.map(x => x.categoria || 'Outros'))];
     el.innerHTML = `<div class="dp-toolbar">
         <input type="search" id="pub-q" placeholder="Buscar documento ou competência…" value="${esc(F.q)}" autocomplete="off">
+        <div class="seg" role="group" aria-label="Situação"><button type="button" data-pub-nl="0" aria-pressed="${!F.nl}">Todos <span class="mono arq-n">${itens.length}</span></button><button type="button" data-pub-nl="1" aria-pressed="${F.nl}">Não lidos <span class="mono arq-n">${itens.filter(x => x.lido === false).length}</span></button></div>
         <div class="seg" role="group" aria-label="Categoria">${[['', 'Todas']].concat(cats.map(c => [c, c])).map(([k, r]) => `<button type="button" data-pub-cat="${esc(k)}" aria-pressed="${F.cat === k}">${esc(r)} <span class="mono arq-n">${k ? itens.filter(x => (x.categoria || 'Outros') === k).length : itens.length}</span></button>`).join('')}</div>
         <span class="spacer"></span>
         ${D.total && D.total > itens.length ? `<span class="muted">Mostrando os ${itens.length} mais recentes de ${D.total}</span>` : ''}
@@ -1765,14 +1792,14 @@ export function montarPlataforma(A) {
     $('#pub-ref')?.addEventListener('click', () => { S.plat.docs = null; docsEscritorio(el); });
     const desenhar = () => {
       const q = E.norm(F.q);
-      const vis = itens.map((x, n) => ({ x, n })).filter(({ x }) => (!F.cat || (x.categoria || 'Outros') === F.cat) && (!q || E.norm(`${x.nome} ${x.categoria} ${x.competencia}`).includes(q)));
+      const vis = itens.map((x, n) => ({ x, n })).filter(({ x }) => (!F.cat || (x.categoria || 'Outros') === F.cat) && (!F.nl || x.lido === false) && (!q || E.norm(`${x.nome} ${x.categoria} ${x.competencia}`).includes(q)));
       // agrupados pela competência, a mais recente primeiro
       const chave = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); return m ? `${m[2]}${m[1]}` : '0'; };
       const grupos = new Map();
       vis.sort((a, b) => chave(b.x.competencia).localeCompare(chave(a.x.competencia))).forEach(v => { const k = v.x.competencia || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(v); });
       const rotComp = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); return m ? cap(new Date(+m[2], +m[1] - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })) : 'Sem competência'; };
       $('#pub-lista').innerHTML = `<div class="list-card"><div class="dp-listhead doc-cols"><span>Documento</span><span>Categoria</span><span>Competência</span><span>Publicado</span><span></span></div>
-        ${[...grupos].map(([k, vs]) => `<div class="arq-mes"><span>${esc(rotComp(k))}</span>${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-zip="${esc(k)}" title="Baixa todos os documentos deste grupo num arquivo ZIP">${icon('download', 'ic-sm')} Baixar tudo (ZIP)</button>`}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b></span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
+        ${[...grupos].map(([k, vs]) => `<div class="arq-mes"><span>${esc(rotComp(k))}</span>${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-zip="${esc(k)}" title="Baixa todos os documentos deste grupo num arquivo ZIP">${icon('download', 'ic-sm')} Baixar tudo (ZIP)</button>`}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b>${x.lido === false ? ' <span class="pill pill-soon">Novo</span>' : ''}</span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
           || `<div class="list-vazio">${itens.length ? 'Nenhum documento com esse filtro.' : 'Nenhum documento publicado.'}</div>`}</div>`;
       const motivos = { 'sem acesso': 'o portal não deixou ler o arquivo', 'sem projeto': 'não achei o código do projeto', 'arquivo grande demais': 'o arquivo é grande demais', 'sem endereço de download': 'o portal não trouxe o endereço do arquivo', 'sem regra': 'download não configurado' };
       const baixarUm = async (x) => {
@@ -1809,6 +1836,7 @@ export function montarPlataforma(A) {
     };
     let t0;
     $('#pub-q').addEventListener('input', (e) => { F.q = e.target.value; clearTimeout(t0); t0 = setTimeout(desenhar, 150); });
+    el.querySelectorAll('[data-pub-nl]').forEach(b => b.addEventListener('click', () => { F.nl = b.dataset.pubNl === '1'; el.querySelectorAll('[data-pub-nl]').forEach(x => x.setAttribute('aria-pressed', x === b)); desenhar(); }));
     el.querySelectorAll('[data-pub-cat]').forEach(b => b.addEventListener('click', () => { F.cat = b.dataset.pubCat; el.querySelectorAll('[data-pub-cat]').forEach(x => x.setAttribute('aria-pressed', x === b)); desenhar(); }));
     $('#doc-portal').addEventListener('click', () => request({ type: 'abrirNoPortal', area: 'documentos' }));
     desenhar();
