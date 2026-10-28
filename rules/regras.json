@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.27-2",
+  "versao": "2026.10.28-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -32,12 +32,16 @@
       "pageSize": 100,
       "ordem": "createdDate:desc",
       "listaEm": ["items", "data", "documents", "results", "content", "value"],
-      "total": ["totalItems", "total", "totalCount", "count"],
+      "total": ["data.totalItems", "totalItems", "total", "totalCount", "count"],
+      "maisPaginas": ["data.hasMore", "hasMore"],
+      "paginacao": { "lista": "data.items", "mais": "data.hasMore", "pagina": "data.pageIndex", "max": 5 },
       "campos": {
         "id": ["id", "documentId", "uid"],
         "nome": ["name", "fileName", "displayName", "title"],
         "criado": ["createdDate", "createdAt", "created", "uploadDate"],
-        "pasta": ["parent.name", "parentName", "folder.name", "folderName", "category"],
+        "pasta": ["parentItem.name", "parent.name", "parentName", "folder.name", "folderName", "category"],
+        "lido": ["isReadByClientUser", "readByClientUser", "isRead"],
+        "tipoItem": ["itemType", "documentType"],
         "projeto": ["projectId", "project.id", "containerId", "container.id"]
       },
       "competencia": ["competence", "competencia", "period", "periodo", "reference", "referencia", "month"],

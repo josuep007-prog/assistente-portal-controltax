@@ -3510,6 +3510,7 @@ export function documentosDoPortal(json, rules) {
   const forma = formaDaResposta(json);
   if (!lista) return { itens: [], total: null, campos: [], reconhecido: false, forma };
   const total = (() => { const v = json && !Array.isArray(json) ? primeiro(json, cfg.total || ['totalItems', 'total']) : undefined; return Number.isFinite(+v) ? +v : null; })();
+  const maisPaginas = json && !Array.isArray(json) ? primeiro(json, cfg.maisPaginas || ['hasMore']) === true : false;
   const dataBr = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   const competenciaDe = (v) => {
     const t = String(v ?? '').trim(); let m;
@@ -3528,17 +3529,19 @@ export function documentosDoPortal(json, rules) {
   const itens = [];
   for (const raw of lista) {
     if (!raw || typeof raw !== 'object' || raw.isFolder === true) continue;
+    if (/^(folder|pasta|directory|container)$/i.test(String(primeiro(raw, cfg.campos?.tipoItem) ?? ''))) continue;
     const id = primeiro(raw, cfg.campos?.id), nome = primeiro(raw, cfg.campos?.nome);
     if (id == null || !nome) continue;
     const c = primeiro(raw, cfg.campos?.criado); const d = c ? new Date(c) : null;
     const diretaComp = primeiro(raw, cfg.competencia);
     itens.push({
+      lido: (() => { const v = primeiro(raw, cfg.campos?.lido); return typeof v === 'boolean' ? v : null; })(),
       id: String(id), nome: String(nome), arquivo: String(nome), projeto: String(primeiro(raw, cfg.campos?.projeto) ?? ''), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''),
       competencia: doCustom(raw) || competenciaDe(diretaComp), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
     });
   }
   const campos = Object.keys(lista.find(x => x && typeof x === 'object') || {}).slice(0, 40);
-  return { itens, total, campos, forma, reconhecido: itens.length > 0 || lista.length === 0 };
+  return { itens, total, campos, forma, maisPaginas, reconhecido: itens.length > 0 || lista.length === 0 };
 }
 
 /** Só a FORMA de uma resposta (nomes das chaves e tipos, até 3 níveis; nenhum valor): para o diagnóstico. Chaves que parecem

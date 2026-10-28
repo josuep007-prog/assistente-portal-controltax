@@ -1622,4 +1622,15 @@ t('documentos do escritório (2.15.1): lista mais adentro na resposta e diagnós
   assert.equal(E.formaDaResposta(null), 'null'); assert.equal(E.formaDaResposta([]), '[]');
 });
 
+t('documentos do escritório (2.16): forma real do Onvio — data.items, não lido, pasta, total e mais páginas', () => {
+  const resp = { apiVersion: '1', id: 'z', data: { currentItemCount: 2, itemsPerPage: 100, startIndex: 1, totalItems: 5, pageIndex: 1, totalPages: 3, hasMore: true, items: [
+    { id: 'a1', name: 'Recibo.pdf', containerId: 'C1', createdDate: '2026-10-02T10:00:00Z', parentItem: { name: 'Folha' }, itemType: 'Document', isReadByClientUser: false },
+    { id: 'a2', name: 'Pasta nova', containerId: 'C1', itemType: 'Folder' },
+    { id: 'a3', name: 'Guia.pdf', containerId: 'C1', createdDate: '2026-10-03T10:00:00Z', isReadByClientUser: true }] } };
+  const a = E.documentosDoPortal(resp, rules);
+  assert.deepEqual(a.itens.map(x => [x.id, x.lido, x.categoria, x.projeto]), [['a1', false, 'Folha', 'C1'], ['a3', true, '', 'C1']], 'pasta fica de fora');
+  assert.equal(a.total, 5); assert.equal(a.maisPaginas, true); assert.equal(E.documentosDoPortal({ data: { items: [], hasMore: false } }, rules).maisPaginas, false);
+  assert.equal(E.documentosDoPortal({ data: { items: [{ id: 'q', name: 'x.pdf' }] } }, rules).itens[0].lido, null, 'sem o campo, não sabe');
+});
+
 console.log(`\n${n} testes ok`);
