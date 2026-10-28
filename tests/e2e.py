@@ -44,9 +44,12 @@ async def abrir(p, tmp, plataforma=False, url=URL):
             if r.request.headers.get('authorization') != 'Bearer teste-123' or 'clientId' not in u:
                 await r.fulfill(status=401, content_type='application/json', body='{"message":"Unauthorized"}')
             else:
-                docs = [{'id': 'd1', 'projectId': 'p1', 'name': 'Folha de pagamento 09-2026.pdf', 'createdDate': '2026-10-05T12:00:00Z', 'parent': {'name': 'Folha'}, 'customFields': [{'Name': 'competence', 'Value': '2026-09'}]},
-                        {'id': 'd2', 'projectId': 'p1', 'name': 'Guia do FGTS.pdf', 'createdDate': '2026-10-07T12:00:00Z', 'parent': {'name': 'Guias'}}]
-                await r.fulfill(status=200, content_type='application/json', body=json.dumps({'items': docs, 'totalItems': 2}))
+                # forma real vista no Onvio (27/10/2026): {apiVersion,id,data:{items,totalItems,hasMore,pageIndex,...}}; 2 páginas de 1 item
+                pag = int(re.search(r'from=(\d+)', u).group(1)) if re.search(r'from=(\d+)', u) else 1
+                d1 = {'id': 'd1', 'name': 'Folha de pagamento 09-2026.pdf', 'containerId': 'p1', 'createdDate': '2026-10-05T12:00:00Z', 'parentItem': {'name': 'Folha'}, 'itemType': 'Document', 'isReadByClientUser': True, 'customFields': [{'Name': 'competence', 'Value': '2026-09'}]}
+                d2 = {'id': 'd2', 'name': 'Guia do FGTS.pdf', 'containerId': 'p1', 'createdDate': '2026-10-07T12:00:00Z', 'parentItem': {'name': 'Guias'}, 'itemType': 'Document', 'isReadByClientUser': False}
+                dados = {'items': [d1] if pag == 1 else [d2], 'totalItems': 2, 'hasMore': pag == 1, 'pageIndex': pag, 'itemsPerPage': 1}
+                await r.fulfill(status=200, content_type='application/json', body=json.dumps({'apiVersion': '1', 'id': 'x', 'data': dados}))
         elif '/api/br-payroll-sr/' in u:
             # como o Onvio real: sem o cabeçalho de acesso que o portal usa, 401 (o cookie não basta)
             if r.request.headers.get('authorization') != 'Bearer teste-123':
@@ -147,6 +150,11 @@ async def cenario_plataforma(p):
     await pn.click('[data-doc-aba="escritorio"]'); await page.wait_for_timeout(4000)
     lista = await pn.locator('#pub-lista').inner_text()
     check('Folha de pagamento 09-2026.pdf' in lista and 'Guia do FGTS.pdf' in lista and 'Guias' in lista and '09/2026' in lista, 'Documentos do escritório: lista lida da API do portal (com o acesso do portal)')
+    check('Novo' in lista and await pn.evaluate("document.querySelector('[data-badge=documentos]')?.textContent") == '1', 'documento não lido: etiqueta "Novo" e o número 1 no menu')
+    await pn.click('[data-pub-nl="1"]'); await page.wait_for_timeout(300)
+    nl = await pn.locator('#pub-lista').inner_text()
+    check('Guia do FGTS.pdf' in nl and 'Folha de pagamento' not in nl, 'filtro "Não lidos" mostra só o não lido (a segunda página também foi lida)')
+    await pn.click('[data-pub-nl="0"]'); await page.wait_for_timeout(300)
     check(await pn.locator('#pub-lista [data-baixar]').count() == 2 and 'Baixar' in await pn.locator('#pub-lista [data-baixar]').first.inner_text(), 'com o download mapeado, o botão baixa o arquivo')
     async with page.expect_download(timeout=20000) as dl:
         await pn.locator('#pub-lista [data-baixar]').first.click()

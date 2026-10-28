@@ -1,6 +1,6 @@
 # Chrome Web Store — Assistente do Portal do Cliente — ControlTax
 
-> Última atualização: 2026-10-27 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
+> Última atualização: 2026-10-28 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
 
 ## Ficha
 
@@ -58,6 +58,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.16.0 | 2026-10-28 | **Documentos novos.** Com a forma real da lista do Onvio (`data.items`, `isReadByClientUser`, `containerId`…) a aba Documentos → Publicados pelo escritório lista os documentos, com etiqueta **Novo**, filtro **Não lidos (n)**, número no menu e aviso quando o escritório publica algo novo (conferência a cada ~5 min). Lê várias páginas (`hasMore`), ignora pastas e, no download, tenta o código do projeto do item e o que o portal usou. Só leitura: a extensão não marca nada como lido. |
 | 2.15.1 | 2026-10-27 | **Documentos do escritório: lista em qualquer lugar da resposta e diagnóstico com a forma.** A lista de documentos é achada mesmo quando vem mais adentro da resposta do portal (até 3 níveis); se ainda assim não reconhecer, "Copiar diagnóstico" traz a **forma** da resposta (só nomes de chaves e tipos, nenhum valor) para ajustar as regras. |
 | 2.15.0 | 2026-10-27 | **Central de downloads.** Em Documentos → "Do escritório", o botão **Baixar** entrega o arquivo (dois passos como o portal: pede o endereço de download e baixa, só leitura e com o acesso do próprio portal; o token temporário nunca é guardado nem mostrado) e **Baixar tudo (ZIP)** junta os documentos de cada competência num ZIP montado no computador, com progresso e lista do que não baixou. Regras: `config.documentosPortal.download` (limite de 25 MB por arquivo). |
 | 2.14.0 | 2026-10-27 | **Backup e aviso de versão a cada 2 dias.** A cada 2 dias a extensão guarda um retrato das regras (os 2 últimos, usados se o arquivo remoto e o cache falharem) e confere se há versão nova da extensão (as regras publicadas anunciam `config.atualizacaoExtensao`); se houver, avisa uma vez por versão, e Configurações → "Atualizações e backup" mostra o link, a última conferência e os backups, com "Conferir agora". A instalação por pasta continua sem se atualizar sozinha (só a Chrome Web Store faz isso). |
