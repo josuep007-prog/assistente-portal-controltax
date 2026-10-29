@@ -4,6 +4,30 @@
 /** Documentos que o escritório publica (área Documentos do Onvio): resposta crua da API → itens do painel.
  *  A forma real da resposta ainda está sendo calibrada: os nomes dos campos vêm de config.documentosPortal (vale o primeiro
  *  que existir) e a competência também é procurada em customFields. Só os NOMES dos campos vão para o diagnóstico. */
+/** Nomes das pastas de um item, da mais próxima à raiz (parentItem dentro de parentItem). */
+export function caminhoDoItem(raw) {
+  const nomes = []; let p = raw?.parentItem;
+  for (let n = 0; p && typeof p === 'object' && n < 8; n++, p = p.parentItem) { const t = String(p.name ?? '').trim(); if (t) nomes.push(t); }
+  return nomes;
+}
+const MESES = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+/** Competência (MM/AAAA) pelas pastas, ex.: "2026" > "10 - Outubro", "09/2026", "Outubro de 2026". Precisa de mês E ano. */
+export function competenciaDoCaminho(nomes) {
+  const sem = (t) => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  let ano = '', mes = '';
+  for (const nome of [...nomes].reverse()) {   // da raiz para a pasta do arquivo: a mais próxima ganha
+    const t = sem(nome); let m;
+    if ((m = /(?:^|\D)(0?[1-9]|1[0-2])\s*[\/.\-]\s*(20\d{2})(?:\D|$)/.exec(t))) { mes = m[1].padStart(2, '0'); ano = m[2]; continue; }
+    if ((m = /(?:^|\D)(20\d{2})\s*[\/.\-]\s*(0?[1-9]|1[0-2])(?:\D|$)/.exec(t))) { ano = m[1]; mes = m[2].padStart(2, '0'); continue; }
+    const k = MESES.findIndex(x => new RegExp(`(^|[^a-z])${x}([^a-z]|$)`).test(t));
+    const a = /(?:^|\D)(20\d{2})(?:\D|$)/.exec(t);
+    if (k >= 0) { mes = String(k + 1).padStart(2, '0'); if (a) ano = a[1]; continue; }
+    if (a && /^(20\d{2})$/.test(t)) { ano = a[1]; continue; }
+    if ((m = /^(0?[1-9]|1[0-2])(?:\s*[-–.]\s*[a-z]+)?$/.exec(t))) mes = m[1].padStart(2, '0');
+  }
+  return ano && mes ? `${mes}/${ano}` : '';
+}
+
 export function documentosDoPortal(json, rules) {
   const cfg = rules?.config?.documentosPortal || {};
   const caminho = (o, p) => String(p).split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
@@ -38,6 +62,14 @@ export function documentosDoPortal(json, rules) {
     if (cf && typeof cf === 'object') { const k = Object.keys(cf).find(x => reComp.test(x)); return k ? competenciaDe(cf[k]) : ''; }
     return '';
   };
+  const vencimentoDe = (raw) => {
+    const cf = raw?.customFields ?? raw?.CustomFields; let v;
+    if (Array.isArray(cf)) { const c = cf.find(x => /^(due ?date|vencimento|expiration ?date)$/i.test(String(x?.Name ?? x?.name ?? ''))); v = c?.Value ?? c?.value; }
+    else if (cf && typeof cf === 'object') { const k = Object.keys(cf).find(x => /^(due ?date|vencimento|expiration ?date)$/i.test(x)); v = k ? cf[k] : undefined; }
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? ''));   // o dia como veio (sem fuso: meia-noite UTC viraria o dia anterior)
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    const d = v ? new Date(v) : null; return d && !isNaN(d) ? dataBr(d) : '';
+  };
   const itens = [];
   for (const raw of lista) {
     if (!raw || typeof raw !== 'object' || raw.isFolder === true) continue;
@@ -49,7 +81,7 @@ export function documentosDoPortal(json, rules) {
     itens.push({
       lido: (() => { const v = primeiro(raw, cfg.campos?.lido); return typeof v === 'boolean' ? v : null; })(),
       id: String(id), nome: String(nome), arquivo: String(nome), projeto: String(primeiro(raw, cfg.campos?.projeto) ?? ''), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''),
-      competencia: doCustom(raw) || competenciaDe(diretaComp), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
+      competencia: doCustom(raw) || competenciaDe(diretaComp) || competenciaDoCaminho(caminhoDoItem(raw)), vencimento: vencimentoDe(raw), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
     });
   }
   const campos = Object.keys(lista.find(x => x && typeof x === 'object') || {}).slice(0, 40);
@@ -74,6 +106,8 @@ export function padroesDosItens(lista) {
     else marca(`customFields=${cf == null ? 'null' : typeof cf}`);
     for (const k of ['customItemMetaData', 'userTags']) { const v = raw[k]; marca(`${k}=${v == null ? 'null' : Array.isArray(v) ? (v.length ? `[${v.length}]` : '[]') : typeof v === 'object' ? `{${Object.keys(v).slice(0, 6).join(',')}}` : typeof v}`); }
     for (const k of ['documentType', 'itemType', 'status']) { const v = raw[k]; if (v != null) marca(`${k}=${/^[A-Za-z]{1,20}$/.test(String(v)) ? v : forma(v)}`); }
+    if (Array.isArray(raw.userTags) && raw.userTags.length) { const t0 = raw.userTags[0]; marca(`userTags[0]=${t0 && typeof t0 === 'object' ? `{${Object.keys(t0).slice(0, 6).join(',')}}` : typeof t0}`); }
+    const cam = caminhoDoItem(raw); marca(`caminho(${cam.length} níveis)=${cam.slice().reverse().map(forma).join('/')}`);
     const pi = raw.parentItem; marca(`parentItem=${pi == null ? 'null' : typeof pi === 'object' ? `{${Object.keys(pi).slice(0, 6).join(',')}}` : typeof pi}`);
   }
   return [...cont].slice(0, 30).map(([k, n]) => `${k} (x${n})`);

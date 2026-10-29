@@ -1645,4 +1645,17 @@ t('padrões dos campos personalizados (diagnóstico, sem valores)', () => {
   assert.ok(!t.includes('Folha') && !t.includes('2026'), 'nenhum valor real');
 });
 
+t('documentos do escritório (2.17.1): competência pelas pastas e vencimento do campo dueDate', () => {
+  const c = (...nomes) => E.competenciaDoCaminho(nomes);   // da pasta do arquivo para a raiz
+  assert.equal(c('10 - Outubro', '2026', 'Folha'), '10/2026');
+  assert.equal(c('09-2026'), '09/2026');
+  assert.equal(c('Outubro de 2026'), '10/2026');
+  assert.equal(c('2026-03'), '03/2026');
+  assert.equal(c('Guias', 'Pessoal'), '', 'sem mês e ano, não inventa');
+  assert.equal(c('Outubro'), '', 'só o mês não basta');
+  const r = E.documentosDoPortal({ data: { items: [{ id: 'a', name: 'x.pdf', parentItem: { name: '10', parentItem: { name: '2026', parentItem: { name: 'Folha' } } }, customFields: [{ Name: 'dueDate', Value: '2026-11-20T00:00:00Z' }] }] } }, rules);
+  assert.equal(r.itens[0].competencia, '10/2026'); assert.equal(r.itens[0].vencimento, '20/11/2026');
+  assert.ok(r.padroes.some(x => x.startsWith('caminho(3 níveis)=')), r.padroes.join('|'));
+});
+
 console.log(`\n${n} testes ok`);
