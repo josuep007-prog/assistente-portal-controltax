@@ -1200,8 +1200,81 @@ async def teste_lote5(b):
     await ctx.close()
 
 
+async def teste_contraste(b):
+    """Contraste (WCAG 4,5:1) nos dois temas, em todas as telas da plataforma. O medidor é o do Control Onvio
+    (tests/contraste-lib.js) e roda dentro do iframe do painel. Falha se houver qualquer texto abaixo de 4,5:1."""
+    print('\n[contraste] 4,5:1 nos temas claro e escuro')
+    lib = open(os.path.join(os.path.dirname(__file__), 'contraste-lib.js'), encoding='utf-8').read()
+    medir = "(src) => { const m = { exports: null }; new Function('module', src)(m); return m.exports(4.5); }"
+    todas = {}
+    for tema in ('light', 'dark'):
+        ctx = await b.new_context(viewport={'width': 1366, 'height': 768})
+        pg = await ctx.new_page()
+        await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+        pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+        await pn.evaluate(f"document.documentElement.setAttribute('data-theme', '{tema}')")
+        async def espera(cond, s=15):
+            for _ in range(s * 4):
+                try:
+                    if await cond(): return True
+                except Exception: pass
+                await pg.wait_for_timeout(250)
+            return False
+        async def fechar():
+            await pn.evaluate("document.querySelector('#modal .dlg-x')?.click()"); await pg.wait_for_timeout(300)
+        async def medir_tela(nome):
+            await pg.wait_for_timeout(900)
+            r = await pn.evaluate(medir, lib)
+            todas[f'{nome}-{tema}'] = r
+            check(not r, f'contraste {nome} ({tema}): {len(r)} texto(s) abaixo de 4,5:1' + ('' if not r else ' — ' + '; '.join(f"{x['r']} {x['fg']}/{x['bg']} «{x['texto']}» {x['no']}" for x in r[:6])))
+        await espera(lambda: pn.evaluate("!!document.querySelector('.hj-hero[data-pronto]')"))
+        await medir_tela('hoje')
+        for mod, nome in (('pendencias', 'solicitacoes'), ('funcionarios', 'funcionarios'), ('documentos', 'documentos'), ('ferramentas', 'calcular'), ('historico', 'agenda')):
+            await pn.click(f'#rail [data-mod="{mod}"]'); await pg.wait_for_timeout(500)
+            await medir_tela(nome)
+        # variações: solicitações em lista e tabela, documentos do escritório, ficha do funcionário, busca (Ctrl+K), configurações
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(500)
+        for vis in ('lista', 'tabela'):
+            await pn.click(f'[data-vis-sol="{vis}"]'); await medir_tela(f'solicitacoes-{vis}')
+        await pn.click('[data-vis-sol="cartoes"]')
+        await pn.click('#rail [data-mod="documentos"]'); await pg.wait_for_timeout(500)
+        await pn.click('[data-doc-aba="escritorio"]'); await medir_tela('documentos-escritorio')
+        await pn.click('#rail [data-mod="funcionarios"]'); await pg.wait_for_timeout(500)
+        if await pn.locator('[data-ficha]').count():
+            await pn.locator('[data-ficha]').first.click(); await medir_tela('ficha-funcionario'); await fechar()
+        await pn.click('#plat-busca'); await pg.wait_for_timeout(400)
+        await medir_tela('busca'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(300)
+        await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(500)
+        await medir_tela('configuracoes')
+        # detalhe de uma solicitação, em cada aba
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
+        await pn.locator('#sol-grupos .hj-card').first.click()
+        await espera(lambda: pn.evaluate("!!document.querySelector('#dt-body .tr-item')"))
+        await medir_tela('detalhe-conversa')
+        for aba in ('dados', 'observar'):
+            await pn.click(f'#modal [data-dt="{aba}"]'); await medir_tela(f'detalhe-{aba}')
+        await fechar()
+        # Novo pedido: a escolha do tipo e o formulário
+        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+        await medir_tela('novo-pedido')
+        await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click()
+        if await espera(lambda: pn.evaluate("!!document.querySelector('.ee-lista')"), 4):
+            await medir_tela('escolha-empresa')
+            await pn.click('.dlg [data-acao="2"]')
+        await espera(lambda: pn.evaluate("!!document.querySelector('.v-preencher #pd-voltar')"), 8)
+        await medir_tela('formulario')
+        await ctx.close()
+    if os.environ.get('CT_JSON'): json.dump(todas, open(os.environ['CT_JSON'], 'w'), ensure_ascii=False, indent=1)
+
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'ct':   # SIM_SO=ct roda só o contraste (temas claro e escuro)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_contraste(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
     if os.environ.get('SIM_SO') == 'viv':   # SIM_SO=viv roda só a escrita ao vivo e a resposta ao escritório (2.12)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
