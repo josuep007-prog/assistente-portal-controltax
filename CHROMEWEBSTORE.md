@@ -1,6 +1,6 @@
 # Chrome Web Store — Assistente do Portal do Cliente — ControlTax
 
-> Última atualização: 2026-10-28 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
+> Última atualização: 2026-10-29 · Publicação recomendada: **Não listada** (só quem tem o link instala; o Chrome atualiza sozinho)
 
 ## Ficha
 
@@ -58,6 +58,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.16.1 | 2026-10-29 | **Documentos com muitas pastas.** Com dezenas de pastas, os botões de pasta alargavam a tela e empurravam as colunas e os botões Baixar para fora da janela: agora, com mais de 6 pastas, elas viram uma lista suspensa e a lista nunca passa da largura da tela. Documentos sem competência são agrupados pelo mês de publicação ("Publicados em outubro de 2026"). |
 | 2.16.0 | 2026-10-28 | **Documentos novos.** Com a forma real da lista do Onvio (`data.items`, `isReadByClientUser`, `containerId`…) a aba Documentos → Publicados pelo escritório lista os documentos, com etiqueta **Novo**, filtro **Não lidos (n)**, número no menu e aviso quando o escritório publica algo novo (conferência a cada ~5 min). Lê várias páginas (`hasMore`), ignora pastas e, no download, tenta o código do projeto do item e o que o portal usou. Só leitura: a extensão não marca nada como lido. |
 | 2.15.1 | 2026-10-27 | **Documentos do escritório: lista em qualquer lugar da resposta e diagnóstico com a forma.** A lista de documentos é achada mesmo quando vem mais adentro da resposta do portal (até 3 níveis); se ainda assim não reconhecer, "Copiar diagnóstico" traz a **forma** da resposta (só nomes de chaves e tipos, nenhum valor) para ajustar as regras. |
 | 2.15.0 | 2026-10-27 | **Central de downloads.** Em Documentos → "Do escritório", o botão **Baixar** entrega o arquivo (dois passos como o portal: pede o endereço de download e baixa, só leitura e com o acesso do próprio portal; o token temporário nunca é guardado nem mostrado) e **Baixar tudo (ZIP)** junta os documentos de cada competência num ZIP montado no computador, com progresso e lista do que não baixou. Regras: `config.documentosPortal.download` (limite de 25 MB por arquivo). |
