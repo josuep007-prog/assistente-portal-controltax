@@ -130,7 +130,7 @@ export function montarDocumentos(C) {
       let r = await request({ type: 'documentos' }, 30000) || { disponivel: false };
       if (r.disponivel && r.bruto !== undefined) {   // área Documentos do Onvio real: resposta crua da API, normalizada aqui (nada é guardado)
         const n = E.documentosDoPortal(r.bruto, S.rules);
-        S.plat.docsDiag = { itens: n.itens.length, total: n.total, campos: n.campos, reconhecido: n.reconhecido, forma: n.forma };
+        S.plat.docsDiag = { itens: n.itens.length, total: n.total, campos: n.campos, reconhecido: n.reconhecido, forma: n.forma, padroes: n.padroes };
         r = n.reconhecido ? { disponivel: true, itens: n.itens.sort((x, y) => y.criado - x.criado), total: n.total, baixar: r.baixar } : { disponivel: false, motivo: 'forma' };
       } else S.plat.docsDiag = { codigo: r.codigo, motivo: r.motivo };
       // novos: documentos não lidos que ainda não vi nesta sessão (a primeira leitura só conta, não avisa)
@@ -191,6 +191,7 @@ export function montarDocumentos(C) {
       const motivos = { 'sem acesso': 'o portal não deixou ler o arquivo', 'sem projeto': 'não achei o código do projeto', 'arquivo grande demais': 'o arquivo é grande demais', 'sem endereço de download': 'o portal não trouxe o endereço do arquivo', 'sem regra': 'download não configurado' };
       const baixarUm = async (x) => {
         const r = await request({ type: 'baixarDocumento', docId: x.id, projeto: x.projeto, nome: x.nome }, 90000);
+        if (r?.forma) S.plat.downDiag = r.forma;   // só a forma (chaves e tipos) da resposta que não trouxe o endereço
         if (!r?.arquivo) return { ok: false, motivo: motivos[r?.motivo] || r?.motivo || 'sem resposta do portal' };
         return { ok: true, arquivo: r.arquivo };
       };

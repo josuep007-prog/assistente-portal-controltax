@@ -53,7 +53,30 @@ export function documentosDoPortal(json, rules) {
     });
   }
   const campos = Object.keys(lista.find(x => x && typeof x === 'object') || {}).slice(0, 40);
-  return { itens, total, campos, forma, maisPaginas, reconhecido: itens.length > 0 || lista.length === 0 };
+  return { itens, total, campos, forma, maisPaginas, padroes: padroesDosItens(lista), reconhecido: itens.length > 0 || lista.length === 0 };
+}
+
+/** Para o diagnóstico: como são os campos personalizados dos itens (nome do campo e o PADRÃO do valor: dígitos viram 9, letras
+ *  viram a, códigos de 32 letras/números viram <id>; nenhum valor real), mais tipo/situação quando são só uma palavra.
+ *  Serve para achar de onde vem a competência. Ex.: ['competence=99/9999 (x12)', 'tipo=Document (x45)']. */
+export function padroesDosItens(lista) {
+  const forma = (v) => {
+    const t = String(v ?? '');
+    if (/^[0-9a-f]{32}$/i.test(t)) return '<id>';
+    return t.slice(0, 24).replace(/\d/g, '9').replace(/[A-Za-zÀ-ÿ]/g, 'a').replace(/a+/g, 'a');
+  };
+  const cont = new Map(); const marca = (k) => cont.set(k, (cont.get(k) || 0) + 1);
+  for (const raw of Array.isArray(lista) ? lista : []) {
+    if (!raw || typeof raw !== 'object') continue;
+    const cf = raw.customFields ?? raw.CustomFields;
+    if (Array.isArray(cf)) { if (!cf.length) marca('customFields=[]'); for (const c of cf.slice(0, 8)) marca(`customFields.${String(c?.Name ?? c?.name ?? '?').slice(0, 30)}=${forma(c?.Value ?? c?.value)}`); }
+    else if (cf && typeof cf === 'object') { const ks = Object.keys(cf); if (!ks.length) marca('customFields={}'); for (const k of ks.slice(0, 8)) marca(`customFields.${k.slice(0, 30)}=${forma(cf[k])}`); }
+    else marca(`customFields=${cf == null ? 'null' : typeof cf}`);
+    for (const k of ['customItemMetaData', 'userTags']) { const v = raw[k]; marca(`${k}=${v == null ? 'null' : Array.isArray(v) ? (v.length ? `[${v.length}]` : '[]') : typeof v === 'object' ? `{${Object.keys(v).slice(0, 6).join(',')}}` : typeof v}`); }
+    for (const k of ['documentType', 'itemType', 'status']) { const v = raw[k]; if (v != null) marca(`${k}=${/^[A-Za-z]{1,20}$/.test(String(v)) ? v : forma(v)}`); }
+    const pi = raw.parentItem; marca(`parentItem=${pi == null ? 'null' : typeof pi === 'object' ? `{${Object.keys(pi).slice(0, 6).join(',')}}` : typeof pi}`);
+  }
+  return [...cont].slice(0, 30).map(([k, n]) => `${k} (x${n})`);
 }
 
 /** Só a FORMA de uma resposta (nomes das chaves e tipos, até 3 níveis; nenhum valor): para o diagnóstico. Chaves que parecem
