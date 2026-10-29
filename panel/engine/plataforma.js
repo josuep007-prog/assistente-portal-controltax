@@ -329,6 +329,8 @@ export function vereditoConversa(trs, regras) {
   const ult = l[l.length - 1];
   if (!ult) return null;
   const out = { ultimoLado: ult.lado, pede: false, frase: '', anexoSemArquivo: false, trecho: '' };
+  // quando o escritório respondeu pela primeira vez (só a data; alimenta o "Movimento das suas solicitações")
+  const prim = l.find(x => x.lado === 'esc'); if (prim?.em) { out.primeiraResposta = prim.em; out.abertura = l[0]?.em || null; }
   if (ult.lado === 'esc') Object.assign(out, pedeAlgo(ult.texto, regras));
   // o cliente fala em anexo depois da última resposta do escritório e nenhum arquivo chegou
   let k = l.length - 1; while (k > 0 && l[k].lado === 'cli') k--;
@@ -580,4 +582,39 @@ export function situacaoEmpregado(e, hoje = today(), regras = {}) {
   if (exp && exp.falta <= 30) out.proxima = { d: exp.fim, titulo: `Fim da experiência (${exp.n} dias)`, nivel: exp.falta <= 5 ? 'late' : 'soon', falta: exp.falta };
   else if (out.ferias && out.ferias.falta <= 90) out.proxima = { d: out.ferias.limite, titulo: 'Conceder férias até (estimativa)', nivel: out.ferias.falta <= 30 ? 'late' : 'soon', falta: out.ferias.falta };
   return out;
+}
+
+/* ---------- Movimento das suas solicitações (Hoje) ----------
+   As últimas N semanas (segunda a domingo; a última é a de hoje, ainda em curso): quantas você abriu e quantas foram
+   concluídas, e quanto o escritório levou para dar a 1ª resposta (quando o trâmite já foi lido: i.veredito.primeiraResposta).
+   Puro e só em memória. A conclusão usa a data da última movimentação (i.atualizado): é uma aproximação (a calibrar).
+   Devolve { ok, minimo, total, semanas: [{ ini, fim, rotulo, abertas, concluidas, resposta: { n, mediana } }],
+   resposta: { n, mediana, media, minimo } } — "ok" só com solicitações suficientes no período. */
+export function movimentoSemanal(itens, hoje = today(), regras = null) {
+  const cfg = regras?.config?.movimento || {};
+  const N = Math.max(2, Math.min(26, +cfg.semanas || 8)), minimo = +cfg.minimoSolicitacoes || 3, minResp = +cfg.minimoRespostas || 3;
+  const h = parseDate(hoje) || today();
+  const seg = addDays(h, -((h.getDay() + 6) % 7));   // segunda-feira da semana de hoje
+  const semanas = Array.from({ length: N }, (_, k) => { const ini = addDays(seg, -7 * (N - 1 - k)); return { ini, fim: addDays(ini, 6), rotulo: fmtDate(ini).slice(0, 5), abertas: 0, concluidas: 0, resposta: { n: 0, mediana: null }, _dias: [] }; });
+  const onde = (d) => { if (!d) return -1; const k = Math.floor(diffDays(semanas[0].ini, d) / 7); return k >= 0 && k < N ? k : -1; };
+  const vistos = new Set(), todos = [];
+  const mediana = (v) => { if (!v.length) return null; const o = [...v].sort((a, b) => a - b), m = o.length >> 1; return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2; };
+  for (const i of itens || []) {
+    const criado = parseDate(i.criado), fim = parseDate(i.atualizado);
+    const kA = onde(criado), kC = i.estado === 'concluida' ? onde(fim) : -1;
+    if (kA >= 0) semanas[kA].abertas++;
+    if (kC >= 0) semanas[kC].concluidas++;
+    if (kA >= 0 || kC >= 0) vistos.add(i);
+    // 1ª resposta: dias entre a abertura e a primeira resposta do escritório, na semana em que a solicitação foi aberta
+    const v = i.veredito;
+    if (kA >= 0 && v?.primeiraResposta) {
+      const ab = parseDate(v.abertura) || criado, re = parseDate(v.primeiraResposta);
+      if (ab && re) { const d = Math.max(0, diffDays(ab, re)); semanas[kA]._dias.push(d); todos.push(d); }
+    }
+  }
+  for (const s of semanas) { s.resposta = { n: s._dias.length, mediana: mediana(s._dias) }; delete s._dias; }
+  const total = vistos.size;
+  const resposta = { n: todos.length, mediana: mediana(todos), media: todos.length ? todos.reduce((a, b) => a + b, 0) / todos.length : null, ok: todos.length >= minResp };
+  return { ok: total >= minimo, minimo, total, semanas, resposta,
+    abertas: semanas.reduce((a, s) => a + s.abertas, 0), concluidas: semanas.reduce((a, s) => a + s.concluidas, 0) };
 }
