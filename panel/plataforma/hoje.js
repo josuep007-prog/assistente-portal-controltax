@@ -352,13 +352,13 @@ export function montarHoje(C) {
         return `<section class="pn-card hj-docs" id="eq-docs"><div class="pn-card-head"><h3>Documentos novos <span class="eq-n">${nl.length}</span></h3><small>Publicados pelo escritório e ainda não lidos no portal.</small></div><div class="pn-card-body eq-body">${linhas || `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhum documento novo.</div>`}${nl.length > S.plat.docsHojeLista.length ? `<button type="button" class="btn btn-sm btn-ghost dn-todos" id="dn-todos">Ver os ${nl.length} não lidos ${icon('right', 'ic-sm')}</button>` : ''}</div></section>`;
       };
       return `<div class="hj-equipe">
-        ${docsCard()}
         ${folhaCard()}
         ${term.length ? card('eq-terminar', 'Para terminar', 'Pedidos começados e não enviados (7 dias, neste computador).', term, '') : ''}
         ${card('eq-legais', 'Prazos legais', 'Pagamento dos cálculos em aberto e eSocial das admissões.', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…')}
         ${card('eq-avisos', 'Aviso sem cálculo', 'Férias e rescisões perto do pagamento com só o aviso no portal.', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
         ${card('eq-exp', 'Experiência vencendo', 'Próximos 30 dias, pela data de admissão.', exp, 'Nenhuma experiência vencendo.')}
         ${card('eq-ferias', 'Férias a vencer', 'Prazo para conceder em até 60 dias (estimativa: o portal não informa as férias já tiradas).', fer, 'Nenhuma férias a vencer.')}
+        ${docsCard()}
       </div>`;
     }
     // Atenção nas suas solicitações (casos do Control Onvio na visão do cliente)
