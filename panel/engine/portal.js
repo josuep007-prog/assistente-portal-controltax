@@ -28,6 +28,21 @@ export function competenciaDoCaminho(nomes) {
   return ano && mes ? `${mes}/${ano}` : '';
 }
 
+/** Competência (MM/AAAA) pelo NOME do arquivo quando as pastas não trazem: "Folha 09-2026.pdf", "FGTS 10.2026", "2026-09",
+ *  "Setembro de 2026", "set/2026". Não confunde com data completa (20-11-2026 é dia-mês-ano, não competência). */
+export function competenciaDoNome(nome) {
+  const t = String(nome ?? '').replace(/\.[A-Za-z0-9]{1,5}$/, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  let m;
+  if ((m = /(?<!\d[-_./])(?<!\d)(0?[1-9]|1[0-2])\s*[-_./]\s*(20\d{2})(?!\d)(?![-_./]\d)/.exec(t))) return `${m[1].padStart(2, '0')}/${m[2]}`;
+  if ((m = /(?<!\d)(20\d{2})\s*[-_./]\s*(0[1-9]|1[0-2])(?!\d)(?![-_./]\d)/.exec(t))) return `${m[2]}/${m[1]}`;
+  const abre = MESES.map(x => x.slice(0, 3));
+  for (let k = 0; k < 12; k++) {
+    const r = new RegExp(`(?:^|[^a-z])(?:${MESES[k]}|${abre[k]})\\s*(?:de\\s*|[-_./]\\s*)?(20\\d{2})(?!\\d)`).exec(t);
+    if (r) return `${String(k + 1).padStart(2, '0')}/${r[1]}`;
+  }
+  return '';
+}
+
 export function documentosDoPortal(json, rules) {
   const cfg = rules?.config?.documentosPortal || {};
   const caminho = (o, p) => String(p).split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
@@ -81,7 +96,7 @@ export function documentosDoPortal(json, rules) {
     itens.push({
       lido: (() => { const v = primeiro(raw, cfg.campos?.lido); return typeof v === 'boolean' ? v : null; })(),
       id: String(id), nome: String(nome), arquivo: String(nome), projeto: String(primeiro(raw, cfg.campos?.projeto) ?? ''), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''),
-      competencia: doCustom(raw) || competenciaDe(diretaComp) || competenciaDoCaminho(caminhoDoItem(raw)), vencimento: vencimentoDe(raw), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
+      competencia: doCustom(raw) || competenciaDe(diretaComp) || competenciaDoCaminho(caminhoDoItem(raw)) || competenciaDoNome(nome), vencimento: vencimentoDe(raw), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
     });
   }
   const campos = Object.keys(lista.find(x => x && typeof x === 'object') || {}).slice(0, 40);
@@ -108,6 +123,7 @@ export function padroesDosItens(lista) {
     for (const k of ['documentType', 'itemType', 'status']) { const v = raw[k]; if (v != null) marca(`${k}=${/^[A-Za-z]{1,20}$/.test(String(v)) ? v : forma(v)}`); }
     if (Array.isArray(raw.userTags) && raw.userTags.length) { const t0 = raw.userTags[0]; marca(`userTags[0]=${t0 && typeof t0 === 'object' ? `{${Object.keys(t0).slice(0, 6).join(',')}}` : typeof t0}`); }
     const cam = caminhoDoItem(raw); marca(`caminho(${cam.length} níveis)=${cam.slice().reverse().map(forma).join('/')}`);
+    marca(`nome=${forma(String(raw.name ?? '').replace(/\\.[A-Za-z0-9]{1,5}$/, ''))}${competenciaDoNome(raw.name) ? ' (competência no nome)' : ''}`);
     const pi = raw.parentItem; marca(`parentItem=${pi == null ? 'null' : typeof pi === 'object' ? `{${Object.keys(pi).slice(0, 6).join(',')}}` : typeof pi}`);
   }
   return [...cont].slice(0, 30).map(([k, n]) => `${k} (x${n})`);

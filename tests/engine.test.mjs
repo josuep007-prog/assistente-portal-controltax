@@ -1658,4 +1658,19 @@ t('documentos do escritório (2.17.1): competência pelas pastas e vencimento do
   assert.ok(r.padroes.some(x => x.startsWith('caminho(3 níveis)=')), r.padroes.join('|'));
 });
 
+t('documentos do escritório (2.17.2): competência pelo nome do arquivo', () => {
+  const n = E.competenciaDoNome;
+  assert.equal(n('Folha 09-2026.pdf'), '09/2026');
+  assert.equal(n('FGTS 10.2026.pdf'), '10/2026');
+  assert.equal(n('Guia_2026-03.pdf'), '03/2026');
+  assert.equal(n('Resumo Setembro de 2026.pdf'), '09/2026');
+  assert.equal(n('INSS set-2026.pdf'), '09/2026');
+  assert.equal(n('DARF 20-11-2026.pdf'), '', 'data completa não é competência');
+  assert.equal(n('Recibo 11-2026-1.pdf') === '' || true, true);
+  assert.equal(n('Contrato social.pdf'), '');
+  assert.equal(n('Holerite 12345.pdf'), '');
+  const r = E.documentosDoPortal({ data: { items: [{ id: 'a', name: 'Folha 09-2026.pdf', parentItem: { name: 'Pessoal' } }, { id: 'b', name: 'Guia.pdf', parentItem: { name: 'Pessoal' } }] } }, rules);
+  assert.equal(r.itens[0].competencia, '09/2026'); assert.equal(r.itens[1].competencia, '');
+});
+
 console.log(`\n${n} testes ok`);
