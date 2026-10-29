@@ -170,6 +170,14 @@ async def cenario_plataforma(p):
     with zipfile.ZipFile(zp) as z:
         nomes = z.namelist()
         check(z.testzip() is None and len(nomes) >= 1 and all(z.read(n).startswith(b'%PDF-FAKE-') for n in nomes), f'Baixar tudo (ZIP) entrega um ZIP válido com os arquivos do grupo ({nomes})')
+    await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(800)
+    check(await pn.locator('#eq-docs .dn-li').count() == 1 and '1' in await pn.locator('#eq-docs .eq-n').inner_text(), 'Hoje: cartão "Documentos novos" lista só os não lidos')
+    async with page.expect_download(timeout=20000) as dn:
+        await pn.locator('#eq-docs [data-dn]').first.click()
+    dnv = await dn.value
+    check(open(await dnv.path(), 'rb').read().startswith(b'%PDF-FAKE-'), 'Hoje: o botão do cartão baixa o documento novo')
+    await pn.click('#eq-docs .dn-li'); await page.wait_for_timeout(600)
+    check(await pn.locator('[data-pub-nl="1"][aria-pressed="true"]').count() == 1, 'Hoje: clicar no cartão abre Documentos já em Não lidos')
     await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(500)
     await pn.set_input_files('#file-input', os.path.join(FIX, 'atestado.pdf'))
     for _ in range(60):

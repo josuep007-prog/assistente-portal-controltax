@@ -10,6 +10,7 @@ export function montarHoje(C) {
   const abrirDia = (...a) => C.abrirDia(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const abrirModelo = (...a) => C.abrirModelo(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const editarLembrete = (...a) => C.editarLembrete(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
+  const tipoArquivo = (...a) => C.tipoArquivo(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const reaproveitar = (...a) => C.reaproveitar(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   /* =================== HOJE (2.1) =================== */
   /* No formato da tela Hoje do Control Onvio (repositório do escritório), na visão do cliente: rosca "% em dia",
@@ -341,7 +342,17 @@ export function montarHoje(C) {
           <div class="pn-card-body eq-body"><div class="pn-li eq-li folha-drop"><div class="main"><b>Horas extras, faltas, comissões… do mês</b><small>Arraste a planilha aqui ou prepare o lançamento (${esc(folha.tipoLancamento)}, competência ${esc(folha.competencia)}, para você conferir).</small></div><div class="eq-acoes">${pillQ(folha.limite)}</div></div>
           <div class="eq-acoes folha-acoes"><button type="button" class="btn btn-sm btn-primary" data-eq="${n(() => prepararFolha(folha))}" data-folha="preparar">Preparar</button><button type="button" class="btn btn-sm" data-eq="${n(() => usarMesPassado(folha))}" data-folha="passado">Usar o lançamento do mês passado</button><button type="button" class="btn btn-sm btn-ghost" data-eq="${n(() => nadaALancar(folha))}" data-folha="nada">Nada a lançar este mês</button></div></div></section>`;
       };
+      // documentos que o escritório publicou e o portal ainda mostra como não lidos (como a aba Não lidos do portal)
+      const docsCard = () => {
+        const D = S.plat.docs; S.plat.docsHojeLista = [];
+        if (!D?.disponivel) return '';
+        const nl = (D.itens || []).filter(x => x.lido === false);
+        S.plat.docsHojeLista = nl.slice(0, 5);
+        const linhas = S.plat.docsHojeLista.map((x, n) => { const [cls, rot] = tipoArquivo(x.arquivo || x.nome || 'x.pdf'); return `<div class="dn-li" data-dn-abrir="${n}"><span class="arq-ext ext-${cls}">${rot}</span><div class="main"><b title="${esc(x.nome)}">${esc(x.nome)}</b><small>${esc(x.pasta || x.categoria || 'Documento')}</small><small class="mono">${esc([x.data, x.vencimento && `vence ${x.vencimento}`].filter(Boolean).join(' · '))}</small></div><button type="button" class="btn btn-sm dn-bx" data-dn="${n}" title="${D.baixar === false ? 'Abrir no portal' : 'Baixar'}" aria-label="Baixar ${esc(x.nome)}">${icon(D.baixar === false ? 'external' : 'download', 'ic-sm')}</button></div>`; }).join('');
+        return `<section class="pn-card hj-docs" id="eq-docs"><div class="pn-card-head"><h3>Documentos novos <span class="eq-n">${nl.length}</span></h3><small>Publicados pelo escritório e ainda não lidos no portal.</small></div><div class="pn-card-body eq-body">${linhas || `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhum documento novo.</div>`}${nl.length > S.plat.docsHojeLista.length ? `<button type="button" class="btn btn-sm btn-ghost dn-todos" id="dn-todos">Ver os ${nl.length} não lidos ${icon('right', 'ic-sm')}</button>` : ''}</div></section>`;
+      };
       return `<div class="hj-equipe">
+        ${docsCard()}
         ${folhaCard()}
         ${term.length ? card('eq-terminar', 'Para terminar', 'Pedidos começados e não enviados (7 dias, neste computador).', term, '') : ''}
         ${card('eq-legais', 'Prazos legais', 'Pagamento dos cálculos em aberto e eSocial das admissões.', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…')}
@@ -367,6 +378,17 @@ export function montarHoje(C) {
 
     // ---------- interações ----------
     viewEl.querySelectorAll('[data-eq]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); acoesEq[+b.dataset.eq]?.acao?.(); }));
+    const irDocsNovos = () => { S.plat.docAba = 'escritorio'; S.plat.filtroPub = { q: '', cat: '', nl: true }; A.setView('documentos'); };
+    viewEl.querySelectorAll('[data-dn]').forEach(b => b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const x = S.plat.docsHojeLista?.[+b.dataset.dn]; if (!x) return;
+      if (S.plat.docs?.baixar === false) { request({ type: 'abrirNoPortal', area: 'documentos' }, 30000); return; }
+      b.disabled = true; const r = await P.baixarDoEscritorio(x); b.disabled = false;
+      if (!r.ok) { toast(`Não consegui baixar: ${r.motivo}. Você pode abrir no portal.`); return; }
+      P.entregarArquivo(r.arquivo.buf, r.arquivo.name || x.nome, r.arquivo.type);
+    }));
+    viewEl.querySelectorAll('[data-dn-abrir]').forEach(b => b.addEventListener('click', irDocsNovos));
+    $('#dn-todos')?.addEventListener('click', irDocsNovos);
     viewEl.querySelectorAll('[data-eq-abrir]').forEach(b => b.addEventListener('click', () => acoesEq[+b.dataset.eqAbrir]?.abrir?.()));
     viewEl.querySelectorAll('[data-passo]').forEach(b => b.addEventListener('click', () => passosHtml.acoes[+b.dataset.passo]?.()));
     viewEl.querySelectorAll('[data-slide]').forEach(b => b.addEventListener('click', () => slidesDoCarrossel.ultimo[+b.dataset.slide]?.fn()));

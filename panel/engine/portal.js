@@ -95,7 +95,7 @@ export function documentosDoPortal(json, rules) {
     const diretaComp = primeiro(raw, cfg.competencia);
     itens.push({
       lido: (() => { const v = primeiro(raw, cfg.campos?.lido); return typeof v === 'boolean' ? v : null; })(),
-      id: String(id), nome: String(nome), arquivo: String(nome), projeto: String(primeiro(raw, cfg.campos?.projeto) ?? ''), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''),
+      id: String(id), nome: String(nome), arquivo: String(nome), projeto: String(primeiro(raw, cfg.campos?.projeto) ?? ''), categoria: String(primeiro(raw, cfg.campos?.pasta) || ''), pasta: caminhoDoItem(raw).slice().reverse().join(' / '),
       competencia: doCustom(raw) || competenciaDe(diretaComp) || competenciaDoCaminho(caminhoDoItem(raw)) || competenciaDoNome(nome), vencimento: vencimentoDe(raw), data: d && !isNaN(d) ? dataBr(d) : '', criado: d && !isNaN(d) ? d.getTime() : 0
     });
   }

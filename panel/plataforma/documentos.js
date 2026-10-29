@@ -142,6 +142,9 @@ export function montarDocumentos(C) {
       }
       S.plat.docs = r; S.plat.carregandoDocs = null;
       atualizarBadgeDocs();
+      // o cartão de documentos novos do Hoje: redesenha só quando a lista de não lidos mudou
+      const ass = r.disponivel ? r.itens.filter(x => x.lido === false).map(x => x.id).join(',') : '-';
+      if (ass !== S.plat.docsHojeAss) { S.plat.docsHojeAss = ass; if (S.view === 'inicio' && document.body.classList.contains('plat') && C.seguroRedesenhar?.()) P.render('inicio'); }
       return r;
     })();
     return S.plat.carregandoDocs;
@@ -151,6 +154,20 @@ export function montarDocumentos(C) {
     const n = S.plat.docs?.disponivel ? S.plat.docs.itens.filter(x => x.lido === false).length : 0;
     b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
   };
+  /* Baixar um documento do escritório e entregar o arquivo ao cliente (usado aqui e no Hoje). */
+  const motivos = { 'sem acesso': 'o portal não deixou ler o arquivo', 'sem projeto': 'não achei o código do projeto', 'arquivo grande demais': 'o arquivo é grande demais', 'sem endereço de download': 'o portal não trouxe o endereço do arquivo', 'sem regra': 'download não configurado' };
+  const baixarUm = async (x) => {
+    const r = await request({ type: 'baixarDocumento', docId: x.id, projeto: x.projeto, nome: x.nome }, 90000);
+    if (r?.forma) S.plat.downDiag = r.forma;   // só a forma (chaves e tipos) da resposta que não trouxe o endereço
+    if (!r?.arquivo) return { ok: false, motivo: motivos[r?.motivo] || r?.motivo || 'sem resposta do portal' };
+    return { ok: true, arquivo: r.arquivo };
+  };
+  const entregar = (bytes, nome, tipo) => {
+    const url = URL.createObjectURL(new Blob([bytes], { type: tipo || 'application/octet-stream' }));
+    const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  };
+  P.baixarDoEscritorio = baixarUm; P.entregarArquivo = entregar;   // também usados pelo cartão de documentos novos do Hoje
   async function docsEscritorio(el) {
     if (!S.plat.docs) {
       el.innerHTML = loading('Procurando os documentos no portal…');
@@ -188,18 +205,6 @@ export function montarDocumentos(C) {
       $('#pub-lista').innerHTML = `<div class="list-card"><div class="dp-listhead doc-cols"><span>Documento</span><span>Categoria</span><span>Competência</span><span>Publicado</span><span></span></div>
         ${[...grupos].map(([k, vs]) => `<div class="arq-mes"><span>${esc(rotComp(k))}</span>${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-zip="${esc(k)}" title="Baixa todos os documentos deste grupo num arquivo ZIP">${icon('download', 'ic-sm')} Baixar tudo (ZIP)</button>`}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b>${x.lido === false ? ' <span class="pill pill-soon">Novo</span>' : ''}${x.vencimento ? ` <span class="muted mono" title="Vencimento informado pelo escritório">vence ${esc(x.vencimento)}</span>` : ''}</span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
           || `<div class="list-vazio">${itens.length ? 'Nenhum documento com esse filtro.' : 'Nenhum documento publicado.'}</div>`}</div>`;
-      const motivos = { 'sem acesso': 'o portal não deixou ler o arquivo', 'sem projeto': 'não achei o código do projeto', 'arquivo grande demais': 'o arquivo é grande demais', 'sem endereço de download': 'o portal não trouxe o endereço do arquivo', 'sem regra': 'download não configurado' };
-      const baixarUm = async (x) => {
-        const r = await request({ type: 'baixarDocumento', docId: x.id, projeto: x.projeto, nome: x.nome }, 90000);
-        if (r?.forma) S.plat.downDiag = r.forma;   // só a forma (chaves e tipos) da resposta que não trouxe o endereço
-        if (!r?.arquivo) return { ok: false, motivo: motivos[r?.motivo] || r?.motivo || 'sem resposta do portal' };
-        return { ok: true, arquivo: r.arquivo };
-      };
-      const entregar = (bytes, nome, tipo) => {
-        const url = URL.createObjectURL(new Blob([bytes], { type: tipo || 'application/octet-stream' }));
-        const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
-      };
       $('#pub-lista').querySelectorAll('[data-baixar]').forEach(b => b.addEventListener('click', async () => {
         if (D.baixar === false) { request({ type: 'abrirNoPortal', area: 'documentos' }, 30000); return; }   // download não configurado nas regras
         const x = itens[+b.dataset.baixar]; b.disabled = true;
@@ -285,5 +290,5 @@ export function montarDocumentos(C) {
     $('#doc-msg')?.addEventListener('click', async () => { try { await navigator.clipboard.writeText(A.mensagemAdmissao()); toast('Mensagem copiada. Cole no WhatsApp ou no e-mail.'); } catch { toast('Não consegui copiar.'); } });
   }
 
-  Object.assign(C, { abrirModelo, renderDocumentos });
+  Object.assign(C, { abrirModelo, renderDocumentos, tipoArquivo });
 }
