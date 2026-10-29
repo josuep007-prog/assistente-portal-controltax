@@ -29,5 +29,28 @@ No módulo do assunto. Se ela for usada fora do motor, acrescente o nome na fach
 ### Testes
 `node tests/engine.test.mjs` cobre tudo pela fachada.
 
+## Plataforma (`panel/plataforma.js` → `panel/plataforma/*.js`)
+
+Desde a 2.16.3 a plataforma em tela cheia é dividida por tela. `panel/plataforma.js` só monta as partes, na mesma ordem de antes, passando a todas o mesmo **contexto** `C` (o `S`, `$`, `esc`, `icon`, `request`, `send`, `toast`, `viewEl` e o `A` que o painel entrega). Cada parte é uma função `montarX(C)`.
+
+| Parte | O que tem |
+|---|---|
+| `nucleo.js` | Estado (`S.plat`), `P`, funções de apoio (empresa, tipo, datas, carregando) |
+| `casca.js` | Trilho, cabeçalho, indicador de leitura, seletor de empresa |
+| `dados.js` | Leitura das solicitações e dos funcionários, leitura automática |
+| `entrada.js` | Entrada, contexto, avisos, troca de tela (`P.render`) |
+| `dialogos.js`, `eventos.js` | Diálogo genérico; eventos da agenda |
+| `hoje.js` | Tela Hoje e atalhos que abrem um pedido já com dados |
+| `solicitacoes.js` | Cartões, situações, lista, tabela e detalhe da solicitação |
+| `novopedido.js`, `empresa.js` | Novo pedido; escolha e troca da empresa do pedido |
+| `funcionarios.js`, `agenda.js` | Funcionários e ficha; agenda e lembretes |
+| `documentos.js` | Documentos (das solicitações, do escritório, modelos, listas) |
+| `busca.js` | Busca (Ctrl+K) |
+
+**Como as partes se enxergam:** o que uma parte define e outra usa é registrado em `C` no fim dela (`Object.assign(C, {...})`). Uma parte que usa algo definido por uma parte que monta **antes** pega o valor direto de `C`; o que é definido por uma parte que monta **depois** (só funções) entra por um atalho que chama `C.nome(...)` na hora do uso. Por isso: **nada deve chamar, na hora da montagem, uma função de uma parte posterior**; dentro de funções (em tempo de uso) está tudo disponível. Estado que atravessa partes vai em `S.plat` (por exemplo `S.plat.desenhada`), não em `let` local.
+
+### Onde pôr código novo
+Na parte da tela. Se outra parte for usar, o nome entra no `Object.assign(C, …)` no fim do arquivo e, na parte que usa, na linha de `const { … } = C` (ou no atalho, se for de uma parte posterior).
+
 ## Camadas da extensão
 Veja a tabela de arquitetura no `CLAUDE.md`: service worker (`background/`), mãos no portal (`content/`) e painel (`panel/`).
