@@ -262,7 +262,7 @@
           const real = plat.baixarDocumento ? { file: await plat.baixarDocumento(m.docId) } : await baixarDocumentoReal(m);
           const f = real.file;
           const packed = f ? (await packFiles([f]))[0] : null;
-          post({ type: 'arquivo', id: m.id, arquivo: packed, motivo: real.motivo }, packed ? [packed.buf] : []);
+          post({ type: 'arquivo', id: m.id, arquivo: packed, motivo: real.motivo, forma: real.forma }, packed ? [packed.buf] : []);
           break;
         }
         case 'abrirNoPortal': { const ok = await abrirNoPortal(m); post({ type: 'abriuNoPortal', id: m.id, ok }); break; }
@@ -1048,7 +1048,26 @@
     if (!r.ok) return { motivo: r.status === 401 || r.status === 403 ? 'sem acesso' : `erro ${r.status}` };
     let j = null; try { j = await r.json(); } catch { return { motivo: 'resposta ilegível' }; }
     let url = ''; for (const k of cfg.url || ['downloadUrl']) { const v = caminho(j, k); if (typeof v === 'string' && v) { url = v; break; } }
-    if (!url) return { motivo: 'sem endereço de download', campos: Object.keys(j || {}).slice(0, 30) };
+    // não achou pelos nomes das regras: procura em qualquer nível um texto que seja endereço do armazenamento (ou com token)
+    if (!url) {
+      const acha = (o, prof = 0) => {
+        if (typeof o === 'string') return /^(https?:\/\/|\/)/.test(o) && (/\/api\/storage\//.test(o) || /[?&]token=/i.test(o)) ? o : '';
+        if (!o || typeof o !== 'object' || prof > 4) return '';
+        for (const v of Object.values(o)) { const r = acha(v, prof + 1); if (r) return r; }
+        return '';
+      };
+      url = acha(j);
+    }
+    // só a FORMA da resposta (chaves e tipos; texto que parece endereço vira str:endereço), para o diagnóstico
+    const forma = (o, prof = 0) => {
+      if (o == null) return 'null';
+      if (typeof o === 'string') return /^(https?:\/\/|\/)/.test(o) ? 'str:endereço' : 'str';
+      if (typeof o !== 'object') return typeof o;
+      if (Array.isArray(o)) return o.length ? `[${prof >= 3 ? '…' : forma(o[0], prof + 1)}]` : '[]';
+      if (prof >= 3) return '{…}';
+      return `{${Object.keys(o).slice(0, 20).map(k => `${/^[0-9a-f]{32}$/i.test(k) ? '<id>' : k.slice(0, 30)}:${forma(o[k], prof + 1)}`).join(',')}}`;
+    };
+    if (!url) return { motivo: 'sem endereço de download', campos: Object.keys(j || {}).slice(0, 30), forma: forma(j).slice(0, 700) };
     let u; try { u = new URL(url, location.href); } catch { return { motivo: 'endereço inválido' }; }
     if (u.origin !== location.origin || !u.pathname.startsWith('/api/storage/')) return { motivo: 'endereço fora do portal' };
     const max = (+cfg.maxMB || 25) * 1048576;

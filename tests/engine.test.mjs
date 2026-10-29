@@ -1633,4 +1633,16 @@ t('documentos do escritório (2.16): forma real do Onvio — data.items, não li
   assert.equal(E.documentosDoPortal({ data: { items: [{ id: 'q', name: 'x.pdf' }] } }, rules).itens[0].lido, null, 'sem o campo, não sabe');
 });
 
+t('padrões dos campos personalizados (diagnóstico, sem valores)', () => {
+  const r = E.documentosDoPortal({ data: { items: [
+    { id: 'a', name: 'x.pdf', customFields: [{ Name: 'competence', Value: '2026-09' }, { Name: 'clientId', Value: 'a'.repeat(32) }], documentType: 'Document', parentItem: { name: 'Folha' } },
+    { id: 'b', name: 'y.pdf', customFields: [], userTags: [] }
+  ] } }, rules);
+  const t = r.padroes.join(' | ');
+  assert.ok(t.includes('customFields.competence=9999-99 (x1)'), t);
+  assert.ok(t.includes('customFields.clientId=<id>'), t);
+  assert.ok(t.includes('customFields=[] (x1)') && t.includes('documentType=Document'), t);
+  assert.ok(!t.includes('Folha') && !t.includes('2026'), 'nenhum valor real');
+});
+
 console.log(`\n${n} testes ok`);

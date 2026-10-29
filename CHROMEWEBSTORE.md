@@ -58,6 +58,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.16.5 | 2026-10-29 | **Download dos documentos do escritório.** Quando o portal responde 200 mas a resposta não tem o campo de endereço conhecido, a extensão agora procura o endereço em qualquer nível da resposta; se ainda assim não achar, o "Copiar diagnóstico" traz a *forma* da resposta (chaves e tipos, sem valores) para calibrar. O diagnóstico também mostra os *padrões* dos campos personalizados dos itens (para achar a competência). |
 | 2.16.4 | 2026-10-29 | **Organização interna.** O painel (`panel.js`, 2.900 linhas) foi dividido em 12 módulos por assunto em `panel/painel/` (base, conexão, modo, início, lote, valores, preencher, formulário, portal, facilidades, histórico, configurações). Nada muda para o cliente. Testes: motor, e2e e simulador. |
 | 2.16.3 | 2026-10-29 | **Organização interna.** A plataforma em tela cheia (`plataforma.js`, 1.900 linhas) foi dividida em 14 partes por tela (`panel/plataforma/`), sem mudar o comportamento; todos os testes passam. |
 | 2.16.2 | 2026-10-29 | **Organização interna.** O motor de regras (`engine.js`, 3.500 linhas) foi dividido em 14 módulos por assunto (`panel/engine/`), sem mudar o comportamento: a API é a mesma (180 nomes) e todos os testes passam. |
