@@ -54,3 +54,24 @@ Na parte da tela. Se outra parte for usar, o nome entra no `Object.assign(C, …
 
 ## Camadas da extensão
 Veja a tabela de arquitetura no `CLAUDE.md`: service worker (`background/`), mãos no portal (`content/`) e painel (`panel/`).
+
+## Painel (`panel/panel.js` → `panel/painel/*.js`)
+
+Desde a 2.16.4 o painel também é dividido por assunto. `panel/panel.js` ficou só com a montagem da plataforma e a partida; o resto está em módulos ES que se importam entre si (com ciclos, como no motor).
+
+| Módulo | O que tem |
+|---|---|
+| `base.js` | Estado `S`, utilidades de interface, ícones, `request`/`send`, atalho `P` da plataforma |
+| `conexao.js` | Conexão com a página, regras, preferências, contexto da página |
+| `modo.js` | Modo (plataforma ou painel), navegação entre abas, `render` |
+| `inicio.js` | Início e leitura de arquivos |
+| `lote.js` | Vários arquivos: uma solicitação por documento |
+| `valores.js` | Valores combinados (documento, texto e portal) |
+| `preencher.js` | Aba Preencher |
+| `formulario.js` | Formulário próprio da plataforma e preenchimento do portal |
+| `portal.js` | Portal ↔ Assistente, resumo antes de enviar, modelos |
+| `facilidades.js` | Rascunho, repetir, colar, diagnóstico |
+| `historico.js` | Histórico e Pendências |
+| `config.js` | Calculadoras e Configurações |
+
+Regras: (1) nada chama função de outro módulo na hora do carregamento; (2) variáveis soltas que mudavam (`lastKey`, `reqId`…) agora ficam em `S.pv`; (3) os ouvintes de eventos de cada módulo ficam em `ligar()`, chamado por `panel.js` na ordem de antes; (4) `P` (a plataforma) é um atalho em `base.js`, preenchido por `definirPlat` no fim de `panel.js`.

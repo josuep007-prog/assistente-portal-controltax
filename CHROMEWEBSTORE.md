@@ -58,6 +58,7 @@ Política de privacidade: ⬜ publicar uma página simples (pode ser no mesmo re
 
 | Versão | Data | Mudanças |
 |---|---|---|
+| 2.16.4 | 2026-10-29 | **Organização interna.** O painel (`panel.js`, 2.900 linhas) foi dividido em 12 módulos por assunto em `panel/painel/` (base, conexão, modo, início, lote, valores, preencher, formulário, portal, facilidades, histórico, configurações). Nada muda para o cliente. Testes: motor, e2e e simulador. |
 | 2.16.3 | 2026-10-29 | **Organização interna.** A plataforma em tela cheia (`plataforma.js`, 1.900 linhas) foi dividida em 14 partes por tela (`panel/plataforma/`), sem mudar o comportamento; todos os testes passam. |
 | 2.16.2 | 2026-10-29 | **Organização interna.** O motor de regras (`engine.js`, 3.500 linhas) foi dividido em 14 módulos por assunto (`panel/engine/`), sem mudar o comportamento: a API é a mesma (180 nomes) e todos os testes passam. |
 | 2.16.1 | 2026-10-29 | **Documentos com muitas pastas.** Com dezenas de pastas, os botões de pasta alargavam a tela e empurravam as colunas e os botões Baixar para fora da janela: agora, com mais de 6 pastas, elas viram uma lista suspensa e a lista nunca passa da largura da tela. Documentos sem competência são agrupados pelo mês de publicação ("Publicados em outubro de 2026"). |
