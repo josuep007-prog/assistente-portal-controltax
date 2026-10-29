@@ -1783,7 +1783,7 @@ export function montarPlataforma(A) {
     el.innerHTML = `<div class="dp-toolbar">
         <input type="search" id="pub-q" placeholder="Buscar documento ou competência…" value="${esc(F.q)}" autocomplete="off">
         <div class="seg" role="group" aria-label="Situação"><button type="button" data-pub-nl="0" aria-pressed="${!F.nl}">Todos <span class="mono arq-n">${itens.length}</span></button><button type="button" data-pub-nl="1" aria-pressed="${F.nl}">Não lidos <span class="mono arq-n">${itens.filter(x => x.lido === false).length}</span></button></div>
-        <div class="seg" role="group" aria-label="Categoria">${[['', 'Todas']].concat(cats.map(c => [c, c])).map(([k, r]) => `<button type="button" data-pub-cat="${esc(k)}" aria-pressed="${F.cat === k}">${esc(r)} <span class="mono arq-n">${k ? itens.filter(x => (x.categoria || 'Outros') === k).length : itens.length}</span></button>`).join('')}</div>
+        ${cats.length > 6 ? `<select id="pub-cat" aria-label="Pasta"><option value="">Todas as pastas (${itens.length})</option>${cats.map(c => `<option value="${esc(c)}"${F.cat === c ? ' selected' : ''}>${esc(c)} (${itens.filter(x => (x.categoria || 'Outros') === c).length})</option>`).join('')}</select>` : `<div class="seg" role="group" aria-label="Categoria">${[['', 'Todas']].concat(cats.map(c => [c, c])).map(([k, r]) => `<button type="button" data-pub-cat="${esc(k)}" aria-pressed="${F.cat === k}">${esc(r)} <span class="mono arq-n">${k ? itens.filter(x => (x.categoria || 'Outros') === k).length : itens.length}</span></button>`).join('')}</div>`}
         <span class="spacer"></span>
         ${D.total && D.total > itens.length ? `<span class="muted">Mostrando os ${itens.length} mais recentes de ${D.total}</span>` : ''}
         <button class="btn btn-sm btn-ghost" id="pub-ref">${icon('refresh', 'ic-sm')} Atualizar</button>
@@ -1794,10 +1794,10 @@ export function montarPlataforma(A) {
       const q = E.norm(F.q);
       const vis = itens.map((x, n) => ({ x, n })).filter(({ x }) => (!F.cat || (x.categoria || 'Outros') === F.cat) && (!F.nl || x.lido === false) && (!q || E.norm(`${x.nome} ${x.categoria} ${x.competencia}`).includes(q)));
       // agrupados pela competência, a mais recente primeiro
-      const chave = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); return m ? `${m[2]}${m[1]}` : '0'; };
+      const chave = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || '') || /^pub:(\d{4})-(\d{2})$/.exec(c || ''); return m ? (c.startsWith('pub:') ? `${m[1]}${m[2]}` : `${m[2]}${m[1]}`) : '0'; };
       const grupos = new Map();
-      vis.sort((a, b) => chave(b.x.competencia).localeCompare(chave(a.x.competencia))).forEach(v => { const k = v.x.competencia || ''; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(v); });
-      const rotComp = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); return m ? cap(new Date(+m[2], +m[1] - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })) : 'Sem competência'; };
+      vis.sort((a, b) => chave(b.x.competencia || (b.x.criado ? `pub:${new Date(b.x.criado).toISOString().slice(0, 7)}` : '')).localeCompare(chave(a.x.competencia || (a.x.criado ? `pub:${new Date(a.x.criado).toISOString().slice(0, 7)}` : '')))).forEach(v => { const k = v.x.competencia || (v.x.criado ? `pub:${new Date(v.x.criado).toISOString().slice(0, 7)}` : ''); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(v); });
+      const rotComp = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); const p = /^pub:(\d{4})-(\d{2})$/.exec(c || ''); const mes = (a, mm) => cap(new Date(+a, +mm - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })); return m ? mes(m[2], m[1]) : p ? `Publicados em ${mes(p[1], p[2])}` : 'Sem data'; };
       $('#pub-lista').innerHTML = `<div class="list-card"><div class="dp-listhead doc-cols"><span>Documento</span><span>Categoria</span><span>Competência</span><span>Publicado</span><span></span></div>
         ${[...grupos].map(([k, vs]) => `<div class="arq-mes"><span>${esc(rotComp(k))}</span>${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-zip="${esc(k)}" title="Baixa todos os documentos deste grupo num arquivo ZIP">${icon('download', 'ic-sm')} Baixar tudo (ZIP)</button>`}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b>${x.lido === false ? ' <span class="pill pill-soon">Novo</span>' : ''}</span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
           || `<div class="list-vazio">${itens.length ? 'Nenhum documento com esse filtro.' : 'Nenhum documento publicado.'}</div>`}</div>`;
@@ -1837,6 +1837,7 @@ export function montarPlataforma(A) {
     let t0;
     $('#pub-q').addEventListener('input', (e) => { F.q = e.target.value; clearTimeout(t0); t0 = setTimeout(desenhar, 150); });
     el.querySelectorAll('[data-pub-nl]').forEach(b => b.addEventListener('click', () => { F.nl = b.dataset.pubNl === '1'; el.querySelectorAll('[data-pub-nl]').forEach(x => x.setAttribute('aria-pressed', x === b)); desenhar(); }));
+    $('#pub-cat')?.addEventListener('change', (ev) => { F.cat = ev.target.value; desenhar(); });
     el.querySelectorAll('[data-pub-cat]').forEach(b => b.addEventListener('click', () => { F.cat = b.dataset.pubCat; el.querySelectorAll('[data-pub-cat]').forEach(x => x.setAttribute('aria-pressed', x === b)); desenhar(); }));
     $('#doc-portal').addEventListener('click', () => request({ type: 'abrirNoPortal', area: 'documentos' }));
     desenhar();

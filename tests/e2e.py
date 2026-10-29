@@ -48,7 +48,8 @@ async def abrir(p, tmp, plataforma=False, url=URL):
                 pag = int(re.search(r'from=(\d+)', u).group(1)) if re.search(r'from=(\d+)', u) else 1
                 d1 = {'id': 'd1', 'name': 'Folha de pagamento 09-2026.pdf', 'containerId': 'p1', 'createdDate': '2026-10-05T12:00:00Z', 'parentItem': {'name': 'Folha'}, 'itemType': 'Document', 'isReadByClientUser': True, 'customFields': [{'Name': 'competence', 'Value': '2026-09'}]}
                 d2 = {'id': 'd2', 'name': 'Guia do FGTS.pdf', 'containerId': 'p1', 'createdDate': '2026-10-07T12:00:00Z', 'parentItem': {'name': 'Guias'}, 'itemType': 'Document', 'isReadByClientUser': False}
-                dados = {'items': [d1] if pag == 1 else [d2], 'totalItems': 2, 'hasMore': pag == 1, 'pageIndex': pag, 'itemsPerPage': 1}
+                extras = [{'id': f'x{n}', 'name': f'Documento extra {n}.pdf', 'containerId': 'p1', 'createdDate': '2026-10-08T12:00:00Z', 'parentItem': {'name': f'Pasta com nome comprido número {n}'}, 'itemType': 'Document', 'isReadByClientUser': True} for n in range(18)]   # muitas pastas
+                dados = {'items': [d1] if pag == 1 else [d2] + extras, 'totalItems': 20, 'hasMore': pag == 1, 'pageIndex': pag, 'itemsPerPage': 1}
                 await r.fulfill(status=200, content_type='application/json', body=json.dumps({'apiVersion': '1', 'id': 'x', 'data': dados}))
         elif '/api/br-payroll-sr/' in u:
             # como o Onvio real: sem o cabeçalho de acesso que o portal usa, 401 (o cookie não basta)
@@ -155,7 +156,10 @@ async def cenario_plataforma(p):
     nl = await pn.locator('#pub-lista').inner_text()
     check('Guia do FGTS.pdf' in nl and 'Folha de pagamento' not in nl, 'filtro "Não lidos" mostra só o não lido (a segunda página também foi lida)')
     await pn.click('[data-pub-nl="0"]'); await page.wait_for_timeout(300)
-    check(await pn.locator('#pub-lista [data-baixar]').count() == 2 and 'Baixar' in await pn.locator('#pub-lista [data-baixar]').first.inner_text(), 'com o download mapeado, o botão baixa o arquivo')
+    sem_estouro = await pn.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1")
+    caixa_b = await pn.locator('#pub-lista [data-baixar]').first.bounding_box()
+    check(sem_estouro and caixa_b and caixa_b['x'] + caixa_b['width'] <= 1400 and await pn.locator('#pub-cat').count() == 1, 'muitas pastas: viram uma lista suspensa e o botão Baixar fica dentro da janela')
+    check(await pn.locator('#pub-lista [data-baixar]').count() >= 2 and 'Baixar' in await pn.locator('#pub-lista [data-baixar]').first.inner_text(), 'com o download mapeado, o botão baixa o arquivo')
     async with page.expect_download(timeout=20000) as dl:
         await pn.locator('#pub-lista [data-baixar]').first.click()
     d1 = await dl.value; conteudo = open(await d1.path(), 'rb').read()
