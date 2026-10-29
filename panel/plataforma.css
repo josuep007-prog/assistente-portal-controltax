@@ -578,6 +578,10 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 .hj-hero .hj-tick { background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); }
 .hj-hero .hj-passos { background: color-mix(in srgb, var(--surface) 75%, transparent); }
 .hj-hero .hj-step { background: var(--surface); }
+/* o destaque do Hoje inverte o tema: escuro no tema claro e claro no tema escuro (cada tema tem o seu contraste) */
+.hj-hero { --surface:#131A21; --surface-2:#182129; --surface-3:#1E2831; --ink:#E8EDF2; --ink-2:#AAB7C2; --ink-3:#7A8791; --rule:#242F39; --rule-strong:#35434E; --brand-red:#E8474B; --blue-deep:#8CC6EC; --ok:#4ECC8B; --warn:#FF9D42; --hj-late:#E8474B; --hj-today:#FF9D42; --shadow-1:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35); color-scheme: dark; }
+:root[data-theme="dark"] .hj-hero { --surface:#FFFFFF; --surface-2:#F5F8FA; --surface-3:#EAEFF3; --ink:#101820; --ink-2:#47545F; --ink-3:#5F6D77; --rule:#DCE3E9; --rule-strong:#C2CCD5; --brand-red:#C2000C; --blue-deep:#3C659B; --ok:#167A45; --warn:#B5530C; --hj-late:#C2000C; --hj-today:#B5530C; --shadow-1:0 1px 2px rgba(16,24,32,.05), 0 6px 16px rgba(16,24,32,.06); color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hj-hero { --surface:#FFFFFF; --surface-2:#F5F8FA; --surface-3:#EAEFF3; --ink:#101820; --ink-2:#47545F; --ink-3:#5F6D77; --rule:#DCE3E9; --rule-strong:#C2CCD5; --brand-red:#C2000C; --blue-deep:#3C659B; --ok:#167A45; --warn:#B5530C; --hj-late:#C2000C; --hj-today:#B5530C; --shadow-1:0 1px 2px rgba(16,24,32,.05), 0 6px 16px rgba(16,24,32,.06); color-scheme: light; } }
 /* ícone e cor por família de solicitação */
 .tp-ic { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 3px; margin-right: 6px; vertical-align: -6px; color: var(--fc); background: color-mix(in srgb, var(--fc) 13%, var(--surface)); }
 .tp-ic .ic { width: 13px; height: 13px; }
