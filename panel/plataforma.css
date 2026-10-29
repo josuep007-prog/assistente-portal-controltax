@@ -708,3 +708,8 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 
 .arq-mes { display: flex; align-items: center; gap: 8px; }
 .arq-mes .btn { margin-left: auto; }
+
+/* Documentos do escritório: muitas pastas não podem alargar a tela (a lista e os botões ficavam fora da janela) */
+.dp-toolbar #pub-cat { max-width: 280px; }
+#pub-lista, #pub-lista .list-card { min-width: 0; max-width: 100%; }
+.dp-toolbar .seg { flex-wrap: wrap; max-width: 100%; }
