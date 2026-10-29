@@ -713,3 +713,12 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .dp-toolbar #pub-cat { max-width: 280px; }
 #pub-lista, #pub-lista .list-card { min-width: 0; max-width: 100%; }
 .dp-toolbar .seg { flex-wrap: wrap; max-width: 100%; }
+
+/* Cartão "Documentos novos" do Hoje (como a aba Não lidos do portal): ícone, nome, pasta, data e baixar */
+.hj-docs .dn-li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); cursor: pointer; min-width: 0; }
+.hj-docs .dn-li:hover { border-color: var(--blue-deep); background: var(--surface-2); }
+.hj-docs .dn-li .main { flex: 1; min-width: 0; }
+.hj-docs .dn-li .main b { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hj-docs .dn-li .main small { display: block; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hj-docs .dn-bx { flex: none; }
+.hj-docs .dn-todos { align-self: flex-start; }
