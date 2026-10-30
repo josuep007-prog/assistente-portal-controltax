@@ -1,6 +1,6 @@
 /* Painel — Modo da tela (plataforma ou painel) e navegação entre abas. (parte de panel/panel.js, dividido na 2.16.4; mapa em docs/arquitetura.md). */
 import * as E from '../engine.js';
-import { $, P, S, icon, request, send, standalone, viewEl } from './base.js';
+import { $, P, S, esc, icon, request, send, standalone, viewEl } from './base.js';
 import { gravarRascunhos, guardarEquipe, rascunhoDe } from './facilidades.js';
 import { renderConfig, renderFerramentas } from './config.js';
 import { renderFieldsOnly, renderPreencher } from './preencher.js';
@@ -170,10 +170,20 @@ export function syncThemeIcon() {
   $('#btn-theme').innerHTML = icon(dark ? 'sun' : 'moon');
 }
 
+/** Uma tela que falha ao desenhar nunca fica muda: mostra o motivo (sem dados do cliente) e deixa tentar de novo. */
+function telaComErro(e) {
+  const v = S.view;
+  viewEl.innerHTML = `<div class="empty"><p><b>Não consegui abrir esta tela.</b></p><p class="muted">Tente de novo; se continuar, recarregue o portal (F5) e abra de novo.</p><p class="muted mono" style="font-size:12px">${esc(String(e?.message || e || 'erro desconhecido').slice(0, 200))}</p><button type="button" class="btn" id="tela-de-novo">Tentar de novo</button></div>`;
+  $('#tela-de-novo')?.addEventListener('click', () => { S.view = v; render(); });
+}
 export function render() {
   if (!S.rules) { viewEl.innerHTML = `<div class="empty"><div class="spin" style="margin:auto"></div><p>Carregando…</p></div>`; return; }
-  if (S.modo === 'plataforma' && P) return P.render(S.view);
-  ({ inicio: renderInicio, preencher: renderPreencher, pendencias: renderPendencias, ferramentas: renderFerramentas, historico: renderHistorico, config: renderConfig }[S.view] || renderInicio)();
+  try {
+    const r = (S.modo === 'plataforma' && P) ? P.render(S.view)
+      : ({ inicio: renderInicio, preencher: renderPreencher, pendencias: renderPendencias, ferramentas: renderFerramentas, historico: renderHistorico, config: renderConfig }[S.view] || renderInicio)();
+    if (r && typeof r.catch === 'function') r.catch(telaComErro);
+    return r;
+  } catch (e) { telaComErro(e); }
 }
 
 /** Liga os ouvintes deste módulo (chamado uma vez por panel.js, na ordem de antes). */
