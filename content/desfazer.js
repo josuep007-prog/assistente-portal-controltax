@@ -48,6 +48,7 @@ async function lerGrade(adicionar) {
     atualizarGrade();
     const sc = gradeAmpla.scroller;
     gradeAddInfo = gradeAposAdicionar();
+    if (sc && /obrigat/i.test(gradeAddInfo)) return { ok: false, motivo: 'o portal respondeu "Campo obrigatório" ao adicionar os funcionários: escolha você mesmo o Tipo de lançamento e a Competência no portal (clicando no campo), clique nele em "Adicionar todos os funcionários" e só então em "Carregar funcionários e rubricas" aqui' };
     return { ok: false, motivo: sc ? `achei a grade na tela (${gradeAmpla.achada}), mas não consegui ler as linhas dos funcionários (${gradeAriaInfo || 'sem detalhe'}; depois do clique em adicionar: ${gradeAddInfo || '-'}): copie o diagnóstico em Configurações e mande ao escritório` : 'a grade não apareceu na tela (a competência está preenchida? use "Adicionar todos os funcionários" no portal)' };
   }
   const g = lerTabelaGrade(tab);

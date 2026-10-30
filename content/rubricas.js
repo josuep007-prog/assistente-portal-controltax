@@ -172,8 +172,9 @@ function gradeEstrutura() {
 /** Entradas do formulário fora da grade (nomes de atributos, nunca valores): para achar o campo da competência. */
 function gradeEntradas() {
   const sc = gradeAmpla.scroller;
-  return [...mainEl().querySelectorAll('input:not([type=hidden]):not([type=file]), textarea, select')].filter(e => !sc?.contains(e) && !e.closest('app-help-menu')).slice(0, 14).map(e => {
+  return [...mainEl().querySelectorAll('input:not([type=hidden]):not([type=file]), textarea, select')].filter(e => !sc?.contains(e) && !e.closest('app-help-menu')).slice(0, 16).map(e => {
     const at = (n) => (e.getAttribute(n) ? `${n}=${String(e.getAttribute(n)).slice(0, 28)}` : '');
-    return `${e.tagName.toLowerCase()}${[at('type'), at('formcontrolname'), at('name'), at('id'), at('placeholder'), at('aria-label')].filter(Boolean).map(x => ' ' + x).join('')} pai=${e.parentElement?.tagName.toLowerCase()}${typeof e.parentElement?.className === 'string' && e.parentElement.className.trim() ? '.' + e.parentElement.className.trim().split(/\s+/)[0] : ''}`;
-  }).join(' ; ').slice(0, 1300);
+    const estado = [e.disabled ? 'desligado' : '', e.readOnly ? 'só-leitura' : '', e.checked ? 'marcado' : '', ...[...e.classList].filter(c => /^ng-(valid|invalid|touched|dirty)$/.test(c)).map(c => c.slice(3)), e.value ? `valor=${e.value.length}car` : ''].filter(Boolean).join(',');
+    return `${e.tagName.toLowerCase()}${[at('type'), at('formcontrolname'), at('name'), at('id'), at('placeholder'), at('aria-label')].filter(Boolean).map(x => ' ' + x).join('')}${estado ? ` {${estado}}` : ''} pai=${e.parentElement?.tagName.toLowerCase()}${typeof e.parentElement?.className === 'string' && e.parentElement.className.trim() ? '.' + e.parentElement.className.trim().split(/\s+/)[0] : ''}`;
+  }).join(' ; ').slice(0, 2000);
 }
