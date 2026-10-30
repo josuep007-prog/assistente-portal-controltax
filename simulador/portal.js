@@ -457,6 +457,15 @@
         grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div class="p-gd-rolagem" style="overflow:auto;height:300px;width:100%;text-align:left"><div style="display:grid;grid-template-columns:50px 250px repeat(' + EVENTOS.length + ',150px);width:max-content">' + flat + '</div></div></div>';
         return;
       }
+      if (modoDiv === 'wijmo') {
+        // planilha Wijmo do Onvio real (visto no diagnóstico de 30/10/2026): div.wj-cells[role=grid] > div.wj-row[role=row] > div.wj-cell; a célula só vira campo ao clicar
+        var wc = function (html, role, w) { return '<div class="wj-cell" role="' + role + '" style="flex:none;width:' + w + 'px;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc;height:40px">' + html + '</div>'; };
+        var wh = '<div class="wj-row" role="row" style="display:flex">' + wc('', 'columnheader', 50) + wc('Nome', 'columnheader', 250) + EVENTOS.map(function (ev) { return wc(esc(ev), 'columnheader', 150); }).join('') + '</div>';
+        var wb = EMP3.map(function (e) { return '<div class="wj-row" role="row" style="display:flex">' + wc('<input type="checkbox">', 'gridcell', 50) + wc(esc(e), 'gridcell', 250) + EVENTOS.map(function () { return wc('', 'gridcell', 150); }).join('') + '</div>'; }).join('');
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div style="overflow:auto;height:300px;width:100%;text-align:left"><div class="wj-cells" role="grid">' + wh + wb + '</div></div></div>';
+        grid.querySelectorAll('.wj-cell[role=gridcell]').forEach(function (c) { c.addEventListener('click', function () { if (c.querySelector('input') || c.querySelector('input,b') || c.children.length) return; var i = document.createElement('input'); i.type = 'text'; i.className = 'p-grade-v'; i.style.cssText = 'width:100%;border:0'; c.appendChild(i); i.focus(); i.addEventListener('blur', function () { c.dataset.v = i.value; c.textContent = i.value; }); }); });
+        return;
+      }
       if (modoDiv === 'div' || modoDiv === 'div-edit') {
         // grade em blocos, como o portal real (div em div.content__grid): caixa de marcar + nome + eventos; 'div-edit': a célula só vira campo ao clicar
         var larg = function (w, html, cls) { return '<div class="' + (cls || '') + '" style="flex:none;width:' + w + 'px;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc">' + html + '</div>'; };
