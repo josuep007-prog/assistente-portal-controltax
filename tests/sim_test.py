@@ -853,6 +853,28 @@ async def teste_grade_virtual(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
+async def teste_grade_api(b):
+    """2.22.0: a planilha do portal (Wijmo) existe como objeto na página: lê e lança por ela (por baixo), sem clicar na tela."""
+    print('\n[grade pela planilha do portal] ler e lançar pelo objeto da planilha')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/payroll-entries/add')"); await pg.wait_for_timeout(1500)
+    await pg.evaluate("window.__ctSim.hooks().preencher('rubricas', { competencia: '11/2026' }, {})"); await pg.wait_for_timeout(800)
+    await pg.evaluate("document.querySelector('[data-all]').click()"); await pg.wait_for_timeout(1200)
+    g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
+    check(bool(g) and len(g['empregados']) == 14 and len(g['titulos']) == 10, f"planilha do portal: lê todos os funcionários e rubricas de uma vez ({len(g['empregados']) if g else None} e {len(g['titulos']) if g else None})")
+    r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'FUNCIONARIO M TESTE', evento: '190 - RUBRICA J', valor: '7' }, { empregado: 'FUNCIONARIO B TESTE', evento: '110 - RUBRICA B', valor: '3' }, { empregado: 'FUNCIONARIO X', evento: '110 - RUBRICA B', valor: '1' }])")
+    v = await pg.evaluate("window.__vals")
+    usada = await pg.evaluate("window.__apiUsada || 0")
+    check(r.get('ok') and r.get('n') == 2 and v.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7' and v.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '3' and usada == 2, f"planilha do portal: lança pelo objeto da planilha, sem clicar na tela ({r.get('n')} de 3; modelo {v}; usada {usada}x)")
+    check(len(r.get('faltaram', [])) == 1 and 'fora da grade' in (r['faltaram'][0].get('motivo') or ''), f"planilha do portal: funcionário que não existe volta com o motivo ({r.get('faltaram')})")
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_comando_rubricas(b):
     """2.21.0: bloco "Comando" da planilha: o cliente escreve e a planilha é preenchida sozinha (abre a grade do portal se preciso)."""
     print('\n[comando] preencher a planilha de rubricas por comando')
@@ -1352,7 +1374,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_comando_rubricas(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -1745,7 +1767,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_comando_rubricas(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)

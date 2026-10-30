@@ -143,8 +143,11 @@ async function gradeCampoDaCelula(cel) {
   b.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   const doBloco = () => b.querySelector('input:not([type=checkbox]), textarea, [contenteditable=true]');
   const antes = document.activeElement;   // o campo que já estava em foco (de outra célula) não conta
+  // a planilha do portal acha a célula pela posição do mouse: os eventos levam as coordenadas do centro da célula
+  const r = gradeRect(b), pos = { clientX: Math.round((r.left + r.right) / 2), clientY: Math.round((r.top + r.bottom) / 2), screenX: Math.round((r.left + r.right) / 2), screenY: Math.round((r.top + r.bottom) / 2) };
   for (const tipo of ['click', 'dblclick']) {
-    b.dispatchEvent(new MouseEvent(tipo, { bubbles: true, cancelable: true, view: window }));
+    const seq = tipo === 'click' ? ['mousedown', 'mouseup', 'click'] : ['mousedown', 'mouseup', 'click', 'mousedown', 'mouseup', 'click', 'dblclick'];
+    for (const t of seq) b.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window, button: 0, detail: t === 'dblclick' ? 2 : 1, ...pos }));
     await sleep(120);
     const ativo = document.activeElement;
     const novo = ativo && ativo !== antes && ativo.matches?.('input, textarea, [contenteditable=true]') && gradeAmpla.scroller?.contains(ativo) ? ativo : null;
@@ -194,9 +197,17 @@ function gradeRolante(sc) {
 const gradeUnir = (lista, novos) => { const vistos = new Set(lista.map(x => norm(x))); for (const n of novos) { const k = norm(n); if (n && !vistos.has(k)) { vistos.add(k); lista.push(n); } } };
 
 async function gradeLerTudo() {
+  // 1) pela própria planilha do portal (todas as linhas e colunas, sem rolar)
+  const api = await pedirGrade('ler');
+  gradeApiInfo = api ? { achou: !!api.achou, semGrade: !!api.semGrade, colunas: api.colunas, linhas: api.linhas, colunaDoNome: api.colunaDoNome, chaves: api.chaves, erro: api.erro } : { ajudante: false };
+  if (api?.ok && api.empregados.length) {
+    gradeMapa = { empregados: [...api.empregados], eventos: [...api.titulos] };
+    return { titulos: api.titulos, empregados: api.empregados, fonte: 'planilha do portal' };
+  }
+  // 2) pela tela, rolando
   atualizarGrade();
   const sc = gradeAmpla.scroller; const g0 = sc && gradeDivLer(sc);
-  if (!g0) return { titulos: [], empregados: [] };
+  if (!g0) return { titulos: [], empregados: [], fonte: '' };
   const rol = gradeRolante(sc);
   const empregados = [], titulos = [];
   gradeUnir(empregados, g0.empregados); gradeUnir(titulos, g0.titulos);
@@ -220,7 +231,7 @@ async function gradeLerTudo() {
     rol.scrollTo(ant.x, ant.y); await sleep(100);
   }
   gradeMapa = { empregados: [...empregados], eventos: [...titulos] };
-  return { titulos, empregados };
+  return { titulos, empregados, fonte: 'tela (rolando)' };
 }
 
 /** Rola a grade até a linha e a coluna aparecerem (sem clicar). Devolve se achou as duas. */
@@ -247,4 +258,30 @@ async function gradeIrPara(empregado, evento) {
     await sleep(130);
   }
   return !!tem();
+}
+
+/* ============ Planilha do portal pelo objeto dela (ajudante content/pagina-grade.js, mundo da página) ============ */
+const gradeEspera = new Map(); let gradeSeq = 0, gradeSemAjudanteAte = 0;
+let gradeAjudante = false;
+let gradeApiInfo = null;   // o que o ajudante achou (só contagens e nomes de propriedades), para o diagnóstico
+document.addEventListener('ct-grade-resposta', (e) => {
+  let d; try { d = JSON.parse(e.detail); } catch { return; }
+  const f = gradeEspera.get(d.id); if (f) { gradeEspera.delete(d.id); f(d); }
+});
+function pedirUma(op, dados, ms) {
+  return new Promise((res) => {
+    const id = `g${++gradeSeq}`;
+    const t = setTimeout(() => { gradeEspera.delete(id); res(null); }, ms);
+    gradeEspera.set(id, (d) => { clearTimeout(t); res(d); });
+    document.dispatchEvent(new CustomEvent('ct-grade-pedido', { detail: JSON.stringify({ ...dados, op, id }) }));
+  });
+}
+/** Pede ao ajudante da página; null se ele não responde (aba antiga, sem o ajudante) — aí vale a leitura e a digitação pela tela. */
+async function pedirGrade(op, dados = {}, ms = 5000) {
+  if (Date.now() < gradeSemAjudanteAte) return null;
+  if (!gradeAjudante) {   // ele está aí? (resposta rápida; a operação em si pode demorar mais)
+    gradeAjudante = !!(await pedirUma('ping', {}, 1500));
+    if (!gradeAjudante) { gradeSemAjudanteAte = Date.now() + 30000; return null; }
+  }
+  return pedirUma(op, dados, ms);
 }

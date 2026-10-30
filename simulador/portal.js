@@ -457,7 +457,7 @@
         grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div class="p-gd-rolagem" style="overflow:auto;height:300px;width:100%;text-align:left"><div style="display:grid;grid-template-columns:50px 250px repeat(' + EVENTOS.length + ',150px);width:max-content">' + flat + '</div></div></div>';
         return;
       }
-      if (modoDiv === 'wijmo-virtual') {
+      if (modoDiv === 'wijmo-virtual' || modoDiv === 'wijmo-api') {
         // planilha virtualizada (Wijmo): só as linhas e colunas que cabem na tela existem; rolagem nos dois sentidos, nome e cabeçalho fixos
         var NOMES = []; for (var q = 0; q < 14; q++) NOMES.push('FUNCIONARIO ' + String.fromCharCode(65 + q) + ' TESTE');
         var EVS = []; for (var q2 = 0; q2 < 10; q2++) EVS.push(String(100 + q2 * 10) + ' - RUBRICA ' + String.fromCharCode(65 + q2));
@@ -489,6 +489,22 @@
           }
         };
         vsc.addEventListener('scroll', desenha);
+        if (modoDiv === 'wijmo-api') {   // como o Wijmo: a instância da planilha fica numa propriedade do elemento que a hospeda
+          var ed = null, cur = null;
+          var fake = {
+            isReadOnly: false,
+            rows: { length: NOMES.length }, columns: (function () { var c = [{ header: 'Nome' }]; EVS.forEach(function (e) { c.push({ header: e }); }); return c; })(),
+            getCellData: function (r, c) { return c === 0 ? NOMES[r] : (window.__vals[NOMES[r] + '|' + EVS[c - 1]] || ''); },
+            setCellData: function (r, c, v) { window.__vals[NOMES[r] + '|' + EVS[c - 1]] = v == null ? '' : String(v); window.__apiUsada = (window.__apiUsada || 0) + 1; desenha(); return true; },
+            select: function () {}, scrollIntoView: function () {},
+            startEditing: function (full, r, c) { cur = { r: r, c: c }; ed = document.createElement('input'); return true; },
+            get activeEditor() { return ed; },
+            finishEditing: function () { if (!cur) return false; fake.setCellData(cur.r, cur.c, ed.value); cur = null; ed = null; return true; },
+            cancelEdit: function () { cur = null; ed = null; }
+          };
+          fake.columns.length = EVS.length + 1;
+          raiz.parentElement['wj-Control'] = fake;
+        }
         grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"></div>'; grid.querySelector('.content__grid').appendChild(vsc); desenha();
         return;
       }

@@ -99,6 +99,11 @@ export function onSubmitAttempt(m) {
   if (!tipo) { if (!auto) send({ type: 'confirmSubmit' }); return; }
   const vals = valoresParaChecar(tipo);
   const list = [...E.runChecks(tipo, vals, anexosAtuais(tipo), S.rules, E.today(), { ausentes: camposAusentes(m.form) }), ...avisosExtras(tipo, vals), ...naoAceitosPeloPortal(tipo, m.form)].filter(i => i.nivel === 'erro' || i.nivel === 'atencao');
+  // Lançamento de Rubricas: o resumo diz quantos valores a planilha tem e avisa dos que não chegaram à grade do portal
+  const plan = tipo === 'rubricas' ? S.work[tipo]?.planilha : null;
+  const planValores = plan ? Object.entries(plan.valores).filter(([, v]) => String(v).trim()) : [];
+  const planFuncionarios = new Set(planValores.map(([k]) => k.split('|')[0])).size;
+  if (plan && (plan.falhas?.size || plan.pend?.size)) list.push({ nivel: 'atencao', grupo: 'Planilha', mensagem: `${(plan.falhas?.size || 0) + (plan.pend?.size || 0)} valor(es) da planilha ainda não chegaram à grade do portal${plan.falhas?.size ? ' (as células marcadas em vermelho foram recusadas)' : ''}. Confira a grade do portal antes de enviar.` });
   if (auto && list.some(i => i.nivel === 'erro' || i.grupo === 'Portal')) return;
   if (!list.length && !pediu && !auto) { S.ultimoEnvio = { tipo, quando: Date.now(), valores: vals }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
@@ -112,6 +117,7 @@ export function onSubmitAttempt(m) {
     <p class="muted" style="margin:0 0 10px">${esc(auto && !list.length ? 'Preparei o pedido. Confira o resumo e, se estiver certo, envie: o envio é feito pelo próprio portal.' : list.length ? (S.rules.mensagens?.envioComPendencias || '') : 'Confira o resumo. O envio é feito pelo próprio portal.')}</p>
     <div class="resumo card pad"><b>${esc(vals.assunto || t.nome)}</b>
       <dl class="kv" style="margin-top:6px">${(P?.empresasDoLogin?.().length || 0) > 1 ? `<dt>Empresa</dt><dd>${esc(S.ctx.empresa)}</dd>` : ''}${principais.map(([k, c]) => `<dt>${esc(c.rotulo)}</dt><dd>${esc(vals[k])}</dd>`).join('')}
+      ${planValores.length ? `<dt>Lançamentos na planilha</dt><dd>${planValores.length} valor(es) para ${planFuncionarios} funcionário(s)</dd>` : ''}
       <dt>Anexos</dt><dd>${anexos.length ? esc(anexos.map(a => a.nome).join(', ')) : 'nenhum'}</dd></dl></div>
     ${list.length ? `<div class="checks" style="margin-top:10px">${list.map(i => `<div class="chk ${i.nivel}"><span class="st">${icon(i.nivel === 'erro' ? 'x' : 'alert', 'ic-sm')}</span><span>${esc(i.mensagem)}</span></div>${i.modelo ? botaoModelo(i.modelo) : ''}`).join('')}</div>` : ''}
     <div class="actions" style="margin-top:14px">

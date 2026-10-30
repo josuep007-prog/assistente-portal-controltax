@@ -193,6 +193,7 @@ export async function carregar(tipo) {
   try { g = await request({ type: 'lerGrade', adicionar: true }, 60000); } finally { S.preenchendo = false; }
   P.lendo = false;
   if (!g?.ok) { P.erro = `Não consegui ler a grade do portal: ${g?.motivo || 'o portal não respondeu'}.`; renderPlanilhaRubricas(tipo); return; }
+  P.fonte = g.fonte || ''; P.api = g.api || null;
   const antes = { ...P.valores }, empAntes = P.empregados, evAntes = P.eventos;
   P.eventos = g.eventos || []; P.empregados = g.empregados || []; P.carregada = true; P.valores = {};
   // o que já estava digitado continua (pelo nome do funcionário e da rubrica); depois, o que veio de planilha, texto ou mês passado
