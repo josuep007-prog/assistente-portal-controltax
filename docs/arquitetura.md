@@ -78,7 +78,7 @@ Regras: (1) nada chama função de outro módulo na hora do carregamento; (2) va
 
 ## Conteúdo (`content/*.js`)
 
-Desde a 2.17.0 o conteúdo que roda dentro do Onvio é dividido em 9 scripts comuns (o Chrome não carrega módulos como script de conteúdo). Eles **compartilham o escopo do mundo isolado**: o que um declara (`const`, `let`, `function`) os seguintes enxergam, como na época do arquivo único. A **ordem de carga** é a do `manifest.json` (e a do `simulador/index.html`): `opcoes`, `nucleo`, `interface`, `canal`, `leitura`, `preenchimento`, `desfazer`, `portal`, `api`, `final`. `pagina.js` continua à parte (mundo da página).
+Desde a 2.17.0 o conteúdo que roda dentro do Onvio é dividido em 10 scripts comuns (o Chrome não carrega módulos como script de conteúdo). Eles **compartilham o escopo do mundo isolado**: o que um declara (`const`, `let`, `function`) os seguintes enxergam, como na época do arquivo único. A **ordem de carga** é a do `manifest.json` (e a do `simulador/index.html`): `opcoes`, `nucleo`, `interface`, `canal`, `leitura`, `preenchimento`, `desfazer`, `rubricas`, `portal`, `api`, `final`. `pagina.js` continua à parte (mundo da página).
 
 | Script | O que tem |
 |---|---|
@@ -88,6 +88,7 @@ Desde a 2.17.0 o conteúdo que roda dentro do Onvio é dividido em 9 scripts com
 | `leitura.js` | Leitura da tela e revelar etapas/abas |
 | `preenchimento.js` | Preencher campos, combos, rádios, anexos; marcar o que falta |
 | `desfazer.js` | Grade de rubricas e desfazer |
+| `rubricas.js` | Planilha de rubricas ampla (2.19.0): altura da tela, nome e títulos fixos, botão Ampliar planilha (só estilo) |
 | `portal.js` | Trocar de empresa, pendências, adaptador da plataforma |
 | `api.js` | Leituras da API com o acesso do portal, documentos, resposta |
 | `final.js` | Conferência antes de enviar, arrastar e soltar, rotas, mensagens do service worker e a partida |

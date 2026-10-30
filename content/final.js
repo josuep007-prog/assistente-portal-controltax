@@ -96,12 +96,12 @@ const routeChanged = () => {
     const r = routeInfo();
     // formulário fechou e voltou à lista → provável envio concluído
     if (ultimoForm && !href.includes('/add') && r.mode === 'list') { post({ type: 'formClosed', from: ultimoForm, to: href }); ultimoForm = ''; }
-    sendContext(); atualizarLauncher(); avisarDesfazer();
+    sendContext(); atualizarLauncher(); avisarDesfazer(); atualizarGrade();
   }, 600);
 };
 setInterval(routeChanged, 500);
 let formTimer = null;
-new MutationObserver(() => { clearTimeout(formTimer); formTimer = setTimeout(() => { sendContext(); verAtencao(); }, 700); })
+new MutationObserver(() => { clearTimeout(formTimer); formTimer = setTimeout(() => { sendContext(); verAtencao(); atualizarGrade(); }, 700); })
   .observe(document.documentElement, { childList: true, subtree: true });
 
 /* ============ Regras e mensagens do service worker ============ */
