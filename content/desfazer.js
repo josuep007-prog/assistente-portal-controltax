@@ -17,24 +17,46 @@ function lerTabelaGrade(tab) {
   const empregados = linhas.map(r => (celulas(r)[ce]?.innerText || '').trim());
   return { titulos, linhas, empregados, celulas, eventos: titulos.filter((t, i) => i !== ce && t) };   // sem a coluna de marcar (título vazio)
 }
+/** A grade em blocos (div), quando o portal não usa <table>: a achada por rubricas.js, lida pela posição das colunas e linhas. */
+const lerGradeDiv = () => { atualizarGrade(); const g = gradeDivLer(gradeAmpla.scroller); return g && g.linhas.length ? g : null; };
 async function lerGrade(adicionar) {
   const r = routeInfo();
   if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, motivo: 'abra o Lançamento de Rubricas' };
   let tab = acharGrade();
+  if (!tab && lerGradeDiv()) { const g = lerGradeDiv(); return { ok: true, eventos: g.titulos, empregados: g.empregados }; }
   if ((!tab || !lerTabelaGrade(tab).linhas.length) && adicionar) {
     const alvo = norm(cfgGrade().botaoAdicionarTodos);
     const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
     if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
     await reveal(b); b.click();
-    for (let i = 0; i < 20 && !(tab = acharGrade()); i++) await sleep(250);
+    for (let i = 0; i < 20 && !(tab = acharGrade()) && !lerGradeDiv(); i++) await sleep(250);
   }
+  if (!tab) { const g = lerGradeDiv(); if (g) return { ok: true, eventos: g.titulos, empregados: g.empregados }; }
   if (!tab) return { ok: false, motivo: 'a grade não apareceu (a competência está preenchida?)' };
   const g = lerTabelaGrade(tab);
   return { ok: true, eventos: g.eventos, empregados: g.empregados };
 }
 /** celulas: [{ empregado, evento, valor }] com os nomes exatos da grade (o painel casa os nomes antes). */
+async function preencherGradeDiv(celulas) {
+  const antes = [], faltaram = [];
+  for (const c of celulas) {
+    const g = lerGradeDiv();   // lê de novo a cada célula: o portal pode redesenhar a grade ao editar
+    const i = g ? g.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1;
+    const j = g ? g.titulos.findIndex(t => norm(t) === norm(c.evento)) : -1;
+    const campo = i >= 0 && j >= 0 ? await gradeCampoDaCelula(g.celula(g.linhas[i], j)) : null;
+    if (!campo || campo.disabled || campo.readOnly) { faltaram.push(c); continue; }
+    const v0 = campo.value ?? campo.textContent ?? '';
+    if (v0 === String(c.valor)) continue;
+    if (campo.isContentEditable) { campo.textContent = String(c.valor); campo.dispatchEvent(new Event('input', { bubbles: true })); } else setNative(campo, String(c.valor));
+    campo.dispatchEvent(new Event('change', { bubbles: true })); campo.dispatchEvent(new Event('blur', { bubbles: true })); mark(campo); await sleep(30);
+    antes.push({ empregado: c.empregado, evento: c.evento, antes: v0 });
+  }
+  if (antes.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: antes }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
+  return { ok: true, n: celulas.length - faltaram.length, mudou: antes.length, faltaram };
+}
 async function preencherGrade(celulas) {
-  const tab = acharGrade(); if (!tab) return { ok: false, n: 0, mudou: 0, faltaram: celulas };
+  const tab = acharGrade();
+  if (!tab) return lerGradeDiv() ? preencherGradeDiv(celulas) : { ok: false, n: 0, mudou: 0, faltaram: celulas };
   await reveal(tab);
   const g = lerTabelaGrade(tab);
   const antes = [], faltaram = [];

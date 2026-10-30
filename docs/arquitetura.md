@@ -89,7 +89,7 @@ Desde a 2.17.0 o conteúdo que roda dentro do Onvio é dividido em 10 scripts co
 | `leitura.js` | Leitura da tela e revelar etapas/abas |
 | `preenchimento.js` | Preencher campos, combos, rádios, anexos; marcar o que falta |
 | `desfazer.js` | Grade de rubricas e desfazer |
-| `rubricas.js` | Planilha de rubricas ampla (2.19.0): altura da tela, nome e títulos fixos, botão Ampliar planilha (só estilo) |
+| `rubricas.js` | Acha e lê a grade do Lançamento de Rubricas (blocos ou tabela) para a planilha da plataforma; nunca muda o visual do Onvio |
 | `portal.js` | Trocar de empresa, pendências, adaptador da plataforma |
 | `api.js` | Leituras da API com o acesso do portal, documentos, resposta |
 | `final.js` | Conferência antes de enviar, arrastar e soltar, rotas, mensagens do service worker e a partida |

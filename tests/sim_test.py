@@ -796,6 +796,37 @@ async def teste_cadastro(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_grade_div(b):
+    """2.20.1: a grade do portal real é de blocos (div), não de tabela: lida pela posição, sem mudar nada na tela do Onvio."""
+    print('\n[grade em blocos] leitura por posição, escrita e o Onvio intacto')
+    for modo in ('div', 'div-edit'):
+        ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+        pg = await ctx.new_page()
+        erros = []
+        pg.on('pageerror', lambda e: erros.append(str(e)))
+        await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+        await pg.evaluate("(m) => localStorage.setItem('ct-sim-grade', m)", modo)
+        await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/payroll-entries/add')"); await pg.wait_for_timeout(1500)
+        # o portal real não tem o formcontrolname da competência (diagnóstico de 30/10/2026): o campo é achado pelo rótulo
+        await pg.evaluate("document.querySelector('[formcontrolname=basisDate]').removeAttribute('formcontrolname')")
+        await pg.evaluate("window.__ctSim.hooks().preencher('rubricas', { competencia: '11/2026' }, {})"); await pg.wait_for_timeout(800)
+        comp = await pg.evaluate("document.querySelector('#datepicker-dropdown-input')?.value")
+        check(comp == '11/2026', f'competência sem formcontrolname: achada pelo rótulo "Competência" e preenchida ({comp!r}, {modo})')
+        await pg.evaluate("document.querySelector('#datepicker-dropdown-input').dispatchEvent(new Event('input', { bubbles: true }))")
+        await pg.evaluate("document.querySelector('[data-all]').click()"); await pg.wait_for_timeout(1200)
+        antes = await pg.evaluate("document.documentElement.outerHTML.length")
+        g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
+        check(bool(g) and len(g['titulos']) == 6 and g['empregados'] == ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'], f'grade em blocos ({modo}): colunas e funcionários lidos pela posição ({g})')
+        r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'JORGE OLIVEIRA ALVES', evento: '0010 - FALTAS', valor: '2' }, { empregado: 'RONALDO DE SOUZA', evento: '0020 - COMISSÕES', valor: '350' }])")
+        v = await pg.evaluate("[...document.querySelectorAll('.p-gd-row')].map(r => [...r.querySelectorAll('input.p-grade-v')].map(i => i.value).join('|'))")
+        check(r.get('ok') and r.get('n') == 2 and '2' in v[1].split('|') and '350' in v[2].split('|') and not any(x in v[0].split('|') for x in ('2', '350')), f'grade em blocos ({modo}): os valores caem nas linhas certas ({r.get("n")} de 2; {v})')
+        if modo == 'div':
+            check(v[1].split('|')[2] == '2' and v[2].split('|')[4] == '350', f'grade em blocos ({modo}): e nas colunas certas ({v})')
+        extra = await pg.evaluate("({ css: !!document.getElementById('ct-grade-css'), btn: !!document.querySelector('.ct-grade-btn, .ct-grade-barra'), cls: !!document.querySelector('.ct-grade-card, .ct-grade-scroll') })")
+        check(not any(extra.values()), f'o Onvio fica do jeito original: nenhum estilo, botão ou classe da extensão na grade ({extra})')
+        check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+        await ctx.close()
+
 async def teste_lote6(b):
     """Lote 6: variáveis da folha no Hoje (38), grade de rubricas (45) e resposta preparada no portal (46)."""
     import datetime
@@ -898,16 +929,6 @@ async def teste_lote6(b):
     await pn.fill('#plan-q', 'ronaldo')
     check(await pn.evaluate("[...document.querySelectorAll('.plan-tabela tbody tr')].filter(t => !t.hidden).length") == 1, 'planilha da plataforma: a busca esconde os outros funcionários')
     await pn.fill('#plan-q', '')
-    # 2.19: planilha ampla — altura que aproveita a tela, botão de tela cheia, nome e títulos fixos
-    ok = await espera(lambda: pg.evaluate("!!document.querySelector('.ct-grade-btn') && !!document.querySelector('.ct-grade-scroll')"), 10)
-    check(ok, 'rubricas: a grade do portal ganha o botão "Ampliar planilha"')
-    dim = await pg.evaluate("(() => { const s = document.querySelector('.ct-grade-scroll'); return { h: s.clientHeight, ih: innerHeight, pos: getComputedStyle(s.querySelector('thead th')).position, col: getComputedStyle(s.querySelector('tbody td')).position }; })()")
-    check(dim['h'] >= 440 and dim['pos'] == 'sticky' and dim['col'] == 'sticky', f"rubricas: a grade ocupa a tela (altura {dim['h']}px, antes 300px) com títulos e nome fixos")
-    await pg.evaluate("document.querySelector('.ct-grade-btn').click()"); await pg.wait_for_timeout(600)
-    cheia = await pg.evaluate("(() => { const c = document.querySelector('.ct-grade-card'); const s = document.querySelector('.ct-grade-scroll'); return { on: !!document.fullscreenElement || c.classList.contains('ct-grade-cheia'), h: s.clientHeight, ih: innerHeight, txt: document.querySelector('.ct-grade-btn').textContent }; })()")
-    check(cheia['on'] and cheia['h'] >= cheia['ih'] - 140 and 'Sair' in cheia['txt'], f"rubricas: Ampliar planilha cobre a tela com uma só área de rolagem ({cheia['h']}px de {cheia['ih']}px)")
-    await pg.evaluate("document.querySelector('.ct-grade-btn').click()"); await pg.wait_for_timeout(500)
-    check(await pg.evaluate("!document.fullscreenElement && !document.querySelector('.ct-grade-cheia') && document.querySelector('.ct-grade-btn').textContent.startsWith('Ampliar')"), 'rubricas: sair da tela cheia volta ao normal')
     ok = await espera(lambda: pn.evaluate("(document.querySelector('#grade-rub')?.innerText || '').includes('Bônus de Natal')"), 5)
     check(ok, 'rubrica sem evento na empresa fica para o cliente (com aviso)')
     # envio: só pelo botão do portal, depois do resumo; o aviso do Hoje some com o lançamento da competência no portal
@@ -1235,7 +1256,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -1628,6 +1649,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
+        await teste_grade_div(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
