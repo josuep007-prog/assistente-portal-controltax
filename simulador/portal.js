@@ -448,6 +448,16 @@
     // 1ª coluna e um evento da empresa (código - nome) por coluna, um campo por célula
     grid.querySelector('[data-all]').addEventListener('click', function () {
       if (!ci.value) { ci.classList.add('p-invalid'); toast('Informe a competência antes de adicionar funcionários.', 'err'); return; }
+      var modoDiv = null; try { modoDiv = localStorage.getItem('ct-sim-grade'); } catch (e) { /* sem armazenamento */ }
+      if (modoDiv === 'div' || modoDiv === 'div-edit') {
+        // grade em blocos, como o portal real (div em div.content__grid): caixa de marcar + nome + eventos; 'div-edit': a célula só vira campo ao clicar
+        var larg = function (w, html, cls) { return '<div class="' + (cls || '') + '" style="flex:none;width:' + w + 'px;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc">' + html + '</div>'; };
+        var cab = larg(50, '<input type="checkbox" aria-label="Todos">') + larg(250, '<b>Nome</b>') + EVENTOS.map(function (ev) { return larg(150, '<b>' + esc(ev) + '</b>'); }).join('');
+        var corpo = EMP3.map(function (e) { return '<div class="p-gd-row" style="display:flex;min-width:max-content;height:50px;border-top:1px solid #ccc">' + larg(50, '<input type="checkbox">') + larg(250, '<span>' + esc(e) + '</span><i title="info" style="margin-left:8px">i</i>') + EVENTOS.map(function (ev) { return larg(150, modoDiv === 'div' ? '<input type="text" class="p-grade-v" style="width:100%;border:0">' : '', 'p-gd-cel'); }).join('') + '</div>'; }).join('');
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div class="p-gd-rolagem" style="overflow:auto;height:300px;width:100%;text-align:left"><div style="display:flex;min-width:max-content;height:50px">' + cab + '</div>' + corpo + '</div></div>';
+        if (modoDiv === 'div-edit') grid.querySelectorAll('.p-gd-cel').forEach(function (c) { c.addEventListener('dblclick', function () { if (c.querySelector('input')) return; var i = document.createElement('input'); i.type = 'text'; i.className = 'p-grade-v'; i.style.cssText = 'width:100%;border:0'; c.appendChild(i); i.focus(); }); });
+        return;
+      }
       grid.querySelector('.p-grid-b').innerHTML = '<table class="p-table p-grade" role="grid" aria-label="Rubricas"><thead><tr><th>Empregado</th>' + EVENTOS.map(function (ev) { return '<th>' + esc(ev) + '</th>'; }).join('') + '</tr></thead><tbody>' +
         EMP3.map(function (e) { return '<tr><td>' + esc(e) + '</td>' + EVENTOS.map(function (ev) { return '<td><input type="text" class="p-grade-v" inputmode="decimal" aria-label="' + esc(ev + ' de ' + e) + '"></td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table><small class="p-help">Grade do simulador (a calibrar): no portal real as colunas vêm dos eventos cadastrados para a empresa.</small>';

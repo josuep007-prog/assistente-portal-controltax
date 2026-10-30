@@ -1,14 +1,12 @@
-/* Assistente do Portal do Cliente — conteúdo: Planilha de rubricas ampla (2.19.0).
+/* Assistente do Portal do Cliente — conteúdo: leitura da grade do Lançamento de Rubricas (2.20.1).
  * Parte de content/ (mapa em docs/arquitetura.md). Script comum: compartilha o escopo do mundo isolado com os outros arquivos
  * de content/ (a ordem de carga está no manifest e no simulador).
  *
- * O Lançamento de Rubricas do portal mostra a grade (Nome + uma coluna por evento) numa janelinha com altura fixa e três
- * barras de rolagem (a da página, a de cima/baixo e a do lado). Aqui a grade ganha: (1) altura que aproveita a tela, (2) a
- * coluna do nome e o cabeçalho fixos ao rolar, (3) títulos que quebram em duas linhas em vez de cortar e (4) o botão "Ampliar
- * planilha": tela cheia só para a grade, com uma única área de rolagem. Só muda o jeito de mostrar (estilo): não lê nem escreve
- * valores, nada é enviado. A grade real não tem seletor mapeado: ela é achada pelo que tem (uma área rolável com várias colunas
- * "código - nome do evento"); o diagnóstico mostra a etiqueta e as classes do que foi achado (a calibrar no Onvio real). */
-const gradeAmpla = { card: null, scroller: null, barra: null, cheia: false, viaTelaCheia: false, achada: '' };
+ * NADA aqui muda o jeito que o Onvio aparece (sem estilo, botão ou classe na página): a 2.19.0 chegou a ampliar a planilha do
+ * próprio portal e foi desfeita a pedido do Josué. Este arquivo só ACHA a grade e a lê (colunas "código - evento", funcionários,
+ * células) para a Planilha de rubricas da plataforma (panel/painel/planilha.js) lançar os valores digitados nela. A grade real é
+ * feita de blocos (div em div.content__grid), não de tabela: é achada pelo conteúdo e lida pela posição na tela. */
+const gradeAmpla = { card: null, scroller: null, achada: '' };   // só guarda o que foi achado (o nome vem da 2.19.0)
 
 const gradeEhRubricas = () => { const r = routeInfo(); return r.mode === 'form' && tipoBySlug(r.slug) === 'rubricas'; };
 const gradeNome = (el) => (el ? `${el.tagName.toLowerCase()}${typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : ''}` : '');
@@ -27,105 +25,123 @@ function acharPlanilha() {
   let cand = [...main.querySelectorAll('*')].filter(el => el.clientWidth >= 300 && el.clientHeight >= 80 && rolavel(el) && gradeEventosEm(el) >= 2);
   cand = cand.filter(el => !cand.some(o => o !== el && el.contains(o)));   // a área rolável mais de dentro (não a rolagem da página)
   let scroller = cand.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0] || null;
-  if (!scroller) {   // sem área rolável própria: a tabela da grade, e o pai dela passa a rolar
-    const tab = main.querySelector(cfgGrade().tabela) || [...main.querySelectorAll('table, [role=grid]')].find(t => gradeEventosEm(t) >= 2);
-    scroller = tab ? tab.parentElement : null;
+  if (!scroller) {   // sem área rolável própria: a tabela da grade (ou o bloco que tem as colunas)
+    const tab = main.querySelector(cfgGrade().tabela) || [...main.querySelectorAll('table, [role=grid], div')].find(t => gradeEventosEm(t) >= 2 && !t.querySelector('table, [role=grid]'));
+    scroller = tab ? (tab.tagName === 'TABLE' ? tab.parentElement : tab) : null;
   }
   if (!scroller || scroller === main || scroller === document.body) return null;
-  // o cartão: o primeiro bloco acima que também tem os botões "Adicionar funcionários"
-  const botao = /adicionar\s+(todos\s+os\s+)?funcion/;
-  let card = scroller.parentElement;
-  for (let el = scroller.parentElement; el && el !== main && el !== document.body; el = el.parentElement) {
-    if ([...el.querySelectorAll('button')].some(b => botao.test(norm(b.innerText).toLowerCase()))) { card = el; break; }
-  }
-  return { scroller, card: card && card !== main ? card : scroller.parentElement };
+  return { scroller, card: scroller.parentElement };
 }
 
-const gradeCss = () => `
-.ct-grade-scroll { overflow: auto !important; max-height: none !important; }
-.ct-grade-scroll tr > :first-child, .ct-grade-scroll [role=row] > :first-child { position: sticky !important; left: 0 !important; z-index: 3 !important; background: #fff !important; box-shadow: 2px 0 0 rgba(0,0,0,.08); }
-.ct-grade-scroll thead th, .ct-grade-scroll [role=columnheader] { position: sticky !important; top: 0 !important; z-index: 4 !important; background: #fff !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.2 !important; vertical-align: bottom !important; }
-.ct-grade-scroll thead th:first-child, .ct-grade-scroll [role=columnheader]:first-child { z-index: 5 !important; }
-.ct-grade-card.ct-grade-cheia { position: fixed !important; inset: 0 !important; z-index: 2147482000 !important; margin: 0 !important; padding: 12px 16px !important; background: #fff !important; box-sizing: border-box !important; overflow: auto !important; }
-.ct-grade-card:fullscreen { margin: 0 !important; padding: 12px 16px !important; background: #fff !important; box-sizing: border-box !important; overflow: auto !important; }
-.ct-grade-barra { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; font: 500 12.5px 'IBM Plex Sans', system-ui, sans-serif; color: #4b5b68; }
-.ct-grade-btn { border: 1px solid #0071a9; background: #fff; color: #0071a9; border-radius: 3px; padding: 6px 12px; font: 700 12px 'IBM Plex Sans', system-ui, sans-serif; letter-spacing: .02em; cursor: pointer; }
-.ct-grade-btn:hover { background: #0071a9; color: #fff; }
-.ct-grade-btn:focus-visible { outline: 2px solid #0071a9; outline-offset: 2px; }
-`;
-
-function gradeEstilo() {
-  if (document.getElementById('ct-grade-css')) return;
-  const st = document.createElement('style'); st.id = 'ct-grade-css'; st.textContent = gradeCss();
-  document.documentElement.appendChild(st);
-}
-
-/** Altura da área rolável: a que sobra na tela (cheia) ou quase a tela toda (normal), sem as barras de cima e de baixo da página. */
-function gradeAltura() {
-  const { scroller } = gradeAmpla; if (!scroller || !scroller.isConnected) return;
-  const topo = scroller.getBoundingClientRect().top;
-  const h = Math.round(gradeAmpla.cheia ? innerHeight - Math.max(0, topo) - 16 : Math.max(460, innerHeight - 170));
-  if (scroller.style.getPropertyValue('height') !== `${h}px`) scroller.style.setProperty('height', `${h}px`, 'important');
-}
-
-function gradeBarra() {
-  const { card } = gradeAmpla; if (!card) return;
-  if (!gradeAmpla.barra || !gradeAmpla.barra.isConnected) {
-    const b = document.createElement('div'); b.className = 'ct-grade-barra';
-    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'ct-grade-btn';
-    const dica = document.createElement('span');
-    btn.addEventListener('click', () => gradeCheia(!gradeAmpla.cheia));
-    b.append(btn, dica); card.insertBefore(b, card.firstChild); gradeAmpla.barra = b;
-  }
-  const [btn, dica] = gradeAmpla.barra.children;
-  const t = gradeAmpla.cheia ? 'Sair da tela cheia (Esc)' : 'Ampliar planilha (tela cheia)';
-  if (btn.textContent !== t) btn.textContent = t;
-  const d = gradeAmpla.cheia ? 'Role só dentro da planilha: o nome e os títulos ficam fixos.' : 'Para preencher com mais espaço, sem as barras da página.';
-  if (dica.textContent !== d) dica.textContent = d;
-}
-
-async function gradeCheia(ligar) {
-  const { card } = gradeAmpla; if (!card) return;
-  if (ligar) {
-    gradeAmpla.cheia = true;
-    try { await card.requestFullscreen({ navigationUI: 'hide' }); gradeAmpla.viaTelaCheia = true; }
-    catch { gradeAmpla.viaTelaCheia = false; card.classList.add('ct-grade-cheia'); }   // sem tela cheia do navegador: cobre a janela com o próprio bloco
-  } else {
-    gradeAmpla.cheia = false;
-    if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
-    gradeAmpla.viaTelaCheia = false; card.classList.remove('ct-grade-cheia');
-  }
-  gradeBarra(); requestAnimationFrame(() => { gradeAltura(); setTimeout(gradeAltura, 150); });
-}
-
-function gradeLimpar() {
-  const { card, scroller, barra } = gradeAmpla;
-  if (document.fullscreenElement && gradeAmpla.viaTelaCheia) document.exitFullscreen().catch(() => {});
-  barra?.remove(); card?.classList.remove('ct-grade-card', 'ct-grade-cheia');
-  if (scroller) { scroller.classList.remove('ct-grade-scroll'); scroller.style.removeProperty('height'); }
-  Object.assign(gradeAmpla, { card: null, scroller: null, barra: null, cheia: false, viaTelaCheia: false, achada: '' });
-}
-
-/** Chamada a cada mudança da tela (final.js): acha a planilha quando ela aparece e a deixa ampla; fora do Lançamento de Rubricas, desfaz. */
+/** Chamada a cada mudança da tela (final.js): acha a grade quando ela aparece. Só guarda a referência (não mexe na página). */
 function atualizarGrade() {
-  if (!gradeEhRubricas()) { if (gradeAmpla.card) gradeLimpar(); return; }
-  if (rules?.tipos?.rubricas?.grade?.ampla === false) return;
-  if (gradeAmpla.scroller && !gradeAmpla.scroller.isConnected) gradeLimpar();   // o portal redesenhou a grade
-  if (!gradeAmpla.scroller) {
-    const a = acharPlanilha(); if (!a) return;
-    gradeEstilo();
-    Object.assign(gradeAmpla, a, { achada: `${gradeNome(a.scroller)} em ${gradeNome(a.card)}` });
-    a.scroller.classList.add('ct-grade-scroll'); a.card.classList.add('ct-grade-card');
-  }
-  gradeBarra(); gradeAltura();
+  if (!gradeEhRubricas()) { if (gradeAmpla.scroller) Object.assign(gradeAmpla, { card: null, scroller: null, achada: '' }); return; }
+  if (gradeAmpla.scroller && !gradeAmpla.scroller.isConnected) Object.assign(gradeAmpla, { card: null, scroller: null, achada: '' });   // o portal redesenhou a grade
+  if (gradeAmpla.scroller) return;
+  const a = acharPlanilha(); if (!a) return;
+  Object.assign(gradeAmpla, a, { achada: `${gradeNome(a.scroller)} em ${gradeNome(a.card)}` });
 }
 
-/** Só etiquetas e classes (nenhum texto da tela): para o diagnóstico. */
-const gradeInfo = () => (gradeEhRubricas() ? { achou: !!gradeAmpla.scroller, onde: gradeAmpla.achada, cheia: gradeAmpla.cheia ? (gradeAmpla.viaTelaCheia ? 'navegador' : 'janela') : '' } : null);
+let gradeDiag = { t: 0, estrutura: '', entradas: '' };
+/** Só etiquetas, classes e contagens (nenhum texto da tela): para o diagnóstico. */
+const gradeInfo = () => {
+  if (!gradeEhRubricas()) return null;
+  if (Date.now() - gradeDiag.t > 5000) gradeDiag = { t: Date.now(), estrutura: gradeEstrutura(), entradas: gradeEntradas() };   // varrer a tela a cada mudança pesaria
+  return { achou: !!gradeAmpla.scroller, onde: gradeAmpla.achada, cheia: '', estrutura: gradeDiag.estrutura, entradas: gradeDiag.entradas };
+};
 
-addEventListener('resize', () => { if (gradeAmpla.scroller) gradeAltura(); });
-document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement && gradeAmpla.cheia && gradeAmpla.viaTelaCheia) { gradeAmpla.cheia = false; gradeAmpla.viaTelaCheia = false; }   // saiu pelo Esc
-  if (gradeAmpla.card) { gradeBarra(); requestAnimationFrame(gradeAltura); }
-});
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && gradeAmpla.cheia && !gradeAmpla.viaTelaCheia) gradeCheia(false); });
+/* ============ Grade que não é <table> (o portal real: div em div.content__grid, visto em 30/10/2026) ============ */
+/* Colunas e linhas pela posição na tela: os títulos "código - evento" dão as colunas; a coluna "Nome" dá os funcionários; cada
+   linha é o menor bloco que tem a caixa de marcar e alcança a última coluna. A célula é o campo (input) que cai na coluna; sem
+   campo, o bloco da célula (o campo aparece ao clicar). Só estrutura e posição: nenhum valor da grade é guardado. */
+const gradeRect = (el) => el.getBoundingClientRect();
+const gradeCentroX = (el) => { const r = gradeRect(el); return (r.left + r.right) / 2; };
+
+function gradeDivLer(scroller) {
+  if (!scroller) return null;
+  const folhas = [...scroller.querySelectorAll('*')].filter(x => !x.children.length && (x.textContent || '').trim());
+  const evs = folhas.filter(x => gradeRotEvento.test(x.textContent));
+  if (evs.length < 2) return null;
+  const centroY = (el) => { const r = gradeRect(el); return (r.top + r.bottom) / 2; };   // pelo centro: um título de duas linhas tem o topo mais alto
+  const topo = centroY(evs[0]);
+  const cab = evs.filter(x => Math.abs(centroY(x) - topo) < 14).sort((a, b) => gradeRect(a).left - gradeRect(b).left);
+  if (cab.length < 2) return null;
+  // a caixa de cada coluna: o maior bloco acima do título que ainda não alcança o título vizinho
+  const caixaDe = (x, vizinhos) => {
+    let el = x, box = gradeRect(x);
+    for (let p = x.parentElement; p && p !== scroller; p = p.parentElement) {
+      if (vizinhos.some(v => v && p.contains(v)) || gradeRect(p).height > 140) break;
+      el = p; box = gradeRect(p);
+    }
+    return { el, left: box.left, right: box.right };
+  };
+  const colunas = cab.map((x, i) => ({ titulo: (x.textContent || '').trim(), ...caixaDe(x, [cab[i - 1], cab[i + 1]]) }));
+  const nomeTit = folhas.find(x => /^(nome|empregad|funcionari)/.test(norm(x.textContent).toLowerCase()) && x.textContent.trim().length < 25 && gradeRect(x).left < gradeRect(cab[0]).left);
+  const nomeCol = nomeTit ? caixaDe(nomeTit, [cab[0]]) : null;
+  const ultimoDireita = colunas[colunas.length - 1].right;
+  const caixas = [...scroller.querySelectorAll('input[type=checkbox], [role=checkbox]')].filter(c => Math.abs(centroY(c) - topo) > 14);   // sem a caixa do cabeçalho
+  const linhas = [];
+  for (const cb of caixas) {
+    let row = cb.parentElement;
+    while (row && row !== scroller && (gradeRect(row).right < ultimoDireita - 4 || gradeRect(row).height < 16)) row = row.parentElement;
+    if (!row || row === scroller || gradeRect(row).height > 140 || linhas.includes(row)) continue;
+    linhas.push(row);
+  }
+  const nomeDe = (row) => {
+    const fl = [...row.querySelectorAll('*')].filter(x => !x.children.length && (x.textContent || '').trim());
+    const na = nomeCol ? fl.filter(x => gradeCentroX(x) >= nomeCol.left - 2 && gradeCentroX(x) <= nomeCol.right + 2) : fl;
+    return ((na[0] || fl[0])?.textContent || '').trim();
+  };
+  const campos = 'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, [contenteditable=true]';
+  const celula = (row, j) => {
+    const c = colunas[j], cx = (c.left + c.right) / 2;
+    const campo = [...row.querySelectorAll(campos)].find(i => { const r = gradeRect(i); return r.width > 0 && cx >= r.left - 2 && cx <= r.right + 2; });
+    if (campo) return { campo };
+    const blocos = [...row.querySelectorAll('*')].filter(e => { const r = gradeRect(e); return r.width > 0 && r.height >= 16 && cx >= r.left && cx <= r.right && r.width <= (c.right - c.left) + 6; });
+    return { bloco: blocos.sort((a, b) => gradeRect(b).width * gradeRect(b).height - gradeRect(a).width * gradeRect(a).height)[0] || null };
+  };
+  return { titulos: colunas.map(c => c.titulo), linhas, empregados: linhas.map(nomeDe), celula };
+}
+
+/** Acha o campo de uma célula; sem campo, clica na célula (duas vezes) para o portal abrir o editor. */
+async function gradeCampoDaCelula(cel) {
+  if (cel.campo) return cel.campo;
+  const b = cel.bloco; if (!b) return null;
+  b.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  const doBloco = () => b.querySelector('input:not([type=checkbox]), textarea, [contenteditable=true]');
+  const antes = document.activeElement;   // o campo que já estava em foco (de outra célula) não conta
+  for (const tipo of ['click', 'dblclick']) {
+    b.dispatchEvent(new MouseEvent(tipo, { bubbles: true, cancelable: true, view: window }));
+    await sleep(120);
+    const ativo = document.activeElement;
+    const novo = ativo && ativo !== antes && ativo.matches?.('input, textarea, [contenteditable=true]') && gradeAmpla.scroller?.contains(ativo) ? ativo : null;
+    const campo = doBloco() || novo;
+    if (campo) return campo;
+  }
+  return null;
+}
+
+/** Só etiquetas, classes e contagens (nenhum texto da tela): para calibrar a grade do portal real pelo diagnóstico. */
+function gradeEstrutura() {
+  const sc = gradeAmpla.scroller; if (!sc) return '';
+  const d = (el) => `${el.tagName.toLowerCase()}${typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : ''}${el.getAttribute('role') ? `[role=${el.getAttribute('role')}]` : ''}`;
+  const ramo = (de) => { const t = []; for (let e = de; e && e !== sc.parentElement; e = e.parentElement) t.unshift(`${d(e)}(${e.children.length})`); return t.join('>'); };
+  const folhas = [...sc.querySelectorAll('*')].filter(x => !x.children.length && (x.textContent || '').trim());
+  const ev = folhas.find(x => gradeRotEvento.test(x.textContent));
+  const cbs = [...sc.querySelectorAll('input[type=checkbox], [role=checkbox]')];
+  const campos = sc.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, [contenteditable=true]');
+  const g = gradeDivLer(sc);
+  const filhos = g?.linhas[0] ? [...g.linhas[0].children].slice(0, 6).map(d).join(',') : '';
+  return [`rolagem=${d(sc)} pai=${d(sc.parentElement)}`, ev ? `título=${ramo(ev)}` : 'sem título de evento', cbs[1] ? `linha=${ramo(cbs[1])}` : 'sem caixas de marcar',
+    `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
+    g ? `lido: ${g.titulos.length} colunas, ${g.linhas.length} linhas; filhos da linha: ${filhos}` : 'leitura por posição: não achou colunas'].join(' | ').slice(0, 1400);
+}
+
+/** Entradas do formulário fora da grade (nomes de atributos, nunca valores): para achar o campo da competência. */
+function gradeEntradas() {
+  const sc = gradeAmpla.scroller;
+  return [...mainEl().querySelectorAll('input:not([type=hidden]):not([type=file]), textarea, select')].filter(e => !sc?.contains(e) && !e.closest('app-help-menu')).slice(0, 14).map(e => {
+    const at = (n) => (e.getAttribute(n) ? `${n}=${String(e.getAttribute(n)).slice(0, 28)}` : '');
+    return `${e.tagName.toLowerCase()}${[at('type'), at('formcontrolname'), at('name'), at('id'), at('placeholder'), at('aria-label')].filter(Boolean).map(x => ' ' + x).join('')} pai=${e.parentElement?.tagName.toLowerCase()}${typeof e.parentElement?.className === 'string' && e.parentElement.className.trim() ? '.' + e.parentElement.className.trim().split(/\s+/)[0] : ''}`;
+  }).join(' ; ').slice(0, 1300);
+}

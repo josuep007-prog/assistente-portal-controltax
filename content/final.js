@@ -128,5 +128,7 @@ Promise.all([loadRules(), modoInicial()]).then(([, inicial]) => {
   // ganchos para o simulador (soltar exemplos, abrir o painel, trocar o modo)
   plat.expose?.({ openPanel: () => setPanel(true), modo: (m) => setModo(m), modoAtual: () => modo, sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); },
     // testes do simulador: o mesmo preenchimento que o painel pede (nunca envia)
-    preencher: (tipo, values, opts) => comboLock(() => fillForm(tipo, values || {}, [], opts || {})) });
+    preencher: (tipo, values, opts) => comboLock(() => fillForm(tipo, values || {}, [], opts || {})),
+    // testes do simulador: a grade lida pela posição na tela (grade em blocos, como a do portal real)
+    grade: { ler: () => { atualizarGrade(); const g = lerGradeDiv(); return g && { titulos: g.titulos, empregados: g.empregados }; }, escrever: (c) => preencherGrade(c) } });
 });

@@ -3315,7 +3315,6 @@
         "calibrar": true,
         "ativo": true,
         "tabela": "table[aria-label='Rubricas'], [role=grid][aria-label='Rubricas']",
-        "ampla": true,
         "botaoAdicionarTodos": "Adicionar todos os funcionários",
         "colunaEmpregado": 0
       },
