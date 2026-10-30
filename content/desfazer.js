@@ -8,12 +8,14 @@
 const cfgGrade = () => ({ tabela: "table[aria-label='Rubricas'], [role=grid][aria-label='Rubricas']", botaoAdicionarTodos: 'Adicionar todos os funcionários', colunaEmpregado: 0, ...(rules?.tipos?.rubricas?.grade || {}) });
 const acharGrade = () => mainEl().querySelector(cfgGrade().tabela);
 function lerTabelaGrade(tab) {
-  const ce = +cfgGrade().colunaEmpregado || 0;
   const titulos = [...tab.querySelectorAll('thead th, [role=columnheader]')].map(th => (th.innerText || '').trim());
+  // a coluna do funcionário: a que se chama Nome/Empregado/Funcionário (no portal real há uma coluna de marcar antes dela); senão a das regras
+  const porTitulo = titulos.findIndex(t => /^(nome|empregad|funcionari)/i.test(norm(t)));
+  const ce = porTitulo >= 0 ? porTitulo : (+cfgGrade().colunaEmpregado || 0);
   const linhas = [...tab.querySelectorAll('tbody tr, [role=row]')].filter(r => r.querySelector('input'));
   const celulas = (r) => [...r.querySelectorAll('td, [role=gridcell], [role=rowheader]')];
   const empregados = linhas.map(r => (celulas(r)[ce]?.innerText || '').trim());
-  return { titulos, linhas, empregados, celulas, eventos: titulos.filter((_, i) => i !== ce) };
+  return { titulos, linhas, empregados, celulas, eventos: titulos.filter((t, i) => i !== ce && t) };   // sem a coluna de marcar (título vazio)
 }
 async function lerGrade(adicionar) {
   const r = routeInfo();

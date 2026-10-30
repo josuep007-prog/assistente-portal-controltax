@@ -42,7 +42,7 @@ async function onPanelMessage(m) {
         if (modo === 'plataforma') iframe?.focus();
         post({ type: 'gradePreenchida', id: m.id, ...r });
         sendContext(); avisarDesfazer();
-        if (r.mudou) toast('Grade preenchida pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });
+        if (r.mudou && !m.silencioso) toast('Grade preenchida pelo Assistente. Confira antes de enviar.', 9000, { rotulo: '↶ Desfazer', fn: () => desfazer() });   // silencioso: a planilha da plataforma lança célula a célula
         break;
       }
       case 'attach': { const a = await attachFiles(unpackFiles(m.files)); post({ type: 'attachResult', id: m.id, n: a.n, anexos: a }); sendContext(); break; }

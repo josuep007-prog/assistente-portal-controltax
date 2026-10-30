@@ -72,6 +72,7 @@ Desde a 2.16.4 o painel também é dividido por assunto. `panel/panel.js` ficou 
 | `portal.js` | Portal ↔ Assistente, resumo antes de enviar, modelos |
 | `facilidades.js` | Rascunho, repetir, colar, diagnóstico |
 | `historico.js` | Histórico e Pendências |
+| `planilha.js` | Planilha de rubricas da plataforma (2.20.0): grade editável que lança célula a célula na grade do portal |
 | `config.js` | Calculadoras e Configurações |
 
 Regras: (1) nada chama função de outro módulo na hora do carregamento; (2) variáveis soltas que mudavam (`lastKey`, `reqId`…) agora ficam em `S.pv`; (3) os ouvintes de eventos de cada módulo ficam em `ligar()`, chamado por `panel.js` na ordem de antes; (4) `P` (a plataforma) é um atalho em `base.js`, preenchido por `definirPlat` no fim de `panel.js`.
