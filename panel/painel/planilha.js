@@ -30,7 +30,7 @@ export function renderPlanilhaRubricas(tipo) {
   if (!P.carregada) {
     el.innerHTML = `<section class="pn-card plan-rub">${cab}<div class="pn-card-body">
       <p class="muted" style="margin:0 0 8px">${P.erro ? esc(P.erro) : noForm ? 'Preencha a competência acima e carregue os funcionários e as rubricas da empresa.' : 'Abra o Lançamento de Rubricas para carregar a planilha.'}</p>
-      <button type="button" class="btn btn-primary" id="plan-carregar"${P.lendo || !noForm ? ' disabled' : ''}>${P.lendo ? 'Lendo a grade do portal…' : 'Carregar funcionários e rubricas'}</button></div></section>`;
+      <button type="button" class="btn btn-primary" id="plan-carregar"${P.lendo || !noForm ? ' disabled' : ''}>${P.lendo ? 'Abrindo a planilha do portal e lendo…' : 'Carregar funcionários e rubricas'}</button></div></section>`;
     $('#plan-carregar')?.addEventListener('click', () => carregar(tipo));
     return;
   }
