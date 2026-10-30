@@ -130,5 +130,5 @@ Promise.all([loadRules(), modoInicial()]).then(([, inicial]) => {
     // testes do simulador: o mesmo preenchimento que o painel pede (nunca envia)
     preencher: (tipo, values, opts) => comboLock(() => fillForm(tipo, values || {}, [], opts || {})),
     // testes do simulador: a grade lida pela posição na tela (grade em blocos, como a do portal real)
-    grade: { ler: () => { atualizarGrade(); const g = lerGradeDiv(); return g && { titulos: g.titulos, empregados: g.empregados }; }, escrever: (c) => preencherGrade(c) } });
+    grade: { ler: async () => { atualizarGrade(); if (!lerGradeDiv()) return null; const t = await gradeLerTudo(); return { titulos: t.titulos, empregados: t.empregados }; }, escrever: (c) => preencherGrade(c) } });
 });

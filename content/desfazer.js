@@ -20,6 +20,8 @@ function lerTabelaGrade(tab) {
 /** A grade em blocos (div), quando o portal não usa <table>: a achada por rubricas.js, lida pela posição das colunas e linhas. */
 const lerGradeDiv = () => { atualizarGrade(); const g = gradeDivLer(gradeAmpla.scroller); return g && g.linhas.length ? g : null; };
 let gradeAddInfo = '';
+/** A grade em blocos lida por inteiro (rola a grade para juntar todas as linhas e colunas). */
+async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados }; }
 /** O que aparece na tela depois de clicar em "Adicionar todos os funcionários": janelas abertas e rótulos de botões (só os nomes dos botões, nenhum dado). */
 function gradeAposAdicionar() {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -34,7 +36,7 @@ async function lerGrade(adicionar) {
   const r = routeInfo();
   if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, motivo: 'abra o Lançamento de Rubricas' };
   let tab = acharGrade();
-  if (!tab && lerGradeDiv()) { const g = lerGradeDiv(); return { ok: true, eventos: g.titulos, empregados: g.empregados }; }
+  if (!tab && lerGradeDiv()) return resultadoGradeDiv();
   if ((!tab || !lerTabelaGrade(tab).linhas.length) && adicionar) {
     const alvo = norm(cfgGrade().botaoAdicionarTodos);
     const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
@@ -43,7 +45,7 @@ async function lerGrade(adicionar) {
     gradeAddInfo = '';
     for (let i = 0; i < 64 && !(tab = acharGrade()) && !lerGradeDiv(); i++) await sleep(250);   // até 16 s: o portal busca os funcionários antes de mostrar a grade
   }
-  if (!tab) { const g = lerGradeDiv(); if (g) return { ok: true, eventos: g.titulos, empregados: g.empregados }; }
+  if (!tab && lerGradeDiv()) return resultadoGradeDiv();
   if (!tab) {
     atualizarGrade();
     const sc = gradeAmpla.scroller;
@@ -58,15 +60,24 @@ async function lerGrade(adicionar) {
 async function preencherGradeDiv(celulas) {
   const antes = [], faltaram = [];
   for (const c of celulas) {
+    await gradeIrPara(c.empregado, c.evento);   // a grade só desenha o que cabe na tela: rola até a célula
     const g = lerGradeDiv();   // lê de novo a cada célula: o portal pode redesenhar a grade ao editar
     const i = g ? g.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1;
     const j = g ? g.titulos.findIndex(t => norm(t) === norm(c.evento)) : -1;
-    const campo = i >= 0 && j >= 0 ? await gradeCampoDaCelula(g.celula(g.linhas[i], j)) : null;
+    let cel = i >= 0 && j >= 0 ? g.celula(g.linhas[i], j) : null;
+    if (cel?.bloco) {   // rolar a grade redesenha as células: traz a célula para a vista, espera o redesenho e a localiza de novo
+      cel.bloco.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); await sleep(200);
+      const g2 = lerGradeDiv(), i2 = g2 ? g2.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1, j2 = g2 ? g2.titulos.findIndex(t => norm(t) === norm(c.evento)) : -1;
+      cel = i2 >= 0 && j2 >= 0 ? g2.celula(g2.linhas[i2], j2) : null;
+    }
+    const campo = cel ? await gradeCampoDaCelula(cel) : null;
     if (!campo || campo.disabled || campo.readOnly) { faltaram.push(c); continue; }
     const v0 = campo.value ?? campo.textContent ?? '';
     if (v0 === String(c.valor)) continue;
     if (campo.isContentEditable) { campo.textContent = String(c.valor); campo.dispatchEvent(new Event('input', { bubbles: true })); } else setNative(campo, String(c.valor));
-    campo.dispatchEvent(new Event('change', { bubbles: true })); campo.dispatchEvent(new Event('blur', { bubbles: true })); mark(campo); await sleep(30);
+    campo.dispatchEvent(new Event('change', { bubbles: true }));
+    if (campo.closest?.('.wj-cell, [role=gridcell]')) campo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));   // a planilha do portal confirma a edição com Enter
+    campo.dispatchEvent(new Event('blur', { bubbles: true })); mark(campo); await sleep(30);
     antes.push({ empregado: c.empregado, evento: c.evento, antes: v0 });
   }
   if (antes.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: antes }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }

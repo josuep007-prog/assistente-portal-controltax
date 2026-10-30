@@ -179,3 +179,72 @@ function gradeEntradas() {
     return `${e.tagName.toLowerCase()}${[at('type'), at('formcontrolname'), at('name'), at('id'), at('placeholder'), at('aria-label')].filter(Boolean).map(x => ' ' + x).join('')}${estado ? ` {${estado}}` : ''} pai=${e.parentElement?.tagName.toLowerCase()}${typeof e.parentElement?.className === 'string' && e.parentElement.className.trim() ? '.' + e.parentElement.className.trim().split(/\s+/)[0] : ''}`;
   }).join(' ; ').slice(0, 2000);
 }
+
+/* ============ Grade virtualizada (Wijmo): rolar para ver tudo ============ */
+/* A planilha do portal só desenha o que cabe na tela (linhas e colunas). Para ler todos os funcionários e todas as rubricas, rola a
+   grade (nomes pela rolagem vertical, rubricas pela horizontal) e junta o que foi aparecendo. Só rolagem: nada é clicado nem escrito. */
+let gradeMapa = { empregados: [], eventos: [] };   // a lista completa, na ordem da grade (só na memória)
+
+/** O elemento que realmente rola (o da grade ou um de dentro dele). */
+function gradeRolante(sc) {
+  const rola = (e) => { const cs = getComputedStyle(e); return (e.scrollHeight > e.clientHeight + 2 && /(auto|scroll)/.test(cs.overflowY)) || (e.scrollWidth > e.clientWidth + 2 && /(auto|scroll)/.test(cs.overflowX)); };
+  const c = [sc, ...sc.querySelectorAll('*')].filter(rola);
+  return c.sort((a, b) => b.scrollWidth * b.scrollHeight - a.scrollWidth * a.scrollHeight)[0] || null;
+}
+const gradeUnir = (lista, novos) => { const vistos = new Set(lista.map(x => norm(x))); for (const n of novos) { const k = norm(n); if (n && !vistos.has(k)) { vistos.add(k); lista.push(n); } } };
+
+async function gradeLerTudo() {
+  atualizarGrade();
+  const sc = gradeAmpla.scroller; const g0 = sc && gradeDivLer(sc);
+  if (!g0) return { titulos: [], empregados: [] };
+  const rol = gradeRolante(sc);
+  const empregados = [], titulos = [];
+  gradeUnir(empregados, g0.empregados); gradeUnir(titulos, g0.titulos);
+  if (rol) {
+    const ant = { x: rol.scrollLeft, y: rol.scrollTop };
+    const passo = (tam) => Math.max(40, Math.floor(tam * 0.6));
+    // funcionários: de cima para baixo, na borda esquerda (a coluna do nome fica fixa)
+    rol.scrollTo(0, 0); await sleep(150);
+    for (let y = 0, n = 0; n < 200; n++) {
+      const g = gradeDivLer(sc); if (g) gradeUnir(empregados, g.empregados);
+      const max = rol.scrollHeight - rol.clientHeight; if (y >= max - 1) break;
+      y = Math.min(max, y + passo(rol.clientHeight)); rol.scrollTo(rol.scrollLeft, y); await sleep(130);
+    }
+    // rubricas: da esquerda para a direita, no alto (o cabeçalho fica fixo)
+    rol.scrollTo(0, 0); await sleep(150);
+    for (let x = 0, n = 0; n < 200; n++) {
+      const g = gradeDivLer(sc); if (g) gradeUnir(titulos, g.titulos);
+      const max = rol.scrollWidth - rol.clientWidth; if (x >= max - 1) break;
+      x = Math.min(max, x + passo(rol.clientWidth)); rol.scrollTo(x, 0); await sleep(130);
+    }
+    rol.scrollTo(ant.x, ant.y); await sleep(100);
+  }
+  gradeMapa = { empregados: [...empregados], eventos: [...titulos] };
+  return { titulos, empregados };
+}
+
+/** Rola a grade até a linha e a coluna aparecerem (sem clicar). Devolve se achou as duas. */
+async function gradeIrPara(empregado, evento) {
+  const sc = gradeAmpla.scroller; if (!sc) return false;
+  const rol = gradeRolante(sc);
+  const tem = () => { const g = gradeDivLer(sc); return g && g.empregados.some(e => norm(e) === norm(empregado)) && g.titulos.some(t => norm(t) === norm(evento)); };
+  if (tem() || !rol) return !!tem();
+  const alvoI = gradeMapa.empregados.findIndex(e => norm(e) === norm(empregado)), alvoJ = gradeMapa.eventos.findIndex(t => norm(t) === norm(evento));
+  for (let n = 0; n < 80; n++) {
+    const g = gradeDivLer(sc); if (!g) { await sleep(100); continue; }
+    const vi = g.empregados.some(e => norm(e) === norm(empregado)), vj = g.titulos.some(t => norm(t) === norm(evento));
+    if (vi && vj) return true;
+    if (!vi) {   // para que lado está a linha: compara a posição dela com a da primeira linha visível
+      const primeira = gradeMapa.empregados.findIndex(e => norm(e) === norm(g.empregados[0]));
+      const dir = alvoI >= 0 && primeira >= 0 ? Math.sign(alvoI - primeira) || 1 : 1;
+      rol.scrollTo(rol.scrollLeft, Math.max(0, rol.scrollTop + dir * Math.max(40, rol.clientHeight * 0.5)));
+    }
+    if (!vj) {
+      const primeira = gradeMapa.eventos.findIndex(t => norm(t) === norm(g.titulos[0]));
+      const dir = alvoJ >= 0 && primeira >= 0 ? Math.sign(alvoJ - primeira) || 1 : 1;
+      rol.scrollTo(Math.max(0, rol.scrollLeft + dir * Math.max(40, rol.clientWidth * 0.5)), rol.scrollTop);
+    }
+    await sleep(130);
+  }
+  return !!tem();
+}
