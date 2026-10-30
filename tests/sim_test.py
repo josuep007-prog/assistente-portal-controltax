@@ -799,7 +799,7 @@ async def teste_cadastro(b):
 async def teste_grade_div(b):
     """2.20.1: a grade do portal real é de blocos (div), não de tabela: lida pela posição, sem mudar nada na tela do Onvio."""
     print('\n[grade em blocos] leitura por posição, escrita e o Onvio intacto')
-    for modo in ('div', 'div-edit', 'div-flat'):
+    for modo in ('div', 'div-edit', 'div-flat', 'wijmo'):
         ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
         pg = await ctx.new_page()
         erros = []
@@ -818,6 +818,10 @@ async def teste_grade_div(b):
         g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
         check(bool(g) and len(g['titulos']) == 6 and g['empregados'] == ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'], f'grade em blocos ({modo}): colunas e funcionários lidos pela posição ({g})')
         r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'JORGE OLIVEIRA ALVES', evento: '0010 - FALTAS', valor: '2' }, { empregado: 'RONALDO DE SOUZA', evento: '0020 - COMISSÕES', valor: '350' }])")
+        if modo == 'wijmo':
+            vals = await pg.evaluate("[...document.querySelectorAll('.wj-row')].slice(1).map(r => [...r.querySelectorAll('.wj-cell')].slice(2).map(c => c.dataset.v || '').join('|'))")
+            check(r.get('ok') and r.get('n') == 2 and vals == ['|||||', '||2|||', '||||350|'] or vals[1].split('|')[2] == '2' and vals[2].split('|')[4] == '350', f'grade Wijmo: valores nas linhas e colunas certas ({vals})')
+            await ctx.close(); continue
         v = await pg.evaluate("(() => { const ins = [...document.querySelectorAll('input.p-grade-v')]; const ys = [...new Set(ins.map(i => Math.round(i.getBoundingClientRect().top)))].sort((a, b) => a - b); return ys.map(y => ins.filter(i => Math.round(i.getBoundingClientRect().top) === y).map(i => i.value).join('|')); })()")
         ordem = [k for k, linha in enumerate(v) if linha.replace('|', '')]
         check(r.get('ok') and r.get('n') == 2 and len(ordem) == 2 and '2' in v[ordem[0]].split('|') and '350' in v[ordem[1]].split('|'), f'grade em blocos ({modo}): os valores caem nas linhas certas, na ordem dos funcionários ({r.get("n")} de 2; {v})')

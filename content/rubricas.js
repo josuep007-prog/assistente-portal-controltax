@@ -57,12 +57,33 @@ const gradeInfo = () => {
 const gradeRect = (el) => el.getBoundingClientRect();
 const gradeCentroX = (el) => { const r = gradeRect(el); return (r.left + r.right) / 2; };
 
+/** Grade com linhas `[role=row]` e células nos filhos (Wijmo FlexGrid): colunas pelo índice da célula do cabeçalho. Só estrutura; nenhum valor é guardado. */
+function gradeAriaLer(scroller, evs) {
+  const celulasDe = (row) => [...row.children];
+  const cabEl = evs[0].closest('[role=row]'); if (!cabEl) return null;
+  const cab = celulasDe(cabEl);
+  const idx = cab.map((c, k) => (gradeRotEvento.test((c.textContent || '').trim()) ? k : -1)).filter(k => k >= 0);
+  if (idx.length < 2) return null;
+  const ehNome = (c) => /^(nome|empregad|funcionari)/.test(norm(c.textContent || '').toLowerCase()) && (c.textContent || '').trim().length < 25;
+  let ni = cab.findIndex(ehNome); if (ni < 0) ni = cab.findIndex((c, k) => k < idx[0] && (c.textContent || '').trim());
+  const rows = [...scroller.querySelectorAll('[role=row]')].filter(r => r !== cabEl && !r.querySelector('[role=columnheader]') && celulasDe(r).length >= idx[idx.length - 1]);
+  const linhas = rows.map(r => { const y = (gradeRect(r).top + gradeRect(r).bottom) / 2; return { y, h: gradeRect(r).height, row: r, els: () => [r, ...r.querySelectorAll('*')] }; });
+  const nomeDe = (l) => (ni >= 0 ? (celulasDe(l.row)[ni]?.textContent || '') : '').trim();
+  const dados = linhas.filter(l => nomeDe(l));
+  if (!dados.length) return null;
+  const campos = 'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, [contenteditable=true]';
+  const celula = (l, j) => { const c = celulasDe(l.row)[idx[j]]; if (!c) return { bloco: null }; const campo = c.matches?.(campos) ? c : c.querySelector(campos); return campo ? { campo } : { bloco: c }; };
+  return { titulos: idx.map(k => (cab[k].textContent || '').trim()), linhas: dados, empregados: dados.map(nomeDe), celula };
+}
+
 function gradeDivLer(scroller) {
   if (!scroller) return null;
   const folhas = [...scroller.querySelectorAll('*')].filter(x => !x.children.length && (x.textContent || '').trim());
   const evs = folhas.filter(x => gradeRotEvento.test(x.textContent));
   if (evs.length < 2) return null;
   const centroY = (el) => { const r = gradeRect(el); return (r.top + r.bottom) / 2; };   // pelo centro: um título de duas linhas tem o topo mais alto
+  const aria = gradeAriaLer(scroller, evs);   // grade com linhas/células de verdade (Wijmo do Onvio: wj-row / wj-cell, role=row)
+  if (aria) return aria;
   const topo = centroY(evs[0]);
   const cab = evs.filter(x => Math.abs(centroY(x) - topo) < 14).sort((a, b) => gradeRect(a).left - gradeRect(b).left);
   if (cab.length < 2) return null;
@@ -138,7 +159,7 @@ function gradeEstrutura() {
   const g = gradeDivLer(sc);
   const filhos = g?.linhas[0] ? `${g.linhas[0].els().length} elementos na faixa da linha (${[...new Set(g.linhas[0].els().map(d))].slice(0, 8).join(',')})` : '';
   return [`rolagem=${d(sc)} pai=${d(sc.parentElement)}`, ev ? `título=${ramo(ev)}` : 'sem título de evento', cbs[1] ? `linha=${ramo(cbs[1])}` : 'sem caixas de marcar',
-    `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
+    `linhas[role=row]=${sc.querySelectorAll('[role=row]').length} celulas[role]=${[...new Set([...sc.querySelectorAll('[role]')].map(x => x.getAttribute('role')))].slice(0, 8).join(',')}`, `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
     g ? `lido: ${g.titulos.length} colunas, ${g.linhas.length} linhas; ${filhos}` : `leitura por posição: não leu (${gradeEventosEm(sc)} títulos de evento, ${cbs.length} caixas de marcar)`].join(' | ').slice(0, 1400);
 }
 
