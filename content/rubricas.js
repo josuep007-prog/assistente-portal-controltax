@@ -78,7 +78,11 @@ function gradeDivLer(scroller) {
   const colunas = cab.map((x, i) => ({ titulo: (x.textContent || '').trim(), ...caixaDe(x, [cab[i - 1], cab[i + 1]]) }));
   const nomeTit = folhas.find(x => /^(nome|empregad|funcionari)/.test(norm(x.textContent).toLowerCase()) && x.textContent.trim().length < 25 && gradeRect(x).left < gradeRect(cab[0]).left);
   const nomeCol = nomeTit ? caixaDe(nomeTit, [cab[0]]) : null;
-  const caixas = [...scroller.querySelectorAll('input[type=checkbox], [role=checkbox]')].filter(c => Math.abs(centroY(c) - topo) > 14).sort((x, y) => centroY(x) - centroY(y));   // sem a caixa do cabeçalho
+  let caixas = [...scroller.querySelectorAll('input[type=checkbox], [role=checkbox], mat-checkbox, [class*=checkbox]')].filter(c => centroY(c) - topo > 14 && gradeRect(c).height > 0 && gradeRect(c).height < 60).sort((x, y) => centroY(x) - centroY(y));   // sem a caixa do cabeçalho
+  if (!caixas.length) {   // sem caixa de marcar: cada nome da coluna Nome, abaixo do cabeçalho, marca uma linha
+    const esq = nomeCol ? (x) => gradeCentroX(x) >= nomeCol.left - 2 && gradeCentroX(x) <= nomeCol.right + 2 : (x) => gradeRect(x).right <= gradeRect(cab[0]).left + 4;
+    caixas = folhas.filter(x => centroY(x) - topo > 14 && !gradeRotEvento.test(x.textContent) && esq(x)).sort((x, y) => centroY(x) - centroY(y));
+  }
   // as linhas pela altura na tela: vale para linhas em bloco e para grade de células soltas lado a lado (CSS grid, sem bloco por linha)
   const ys = caixas.map(centroY);
   const linhas = [];
