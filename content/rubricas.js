@@ -70,12 +70,13 @@ function gradeAriaLer(scroller, evs) {
   const rows = [...scroller.querySelectorAll('[role=row]')].filter(r => r !== cabEl && !r.querySelector('[role=columnheader]'));
   // o nome: a célula da coluna Nome; se estiver vazia, a primeira célula com texto que não seja uma coluna de evento
   const nomeDe = (r) => {
-    const cs = celulasDe(r), t = (c) => (c?.textContent || '').trim();
+    // o nome pode estar num campo (input) da célula: o valor dele não aparece como texto
+    const cs = celulasDe(r), t = (c) => ((c?.textContent || '').trim() || (c?.matches?.('input') ? c.value : c?.querySelector?.('input:not([type=checkbox]):not([type=radio])')?.value) || '').trim();
     return (ni >= 0 && t(cs[ni])) || t(cs.find((c, k) => !idx.includes(k) && t(c) && !/^\d+([.,]\d+)?$/.test(t(c))));
   };
   const linhas = rows.map(r => ({ y: (gradeRect(r).top + gradeRect(r).bottom) / 2, h: gradeRect(r).height, row: r, els: () => [r, ...r.querySelectorAll('*')] }));
   const dados = linhas.filter(l => nomeDe(l.row));
-  gradeAriaInfo = `${rows.length} linhas de dados (filhos: ${rows.slice(0, 6).map(r => celulasDe(r).length).join(',')}; com nome: ${dados.length}; cabeçalho: ${cab.length} filhos, nome no índice ${ni}, eventos nos índices ${idx.join(',')})`;
+  gradeAriaInfo = `${rows.length} linhas de dados (filhos: ${rows.slice(0, 6).map(r => celulasDe(r).length).join(',')}; com nome: ${dados.length}; linhas com campo: ${rows.filter(r => r.querySelector('input:not([type=checkbox]):not([type=radio])')).length}, com campo preenchido: ${rows.filter(r => [...r.querySelectorAll('input:not([type=checkbox]):not([type=radio])')].some(i => i.value)).length}; cabeçalho: ${cab.length} filhos, nome no índice ${ni}, eventos nos índices ${idx.join(',')})`;
   if (!dados.length) return null;
   const campos = 'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, [contenteditable=true]';
   const celula = (l, j) => { const c = celulasDe(l.row)[idx[j]]; if (!c) return { bloco: null }; const campo = c.matches?.(campos) ? c : c.querySelector(campos); return campo ? { campo } : { bloco: c }; };

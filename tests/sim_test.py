@@ -799,7 +799,7 @@ async def teste_cadastro(b):
 async def teste_grade_div(b):
     """2.20.1: a grade do portal real é de blocos (div), não de tabela: lida pela posição, sem mudar nada na tela do Onvio."""
     print('\n[grade em blocos] leitura por posição, escrita e o Onvio intacto')
-    for modo in ('div', 'div-edit', 'div-flat', 'wijmo'):
+    for modo in ('div', 'div-edit', 'div-flat', 'wijmo', 'wijmo-campo'):
         ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
         pg = await ctx.new_page()
         erros = []
@@ -818,7 +818,7 @@ async def teste_grade_div(b):
         g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
         check(bool(g) and len(g['titulos']) == 6 and g['empregados'] == ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'], f'grade em blocos ({modo}): colunas e funcionários lidos pela posição ({g})')
         r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'JORGE OLIVEIRA ALVES', evento: '0010 - FALTAS', valor: '2' }, { empregado: 'RONALDO DE SOUZA', evento: '0020 - COMISSÕES', valor: '350' }])")
-        if modo == 'wijmo':
+        if modo.startswith('wijmo'):
             vals = await pg.evaluate("[...document.querySelectorAll('.wj-row')].slice(1).map(r => [...r.querySelectorAll('.wj-cell')].slice(2).map(c => c.dataset.v || '').join('|'))")
             check(r.get('ok') and r.get('n') == 2 and vals == ['|||||', '||2|||', '||||350|'] or vals[1].split('|')[2] == '2' and vals[2].split('|')[4] == '350', f'grade Wijmo: valores nas linhas e colunas certas ({vals})')
             await ctx.close(); continue
@@ -831,6 +831,22 @@ async def teste_grade_div(b):
         check(not any(extra.values()), f'o Onvio fica do jeito original: nenhum estilo, botão ou classe da extensão na grade ({extra})')
         check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
         await ctx.close()
+
+async def teste_tela_muda(b):
+    """2.20.8: se o serviço de fundo da extensão não responde, Configurações não fica muda: avisa e deixa tentar de novo."""
+    print('\n[telas] Configurações com o serviço de fundo parado')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    await pn.evaluate("chrome.runtime.sendMessage = (m) => (m && (m.type === 'getSettings' || m.type === 'getRules')) ? new Promise(() => {}) : Promise.resolve({})")
+    await pn.click('#rail [data-acao="config"]')
+    ok = False
+    for _ in range(40):
+        if await pn.evaluate("!!document.querySelector('#tela-de-novo')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    check(ok, 'Configurações: sem resposta do serviço de fundo, a tela avisa e oferece "Tentar de novo"')
+    await ctx.close()
 
 async def teste_lote6(b):
     """Lote 6: variáveis da folha no Hoje (38), grade de rubricas (45) e resposta preparada no portal (46)."""
@@ -1261,7 +1277,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -1654,7 +1670,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b)
+        await teste_grade_div(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
