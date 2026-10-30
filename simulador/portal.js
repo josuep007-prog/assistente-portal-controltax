@@ -449,6 +449,14 @@
     grid.querySelector('[data-all]').addEventListener('click', function () {
       if (!ci.value) { ci.classList.add('p-invalid'); toast('Informe a competência antes de adicionar funcionários.', 'err'); return; }
       var modoDiv = null; try { modoDiv = localStorage.getItem('ct-sim-grade'); } catch (e) { /* sem armazenamento */ }
+      if (modoDiv === 'div-flat') {
+        // células soltas lado a lado (CSS grid, sem bloco por linha): caixa de marcar + nome + eventos, tudo filho direto da grade
+        var cel = function (html, extra) { return '<div style="box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc;border-top:1px solid #ccc;height:50px;' + (extra || '') + '">' + html + '</div>'; };
+        var flat = cel('<input type="checkbox" aria-label="Todos">') + cel('<b>Nome</b>') + EVENTOS.map(function (ev) { return cel('<b>' + esc(ev) + '</b>'); }).join('');
+        EMP3.forEach(function (e, n) { flat += cel('<input type="checkbox">') + cel('<span>' + esc(e) + '</span><i title="info" style="margin-left:8px">i</i>') + EVENTOS.map(function () { return cel('<input type="text" class="p-grade-v" data-lin="' + n + '" style="width:100%;border:0">'); }).join(''); });
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div class="p-gd-rolagem" style="overflow:auto;height:300px;width:100%;text-align:left"><div style="display:grid;grid-template-columns:50px 250px repeat(' + EVENTOS.length + ',150px);width:max-content">' + flat + '</div></div></div>';
+        return;
+      }
       if (modoDiv === 'div' || modoDiv === 'div-edit') {
         // grade em blocos, como o portal real (div em div.content__grid): caixa de marcar + nome + eventos; 'div-edit': a célula só vira campo ao clicar
         var larg = function (w, html, cls) { return '<div class="' + (cls || '') + '" style="flex:none;width:' + w + 'px;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc">' + html + '</div>'; };

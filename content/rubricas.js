@@ -78,27 +78,28 @@ function gradeDivLer(scroller) {
   const colunas = cab.map((x, i) => ({ titulo: (x.textContent || '').trim(), ...caixaDe(x, [cab[i - 1], cab[i + 1]]) }));
   const nomeTit = folhas.find(x => /^(nome|empregad|funcionari)/.test(norm(x.textContent).toLowerCase()) && x.textContent.trim().length < 25 && gradeRect(x).left < gradeRect(cab[0]).left);
   const nomeCol = nomeTit ? caixaDe(nomeTit, [cab[0]]) : null;
-  const ultimoDireita = colunas[colunas.length - 1].right;
-  const caixas = [...scroller.querySelectorAll('input[type=checkbox], [role=checkbox]')].filter(c => Math.abs(centroY(c) - topo) > 14);   // sem a caixa do cabeçalho
+  const caixas = [...scroller.querySelectorAll('input[type=checkbox], [role=checkbox]')].filter(c => Math.abs(centroY(c) - topo) > 14).sort((x, y) => centroY(x) - centroY(y));   // sem a caixa do cabeçalho
+  // as linhas pela altura na tela: vale para linhas em bloco e para grade de células soltas lado a lado (CSS grid, sem bloco por linha)
+  const ys = caixas.map(centroY);
   const linhas = [];
-  for (const cb of caixas) {
-    let row = cb.parentElement;
-    while (row && row !== scroller && (gradeRect(row).right < ultimoDireita - 4 || gradeRect(row).height < 16)) row = row.parentElement;
-    if (!row || row === scroller || gradeRect(row).height > 140 || linhas.includes(row)) continue;
-    linhas.push(row);
-  }
+  caixas.forEach((cb, i) => {
+    const y = ys[i];
+    if (linhas.length && Math.abs(linhas[linhas.length - 1].y - y) < 6) return;   // a mesma linha
+    const h = Math.min(140, Math.max(20, ys[i + 1] != null ? ys[i + 1] - y : (ys[i - 1] != null ? y - ys[i - 1] : 50)));
+    linhas.push({ y, h, els: () => [...scroller.querySelectorAll('*')].filter(e => { const r = gradeRect(e); return r.height > 0 && r.height < h * 1.4 && Math.abs((r.top + r.bottom) / 2 - y) < h / 2; }) });
+  });
   const nomeDe = (row) => {
-    const fl = [...row.querySelectorAll('*')].filter(x => !x.children.length && (x.textContent || '').trim());
+    const fl = row.els().filter(x => !x.children.length && (x.textContent || '').trim());
     const na = nomeCol ? fl.filter(x => gradeCentroX(x) >= nomeCol.left - 2 && gradeCentroX(x) <= nomeCol.right + 2) : fl;
     return ((na[0] || fl[0])?.textContent || '').trim();
   };
   const campos = 'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, [contenteditable=true]';
   const celula = (row, j) => {
-    const c = colunas[j], cx = (c.left + c.right) / 2;
-    const campo = [...row.querySelectorAll(campos)].find(i => { const r = gradeRect(i); return r.width > 0 && cx >= r.left - 2 && cx <= r.right + 2; });
+    const c = colunas[j], cx = (c.left + c.right) / 2, els = row.els();
+    const campo = els.find(i => i.matches?.(campos) && (() => { const r = gradeRect(i); return r.width > 0 && cx >= r.left - 2 && cx <= r.right + 2; })());
     if (campo) return { campo };
-    const blocos = [...row.querySelectorAll('*')].filter(e => { const r = gradeRect(e); return r.width > 0 && r.height >= 16 && cx >= r.left && cx <= r.right && r.width <= (c.right - c.left) + 6; });
-    return { bloco: blocos.sort((a, b) => gradeRect(b).width * gradeRect(b).height - gradeRect(a).width * gradeRect(a).height)[0] || null };
+    const blocos = els.filter(e => { const r = gradeRect(e); return r.width > 0 && r.height >= 16 && cx >= r.left && cx <= r.right && r.width <= (c.right - c.left) + 6; });
+    return { bloco: blocos.sort((x, y) => gradeRect(y).width * gradeRect(y).height - gradeRect(x).width * gradeRect(x).height)[0] || null };
   };
   return { titulos: colunas.map(c => c.titulo), linhas, empregados: linhas.map(nomeDe), celula };
 }
@@ -131,10 +132,10 @@ function gradeEstrutura() {
   const cbs = [...sc.querySelectorAll('input[type=checkbox], [role=checkbox]')];
   const campos = sc.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, [contenteditable=true]');
   const g = gradeDivLer(sc);
-  const filhos = g?.linhas[0] ? [...g.linhas[0].children].slice(0, 6).map(d).join(',') : '';
+  const filhos = g?.linhas[0] ? `${g.linhas[0].els().length} elementos na faixa da linha (${[...new Set(g.linhas[0].els().map(d))].slice(0, 8).join(',')})` : '';
   return [`rolagem=${d(sc)} pai=${d(sc.parentElement)}`, ev ? `título=${ramo(ev)}` : 'sem título de evento', cbs[1] ? `linha=${ramo(cbs[1])}` : 'sem caixas de marcar',
     `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
-    g ? `lido: ${g.titulos.length} colunas, ${g.linhas.length} linhas; filhos da linha: ${filhos}` : 'leitura por posição: não achou colunas'].join(' | ').slice(0, 1400);
+    g ? `lido: ${g.titulos.length} colunas, ${g.linhas.length} linhas; ${filhos}` : `leitura por posição: não leu (${gradeEventosEm(sc)} títulos de evento, ${cbs.length} caixas de marcar)`].join(' | ').slice(0, 1400);
 }
 
 /** Entradas do formulário fora da grade (nomes de atributos, nunca valores): para achar o campo da competência. */

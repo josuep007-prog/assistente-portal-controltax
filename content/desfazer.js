@@ -29,10 +29,14 @@ async function lerGrade(adicionar) {
     const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
     if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
     await reveal(b); b.click();
-    for (let i = 0; i < 20 && !(tab = acharGrade()) && !lerGradeDiv(); i++) await sleep(250);
+    for (let i = 0; i < 64 && !(tab = acharGrade()) && !lerGradeDiv(); i++) await sleep(250);   // até 16 s: o portal busca os funcionários antes de mostrar a grade
   }
   if (!tab) { const g = lerGradeDiv(); if (g) return { ok: true, eventos: g.titulos, empregados: g.empregados }; }
-  if (!tab) return { ok: false, motivo: 'a grade não apareceu (a competência está preenchida?)' };
+  if (!tab) {
+    atualizarGrade();
+    const sc = gradeAmpla.scroller;
+    return { ok: false, motivo: sc ? `achei a grade na tela (${gradeAmpla.achada}), mas não consegui ler as linhas dos funcionários: copie o diagnóstico em Configurações e mande ao escritório` : 'a grade não apareceu na tela (a competência está preenchida? use "Adicionar todos os funcionários" no portal)' };
+  }
   const g = lerTabelaGrade(tab);
   return { ok: true, eventos: g.eventos, empregados: g.empregados };
 }
