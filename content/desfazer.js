@@ -35,7 +35,7 @@ async function lerGrade(adicionar) {
   if (!tab) {
     atualizarGrade();
     const sc = gradeAmpla.scroller;
-    return { ok: false, motivo: sc ? `achei a grade na tela (${gradeAmpla.achada}), mas não consegui ler as linhas dos funcionários: copie o diagnóstico em Configurações e mande ao escritório` : 'a grade não apareceu na tela (a competência está preenchida? use "Adicionar todos os funcionários" no portal)' };
+    return { ok: false, motivo: sc ? `achei a grade na tela (${gradeAmpla.achada}), mas não consegui ler as linhas dos funcionários (${gradeAriaInfo || 'sem detalhe'}): copie o diagnóstico em Configurações e mande ao escritório` : 'a grade não apareceu na tela (a competência está preenchida? use "Adicionar todos os funcionários" no portal)' };
   }
   const g = lerTabelaGrade(tab);
   return { ok: true, eventos: g.eventos, empregados: g.empregados };

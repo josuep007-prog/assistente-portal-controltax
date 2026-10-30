@@ -58,22 +58,28 @@ const gradeRect = (el) => el.getBoundingClientRect();
 const gradeCentroX = (el) => { const r = gradeRect(el); return (r.left + r.right) / 2; };
 
 /** Grade com linhas `[role=row]` e células nos filhos (Wijmo FlexGrid): colunas pelo índice da célula do cabeçalho. Só estrutura; nenhum valor é guardado. */
+let gradeAriaInfo = '';   // forma das linhas da grade (só contagens), para o diagnóstico e para o aviso de falha
 function gradeAriaLer(scroller, evs) {
   const celulasDe = (row) => [...row.children];
-  const cabEl = evs[0].closest('[role=row]'); if (!cabEl) return null;
+  const cabEl = evs[0].closest('[role=row]'); if (!cabEl) { gradeAriaInfo = 'sem linha [role=row] no cabeçalho'; return null; }
   const cab = celulasDe(cabEl);
   const idx = cab.map((c, k) => (gradeRotEvento.test((c.textContent || '').trim()) ? k : -1)).filter(k => k >= 0);
-  if (idx.length < 2) return null;
+  if (idx.length < 2) { gradeAriaInfo = 'cabeçalho com menos de 2 eventos'; return null; }
   const ehNome = (c) => /^(nome|empregad|funcionari)/.test(norm(c.textContent || '').toLowerCase()) && (c.textContent || '').trim().length < 25;
   let ni = cab.findIndex(ehNome); if (ni < 0) ni = cab.findIndex((c, k) => k < idx[0] && (c.textContent || '').trim());
-  const rows = [...scroller.querySelectorAll('[role=row]')].filter(r => r !== cabEl && !r.querySelector('[role=columnheader]') && celulasDe(r).length >= idx[idx.length - 1]);
-  const linhas = rows.map(r => { const y = (gradeRect(r).top + gradeRect(r).bottom) / 2; return { y, h: gradeRect(r).height, row: r, els: () => [r, ...r.querySelectorAll('*')] }; });
-  const nomeDe = (l) => (ni >= 0 ? (celulasDe(l.row)[ni]?.textContent || '') : '').trim();
-  const dados = linhas.filter(l => nomeDe(l));
+  const rows = [...scroller.querySelectorAll('[role=row]')].filter(r => r !== cabEl && !r.querySelector('[role=columnheader]'));
+  // o nome: a célula da coluna Nome; se estiver vazia, a primeira célula com texto que não seja uma coluna de evento
+  const nomeDe = (r) => {
+    const cs = celulasDe(r), t = (c) => (c?.textContent || '').trim();
+    return (ni >= 0 && t(cs[ni])) || t(cs.find((c, k) => !idx.includes(k) && t(c) && !/^\d+([.,]\d+)?$/.test(t(c))));
+  };
+  const linhas = rows.map(r => ({ y: (gradeRect(r).top + gradeRect(r).bottom) / 2, h: gradeRect(r).height, row: r, els: () => [r, ...r.querySelectorAll('*')] }));
+  const dados = linhas.filter(l => nomeDe(l.row));
+  gradeAriaInfo = `${rows.length} linhas de dados (filhos: ${rows.slice(0, 6).map(r => celulasDe(r).length).join(',')}; com nome: ${dados.length}; cabeçalho: ${cab.length} filhos, nome no índice ${ni}, eventos nos índices ${idx.join(',')})`;
   if (!dados.length) return null;
   const campos = 'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), textarea, [contenteditable=true]';
   const celula = (l, j) => { const c = celulasDe(l.row)[idx[j]]; if (!c) return { bloco: null }; const campo = c.matches?.(campos) ? c : c.querySelector(campos); return campo ? { campo } : { bloco: c }; };
-  return { titulos: idx.map(k => (cab[k].textContent || '').trim()), linhas: dados, empregados: dados.map(nomeDe), celula };
+  return { titulos: idx.map(k => (cab[k].textContent || '').trim()), linhas: dados, empregados: dados.map(l => nomeDe(l.row)), celula };
 }
 
 function gradeDivLer(scroller) {
@@ -159,7 +165,7 @@ function gradeEstrutura() {
   const g = gradeDivLer(sc);
   const filhos = g?.linhas[0] ? `${g.linhas[0].els().length} elementos na faixa da linha (${[...new Set(g.linhas[0].els().map(d))].slice(0, 8).join(',')})` : '';
   return [`rolagem=${d(sc)} pai=${d(sc.parentElement)}`, ev ? `título=${ramo(ev)}` : 'sem título de evento', cbs[1] ? `linha=${ramo(cbs[1])}` : 'sem caixas de marcar',
-    `linhas[role=row]=${sc.querySelectorAll('[role=row]').length} celulas[role]=${[...new Set([...sc.querySelectorAll('[role]')].map(x => x.getAttribute('role')))].slice(0, 8).join(',')}`, `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
+    `leitura por linhas: ${gradeAriaInfo || '-'}`, `linhas[role=row]=${sc.querySelectorAll('[role=row]').length} celulas[role]=${[...new Set([...sc.querySelectorAll('[role]')].map(x => x.getAttribute('role')))].slice(0, 8).join(',')}`, `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
     g ? `lido: ${g.titulos.length} colunas, ${g.linhas.length} linhas; ${filhos}` : `leitura por posição: não leu (${gradeEventosEm(sc)} títulos de evento, ${cbs.length} caixas de marcar)`].join(' | ').slice(0, 1400);
 }
 
