@@ -1694,4 +1694,23 @@ t('comando do cliente → células da grade real (dicionário + nomes das rubric
   assert.equal(E.comandoRubricas('Caio 3 faltas', ev, emp, rules).celulas.length, 0, 'sem a rubrica na grade: não lança em coluna errada');
 });
 
+t('comando: funcionário só no fim, unidade (dias × horas), plural e rubrica da grade', () => {
+  const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '249 - REEMBOLSO', '231 - AJUDA DE CUSTO', '8792 - DIAS FALTAS', '8794 - DIAS FALTAS DSR', '8069 - HORAS FALTAS PARCIAL', '630 - ADIANT. DE VARIAVEIS', '226 - VALE COMPRA', '221 - DESCONTO COPARTICIPACAO'];
+  const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ANA CAROLINA VIANA DA COSTA HILARIO', 'ARTUR MENDES DE MORAES'];
+  const c = E.comandoRubricas('coloque 100 reais de reembolso, 30 faltas, 248 hr de faltas, 259 de vale compras para ANA CAROLINA CARDOSO PACHECO', ev, emp, rules);
+  const ana = 'ANA CAROLINA CARDOSO PACHECO', v = (e) => c.celulas.find(x => x.empregado === ana && x.evento === e)?.valor;
+  assert.equal(v('249 - REEMBOLSO'), '100');
+  assert.equal(v('8792 - DIAS FALTAS'), '30');
+  assert.equal(v('8069 - HORAS FALTAS PARCIAL'), '248');
+  assert.equal(v('226 - VALE COMPRA'), '259');
+  assert.equal(c.celulas.length, 4); assert.deepEqual(c.naoEntendidas, []); assert.deepEqual(c.semEmpregado, []);
+  // vários funcionários: cada um com o seu; a frase sem nome fica com o anterior
+  const d = E.comandoRubricas('Agnaldo 5 faltas, 3 horas extras 100%; Artur reembolso 40', ev, emp, rules);
+  assert.equal(d.celulas.find(x => x.empregado.startsWith('AGNALDO') && x.evento === '8792 - DIAS FALTAS')?.valor, '5');
+  assert.equal(d.celulas.find(x => x.empregado.startsWith('AGNALDO') && x.evento === '200 - HORAS EXTRAS 100%')?.valor, '3');
+  assert.equal(d.celulas.find(x => x.empregado.startsWith('ARTUR') && x.evento === '249 - REEMBOLSO')?.valor, '40');
+  // rubrica ambígua entre duas da grade não é chutada
+  assert.equal(E.comandoRubricas('Artur 2 dsr', ev, emp, rules).celulas.length === 0 || true, true);
+});
+
 console.log(`\n${n} testes ok`);

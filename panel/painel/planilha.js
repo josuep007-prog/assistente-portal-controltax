@@ -9,7 +9,7 @@ import { enviarPendenteAgora, fillPortal, valorPlat } from './formulario.js';
 
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 const chave = (i, j) => `${i}|${j}`;
-const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false });
+const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false, falhas: new Set(), ultimo: null });
 
 /** Só na plataforma (no painel encaixado o portal é a própria planilha) e só no Lançamento de Rubricas. */
 const ativa = (tipo) => tipo === 'rubricas' && S.modo === 'plataforma' && tipoDef(tipo)?.grade?.ativo !== false;
@@ -95,7 +95,7 @@ export function renderPlanilhaRubricas(tipo) {
     return;
   }
   const f = E.norm(P.filtro);
-  const linhas = P.empregados.map((emp, i) => `<tr data-i="${i}"${f && !E.norm(emp).includes(f) ? ' hidden' : ''}><th scope="row" class="plan-nome" title="${esc(emp)}">${esc(emp)}</th>${P.eventos.map((ev, j) => `<td><input type="text" inputmode="decimal" autocomplete="off" data-i="${i}" data-j="${j}" value="${esc(P.valores[chave(i, j)] || '')}" aria-label="${esc(ev)} — ${esc(emp)}"></td>`).join('')}</tr>`).join('');
+  const linhas = P.empregados.map((emp, i) => `<tr data-i="${i}"${f && !E.norm(emp).includes(f) ? ' hidden' : ''}><th scope="row" class="plan-nome" title="${esc(emp)}">${esc(emp)}</th>${P.eventos.map((ev, j) => `<td${P.falhas.has(chave(i, j)) ? ' class="plan-falhou" title="O portal não aceitou este valor"' : ''}><input type="text" inputmode="decimal" autocomplete="off" data-i="${i}" data-j="${j}" value="${esc(P.valores[chave(i, j)] || '')}" aria-label="${esc(ev)} — ${esc(emp)}"></td>`).join('')}</tr>`).join('');
   el.innerHTML = `<section class="pn-card plan-rub">${cab}<div class="pn-card-body">
     ${blocoComando(P, noForm)}
     <div class="plan-barra"><input type="search" id="plan-q" placeholder="Buscar funcionário…" value="${esc(P.filtro)}" autocomplete="off">
@@ -126,6 +126,7 @@ function ligar(tipo, el) {
   };
   tabela.addEventListener('input', (e) => {
     const inp = e.target.closest('input[data-i]'); if (!inp) return;
+    P.falhas.delete(chave(+inp.dataset.i, +inp.dataset.j)); inp.closest('td')?.classList.remove('plan-falhou');
     gravar(+inp.dataset.i, +inp.dataset.j, inp.value);
     const n = $('#plan-n'); if (n) n.textContent = `${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)`;
     agendar(tipo);
@@ -169,8 +170,15 @@ async function enviarCelulas(tipo) {
   S.preenchendo = true; let r = null;
   try { r = await request({ type: 'preencherGrade', celulas, silencioso: true }, 120000); } finally { S.preenchendo = false; }
   const falhas = r?.faltaram?.length || 0;
-  P.status = !r ? 'O portal não respondeu. Tente de novo.' : falhas ? `${falhas} célula(s) não aceitaram o valor no portal.` : `Lançado na grade do portal às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`;
+  const motivos = {};
+  for (const f of r?.faltaram || []) {
+    motivos[f.motivo || 'motivo não informado'] = (motivos[f.motivo || 'motivo não informado'] || 0) + 1;
+    const i = P.empregados.indexOf(f.empregado), j = P.eventos.indexOf(f.evento); if (i >= 0 && j >= 0) P.falhas.add(chave(i, j));
+  }
+  P.ultimo = r ? { total: celulas.length, falhas, motivos } : { total: celulas.length, falhas: celulas.length, motivos: { 'o portal não respondeu': celulas.length } };
+  P.status = !r ? 'O portal não respondeu. Tente de novo.' : falhas ? `${falhas} célula(s) não aceitaram o valor no portal (marcadas em vermelho): ${Object.entries(motivos).map(([m, n]) => `${m}${n > 1 ? ' ×' + n : ''}`).join('; ')}.` : `Lançado na grade do portal às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`;
   if (!r) chaves.forEach(k => P.pend.add(k));
+  document.querySelectorAll('.plan-tabela td').forEach(td => { const i = td.querySelector('input')?.dataset; if (i && P.falhas.has(chave(+i.i, +i.j))) { td.classList.add('plan-falhou'); td.title = 'O portal não aceitou este valor'; } });
   marcar(tipo);
 }
 

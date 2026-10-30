@@ -745,3 +745,5 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .plan-cmd-linha textarea { flex: 1 1 320px; min-height: 44px; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line, #cfd6dc); border-radius: 4px; background: var(--surface, #fff); color: inherit; }
 .plan-cmd-res { margin-top: 8px; font-size: 13px; }
 .plan-cmd-res .tips { margin: 0; padding-left: 18px; }
+
+.plan-tabela td.plan-falhou { box-shadow: inset 0 0 0 2px var(--brand-red, #C2000C); }

@@ -892,6 +892,14 @@ async def teste_comando_rubricas(b):
     await pg.wait_for_timeout(1500)
     cel = await pg.evaluate("[...document.querySelectorAll('input.p-grade-v')].map(i => i.value).filter(Boolean).sort()")
     check('4' in cel and '2' in cel, f'comando: os valores chegam à grade do portal ({cel})')
+    await pn.fill('#plan-cmd-txt', 'coloque 30 faltas, 5 atrasos, 700 de comissões para RONALDO DE SOUZA'); await pn.click('#plan-cmd-go')
+    ok = False
+    for _ in range(60):
+        if await pn.evaluate("(document.querySelector('#plan-cmd-res')?.innerText || '').includes('Preenchi 3')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    await pg.wait_for_timeout(1500)
+    cel2 = await pg.evaluate("[...document.querySelectorAll('input.p-grade-v')].map(i => i.value).filter(Boolean).sort()")
+    check(ok and all(x in cel2 for x in ('30', '5', '700')), f'comando: o funcionário no fim da frase ("... para RONALDO") vale para todos os itens ({cel2})')
     await pn.fill('#plan-cmd-txt', 'Jorge 9 xpto zeta'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(1500)
     txt = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
     check('Não entendi' in txt, f'comando: o que não foi entendido é avisado, sem inventar valor ({txt[:80]!r})')
