@@ -799,7 +799,7 @@ async def teste_cadastro(b):
 async def teste_grade_div(b):
     """2.20.1: a grade do portal real é de blocos (div), não de tabela: lida pela posição, sem mudar nada na tela do Onvio."""
     print('\n[grade em blocos] leitura por posição, escrita e o Onvio intacto')
-    for modo in ('div', 'div-edit'):
+    for modo in ('div', 'div-edit', 'div-flat'):
         ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
         pg = await ctx.new_page()
         erros = []
@@ -818,10 +818,11 @@ async def teste_grade_div(b):
         g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
         check(bool(g) and len(g['titulos']) == 6 and g['empregados'] == ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'], f'grade em blocos ({modo}): colunas e funcionários lidos pela posição ({g})')
         r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'JORGE OLIVEIRA ALVES', evento: '0010 - FALTAS', valor: '2' }, { empregado: 'RONALDO DE SOUZA', evento: '0020 - COMISSÕES', valor: '350' }])")
-        v = await pg.evaluate("[...document.querySelectorAll('.p-gd-row')].map(r => [...r.querySelectorAll('input.p-grade-v')].map(i => i.value).join('|'))")
-        check(r.get('ok') and r.get('n') == 2 and '2' in v[1].split('|') and '350' in v[2].split('|') and not any(x in v[0].split('|') for x in ('2', '350')), f'grade em blocos ({modo}): os valores caem nas linhas certas ({r.get("n")} de 2; {v})')
-        if modo == 'div':
-            check(v[1].split('|')[2] == '2' and v[2].split('|')[4] == '350', f'grade em blocos ({modo}): e nas colunas certas ({v})')
+        v = await pg.evaluate("(() => { const ins = [...document.querySelectorAll('input.p-grade-v')]; const ys = [...new Set(ins.map(i => Math.round(i.getBoundingClientRect().top)))].sort((a, b) => a - b); return ys.map(y => ins.filter(i => Math.round(i.getBoundingClientRect().top) === y).map(i => i.value).join('|')); })()")
+        ordem = [k for k, linha in enumerate(v) if linha.replace('|', '')]
+        check(r.get('ok') and r.get('n') == 2 and len(ordem) == 2 and '2' in v[ordem[0]].split('|') and '350' in v[ordem[1]].split('|'), f'grade em blocos ({modo}): os valores caem nas linhas certas, na ordem dos funcionários ({r.get("n")} de 2; {v})')
+        if modo in ('div', 'div-flat'):
+            check(len(v) == 3 and v[1].split('|')[2] == '2' and v[2].split('|')[4] == '350', f'grade em blocos ({modo}): e nas colunas certas ({v})')
         extra = await pg.evaluate("({ css: !!document.getElementById('ct-grade-css'), btn: !!document.querySelector('.ct-grade-btn, .ct-grade-barra'), cls: !!document.querySelector('.ct-grade-card, .ct-grade-scroll') })")
         check(not any(extra.values()), f'o Onvio fica do jeito original: nenhum estilo, botão ou classe da extensão na grade ({extra})')
         check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
