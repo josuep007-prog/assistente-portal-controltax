@@ -5,7 +5,7 @@ import { norm, today } from './base.js';
 import { renderTemplate } from './modelos.js';
 import { bestMatch, findEmployeeInText, similarity } from './nomes.js';
 import { texto1 } from './plataforma.js';
-import { MESES, RX_NUM, numeroPorExtenso, plain, temTermo, tl } from './textolivre.js';
+import { MESES, RX_NUM, escR, numeroPorExtenso, plain, temTermo, tl } from './textolivre.js';
 
 /* ---------- Variáveis da folha: competência e uma linha por funcionário ---------- */
 export const mesAno = (d) => `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -204,6 +204,51 @@ export function montarGrade(linhas, eventos, empregados, rules) {
     celulas.push({ empregado: emp, evento: ev, valor: String(l.valor).replace(/^R\$\s*/, '').replace(/\s*(horas?|dias?|h)$/i, '').trim(), rubrica: l.rubrica });
   }
   return { celulas, semEvento, semEmpregado };
+}
+/** Comando escrito pelo cliente ("Ronaldo 10 horas extras, Carla 2 faltas e prêmio 200 para o Artur") → células da grade do portal.
+ *  Primeiro o dicionário das regras (horas extras, faltas…); depois o nome das rubricas da própria grade ("440 - PREMIO", "37 - COMISSOES"),
+ *  que cobre os eventos de cada empresa. O funcionário é o da grade (nome inteiro ou só o primeiro, se for único); sem funcionário na frase vale o
+ *  anterior. O que não foi entendido volta em naoEntendidas, para o cliente lançar. Nada é inventado: só o que o texto diz. */
+export function comandoRubricas(texto, eventos, empregados, rules, { hoje = today() } = {}) {
+  const celulas = [], semEvento = [], semEmpregado = [], naoEntendidas = [];
+  const partes = String(texto || '').normalize('NFC').split(/[;\n]|,(?!\d)|\s+e\s+(?=(?:\p{L}+\s+){1,4}\d|\d)/u).map(x => x.trim()).filter(Boolean);
+  const limpa = (x) => plain(x).replace(/[^a-z0-9]+/g, ' ').trim();
+  const nomes = (eventos || []).map(ev => ({ ev, cheio: limpa(semCodigo(ev)), curto: limpa(nomeEvento(ev)) })).filter(x => x.curto.length >= 4);
+  const nasPalavras = (t, trecho) => (' ' + t + ' ').includes(' ' + trecho + ' ');
+  const poe = (empregado, evento, valor, rubrica) => { if (!celulas.some(c => c.empregado === empregado && c.evento === evento)) celulas.push({ empregado, evento, valor: String(valor), rubrica }); };
+  let ultEmp = null;
+  for (const p of partes) {
+    const t = limpa(p);
+    const emp = (empregados?.length && findEmployeeInText(p, empregados)?.option) || null;
+    if (emp) ultEmp = emp;
+    const quem = emp || ultEmp;
+    // 1) a rubrica da própria grade citada na frase: o nome com o complemento ("premio mes anterior") ganha do simples
+    let ev = null, nota = 0, trecho = '';
+    for (const x of nomes) {
+      const achou = nasPalavras(t, x.cheio) ? x.cheio : nasPalavras(t, x.curto) ? x.curto : '';
+      if (!achou || (x.cheio !== x.curto && achou !== x.cheio)) continue;   // "comissoes (mes anterior)" só quando a frase diz "mês anterior"
+      if (achou.length > nota) { ev = x.ev; nota = achou.length; trecho = achou; }
+    }
+    const resto = trecho ? (' ' + t + ' ').replace(' ' + trecho + ' ', ' ').trim() : t;
+    const dinheiro = p.match(/r\$\s*([\d.]+(?:,\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s*reais/i);
+    const num = dinheiro ? null : plain(resto.length ? p : p).replace(new RegExp(escR(trecho || '\u0000'), 'g'), ' ').match(/(?<![\d/:])(\d{1,2}:\d{2}|\d{1,6}(?:[.,]\d{1,2})?)(?![\d/])/);
+    const valor = dinheiro ? (dinheiro[1] || dinheiro[2]) : num ? num[1] : null;
+    if (ev && valor) {
+      if (quem) poe(quem, ev, valor, semCodigo(ev)); else if (!semEmpregado.includes('?')) semEmpregado.push('?');
+      continue;
+    }
+    // 2) o dicionário das regras (horas extras, faltas…) para o que a grade não nomeia
+    const linhas = linhasRubricas(p, rules, empregados).map(l => ({ ...l, empregado: l.empregado || quem || '' }));
+    if (linhas.length) {
+      const g = montarGrade(linhas, eventos, empregados, rules);
+      g.celulas.forEach(c => poe(c.empregado, c.evento, c.valor, c.rubrica));
+      g.semEvento.forEach(x => { if (!semEvento.includes(x)) semEvento.push(x); });
+      g.semEmpregado.forEach(x => { if (!semEmpregado.includes(x)) semEmpregado.push(x); });
+      continue;
+    }
+    if (valor || ev) naoEntendidas.push(p);
+  }
+  return { celulas, semEvento, semEmpregado, naoEntendidas, competencia: competenciaDoTexto(texto, hoje, rules) };
 }
 /** Linhas de um lançamento já feito (detalhe do portal, {apiDetalhe}/{id}?expand=all) para "Usar o lançamento do mês passado".
  *  O formato real não foi visto (empresa de teste sem eventos): procura listas de funcionários com listas de eventos e valores. A calibrar. */

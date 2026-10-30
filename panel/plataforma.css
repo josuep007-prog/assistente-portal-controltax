@@ -737,3 +737,11 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .plan-tabela td input:focus { outline: 2px solid var(--blue-deep); outline-offset: -2px; background: var(--surface); }
 .plan-tabela tbody tr:hover th, .plan-tabela tbody tr:hover td { background: var(--surface-3); }
 .plan-tabela tbody tr[hidden] { display: none; }
+
+/* Planilha de rubricas — bloco Comando (2.21.0) */
+.plan-cmd { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line, #d9dee3); border-radius: 4px; background: color-mix(in srgb, var(--blue-deep, #3C659B) 6%, transparent); }
+.plan-cmd label { display: block; margin-bottom: 6px; }
+.plan-cmd-linha { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.plan-cmd-linha textarea { flex: 1 1 320px; min-height: 44px; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line, #cfd6dc); border-radius: 4px; background: var(--surface, #fff); color: inherit; }
+.plan-cmd-res { margin-top: 8px; font-size: 13px; }
+.plan-cmd-res .tips { margin: 0; padding-left: 18px; }

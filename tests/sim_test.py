@@ -853,6 +853,52 @@ async def teste_grade_virtual(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
+async def teste_comando_rubricas(b):
+    """2.21.0: bloco "Comando" da planilha: o cliente escreve e a planilha é preenchida sozinha (abre a grade do portal se preciso)."""
+    print('\n[comando] preencher a planilha de rubricas por comando')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto_empresa():   # três empresas no acesso: confirma a que já vem marcada (a do portal)
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa_emp = asyncio.create_task(_auto_empresa())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="rubricas"]')
+    for _ in range(40):
+        if await pn.locator('#plan-cmd-txt').count(): break
+        await pg.wait_for_timeout(300)
+    check(await pn.locator('#plan-cmd-txt').count() == 1 and await pn.locator('#plan-cmd-go').count() == 1, 'comando: o bloco aparece na planilha, mesmo com a grade do portal ainda fechada')
+    ant = await pg.evaluate("document.querySelector('[data-all]') ? 'fechada' : 'aberta'")
+    await pn.fill('#plan-cmd-txt', 'Jorge Oliveira 4 faltas'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(1200)
+    sem = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
+    check('Falta a competência' in sem and await pn.locator('.plan-tabela').count() == 0, f'comando: sem competência no comando nem no portal, pede a competência em vez de tentar às cegas ({sem[:60]!r})')
+    await pn.fill('#plan-cmd-txt', 'Mês passado: Jorge Oliveira 4 faltas, Ronaldo comissão 500 e João 2 horas extras 50%')
+    await pn.click('#plan-cmd-go')
+    ok = False
+    for _ in range(80):
+        if await pn.evaluate("document.querySelectorAll('.plan-tabela tbody tr').length === 3 && (document.querySelector('#plan-cmd-res')?.innerText || '').includes('Preenchi')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    check(ok, 'comando: abre e lê a planilha do portal sozinho e preenche (grade antes: ' + ant + ')')
+    v = await pn.evaluate("(() => { const g = (i, j) => document.querySelector(`.plan-tabela input[data-i='${i}'][data-j='${j}']`)?.value; return [g(1, 2), g(2, 3), g(0, 0)]; })()")
+    check(v[0] == '4' and v[2] == '2', f'comando: faltas do Jorge e horas extras do João nas células certas da planilha ({v})')
+    cel = await pg.evaluate("(() => { const ins = [...document.querySelectorAll('input.p-grade-v')]; return ins.map(i => i.value).filter(Boolean); })()")
+    await pg.wait_for_timeout(1500)
+    cel = await pg.evaluate("[...document.querySelectorAll('input.p-grade-v')].map(i => i.value).filter(Boolean).sort()")
+    check('4' in cel and '2' in cel, f'comando: os valores chegam à grade do portal ({cel})')
+    await pn.fill('#plan-cmd-txt', 'Jorge 9 xpto zeta'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(1500)
+    txt = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
+    check('Não entendi' in txt, f'comando: o que não foi entendido é avisado, sem inventar valor ({txt[:80]!r})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa_emp.cancel()
+    await ctx.close()
+
 async def teste_tela_muda(b):
     """2.20.8: se o serviço de fundo da extensão não responde, Configurações não fica muda: avisa e deixa tentar de novo."""
     print('\n[telas] Configurações com o serviço de fundo parado')
@@ -1298,7 +1344,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_comando_rubricas(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -1691,7 +1737,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_comando_rubricas(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
