@@ -457,6 +457,41 @@
         grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div class="p-gd-rolagem" style="overflow:auto;height:300px;width:100%;text-align:left"><div style="display:grid;grid-template-columns:50px 250px repeat(' + EVENTOS.length + ',150px);width:max-content">' + flat + '</div></div></div>';
         return;
       }
+      if (modoDiv === 'wijmo-virtual') {
+        // planilha virtualizada (Wijmo): só as linhas e colunas que cabem na tela existem; rolagem nos dois sentidos, nome e cabeçalho fixos
+        var NOMES = []; for (var q = 0; q < 14; q++) NOMES.push('FUNCIONARIO ' + String.fromCharCode(65 + q) + ' TESTE');
+        var EVS = []; for (var q2 = 0; q2 < 10; q2++) EVS.push(String(100 + q2 * 10) + ' - RUBRICA ' + String.fromCharCode(65 + q2));
+        var LW = 200, CW = 150, RH = 40, VH = 220, VW = 620;
+        window.__vals = {};
+        var vsc = document.createElement('div'); vsc.className = 'vsc'; vsc.style.cssText = 'overflow:auto;height:' + VH + 'px;width:' + VW + 'px;position:relative;text-align:left;background:#fff';
+        var raiz = document.createElement('div'); raiz.className = 'wj-cells'; raiz.setAttribute('role', 'grid'); raiz.style.cssText = 'position:relative;width:' + (LW + CW * EVS.length) + 'px;height:' + (RH * (NOMES.length + 1)) + 'px';
+        vsc.appendChild(raiz);
+        var cel = function (txt, role, left, w, extra) { var d = document.createElement('div'); d.className = 'wj-cell'; d.setAttribute('role', role); d.style.cssText = 'position:absolute;top:0;left:' + left + 'px;width:' + w + 'px;height:' + RH + 'px;box-sizing:border-box;border:1px solid #ddd;display:flex;align-items:center;padding:0 6px;background:#fff;' + (extra || ''); d.textContent = txt; return d; };
+        var desenha = function () {
+          raiz.innerHTML = '';
+          var r0 = Math.max(0, Math.floor(vsc.scrollTop / RH) - 1), r1 = Math.min(NOMES.length - 1, Math.ceil((vsc.scrollTop + VH) / RH));
+          var c0 = Math.max(0, Math.floor(vsc.scrollLeft / CW) - 1), c1 = Math.min(EVS.length - 1, Math.ceil((vsc.scrollLeft + VW) / CW));
+          var cab = document.createElement('div'); cab.className = 'wj-row'; cab.setAttribute('role', 'row'); cab.style.cssText = 'position:sticky;top:0;left:0;z-index:3;height:' + RH + 'px;width:' + (LW + CW * EVS.length) + 'px';
+          cab.appendChild(cel('Nome', 'columnheader', 0, LW, 'position:sticky;left:0;z-index:4;font-weight:bold'));
+          for (var j = c0; j <= c1; j++) cab.appendChild(cel(EVS[j], 'columnheader', LW + j * CW, CW, 'font-weight:bold'));
+          raiz.appendChild(cab);
+          for (var i = r0; i <= r1; i++) {
+            var lin = document.createElement('div'); lin.className = 'wj-row'; lin.setAttribute('role', 'row'); lin.style.cssText = 'position:absolute;left:0;top:' + (RH * (i + 1)) + 'px;height:' + RH + 'px;width:' + (LW + CW * EVS.length) + 'px';
+            var nc = cel('', 'gridcell', 0, LW, 'position:sticky;left:0;z-index:2'); var ni = document.createElement('input'); ni.type = 'text'; ni.readOnly = true; ni.value = NOMES[i]; ni.style.cssText = 'width:100%;border:0'; nc.appendChild(ni); lin.appendChild(nc);
+            for (var j2 = c0; j2 <= c1; j2++) {
+              (function (ii, jj) {
+                var k = NOMES[ii] + '|' + EVS[jj], c = cel(window.__vals[k] || '', 'gridcell', LW + jj * CW, CW);
+                c.addEventListener('click', function () { if (c.querySelector('input')) return; c.textContent = ''; var inp = document.createElement('input'); inp.type = 'text'; inp.className = 'p-grade-v'; inp.style.cssText = 'width:100%;border:0'; c.appendChild(inp); inp.focus({ preventScroll: true }); inp.addEventListener('blur', function () { window.__vals[k] = inp.value; c.textContent = inp.value; }); });
+                lin.appendChild(c);
+              })(i, j2);
+            }
+            raiz.appendChild(lin);
+          }
+        };
+        vsc.addEventListener('scroll', desenha);
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"></div>'; grid.querySelector('.content__grid').appendChild(vsc); desenha();
+        return;
+      }
       if (modoDiv === 'wijmo' || modoDiv === 'wijmo-campo') {
         // planilha Wijmo do Onvio real (visto no diagnóstico de 30/10/2026): div.wj-cells[role=grid] > div.wj-row[role=row] > div.wj-cell; a célula só vira campo ao clicar
         var wc = function (html, role, w) { return '<div class="wj-cell" role="' + role + '" style="flex:none;width:' + w + 'px;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc;height:40px">' + html + '</div>'; };

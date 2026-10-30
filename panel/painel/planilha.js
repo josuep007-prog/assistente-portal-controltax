@@ -105,7 +105,7 @@ async function enviarCelulas(tipo) {
   const chaves = [...P.pend]; P.pend.clear();
   const celulas = chaves.map(k => { const [i, j] = k.split('|').map(Number); return { empregado: P.empregados[i], evento: P.eventos[j], valor: P.valores[k] ?? '' }; });
   S.preenchendo = true; let r = null;
-  try { r = await request({ type: 'preencherGrade', celulas, silencioso: true }, 30000); } finally { S.preenchendo = false; }
+  try { r = await request({ type: 'preencherGrade', celulas, silencioso: true }, 120000); } finally { S.preenchendo = false; }
   const falhas = r?.faltaram?.length || 0;
   P.status = !r ? 'O portal não respondeu. Tente de novo.' : falhas ? `${falhas} célula(s) não aceitaram o valor no portal.` : `Lançado na grade do portal às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`;
   if (!r) chaves.forEach(k => P.pend.add(k));
@@ -120,7 +120,7 @@ export async function carregar(tipo) {
   for (let k = 0; k < 150 && S.preenchendo; k++) await esperar(200);
   await enviarPendenteAgora(tipo);   // a competência digitada aqui vai antes (o portal pede antes de adicionar os funcionários)
   S.preenchendo = true; let g = null;
-  try { g = await request({ type: 'lerGrade', adicionar: true }, 20000); } finally { S.preenchendo = false; }
+  try { g = await request({ type: 'lerGrade', adicionar: true }, 60000); } finally { S.preenchendo = false; }
   P.lendo = false;
   if (!g?.ok) { P.erro = `Não consegui ler a grade do portal: ${g?.motivo || 'o portal não respondeu'}.`; renderPlanilhaRubricas(tipo); return; }
   const antes = { ...P.valores }, empAntes = P.empregados, evAntes = P.eventos;
