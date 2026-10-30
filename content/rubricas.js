@@ -165,7 +165,7 @@ function gradeEstrutura() {
   const g = gradeDivLer(sc);
   const filhos = g?.linhas[0] ? `${g.linhas[0].els().length} elementos na faixa da linha (${[...new Set(g.linhas[0].els().map(d))].slice(0, 8).join(',')})` : '';
   return [`rolagem=${d(sc)} pai=${d(sc.parentElement)}`, ev ? `título=${ramo(ev)}` : 'sem título de evento', cbs[1] ? `linha=${ramo(cbs[1])}` : 'sem caixas de marcar',
-    `leitura por linhas: ${gradeAriaInfo || '-'}`, `linhas[role=row]=${sc.querySelectorAll('[role=row]').length} celulas[role]=${[...new Set([...sc.querySelectorAll('[role]')].map(x => x.getAttribute('role')))].slice(0, 8).join(',')}`, `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
+    `leitura por linhas: ${gradeAriaInfo || '-'}${typeof gradeAddInfo === 'string' && gradeAddInfo ? ` | após adicionar: ${gradeAddInfo}` : ''}`, `linhas[role=row]=${sc.querySelectorAll('[role=row]').length} celulas[role]=${[...new Set([...sc.querySelectorAll('[role]')].map(x => x.getAttribute('role')))].slice(0, 8).join(',')}`, `caixas=${cbs.length} campos=${campos.length}${campos[0] ? ` (${d(campos[0])} type=${campos[0].getAttribute('type') || '-'})` : ''}`,
     g ? `lido: ${g.titulos.length} colunas, ${g.linhas.length} linhas; ${filhos}` : `leitura por posição: não leu (${gradeEventosEm(sc)} títulos de evento, ${cbs.length} caixas de marcar)`].join(' | ').slice(0, 1400);
 }
 

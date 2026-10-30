@@ -19,6 +19,17 @@ function lerTabelaGrade(tab) {
 }
 /** A grade em blocos (div), quando o portal não usa <table>: a achada por rubricas.js, lida pela posição das colunas e linhas. */
 const lerGradeDiv = () => { atualizarGrade(); const g = gradeDivLer(gradeAmpla.scroller); return g && g.linhas.length ? g : null; };
+let gradeAddInfo = '';
+/** O que aparece na tela depois de clicar em "Adicionar todos os funcionários": janelas abertas e rótulos de botões (só os nomes dos botões, nenhum dado). */
+function gradeAposAdicionar() {
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const rot = (e) => (e.innerText || e.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  const janelas = [...document.querySelectorAll('[role=dialog], [role=alertdialog], .cdk-overlay-pane, bento-modal, .modal')].filter(vis);
+  const botoes = janelas.flatMap(j => [...j.querySelectorAll('button')].filter(vis).map(rot)).filter(Boolean).slice(0, 8);
+  const barra = [...mainEl().querySelectorAll('button')].filter(x => vis(x) && /adicion/i.test(rot(x))).map(x => `${rot(x)}${x.disabled ? ' [desligado]' : ''}`).slice(0, 4);
+  const avisos = [...document.querySelectorAll('[role=alert], [role=status], [class*=toast], [class*=notification], [class*=invalid], [class*=error]')].filter(vis).map(e => (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80)).filter(Boolean).slice(0, 3);
+  return `${avisos.length ? `avisos na tela: ${avisos.join(' | ')}; ` : ''}${janelas.length} janela(s) aberta(s)${botoes.length ? ` com botões: ${botoes.join(' | ')}` : ''}; botões de adicionar na tela: ${barra.join(' | ') || 'nenhum'}`;
+}
 async function lerGrade(adicionar) {
   const r = routeInfo();
   if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, motivo: 'abra o Lançamento de Rubricas' };
@@ -29,13 +40,15 @@ async function lerGrade(adicionar) {
     const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
     if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
     await reveal(b); b.click();
+    gradeAddInfo = '';
     for (let i = 0; i < 64 && !(tab = acharGrade()) && !lerGradeDiv(); i++) await sleep(250);   // até 16 s: o portal busca os funcionários antes de mostrar a grade
   }
   if (!tab) { const g = lerGradeDiv(); if (g) return { ok: true, eventos: g.titulos, empregados: g.empregados }; }
   if (!tab) {
     atualizarGrade();
     const sc = gradeAmpla.scroller;
-    return { ok: false, motivo: sc ? `achei a grade na tela (${gradeAmpla.achada}), mas não consegui ler as linhas dos funcionários (${gradeAriaInfo || 'sem detalhe'}): copie o diagnóstico em Configurações e mande ao escritório` : 'a grade não apareceu na tela (a competência está preenchida? use "Adicionar todos os funcionários" no portal)' };
+    gradeAddInfo = gradeAposAdicionar();
+    return { ok: false, motivo: sc ? `achei a grade na tela (${gradeAmpla.achada}), mas não consegui ler as linhas dos funcionários (${gradeAriaInfo || 'sem detalhe'}; depois do clique em adicionar: ${gradeAddInfo || '-'}): copie o diagnóstico em Configurações e mande ao escritório` : 'a grade não apareceu na tela (a competência está preenchida? use "Adicionar todos os funcionários" no portal)' };
   }
   const g = lerTabelaGrade(tab);
   return { ok: true, eventos: g.eventos, empregados: g.empregados };
