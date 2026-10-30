@@ -135,7 +135,7 @@ function sendContext() {
   const tipo = r.slug ? tipoBySlug(r.slug) : null;
   const empresa = companyName(); notaEmpresa(empresa);
   if (navInterna) return;   // navegação feita pelo Assistente para buscar dados: a tela de quem usa não mudou
-  post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, modo, form: r.mode === 'form' ? snapshot(tipo) : null });
+  post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, modo, form: r.mode === 'form' ? snapshot(tipo) : null, grade: gradeInfo() });
 }
 /* Texto do botão conforme a tela: no formulário, convida a preencher */
 function atualizarLauncher() {

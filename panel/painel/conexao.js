@@ -63,7 +63,7 @@ export function onContext(m) {
   aplicarModo(m.modo);
   const prevTipo = S.ctx.tipo, prevMode = S.ctx.route?.mode;
   const empresaAntes = S.ctx.empresa;
-  S.ctx = { route: m.route || {}, tipo: m.tipo, empresa: m.empresa || '', form: m.form };
+  S.ctx = { route: m.route || {}, tipo: m.tipo, empresa: m.empresa || '', form: m.form, grade: m.grade || null };
   $('#empresa').textContent = S.ctx.empresa || 'Portal do Cliente';
   if (S.ctx.empresa !== empresaAntes && S.rulesBase) { S.rules = regrasDaEmpresa(S.rulesBase, S.ctx.empresa); if (S.view === 'inicio') renderAvisosInicio(); }
   // trocou de empresa sem recarregar: o que estava em andamento é da empresa anterior

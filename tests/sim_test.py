@@ -884,6 +884,16 @@ async def teste_lote6(b):
         return await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA') == '10:30' and await celula('0010 - FALTAS', 'JORGE OLIVEIRA ALVES') == '2' and await celula('0020 - COMISSÕES', 'RONALDO DE SOUZA') == '350,00'
     ok = await espera(planilha_na_grade, 25)
     check(ok, 'planilha → grade: "HE 50", "Faltas (dias)" e "Comissão" nos eventos da empresa' + ('' if ok else f" ({(await pn.locator('#grade-rub').inner_text())!r}, HE {await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA')!r})"))
+    # 2.19: planilha ampla — altura que aproveita a tela, botão de tela cheia, nome e títulos fixos
+    ok = await espera(lambda: pg.evaluate("!!document.querySelector('.ct-grade-btn') && !!document.querySelector('.ct-grade-scroll')"), 10)
+    check(ok, 'rubricas: a grade do portal ganha o botão "Ampliar planilha"')
+    dim = await pg.evaluate("(() => { const s = document.querySelector('.ct-grade-scroll'); return { h: s.clientHeight, ih: innerHeight, pos: getComputedStyle(s.querySelector('thead th')).position, col: getComputedStyle(s.querySelector('tbody td')).position }; })()")
+    check(dim['h'] >= 440 and dim['pos'] == 'sticky' and dim['col'] == 'sticky', f"rubricas: a grade ocupa a tela (altura {dim['h']}px, antes 300px) com títulos e nome fixos")
+    await pg.evaluate("document.querySelector('.ct-grade-btn').click()"); await pg.wait_for_timeout(600)
+    cheia = await pg.evaluate("(() => { const c = document.querySelector('.ct-grade-card'); const s = document.querySelector('.ct-grade-scroll'); return { on: !!document.fullscreenElement || c.classList.contains('ct-grade-cheia'), h: s.clientHeight, ih: innerHeight, txt: document.querySelector('.ct-grade-btn').textContent }; })()")
+    check(cheia['on'] and cheia['h'] >= cheia['ih'] - 140 and 'Sair' in cheia['txt'], f"rubricas: Ampliar planilha cobre a tela com uma só área de rolagem ({cheia['h']}px de {cheia['ih']}px)")
+    await pg.evaluate("document.querySelector('.ct-grade-btn').click()"); await pg.wait_for_timeout(500)
+    check(await pg.evaluate("!document.fullscreenElement && !document.querySelector('.ct-grade-cheia') && document.querySelector('.ct-grade-btn').textContent.startsWith('Ampliar')"), 'rubricas: sair da tela cheia volta ao normal')
     ok = await espera(lambda: pn.evaluate("(document.querySelector('#grade-rub')?.innerText || '').includes('Bônus de Natal')"), 5)
     check(ok, 'rubrica sem evento na empresa fica para o cliente (com aviso)')
     # envio: só pelo botão do portal, depois do resumo; o aviso do Hoje some com o lançamento da competência no portal
