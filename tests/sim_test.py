@@ -884,6 +884,20 @@ async def teste_lote6(b):
         return await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA') == '10:30' and await celula('0010 - FALTAS', 'JORGE OLIVEIRA ALVES') == '2' and await celula('0020 - COMISSÕES', 'RONALDO DE SOUZA') == '350,00'
     ok = await espera(planilha_na_grade, 25)
     check(ok, 'planilha → grade: "HE 50", "Faltas (dias)" e "Comissão" nos eventos da empresa' + ('' if ok else f" ({(await pn.locator('#grade-rub').inner_text())!r}, HE {await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA')!r})"))
+    # 2.20: planilha de rubricas dentro da plataforma — carregar da grade do portal, digitar e lançar célula a célula
+    await pn.click('#plan-carregar') if await pn.locator('#plan-carregar').count() else None
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.plan-tabela tbody tr').length === 3 && document.querySelectorAll('.plan-tabela thead th').length === 7"), 20)
+    resto = '' if ok else await pn.evaluate("[!!document.querySelector('#planilha-rub'), !!document.querySelector('#grade-rub'), document.body.className, document.querySelector('#view')?.className, (document.querySelector('#planilha-rub')?.innerText || '').slice(0, 200)].join(' | ')")
+    check(ok, 'planilha da plataforma: carrega os 3 funcionários e as 6 rubricas da grade do portal' + ('' if ok else f' ({resto!r})'))
+    check(await pn.evaluate("document.querySelector('.plan-tabela input[data-i=\"0\"][data-j=\"0\"]').value") == '10:30', 'planilha da plataforma: traz o que já veio da planilha arrastada (HE 50 do JOAO)')
+    await pn.fill('.plan-tabela input[data-i="0"][data-j="3"]', '7'); await pg.wait_for_timeout(500)
+    ok = await espera(lambda: celula('0011 - ATRASOS', 'JOAO DA SILVA'), 15) and await celula('0011 - ATRASOS', 'JOAO DA SILVA') == '7'
+    check(ok, 'planilha da plataforma: o valor digitado vai para a célula certa da grade do portal')
+    await pn.focus('.plan-tabela input[data-i="1"][data-j="2"]'); await pg.keyboard.press('Enter')
+    check(await pn.evaluate("document.activeElement?.dataset.i") == '2' and await pn.evaluate("document.activeElement?.dataset.j") == '2', 'planilha da plataforma: Enter desce para o funcionário de baixo na mesma rubrica')
+    await pn.fill('#plan-q', 'ronaldo')
+    check(await pn.evaluate("[...document.querySelectorAll('.plan-tabela tbody tr')].filter(t => !t.hidden).length") == 1, 'planilha da plataforma: a busca esconde os outros funcionários')
+    await pn.fill('#plan-q', '')
     # 2.19: planilha ampla — altura que aproveita a tela, botão de tela cheia, nome e títulos fixos
     ok = await espera(lambda: pg.evaluate("!!document.querySelector('.ct-grade-btn') && !!document.querySelector('.ct-grade-scroll')"), 10)
     check(ok, 'rubricas: a grade do portal ganha o botão "Ampliar planilha"')
