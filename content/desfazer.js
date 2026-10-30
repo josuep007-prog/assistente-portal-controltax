@@ -43,7 +43,7 @@ async function garantirCamposDaGrade(forcar) {
   } catch { /* sem os campos: o clique em adicionar mostra o que falta */ }
 }
 /** A grade em blocos lida por inteiro (rola a grade para juntar todas as linhas e colunas). */
-async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados }; }
+async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados, fonte: t.fonte, api: gradeApiInfo }; }
 /** O que aparece na tela depois de clicar em "Adicionar todos os funcionários": janelas abertas e rótulos de botões (só os nomes dos botões, nenhum dado). */
 function gradeAposAdicionar() {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -86,6 +86,13 @@ async function lerGrade(adicionar) {
 /** celulas: [{ empregado, evento, valor }] com os nomes exatos da grade (o painel casa os nomes antes). */
 async function preencherGradeDiv(celulas) {
   const antes = [], faltaram = [];
+  // pela própria planilha do portal (seleciona, abre o editor, digita e confirma, como o portal faz); sem o ajudante, pela tela
+  const api = await pedirGrade('escrever', { celulas }, 60000);
+  if (api?.ok) {
+    const feitas = api.feitas.map(f => ({ empregado: f.empregado, evento: f.evento, antes: f.antes }));
+    if (feitas.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: feitas }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
+    return { ok: true, n: api.feitas.length, mudou: feitas.length, faltaram: api.faltaram, via: 'planilha do portal' };
+  }
   for (const c of celulas) {
     await gradeIrPara(c.empregado, c.evento);   // a grade só desenha o que cabe na tela: rola até a célula
     const g = lerGradeDiv();   // lê de novo a cada célula: o portal pode redesenhar a grade ao editar
@@ -187,6 +194,12 @@ async function desfazer() {
     for (const n of d.anexos) { if (await removerAnexo(n)) anexos.push(n); else falhas.push('anexo:' + n); }
     // grade de rubricas: cada célula volta ao valor de antes
     const tab = d.grade?.length ? acharGrade() : null;
+    if (d.grade?.length && !tab) {   // grade sem <table> (a planilha do portal): cada célula volta pelo ajudante da página
+      const v = await pedirGrade('escrever', { celulas: d.grade.map(c => ({ empregado: c.empregado, evento: c.evento, valor: c.antes })) }, 60000);
+      for (const f of v?.faltaram || []) falhas.push('grade:' + f.evento);
+      if (!v?.ok) for (const c of d.grade) falhas.push('grade:' + c.evento);
+      d.grade = [];
+    }
     const g = tab ? lerTabelaGrade(tab) : null;
     for (const c of d.grade || []) {
       const i = g ? g.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1;
