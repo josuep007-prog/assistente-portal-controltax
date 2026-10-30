@@ -1673,4 +1673,25 @@ t('documentos do escritório (2.17.2): competência pelo nome do arquivo', () =>
   assert.equal(r.itens[0].competencia, '09/2026'); assert.equal(r.itens[1].competencia, '');
 });
 
+t('comando do cliente → células da grade real (dicionário + nomes das rubricas da própria grade)', () => {
+  const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '247 - HORA INTERJORNADA', '37 - COMISSOES', '434 - COMISSOES (MES ANTERIOR)', '440 - PREMIO', '449 - PREMIO MES ANTERIOR', '240 - FERIADO TRABALHADO'];
+  const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ARTUR MENDES DE MORAES', 'CAIO SANTANA VIEIRA'];
+  const c = E.comandoRubricas('Agnaldo 10 horas extras, Ana Carolina Cardoso premio 200 e Artur feriado trabalhado 2', ev, emp, rules);
+  const val = (e, v) => c.celulas.find(x => x.empregado === e && x.evento === v)?.valor;
+  assert.equal(val('AGNALDO DO NASCIMENTO LIMA', '150 - HORAS EXTRAS 50%'), '10');
+  assert.equal(val('ANA CAROLINA CARDOSO PACHECO', '440 - PREMIO'), '200');
+  assert.equal(val('ARTUR MENDES DE MORAES', '240 - FERIADO TRABALHADO'), '2');
+  // o nome com o complemento ganha do simples; sem o complemento, vale o simples
+  const d = E.comandoRubricas('Caio comissoes mes anterior 300; Artur comissoes 150; Caio premio mes anterior 80', ev, emp, rules);
+  assert.equal(d.celulas.find(x => x.evento === '434 - COMISSOES (MES ANTERIOR)')?.valor, '300');
+  assert.equal(d.celulas.find(x => x.evento === '37 - COMISSOES' && x.empregado === 'ARTUR MENDES DE MORAES')?.valor, '150');
+  assert.equal(d.celulas.find(x => x.evento === '449 - PREMIO MES ANTERIOR')?.valor, '80');
+  // o que não casa fica de fora e é avisado; nada é inventado
+  const e = E.comandoRubricas('Fulano 5 horas extras; bom dia; Caio 7 xpto zeta', ev, emp, rules);
+  assert.ok(e.semEmpregado.length >= 1 || e.celulas.length === 0);
+  assert.ok(e.naoEntendidas.some(x => /xpto/i.test(x)));
+  assert.equal(E.comandoRubricas('', ev, emp, rules).celulas.length, 0);
+  assert.equal(E.comandoRubricas('Caio 3 faltas', ev, emp, rules).celulas.length, 0, 'sem a rubrica na grade: não lança em coluna errada');
+});
+
 console.log(`\n${n} testes ok`);
