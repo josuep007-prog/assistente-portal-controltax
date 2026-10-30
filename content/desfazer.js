@@ -20,6 +20,28 @@ function lerTabelaGrade(tab) {
 /** A grade em blocos (div), quando o portal não usa <table>: a achada por rubricas.js, lida pela posição das colunas e linhas. */
 const lerGradeDiv = () => { atualizarGrade(); const g = gradeDivLer(gradeAmpla.scroller); return g && g.linhas.length ? g : null; };
 let gradeAddInfo = '';
+/** Clique como o de uma pessoa (o portal pode ouvir o mouse, não só o "click"). */
+function cliqueCompleto(el) {
+  const o = { bubbles: true, cancelable: true, view: window };
+  for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) el.dispatchEvent(new (t.startsWith('pointer') ? PointerEvent : MouseEvent)(t, o));
+  el.click();
+}
+/** Antes de adicionar os funcionários o portal exige o Tipo de lançamento e a Competência no formulário dele: confere os dois e, se estiverem
+    faltando ou inválidos, refaz (competência digitada tecla a tecla; tipo MENSAL só se nenhum estiver marcado). Nunca troca o que a pessoa escolheu. */
+async function garantirCamposDaGrade(forcar) {
+  try {
+    const radios = [...mainEl().querySelectorAll('input[name=radioBasic]')];
+    if (radios.length && !radios.some(r => r.checked)) {
+      const mensal = radios.find(r => /mensal/i.test(r.closest('label')?.innerText || r.id)) || radios[0];
+      (mensal.closest('label') || mensal).click(); await sleep(150);
+    }
+    const def = resolveTipoLocal('rubricas')?.campos?.competencia, el = def && findField(def);
+    if (el && el.tagName === 'INPUT' && !el.disabled) {
+      const v = (el.value || '').trim();
+      if (v && (forcar || el.classList.contains('ng-invalid'))) { await digitar(el, v); await sleep(150); }
+    }
+  } catch { /* sem os campos: o clique em adicionar mostra o que falta */ }
+}
 /** A grade em blocos lida por inteiro (rola a grade para juntar todas as linhas e colunas). */
 async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados }; }
 /** O que aparece na tela depois de clicar em "Adicionar todos os funcionários": janelas abertas e rótulos de botões (só os nomes dos botões, nenhum dado). */
@@ -41,9 +63,14 @@ async function lerGrade(adicionar) {
     const alvo = norm(cfgGrade().botaoAdicionarTodos);
     const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
     if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
-    await reveal(b); b.click();
+    await garantirCamposDaGrade();
+    await reveal(b); cliqueCompleto(b);
     gradeAddInfo = '';
-    for (let i = 0; i < 64 && !(tab = acharGrade()) && !lerGradeDiv(); i++) await sleep(250);   // até 16 s: o portal busca os funcionários antes de mostrar a grade
+    let segunda = false;
+    for (let i = 0; i < 64 && !(tab = acharGrade()) && !lerGradeDiv(); i++) {   // até 16 s: o portal busca os funcionários antes de mostrar a grade
+      await sleep(250);
+      if (!segunda && i === 10 && /obrigat/i.test(gradeAposAdicionar())) { segunda = true; await garantirCamposDaGrade(true); cliqueCompleto(b); }   // o portal pediu um campo: refaz e tenta de novo, uma vez
+    }
   }
   if (!tab && lerGradeDiv()) return resultadoGradeDiv();
   if (!tab) {
