@@ -98,7 +98,10 @@ async function preencherGradeDiv(celulas) {
       cel = i2 >= 0 && j2 >= 0 ? g2.celula(g2.linhas[i2], j2) : null;
     }
     const campo = cel ? await gradeCampoDaCelula(cel) : null;
-    if (!campo || campo.disabled || campo.readOnly) { faltaram.push(c); continue; }
+    if (!campo || campo.disabled || campo.readOnly) {
+      faltaram.push({ ...c, motivo: i < 0 ? 'funcionário fora da grade' : j < 0 ? 'rubrica fora da grade' : !campo ? 'não consegui abrir a célula para digitar' : 'célula bloqueada pelo portal' });
+      continue;
+    }
     const v0 = campo.value ?? campo.textContent ?? '';
     if (v0 === String(c.valor)) continue;
     if (campo.isContentEditable) { campo.textContent = String(c.valor); campo.dispatchEvent(new Event('input', { bubbles: true })); } else setNative(campo, String(c.valor));
