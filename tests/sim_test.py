@@ -1426,6 +1426,14 @@ async def teste_contraste(b):
             await pn.click('.dlg [data-acao="2"]')
         await espera(lambda: pn.evaluate("!!document.querySelector('.v-preencher #pd-voltar')"), 8)
         await medir_tela('formulario')
+        # planilha de rubricas (2.20/2.21): outro tipo de tela, com a grade e o bloco Comando
+        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+        await pn.locator('.pd-escolha .intent[data-tipo="rubricas"]').click()
+        if await espera(lambda: pn.evaluate("!!document.querySelector('.ee-lista')"), 4): await pn.click('.dlg [data-acao="2"]')
+        if await espera(lambda: pn.evaluate("!!document.querySelector('#plan-cmd-txt')"), 12):
+            await medir_tela('planilha-rubricas')
+        else:
+            check(False, f'contraste: a planilha de rubricas não abriu ({tema})')
         await ctx.close()
     if os.environ.get('CT_JSON'): json.dump(todas, open(os.environ['CT_JSON'], 'w'), ensure_ascii=False, indent=1)
 

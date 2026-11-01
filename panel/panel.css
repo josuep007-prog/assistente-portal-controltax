@@ -17,7 +17,7 @@
   /* fundos cheios com texto branco por cima (selo, aba marcada, avatar): passam de 4,5:1 nos dois temas */
   --red-solid:#C2000C; --blue-solid:#3C659B; --grey-solid:#55626C; --on-solid:#FFFFFF;
   --masthead:#0E151B; --masthead-2:#182229; --masthead-ink:#E9EEF2; --masthead-ink-2:#8FA0AD;
-  --pessoal:#9A6B00; --ok:#167A45; --warn:#B5530C; --info:#2E7FA8;
+  --pessoal:#7F5700; --ok:#167A45; --warn:#A24508; --info:#2E7FA8;
   --ok-bg:color-mix(in srgb, var(--ok) 12%, var(--surface));
   --warn-bg:color-mix(in srgb, var(--warn) 13%, var(--surface));
   --err-bg:color-mix(in srgb, var(--brand-red) 10%, var(--surface));
@@ -39,7 +39,7 @@
     --brand-red:#F2686B; --red-solid:#C82B33; --blue-solid:#2F6592; --grey-solid:#56636D; --brand-red-deep:#8A1A18; --brand-red-soft:#2C1416;
     --blue-deep:#8CC6EC; --blue-mid:#4F8CB8; --blue-pale:#1B2B38;
     --masthead:#080D11; --masthead-2:#131C23;
-    --pessoal:#B98530; --ok:#4ECC8B; --warn:#FF9D42; --info:#6BAAC9;
+    --pessoal:#D09A40; --ok:#4ECC8B; --warn:#FF9D42; --info:#6BAAC9;
     --shadow-1:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35);
     --shadow-2:0 2px 6px rgba(0,0,0,.35), 0 16px 36px rgba(0,0,0,.45); --shadow-card:0 1px 2px rgba(0,0,0,.25);
     color-scheme: dark;
@@ -52,7 +52,7 @@
   --brand-red:#F2686B; --red-solid:#C82B33; --blue-solid:#2F6592; --grey-solid:#56636D; --brand-red-deep:#8A1A18; --brand-red-soft:#2C1416;
   --blue-deep:#8CC6EC; --blue-mid:#4F8CB8; --blue-pale:#1B2B38;
   --masthead:#080D11; --masthead-2:#131C23;
-  --pessoal:#B98530; --ok:#4ECC8B; --warn:#FF9D42; --info:#6BAAC9;
+  --pessoal:#D09A40; --ok:#4ECC8B; --warn:#FF9D42; --info:#6BAAC9;
   --shadow-1:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35);
   --shadow-2:0 2px 6px rgba(0,0,0,.35), 0 16px 36px rgba(0,0,0,.45); --shadow-card:0 1px 2px rgba(0,0,0,.25);
   color-scheme: dark;

@@ -5,7 +5,9 @@
  * Compõe as cores de fundo dos ancestrais (com transparência) e as opacidades; ignora o que está desabilitado, escondido
  * ou sem texto. Fundos com imagem/gradiente são medidos pela cor sólida por baixo (aproximação, marcada em `grad`). */
 module.exports = function medirContraste(minimo) {
-  const parse = c => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p[3] == null || isNaN(p[3]) ? 1 : p[3] }; };
+  // Alteração local: o Chromium devolve color-mix() como "color(srgb r g b / a)" (0 a 1); sem isto o fundo era ignorado.
+  const parse = c => { const s = String(c).match(/color\(srgb\s+([\d.e-]+)\s+([\d.e-]+)\s+([\d.e-]+)(?:\s*\/\s*([\d.e-]+)(%?))?\)/); if (s) return { r: s[1] * 255, g: s[2] * 255, b: s[3] * 255, a: s[4] == null ? 1 : (s[5] ? s[4] / 100 : +s[4]) };
+    const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p[3] == null || isNaN(p[3]) ? 1 : p[3] }; };
   const lum = ({ r, g, b }) => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
   const mix = (top, base, a) => ({ r: top.r * a + base.r * (1 - a), g: top.g * a + base.g * (1 - a), b: top.b * a + base.b * (1 - a) });
   if (false) {}
