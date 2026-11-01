@@ -1200,8 +1200,156 @@ async def teste_lote5(b):
     await ctx.close()
 
 
+async def teste_detalhe(b):
+    """2.19: detalhe da solicitação — navegação ‹ ›, chips por tipo, conversa (tempo relativo, ver mais), aviso do pedido, foco que pisca, foco preso."""
+    print('\n[2.19] detalhe da solicitação')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    ativo_na_janela = lambda: pn.evaluate("!!document.activeElement && !!document.activeElement.closest('#modal .sheet')")
+    nav_txt = lambda: pn.evaluate("(document.querySelector('.dt-nav-n')?.innerText || '').replace(/\\s+/g, ' ')")
+    aba_ativa = lambda: pn.evaluate("document.querySelector('#modal .dp-tab.active')?.dataset.dt")
+    numero = lambda: pn.evaluate("(document.querySelector('#modal #dlg-t .mono')?.innerText || '')")
+    await espera(lambda: pn.evaluate("!!document.querySelector('.hj-hero[data-pronto]')"), 15)
+    await pn.click('#rail [data-mod="pendencias"]')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#sol-grupos [data-card]').length >= 4"), 20)
+    total = await pn.locator('#sol-grupos [data-card]').count()
+    check(ok, f'Solicitações: {total} cartões na tela')
+    # --- 1. navegação pela lista que o cliente via ---
+    await pn.locator('#sol-grupos [data-card]').first.click()
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.dt-nav')"), 10)
+    check(ok and (await nav_txt()) == f'1 de {total}', f'detalhe: navegação "1 de {total}" (a lista que estava na tela) — {await nav_txt()!r}')
+    check(await pn.locator('[data-dt-nav="-1"]').is_disabled() and await pn.locator('[data-dt-nav="1"]').is_enabled(), 'detalhe: "anterior" desligado na primeira, "próxima" ligado')
+    check(bool(await pn.locator('[data-dt-nav="1"]').get_attribute('aria-label')) and bool(await pn.locator('[data-dt-nav="-1"]').get_attribute('aria-label')), 'detalhe: botões ‹ › com aria-label')
+    n1 = await numero()
+    await pn.click('#modal [data-dt="dados"]'); await pg.wait_for_timeout(300)
+    await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(500)
+    check(await nav_txt() == f'2 de {total}' and await numero() != n1, f'seta → leva à próxima ({await nav_txt()!r})')
+    check(await aba_ativa() == 'dados', 'a aba aberta (Dados) continua ao trocar de solicitação')
+    await pg.keyboard.press('ArrowLeft'); await pg.wait_for_timeout(500)
+    check(await nav_txt() == f'1 de {total}' and await numero() == n1, 'seta ← volta à anterior')
+    await pn.click('[data-dt-nav="1"]'); await pg.wait_for_timeout(500)
+    check(await nav_txt() == f'2 de {total}', 'botão › também avança')
+    check(await pn.evaluate("document.activeElement?.dataset?.dtNav") == '1', 'o foco continua no botão usado')
+    # pontas: vai até o fim com o teclado e a "próxima" desliga
+    for _ in range(total + 2):
+        await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(120)
+    check(await nav_txt() == f'{total} de {total}' and await pn.locator('[data-dt-nav="1"]').is_disabled(), 'na última, "próxima" desligada (e as setas não passam do fim)')
+    # --- 5. acessibilidade: foco preso, Esc fecha e devolve o foco ---
+    dentro = True
+    for k in range(40):
+        await pg.keyboard.press('Tab')
+        dentro = dentro and await ativo_na_janela()
+    check(dentro, 'Tab: o foco fica preso na janela do detalhe (40 vezes)')
+    await pg.keyboard.press('Shift+Tab')
+    check(await ativo_na_janela(), 'Shift+Tab também fica na janela')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#modal .sheet').count() == 0, 'Esc fecha o detalhe')
+    # --- 3. voltando para a lista, o cartão da última solicitação vista pisca ---
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#sol-grupos .foco-pisca').length === 1"), 5)
+    check(ok, 'ao fechar o detalhe, o cartão da solicitação vista pisca na lista')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.foco-pisca').length === 0"), 6)
+    check(ok, 'o contorno some sozinho em poucos segundos')
+    # --- 2 e 4. chips, conversa e aviso (aviso de férias 1041: o escritório pede a data; texto longo; 2 dias entre trâmites) ---
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1041').first.click()
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dt-body .tr-item').length >= 2"), 15)
+    check(ok, 'detalhe do aviso de férias 1041: conversa carregada')
+    await pg.wait_for_timeout(1200)
+    chips = await pn.evaluate("[...document.querySelectorAll('#dt-dq .dq')].map(x => x.innerText.replace(/\\s+/g, ' ').trim())")
+    ks = ' | '.join(chips)
+    check(any(c.upper().startswith('INÍCIO DAS FÉRIAS') for c in chips) and any(c.upper().startswith('PAGAMENTO ATÉ') for c in chips) and any(c.upper().startswith('DIAS DE FÉRIAS') for c in chips) and any(c.upper().startswith('PRESCREVE EM') for c in chips),
+          f'chips do aviso de férias: início, pagamento, dias e prescreve em ({ks})')
+    check(len(chips) <= 4, f'no máximo 4 chips ({len(chips)})')
+    qd = await pn.evaluate("document.querySelector('.tr-quando')?.innerText")
+    tt = await pn.evaluate("document.querySelector('.tr-quando')?.title")
+    check(bool(qd) and qd.startswith('há ') and ' às ' in (tt or '') and '/' in tt, f'conversa: tempo relativo ({qd!r}) com a data completa na dica ({tt!r})')
+    check('2 dias depois' in await pn.locator('#dt-body').inner_text(), 'conversa: separador "2 dias depois" entre os trâmites')
+    longo = pn.locator('#dt-body .tr-mais:visible')
+    check(await longo.count() == 1 and (await longo.inner_text()) == 'Ver mais', 'conversa: texto longo recolhido com "Ver mais"')
+    await longo.click(); await pg.wait_for_timeout(200)
+    check(await longo.inner_text() == 'Ver menos' and await longo.get_attribute('aria-expanded') == 'true', 'conversa: "Ver menos" abre o texto todo (aria-expanded)')
+    check(await pn.locator('#dt-body .tr-item.ultimo').count() == 1, 'conversa: a última mensagem tem o destaque (anel)')
+    aviso = await pn.locator('#dt-aviso').inner_text()
+    check('O escritório está pedindo' in aviso and 'ajuda o pedido a andar' in aviso, f'aviso acima da conversa: o que o escritório pede, em tom educativo ({aviso[:90]!r})')
+    check(await pn.locator('#dt-aviso #dt-aviso-resp').is_visible() and bool(await pn.locator('#dt-aviso-resp').get_attribute('aria-label')), 'aviso tem o botão "Responder no portal"')
+    # o aviso só aparece na aba Conversa
+    await pn.click('#modal [data-dt="dados"]'); await pg.wait_for_timeout(300)
+    check(await pn.locator('#dt-aviso').is_hidden(), 'o aviso só aparece na aba Conversa')
+    await pn.click('#modal [data-dt="conversa"]'); await pg.wait_for_timeout(300)
+    # setas dentro da caixa de resposta não trocam de solicitação e ‹ › não descarta o que foi escrito
+    await pn.click('#rl-texto'); await pn.type('#rl-texto', 'abc', delay=20)
+    antes = await nav_txt()
+    await pg.keyboard.press('ArrowLeft'); await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(300)
+    check(await nav_txt() == antes and await pn.input_value('#rl-texto') == 'abc', 'setas na caixa de texto só movem o cursor (não trocam de solicitação)')
+    alvo = '[data-dt-nav="1"]' if await pn.locator('[data-dt-nav="1"]').is_enabled() else '[data-dt-nav="-1"]'
+    await pn.click(alvo); await pg.wait_for_timeout(400)
+    check(await nav_txt() == antes and await pn.locator('#rl-texto').count() == 1, 'com resposta escrita, trocar de solicitação é barrado (nada se perde)')
+    # o botão do aviso abre a solicitação no portal por baixo (o mesmo "Responder no portal")
+    await pn.fill('#rl-texto', ''); await pn.dispatch_event('#rl-texto', 'input'); await pg.wait_for_timeout(300)
+    await pn.click('#dt-aviso-resp')
+    ok = await espera(lambda: pg.evaluate("window.__ctPlatform.path().includes('/vacation-notice/1041')"), 15)
+    check(ok, 'o botão do aviso leva ao portal, na solicitação certa')
+    await pg.wait_for_timeout(600)
+    # afastamento: início e dias, e nenhum dado de saúde
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1039').first.click()
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dt-dq .dq').length >= 2"), 15)
+    chips = await pn.evaluate("[...document.querySelectorAll('#dt-dq .dq')].map(x => x.innerText.replace(/\\s+/g, ' ').trim().toUpperCase())")
+    check(ok and any(c.startswith('INÍCIO') for c in chips) and any(c.startswith('DIAS') for c in chips), f'chips do afastamento: início e dias ({chips})')
+    todo = (await pn.locator('#modal').inner_text()).upper()
+    check('Z76' not in todo and 'MEDICO DE EXEMPLO' not in todo and '00000' not in todo, 'sem CID, médico ou CRM no detalhe do afastamento')
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
+    # --- 4b. anexos como chips com o tipo do arquivo ---
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1060').first.click()
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dt-body .tr-arq').length >= 1"), 15)
+    chip = (await pn.locator('#dt-body .tr-arq').first.inner_text()).replace('\n', ' ') if ok else ''
+    check(ok and 'PDF' in chip and 'Informe de rendimentos 2025.pdf' in chip, f'anexo da conversa vira chip com o tipo do arquivo ({chip!r})')
+    check('está pedindo' not in await pn.locator('#modal').inner_text(), 'resposta sem pedido: sem o aviso de "está pedindo"')
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
+    # --- vindo da busca: só a própria ---
+    await pn.click('#plat-busca'); await pn.fill('#cmdk-q', '1041'); await pg.wait_for_timeout(500)
+    await pn.locator('#cmdk-res [data-r]', has_text='1041').first.click(); await pg.wait_for_timeout(800)
+    check(await pn.locator('#modal .dt-nav').count() == 0 and '1041' in await numero(), 'vindo da busca, o detalhe é só da própria solicitação (sem ‹ ›)')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(300)
+    # --- 3. foco que pisca a partir de outra tela ("Ver na lista"), mesmo com filtro escondendo o cartão ---
+    await pn.click('[data-tipo-sol="afastamento"]'); await pg.wait_for_timeout(300)   # filtro que esconde o aviso de férias
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(800)
+    await pn.locator('#hj-passos .hj-step').first.click()
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#modal .sheet')"), 8)
+    check(ok and await pn.locator('#modal .dt-nav').count() == 1, 'vindo do Hoje, o detalhe navega pela lista do Hoje')
+    num = await numero()
+    await pn.click('#modal .dt-na-lista')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#sol-grupos .foco-pisca').length === 1"), 8)
+    check(ok and await pn.locator('#rail [data-mod="pendencias"].on').count() == 1, 'Ver na lista: vai para Solicitações e a solicitação pisca')
+    txt = await pn.locator('#sol-grupos .foco-pisca').inner_text() if ok else ''
+    check(num.replace('nº ', '') in txt, f'… e é a mesma solicitação ({num})')
+    check(await pn.locator('.tipo-c.fam-todos.on').count() == 1, 'o filtro que a escondia foi tirado')
+    vis = await pn.evaluate("(() => { const r = document.querySelector('#sol-grupos .foco-pisca')?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= innerHeight; })()")
+    check(vis, 'o cartão que pisca está à vista (rolou até ele)')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.foco-pisca').length === 0"), 6)
+    check(ok, 'o pisca termina (cerca de 2 s)')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'dt':   # SIM_SO=dt roda só o detalhe da solicitação (2.19)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_detalhe(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
     if os.environ.get('SIM_SO') == 'viv':   # SIM_SO=viv roda só a escrita ao vivo e a resposta ao escritório (2.12)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
@@ -1607,6 +1755,7 @@ async def main():
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
+        await teste_detalhe(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 

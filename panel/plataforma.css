@@ -726,3 +726,30 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .hj-docs .dn-li .main small { display: block; color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hj-docs .dn-bx { flex: none; }
 .hj-docs .dn-todos { align-self: flex-start; }
+
+/* ===== detalhe da solicitação (2.19): navegação, destaques, aviso da conversa, foco que pisca ===== */
+.dlg:focus { outline: none; }
+.dt-nav { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.dt-nav .btn { min-width: 30px; padding-inline: 6px; }
+.dt-nav .btn:disabled { opacity: .4; cursor: not-allowed; }
+.dt-nav-n { min-width: 56px; text-align: center; font: 500 12px var(--f-mono); color: var(--ink-2); }
+.dt-nav-n b { color: var(--ink); font-weight: 600; }
+.dt-dq .dq small { font-size: 11px; }
+.dt-dq .dq b { font-family: var(--f-mono); }
+.dt-dq .dq.alerta { background: var(--err-bg); border-color: color-mix(in srgb, var(--brand-red) 45%, var(--rule)); }
+.dt-dq .dq.alerta small { color: var(--ink-2); }
+.dt-aviso { display: grid; }
+.dt-aviso[hidden] { display: none; }
+.dt-aviso .aviso-linha { align-items: flex-start; }
+.dt-aviso .aviso-linha > span { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.dt-aviso .aviso-linha small { font-size: 11.5px; color: var(--ink-3); }
+.dt-aviso .aviso-linha .btn { flex: none; align-self: center; }
+.tr-quando { cursor: help; }
+.tr-ext { font: 600 9.5px var(--f-mono); font-style: normal; letter-spacing: .04em; padding: 1px 4px; border-radius: 3px; background: var(--blue-pale); color: var(--blue-deep); }
+.tr-mais:focus-visible, .dt-nav .btn:focus-visible, .tr-arq:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.tr-item.ultimo .tr-bolha { box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue-deep) 40%, transparent); }
+/* solicitação escolhida em outro lugar (aviso, sino, busca): contorno vermelho que pisca ao chegar na lista */
+.foco-pisca { position: relative; z-index: 1; outline: 2px solid var(--brand-red); outline-offset: 2px; animation: foco-pisca .7s ease-in-out 3 both; }
+.dp-row.foco-pisca, .prio.foco-pisca { outline-offset: -2px; }
+@keyframes foco-pisca { 0%, 100% { outline-color: var(--brand-red); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-red) 25%, transparent); } 50% { outline-color: transparent; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .foco-pisca { animation: none; } }

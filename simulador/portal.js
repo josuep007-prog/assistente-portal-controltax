@@ -117,7 +117,7 @@
   function seed() {
     var hoje = new Date(); var d = function (n) { var x = new Date(hoje); x.setDate(x.getDate() - n); return x.toLocaleDateString('pt-BR'); };
     var items = {
-      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 20, abono: 10 }],
+      'vacation-notice': [{ id: 1041, status: 'Aguardando o cliente', empregado: 'RONALDO DE SOUZA', assunto: 'Aviso de férias – RONALDO DE SOUZA', tramite: 'Escritório: falta informar a data do pagamento.', data: d(3), inicio: d(-20), dias: 20, abono: 10, textoLongo: true }],
       'employee-leave': [{ id: 1039, status: 'Em andamento', empregado: 'JOANA FONSECA', assunto: 'Afastamento – JOANA FONSECA – Licença maternidade', tramite: 'Cliente: segue em anexo a certidão de nascimento.', data: d(6) }],
       'general-requests': [{ id: 1042, status: 'Concluída', empregado: '', assunto: 'Envio do contrato social atualizado', tramite: 'Cliente: concluído.', data: d(10) },
         { id: 1060, status: 'Aguardando o cliente', empregado: '', assunto: 'Informe de rendimentos 2025', tramite: 'Escritório: segue o seu comprovante de rendimentos de 2025. Qualquer dúvida, estamos à disposição.', data: d(2), anexos: ['Informe de rendimentos 2025.pdf'] }]
@@ -182,13 +182,14 @@
     },
     clientId: function () { return 'sim-0001'; },
     // trâmites: {base}/{id}/topics (o id é o GUID do item)
+    // (texto longo inventado, para testar o "Ver mais" da conversa)
     tramites: function (base, guid) {
       var r = null, slug = null;
       Object.keys(db.items).forEach(function (k) { (db.items[k] || []).forEach(function (x) { if (guidDe(x.id) === guid) { r = x; slug = k; } }); });
       if (!r) return Promise.resolve([]);
       var cod = codigoDe(slug, r.status);
       return Promise.resolve([
-        { created: isoDe(r.data, 2), status: 1, description: '<p>Solicitação incluída pelo cliente.</p>', createdByContactExpanded: { name: 'Usuário de teste' }, attachmentsExpanded: (r.anexosAbertura || []).map(function (n) { return { name: n }; }) },
+        { created: isoDe(r.data, 2), status: 1, description: r.textoLongo ? TEXTO_LONGO : '<p>Solicitação incluída pelo cliente.</p>', createdByContactExpanded: { name: 'Usuário de teste' }, attachmentsExpanded: (r.anexosAbertura || []).map(function (n) { return { name: n }; }) },
         { created: isoDe(r.data, 0), status: /^Cliente/.test(r.tramite || '') ? (FAMILIA[slug] === 'cadastro' ? 2 : FAMILIA[slug] === 'rubricas' ? 11 : 3) : cod, description: '<p>' + esc(String(r.tramite || '').replace(/^(Escritório|Cliente):\s*/, '')) + '</p>', createdByContactExpanded: { name: /^Cliente/.test(r.tramite || '') ? 'Usuário de teste' : 'ANA ANALISTA (escritório)' }, attachmentsExpanded: (r.anexos || []).map(function (n) { return { name: n }; }) }
       ]);
     },
@@ -203,7 +204,7 @@
       if (slug === 'termination-notice') { it.adviceDate = dia(r.data, 0); it.reason = 'ApprenticeContractTermination'; it.grantedBy = 'EMPLOYEE'; }   // como o Onvio manda (em inglês)
       // para o "Pedir de novo" (lote 6): o tipo de afastamento e dados de saúde inventados (que nunca podem ir para o pedido novo),
       // o cálculo de férias com as escolhas, e o cadastro com dados da pessoa e da empresa (só os da empresa podem ir) — a calibrar
-      if (slug === 'employee-leave') { it.leaveDate = dia(r.data, 0); it.employeeLeaveTypeExpanded = { description: /maternidade/i.test(r.assunto || '') ? 'Licença maternidade' : 'Doença período igual ou inferior a 15 dias' }; it.cid = 'Z76'; it.doctorName = 'DR. MEDICO DE EXEMPLO'; it.crm = '00000'; }
+      if (slug === 'employee-leave') { it.leaveDate = dia(r.data, 0); it.employeeLeaveTypeExpanded = { description: /maternidade/i.test(r.assunto || '') ? 'Licença maternidade' : 'Doença período igual ou inferior a 15 dias' }; it.cid = 'Z76'; it.doctorName = 'DR. MEDICO DE EXEMPLO'; it.crm = '00000'; it.leaveDays = +((/\((\d+) dias\)/.exec(r.assunto || '') || [])[1] || (/maternidade/i.test(r.assunto || '') ? 120 : 3)); }   // dias de afastamento: campo inventado, a calibrar
       if (slug === 'vacation-calculation') { it.initialDate = it.vacationStartDate || dia(r.data, -10); it.payBonusDays = false; it.payFirstInstallmentEarlier = true; }
       if (FAMILIA[slug] === 'cadastro') { it.admissionDate = dia(r.data, 3); it.nationalIdentity = '000.000.000-00'; it.motherName = 'MAE DE EXEMPLO'; it.jobPositionExpanded = { description: 'VENDEDOR' }; it.employeeRegistrationProfessionalExpanded = { departmentExpanded: { description: 'ESCRITÓRIO' } }; it.daysExperience = 45; it.extensionDays = 45; }
       if (slug === 'general-requests') it.departmentExpanded = { name: 'CONTÁBIL' };
@@ -248,6 +249,7 @@
     function dv(a, n) { var t = 0; for (var k = 0; k < n; k++) t += a[k] * (n + 1 - k); var r = (t * 10) % 11; return r === 10 ? 0 : r; }
     d.push(dv(d, 9)); d.push(dv(d, 10)); return d.join('');
   }
+  var TEXTO_LONGO = '<p>Prezados, bom dia.</p><p>Segue a solicitação de férias do colaborador, conforme combinado com a diretoria. Ele pretende sair no início do mês seguinte, e precisamos conferir se o período aquisitivo já está completo antes de comunicar a equipe.</p><p>Também gostaríamos de saber se é possível dividir as férias em dois períodos, e como fica o pagamento do terço constitucional nesse caso. Se for necessário, podemos enviar a documentação adicional ainda esta semana.</p><p>Outro ponto: o colaborador tem um banco de horas positivo e queremos entender se ele pode ser usado para antecipar parte do descanso, ou se o melhor é deixar para o fechamento da folha do mês.</p><p>Obrigado desde já pela atenção e pelo retorno.</p>';
   var DESLIGADOS = ['OTAVIO RANGEL', 'NATALIA BRITO'];
   var FAMILIA = { 'employee-registration': 'cadastro', 'partner-registration': 'cadastro', 'intern-registration': 'cadastro', 'payroll-entries': 'rubricas' };
   var CODIGOS = {
