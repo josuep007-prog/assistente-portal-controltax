@@ -1506,6 +1506,48 @@
         ]
       }
     ],
+    "destaquesDetalhe": {
+      "revisarComEscritorio": true,
+      "descricao": "Os dados que o cliente mais procura, em chips no topo do detalhe da solicitação. 'fonte' diz de onde vem (datas.* = datas do aviso, calc.* = prazo calculado, item.* = a solicitação, bruto.* = campo do detalhe do portal; use | para alternativas). O que faltar não aparece. Nunca coloque dados de saúde (CID, médico, CRM).",
+      "max": 4,
+      "alertaDias": 3,
+      "todos": [
+        "prescreve"
+      ],
+      "campos": {
+        "inicioFerias": { "rotulo": "Início das férias", "fonte": "datas.inicioFerias" },
+        "pagamentoFerias": { "rotulo": "Pagamento até", "fonte": "datas.pagamento|calc.pagamentoFerias", "alerta": "passou" },
+        "diasFerias": { "rotulo": "Dias de férias", "fonte": "datas.dias", "formato": "dias" },
+        "abono": { "rotulo": "Dias de abono", "fonte": "datas.abono", "formato": "dias", "omitirZero": true },
+        "dataAviso": { "rotulo": "Data do aviso", "fonte": "datas.aviso|datas.avisoPrevio" },
+        "ultimoDia": { "rotulo": "Último dia", "fonte": "datas.desligamento|bruto.lastWorkDay|bruto.terminationDate" },
+        "pagamentoRescisao": { "rotulo": "Pagamento até", "fonte": "calc.pagamentoRescisao", "alerta": "passou" },
+        "inicioAfastamento": { "rotulo": "Início", "fonte": "datas.afastamento" },
+        "diasAfastamento": { "rotulo": "Dias", "fonte": "bruto.leaveDays|bruto.daysOfLeave", "formato": "dias" },
+        "retorno": { "rotulo": "Retorno previsto", "fonte": "bruto.returnDate|bruto.expectedReturnDate" },
+        "admissao": { "rotulo": "Admissão", "fonte": "datas.admissao" },
+        "competencia": { "rotulo": "Competência", "fonte": "item.competencia" },
+        "expectativa": { "rotulo": "Expectativa de conclusão", "fonte": "item.expectativa" },
+        "prescreve": { "rotulo": "Prescreve em", "fonte": "item.prescreveEm", "formato": "dias", "alerta": "prescricao" }
+      },
+      "porTipo": {
+        "avisoFerias": ["inicioFerias", "pagamentoFerias", "diasFerias", "abono"],
+        "calculoFerias": ["inicioFerias", "pagamentoFerias", "diasFerias", "expectativa"],
+        "avisoRescisao": ["dataAviso", "ultimoDia", "pagamentoRescisao"],
+        "calculoRescisao": ["ultimoDia", "pagamentoRescisao", "dataAviso", "expectativa"],
+        "afastamento": ["inicioAfastamento", "diasAfastamento", "retorno", "expectativa"],
+        "cadastroEmpregado": ["admissao"],
+        "cadastroEstagiario": ["admissao"],
+        "cadastroContribuinte": ["admissao"],
+        "rubricas": ["competencia"],
+        "geral": ["expectativa"]
+      }
+    },
+    "detalheConversa": {
+      "revisarComEscritorio": true,
+      "descricao": "Conversa do detalhe da solicitação: separador 'N dias depois' só a partir deste intervalo (em dias).",
+      "intervaloDias": 2
+    },
     "observacoes": {
       "avisoFerias": [
         "As férias começam em {inicio}. O aviso precisa ser entregue ao empregado com pelo menos {avisoFeriasDias} dias de antecedência (CLT, art. 135).",

@@ -418,6 +418,86 @@ export function observacoesCliente(item, datas, regras = {}, hoje = today(), cal
   return out;
 }
 
+/* ---------- Detalhe da solicitação: tempo relativo e destaques (2.19, regras: config.destaquesDetalhe) ---------- */
+/** "agora há pouco", "há 12 min", "hoje às 14:30", "ontem às 14:30", "há 3 dias", "há 2 semanas" ou a data (mais de 30 dias). */
+export function tempoRelativo(v, agora = new Date()) {
+  const d = v instanceof Date ? v : new Date(v);
+  if (!v || isNaN(d)) return '';
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const min = Math.round((agora - d) / 60000);
+  if (min < 0) return `${fmtDate(d)} às ${hm}`;   // relógio do portal adiantado: mostra a data, sem inventar "daqui a pouco"
+  if (min < 2) return 'agora há pouco';
+  if (min < 60) return `há ${min} min`;
+  const dias = diffDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()));
+  if (dias <= 0) return `hoje às ${hm}`;
+  if (dias === 1) return `ontem às ${hm}`;
+  if (dias < 7) return `há ${dias} dias`;
+  if (dias < 30) { const s = Math.floor(dias / 7); return `há ${s} ${s === 1 ? 'semana' : 'semanas'}`; }
+  return `em ${fmtDate(d)}`;
+}
+/** "terça-feira, 27/10/2026 às 19:21" (para a dica do tempo relativo). */
+export function dataHoraLonga(v) {
+  const d = v instanceof Date ? v : new Date(v);
+  if (!v || isNaN(d)) return String(v || '');
+  return `${weekday(d)}, ${fmtDate(d)} às ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+/** "3 dias depois" entre dois trâmites, só quando o intervalo é longo (config.detalheConversa.intervaloDias, padrão 2). */
+export function intervaloEntre(a, b, regras = {}) {
+  const x = new Date(a), y = new Date(b);
+  if (isNaN(x) || isNaN(y)) return '';
+  const dias = diffDays(new Date(x.getFullYear(), x.getMonth(), x.getDate()), new Date(y.getFullYear(), y.getMonth(), y.getDate()));
+  if (dias < (+regras?.config?.detalheConversa?.intervaloDias || 2)) return '';
+  return `${dias} ${dias === 1 ? 'dia' : 'dias'} depois`;
+}
+const CHAVE_SENSIVEL = /cid|doctor|medic|m[eé]dic|crm|sa[uú]de|health|diagn|icd|atestado|certificate/i;   // nunca vira destaque
+/** Os 3–4 dados que o cliente mais procura, por tipo de pedido (config.destaquesDetalhe: campos + porTipo + todos).
+ *  Cada campo diz de onde vem (`fonte`: datas.x, calc.x, item.x ou bruto.x, com "|" para alternativas) e como mostrar.
+ *  O que faltar na solicitação simplesmente não aparece. → [{ id, k, v, alerta }] */
+export function destaquesDetalhe(item, datas, bruto, regras = {}, hoje = today(), cal = makeCalendar(regras?.feriados)) {
+  const cfg = regras?.config?.destaquesDetalhe || {};
+  if (!item || !cfg.campos) return [];
+  const d = datas || item.datas || {};
+  const fontes = {
+    datas: d, item,
+    calc: { pagamentoFerias: pagamentoFerias(d.inicioFerias, regras, cal), pagamentoRescisao: d.desligamento ? pagamentoRescisao(d.desligamento, regras, cal) : null },
+    bruto: bruto && typeof bruto === 'object' ? bruto : {}
+  };
+  const lerValor = (fonte) => {
+    for (const alt of String(fonte || '').split('|')) {
+      const [grupo, ...r] = alt.trim().split('.'); const chave = r.join('.');
+      if (!fontes[grupo] || !chave || (grupo === 'bruto' && CHAVE_SENSIVEL.test(chave))) continue;
+      let v = fontes[grupo][chave];
+      if (v && typeof v === 'object' && !(v instanceof Date)) v = texto1(v);
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) v = parseDate(v);
+      if (v == null || v === '' || (typeof v === 'number' && isNaN(v)) || (v instanceof Date && isNaN(v))) continue;
+      return v;
+    }
+    return null;
+  };
+  const dias = (n) => `${n} ${n === 1 ? 'dia' : 'dias'}`;
+  const montar = (id) => {
+    const c = cfg.campos[id]; if (!c || !c.rotulo || CHAVE_SENSIVEL.test(c.rotulo)) return null;
+    let v = lerValor(c.fonte); if (v == null) return null;
+    if (c.omitirZero && +v === 0) return null;
+    let alerta = false, txt;
+    if (v instanceof Date) {
+      txt = fmtDate(v);
+      const falta = diffDays(hoje, v);
+      alerta = c.alerta === 'passou' ? falta < 0 : c.alerta === 'perto' ? falta <= (+cfg.alertaDias || 3) : false;
+    } else if (c.formato === 'dias' && !isNaN(+v)) {
+      txt = dias(+v);
+      alerta = c.alerta === 'prescricao' && +v <= (+regras?.config?.prescricaoAvisoDias || 10);
+    } else txt = String(v);
+    return { id, k: c.rotulo, v: txt, alerta };
+  };
+  const vistos = new Set();
+  const lista = (ids) => (ids || []).map(montar).filter(x => { if (!x || vistos.has(x.id)) return false; vistos.add(x.id); return true; });
+  const comuns = lista(cfg.todos), max = Math.max(1, +cfg.max || 4);
+  const doTipo = lista(cfg.porTipo?.[item.tipo]).slice(0, Math.max(0, max - comuns.length));
+  const out = [...doTipo, ...comuns.slice(0, max)], v2 = new Set();
+  return out.filter(x => { const ch = `${x.k}|${x.v}`; if (v2.has(ch)) return false; v2.add(ch); return true; });
+}
+
 /* "Hoje" do cliente (no formato da tela Hoje do Control Onvio): cada solicitação tem um motivo só,
    para a rosca, as situações e os cartões baterem. */
 export const MOTIVOS_CLIENTE = [
