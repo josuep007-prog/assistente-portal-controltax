@@ -792,6 +792,92 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 @keyframes foco-pisca { 0%, 100% { outline-color: var(--brand-red); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-red) 25%, transparent); } 50% { outline-color: transparent; box-shadow: none; } }
 @media (prefers-reduced-motion: reduce) { .foco-pisca { animation: none; } }
 
+/* ===== Hoje e Solicitações enxutos + gráficos (Simplificado do escritório, adaptado ao cliente) ===== */
+/* dica ⓘ: textos de ajuda saem do corpo da tela e ficam num botão (foco por teclado, Esc fecha) */
+.dica-i { all: unset; box-sizing: border-box; flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: var(--ink-2); cursor: help; }
+.dica-i:hover { color: var(--ink); background: var(--surface-3); }
+.dica-i:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; color: var(--ink); }
+.dica-i .ic { width: 15px; height: 15px; }
+
+/* seções recolhíveis do Hoje (.hj-painel): cabeçalho clicável com seta, resumo e contador à direita */
+.hj-equipe { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+#eq-avisos, #eq-exp, #eq-ferias, #eq-legais, .hj-folha { border-top: 1px solid var(--rule); }
+.hj-painel-h { display: flex; align-items: center; gap: 2px; padding-right: 8px; }
+.hj-painel.aberto > .hj-painel-h { border-bottom: 1px solid var(--rule); }
+.hj-painel-bt { all: unset; box-sizing: border-box; flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 8px 9px 12px; border-radius: var(--r); cursor: pointer; font: 600 14px/1.2 var(--f-head); color: var(--ink); }
+.hj-painel-bt:hover { background: var(--surface-2); }
+.hj-painel-bt:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
+.hj-painel-bt .spacer { flex: 1; }
+.hj-painel-t { white-space: nowrap; }
+.hj-painel-r { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px var(--f-body); color: var(--ink-2); }
+.hj-seta { flex: none; display: inline-grid; color: var(--ink-2); transition: transform .15s; }
+.hj-painel.aberto > .hj-painel-h .hj-seta { transform: rotate(90deg); }
+.hj-painel-c[hidden] { display: none; }
+.hj-painel .eq-n { margin-left: 0; flex: none; }
+.hj-painel-bt .pill { flex: none; }
+@media (max-width: 900px) { .hj-painel-r { display: none; } }
+@media (prefers-reduced-motion: reduce) { .hj-seta { transition: none; } }
+
+/* Solicitações: faixa de uma linha com os tipos que têm pedidos; a grade com todos abre sob demanda */
+.tipos-wrap { margin: 0 0 12px; min-width: 0; max-width: 100%; }
+.tipos-wrap .tipos { margin: 0; }
+.tipos-barra { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.tipos-barra.faixa { margin: 0; }
+.tipos-tit { flex: 1; font: 600 12px var(--f-head); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); }
+.tipos-faixa { flex: 1 1 0; width: 0; min-width: 0; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; padding: 2px 2px 5px; scrollbar-width: thin; }
+.tipos-ver { flex: none; white-space: nowrap; }
+.tipo-f { all: unset; box-sizing: border-box; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); color: var(--ink); font-size: 12.5px; cursor: pointer; transition: background .15s, border-color .15s; }
+.tipo-f:hover { background: var(--surface-2); border-color: var(--rule-strong); }
+.tipo-f:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.tipo-f.on { border-color: var(--fc); box-shadow: inset 0 0 0 1px var(--fc); background: color-mix(in srgb, var(--fc) 8%, var(--surface)); }
+.tipo-f .tp-ic { margin: 0; }
+.tipo-f .tipo-rot { overflow: visible; font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.tipo-f b { font: 700 12px var(--f-mono); color: var(--ink); }
+.tipo-suas { width: 7px; height: 7px; border-radius: 50%; background: var(--brand-red); }
+@media (prefers-reduced-motion: reduce) { .tipo-f { transition: none; } }
+
+/* gráficos (graficos.js): eixos discretos, tinta de texto nos valores, dica nas marcas */
+:root { --viz-grid: var(--rule); }
+.viz text { font: 400 10.5px var(--f-body); fill: var(--ink-2); }
+.viz .grid { stroke: var(--viz-grid); stroke-width: 1; }
+.viz .base { stroke: var(--rule-strong); stroke-width: 1; }
+.viz .alvo { fill: transparent; }
+.viz .alvo:hover { fill: color-mix(in srgb, var(--ink) 6%, transparent); }
+.legenda-viz { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; font-size: 11.5px; color: var(--ink-2); }
+.legenda-viz span { display: inline-flex; align-items: center; gap: 5px; }
+.legenda-viz i { width: 9px; height: 9px; border-radius: 2px; }
+.mv-grade { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px 32px; }
+.mv-grade.so-barras { grid-template-columns: minmax(0, 760px); }
+.mv-bloco { min-width: 0; }
+.mv-bloco h4 { margin: 0 0 8px; font: 600 11.5px var(--f-body); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); }
+.mv-kpi { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; }
+.mv-kpi b { font: 700 24px/1 var(--f-head); color: var(--ink); font-variant-numeric: tabular-nums; }
+.mv-kpi small { font-size: 12px; color: var(--ink-2); }
+.mv-mini { display: inline-flex; align-items: flex-end; flex: none; }
+@media (max-width: 980px) { .mv-grade { grid-template-columns: minmax(0, 1fr); } .mv-mini { display: none; } }
+
+/* telas baixas (1366×650, 1280×720…): destaque do Hoje compacto, para a 1ª seção abaixo ficar à vista */
+@media (max-height: 759px) {
+  .hj-saud { display: none; }
+  .hj-hero-g { gap: 16px; padding: 12px 18px; }
+  .hj-hero .an-svg { width: 96px; height: 96px; }
+  .hj-hero .an-svg .an-total { font-size: 42px; }
+  .hj-hero .an-svg .an-rot { display: none; }
+  .hj-hero .an-f { stroke-width: 12px; }
+  .hj-hero-tx { gap: 3px; }
+  .hj-hero-tx h2 { font-size: 19px; }
+  .hj-hero-tx p { font-size: 12px; }
+  .hj-legenda { display: none; }
+  .hj-tick { margin-top: 4px; padding: 6px 10px; }
+  .hj-tick-palco { min-height: 48px; }
+  .plat-view > * + * { margin-top: 10px; }
+  .hj-passos { padding: 12px 16px; }
+  .hj-passos h3 { margin-bottom: 6px; }
+  .hj-passos-l { max-height: 138px; gap: 4px; }
+  .hj-step { padding: 5px 10px; }
+  .hj-zen { padding: 8px 12px; }
+}
+
 /* Planilha de rubricas da plataforma (2.20.0): funcionários nas linhas, uma rubrica por coluna; nome e títulos fixos */
 .plan-rub .plan-barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .plan-rub .plan-barra input[type=search] { width: 240px; max-width: 100%; }

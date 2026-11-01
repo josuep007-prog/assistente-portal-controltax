@@ -41,7 +41,7 @@ Desde a 2.16.3 a plataforma em tela cheia é dividida por tela. `panel/plataform
 | `dados.js` | Leitura das solicitações e dos funcionários, leitura automática |
 | `entrada.js` | Entrada, contexto, avisos, troca de tela (`P.render`) |
 | `dialogos.js`, `eventos.js` | Diálogo genérico; eventos da agenda |
-| `hoje.js` | Tela Hoje e atalhos que abrem um pedido já com dados |
+| `hoje.js` | Tela Hoje e atalhos que abrem um pedido já com dados; seções recolhíveis `.hj-painel` (`painel`/`ligarPaineis`, estado em `ct.hojeSecoes`), dica ⓘ (`dicaI`, textos em `config.hoje.ajudas`) e o cartão Movimento (`E.movimentoSemanal`, gráficos de `graficos.js`) |
 | `solicitacoes.js` | Cartões, situações, lista e tabela das solicitações (publica `S.plat.listaSol`, o que está na tela) |
 | `detalhe.js` | Detalhe da solicitação (Conversa, Dados, O que observar), navegação ‹ › entre a lista vista, destaques em chips (`config.destaquesDetalhe`) e o foco que pisca (`P.focarSolicitacao(ref)`: o sino e os avisos chamam para levar o cliente ao cartão na lista) |
 | `novopedido.js`, `empresa.js` | Novo pedido; escolha e troca da empresa do pedido |

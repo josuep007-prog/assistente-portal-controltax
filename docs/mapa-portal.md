@@ -95,3 +95,14 @@ Feito e testado só no simulador e no e2e; nada disso foi visto no Onvio real.
 | Competência na lista de Rubricas | O cartão "Variáveis da folha" do Hoje some quando um lançamento tem `effectiveDate` da competência; sem ele na lista, vale um lançamento criado desde o início do aviso (`config.variaveisFolha.semCompetenciaPelaData`). | Se a lista de Rubricas traz `effectiveDate`. |
 | Departamentos da Solicitação Geral | `tipos.geral.catalogo.departamentos`: o nome do catálogo ("Pessoal") casa com a lista do portal pelos sinônimos (no simulador: MASTER, CONTÁBIL, PESSOAL, FINANCEIRO, ADMINISTRATIVO, TI, FISCAL, Patrimônio). | Os nomes reais dos departamentos do escritório na lista. |
 | "Pedir de novo" | `campos.*.api` (caminhos no detalhe, `apiValores` para os códigos). O simulador traz no detalhe o tipo de afastamento, dados de saúde inventados e o cadastro com dados da pessoa (para os testes conferirem o que não pode ir). | O formato de cada campo do detalhe na visão do cliente. |
+
+## "Movimento das suas solicitações" (Hoje, 2.19) — a calibrar
+
+Cartão recolhível do Hoje (`E.movimentoSemanal`, `config.movimento`; só em memória, nada guardado; some com menos de 3 solicitações nas últimas 8 semanas). Testado só no simulador e no engine; conferir no Chrome do Josué:
+
+| O quê | Como é feito hoje | Conferir |
+|---|---|---|
+| Abertas por semana | Semana de segunda a domingo pela data `created` do item da lista (`criado`). | Se `created` é a abertura mesmo (e não a última movimentação) nas listas reais. |
+| Concluídas por semana | Item `estado = concluida` na semana da última movimentação (`atualizado`): é uma **aproximação** da data de conclusão. | Se algum campo da lista traz a data de conclusão. |
+| Tempo até a 1ª resposta | Dias entre o 1º trâmite (abertura) e o 1º trâmite do escritório (`lado = esc`), lidos pelos vereditos (`vereditoConversa` guarda `primeiraResposta`/`abertura`). Só as conversas já lidas entram: as em aberto e as mexidas nos últimos 30 dias — por isso tende a ser um pouco maior que o real. Sem 3 conversas lidas, o cartão mostra só as barras. | Se vale ler também os trâmites das concluídas das 8 semanas (hoje não lê, para não pesar). |
+| Lista truncada | Só entram os itens que a leitura automática trouxe (`solicitacoesMaxPaginas`); semanas antigas podem ficar incompletas. | Quantas páginas as listas reais têm. |

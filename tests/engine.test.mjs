@@ -1770,6 +1770,53 @@ t('detalhe (2.19): destaques em chips por tipo, só com o que existe e nunca dad
   assert.deepEqual(E.destaquesDetalhe(av, av.datas, null, { config: {} }, h), [], 'sem config.destaquesDetalhe, nada');
 });
 
+t('movimento das solicitações: últimas 8 semanas, abertas × concluídas e 1ª resposta', () => {
+  const h = new Date(2026, 9, 29);   // quinta-feira; a semana de hoje começa na segunda 26/10
+  const it = (criado, estado, atualizado, v) => ({ criado: new Date(...criado), estado, atualizado: new Date(...atualizado), veredito: v });
+  const itens = [
+    it([2026, 9, 27], 'andamento', [2026, 9, 28], { primeiraResposta: '2026-10-28T10:00', abertura: '2026-10-27T09:00' }),   // semana de hoje, 1ª resposta em 1 dia
+    it([2026, 9, 20], 'concluida', [2026, 9, 27], { primeiraResposta: '2026-10-23T10:00', abertura: '2026-10-20T09:00' }),   // aberta em 20/10 (3 dias), concluída na semana de hoje
+    it([2026, 9, 21], 'aguardando', [2026, 9, 22], null),
+    it([2026, 8, 22], 'concluida', [2026, 8, 23], { primeiraResposta: '2026-09-24T10:00', abertura: '2026-09-22T09:00' }),   // semana de 21/09 (2 dias)
+    it([2026, 5, 1], 'concluida', [2026, 5, 2], null),   // fora do período
+    it([2026, 9, 22], 'cancelada', [2026, 9, 23], null)
+  ];
+  const m = E.movimentoSemanal(itens, h);
+  assert.equal(m.semanas.length, 8);
+  assert.equal(m.semanas[7].rotulo, '26/10'); assert.equal(m.semanas[0].rotulo, '07/09');
+  assert.equal(m.semanas[7].abertas, 1); assert.equal(m.semanas[7].concluidas, 1);
+  assert.equal(m.semanas[6].abertas, 3); assert.equal(m.semanas[6].concluidas, 0);   // 20, 21 e 22/10 (a cancelada conta como aberta, nunca como concluída)
+  assert.equal(m.semanas[2].abertas, 1); assert.equal(m.semanas[2].concluidas, 1);
+  assert.equal(m.total, 5); assert.ok(m.ok);   // a de junho fica de fora
+  assert.equal(m.abertas, 5); assert.equal(m.concluidas, 2);
+  // 1ª resposta: 1, 3 e 2 dias → mediana 2 (3 respostas bastam)
+  assert.equal(m.resposta.n, 3); assert.equal(m.resposta.mediana, 2); assert.ok(m.resposta.ok);
+  assert.equal(m.semanas[6].resposta.mediana, 3); assert.equal(m.semanas[7].resposta.n, 1);
+  // menos de 3 solicitações no período: o cartão não aparece
+  assert.ok(!E.movimentoSemanal(itens.slice(0, 2), h).ok);
+  assert.ok(!E.movimentoSemanal([], h).ok);
+  // sem as datas das conversas, não há tempo de resposta (só as barras)
+  const sem = E.movimentoSemanal(itens.map(i => ({ ...i, veredito: null })), h);
+  assert.ok(sem.ok && sem.resposta.n === 0 && sem.resposta.mediana === null && !sem.resposta.ok);
+  // as regras mudam o número de semanas e os mínimos
+  const r4 = E.movimentoSemanal(itens, h, { config: { movimento: { semanas: 4, minimoSolicitacoes: 9 } } });
+  assert.equal(r4.semanas.length, 4); assert.ok(!r4.ok); assert.equal(r4.semanas[0].rotulo, '05/10');
+  // domingo ainda é da semana que começou na segunda anterior
+  assert.equal(E.movimentoSemanal([], new Date(2026, 10, 1)).semanas[7].rotulo, '26/10');
+});
+
+t('vereditoConversa guarda a data da 1ª resposta do escritório', () => {
+  const tr = E.tramitesDe([{ created: '2026-10-01T09:00', status: 1, description: 'Segue.' }, { created: '2026-10-03T09:00', status: 4, description: 'Recebido.' }, { created: '2026-10-04T09:00', status: 3, description: 'Obrigado.' }], 'avisoFerias', rules);
+  const v = E.vereditoConversa(tr, rules);
+  assert.equal(v.primeiraResposta, '2026-10-03T09:00'); assert.equal(v.abertura, '2026-10-01T09:00');
+  assert.equal(E.vereditoConversa(E.tramitesDe([{ created: '2026-10-01', status: 1, description: 'x' }], 'avisoFerias', rules), rules).primeiraResposta, undefined);
+});
+
+t('regras: ajudas do Hoje e config.movimento existem', () => {
+  assert.ok(rules.config.movimento.semanas >= 2 && rules.config.movimento.minimoSolicitacoes >= 1);
+  for (const k of ['folha', 'terminar', 'legais', 'avisos', 'experiencia', 'ferias', 'documentos', 'casos', 'truncado']) assert.ok(rules.config.hoje.ajudas[k], k);
+});
+
 t('comando do cliente → células da grade real (dicionário + nomes das rubricas da própria grade)', () => {
   const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '247 - HORA INTERJORNADA', '37 - COMISSOES', '434 - COMISSOES (MES ANTERIOR)', '440 - PREMIO', '449 - PREMIO MES ANTERIOR', '240 - FERIADO TRABALHADO'];
   const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ARTUR MENDES DE MORAES', 'CAIO SANTANA VIEIRA'];

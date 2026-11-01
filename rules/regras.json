@@ -271,6 +271,28 @@
     "prescricaoAvisoDias": 10,
     "leituraAutomaticaSegundos": 30,
     "sino": { "maxLinhas": 8, "maxGuardadas": 400 },
+    "movimento": {
+      "_comentario": "Cartão 'Movimento das suas solicitações' do Hoje: semanas mostradas, mínimo de solicitações no período para o cartão aparecer e de respostas lidas para mostrar o tempo da 1ª resposta. Só números lidos do portal, em memória.",
+      "revisarComEscritorio": true,
+      "semanas": 8,
+      "minimoSolicitacoes": 3,
+      "minimoRespostas": 3,
+      "ajuda": "Conta as solicitações que você abriu em cada semana e as que foram concluídas nela (a data da conclusão é a da última movimentação no portal). Só entram as solicitações que a leitura automática trouxe. O tempo da 1ª resposta vem das conversas já lidas e pode não incluir todas."
+    },
+    "hoje": {
+      "_comentario": "Textos de ajuda do Hoje e das Solicitações (aparecem na dica ⓘ ao lado do título). Podem ser trocados sem nova versão.",
+      "ajudas": {
+        "folha": "As variáveis da folha (horas extras, faltas, comissões…) devem chegar ao escritório até o dia combinado de cada mês. Prepare o lançamento aqui e confira no portal antes de enviar.",
+        "terminar": "Pedidos que você começou a preencher e não enviou nos últimos 7 dias, guardados só neste computador.",
+        "legais": "Prazos da lei que dependem de você: pagamento dos cálculos de férias e de rescisão em aberto e o eSocial das admissões.",
+        "avisos": "Férias e rescisões perto do pagamento que têm só o aviso no portal. Peça o cálculo para o escritório conseguir pagar no prazo.",
+        "experiencia": "Contratos de experiência que vencem nos próximos 30 dias, pela data de admissão. Prorrogue, encerre no fim ou efetive.",
+        "ferias": "Férias que o prazo para conceder vence em até 60 dias. É uma estimativa: o portal não informa as férias já tiradas.",
+        "documentos": "Documentos que o escritório publicou e que o portal ainda mostra como não lidos.",
+        "casos": "O que pode atrasar o atendimento, lido nas conversas e nos pedidos.",
+        "truncado": "Mostrando as mais recentes de cada tipo. As mais antigas continuam no portal."
+      }
+    },
     "escolherUnicaOpcao": {
       "_comentario": "Listas do portal em que o Assistente escolhe sozinho quando há uma opção só (no fim de um preenchimento, se o campo estiver vazio). A fonte aparece como 'única opção do portal'.",
       "revisarComEscritorio": true,

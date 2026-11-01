@@ -2,11 +2,11 @@
  * Recebe o contexto compartilhado (C) e registra nele o que outras partes usam. */
 import * as E from '../engine.js';
 import * as D from '../dados.js';
-import { anelProgresso, cor } from '../graficos.js';
+import { anelProgresso, cor, ligarDicas } from '../graficos.js';
 
 export function montarSolicitacoes(C) {
   const { A, S, $, esc, icon, request, send, toast, viewEl } = C;
-  const { ICONE_MOT, MOT, P, dialogo, familiaTipo, fmt, gravarPref, icTipo, itensVisiveis, lerPref, ligarIr, ligarSeletorEmpresa, loading, nomeTipo, pedirCalculoDoAviso, pedirDeNovo, plural, prepararResposta, quando, rotEmpresa, seletorEmpresa, variasEmpresas } = C;   // definidos em partes que montam antes
+  const { ICONE_MOT, MOT, P, dialogo, dicaI, familiaTipo, fmt, gravarPref, icTipo, itensVisiveis, lerPref, ligarIr, ligarSeletorEmpresa, loading, nomeTipo, pedirCalculoDoAviso, pedirDeNovo, plural, prepararResposta, quando, rotEmpresa, seletorEmpresa, variasEmpresas } = C;   // definidos em partes que montam antes
   const abrirDetalhe = (...a) => C.abrirDetalhe(...a);   // o detalhe vive em detalhe.js, que monta depois (chamado só em tempo de uso)
   /* =================== SOLICITAÇÕES =================== */
   /* No formato das Solicitações do Control Onvio: cartões por tipo (ícone na cor da família, número grande e uma
@@ -20,6 +20,7 @@ export function montarSolicitacoes(C) {
   function renderSolicitacoes() {
     const sol = S.plat.sol, F = S.plat.filtroSol, R = S.rules, hoje = E.today();
     if (!F.vis) F.vis = lerPref('solVis', 'cartoes');
+    if (!F.tiposVis) F.tiposVis = lerPref('solTipos', 'faixa') === 'todos' ? 'todos' : 'faixa';   // faixa de uma linha (só os tipos com pedidos) ou a grade com todos
     if (!sol) { viewEl.innerHTML = loading('Consultando suas solicitações no portal…'); P.carregarSolicitacoes(); return; }
     const vis = itensVisiveis(), comEmpresa = variasEmpresas(vis);
     const prio = E.prioridadesCliente(vis, hoje, R);
@@ -31,17 +32,17 @@ export function montarSolicitacoes(C) {
         <input type="search" id="sol-q" placeholder="Buscar por número, funcionário ou assunto…" value="${esc(F.q)}" autocomplete="off">
         ${seletorEmpresa()}
         <div class="seg" role="group" aria-label="Como mostrar">${[['cartoes', 'grid', 'Cartões'], ['lista', 'list', 'Lista'], ['tabela', 'sheet', 'Tabela']].map(([k, ic, r]) => `<button type="button" data-vis-sol="${k}" aria-pressed="${F.vis === k}" title="${k === 'tabela' ? 'Todas as solicitações, inclusive as encerradas há mais tempo' : r}">${icon(ic, 'ic-sm')} ${r}</button>`).join('')}</div>
-        <span class="dp-count" id="sol-n"></span>
+        <span class="dp-count" id="sol-n"></span>${sol.truncado ? dicaI(R.config?.hoje?.ajudas?.truncado || 'Mostrando as mais recentes de cada tipo. As mais antigas continuam no portal.', 'Sobre a lista') : ''}
         <button type="button" class="btn btn-sm" id="sol-ref">${icon('refresh', 'ic-sm')} Atualizar</button>
         <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
       </div>
 
       ${sol.calibrar.length ? `<div class="note">${icon('info')}<div><b>${esc(sol.calibrar.map(nomeTipo).join(', '))}:</b> ${esc(R.mensagens?.plataformaCalibrar || '')} <button class="btn btn-ghost btn-sm" id="sol-geral">${icon('external', 'ic-sm')} Abrir no portal</button></div></div>` : ''}
 
-      <div class="tipos" id="sol-tipos" role="group" aria-label="Tipo de solicitação"></div>
+      <div class="tipos-wrap" id="sol-tipos" role="group" aria-label="Tipo de solicitação"></div>
       <div class="hj-sits" id="sol-sits" role="group" aria-label="Filtrar por situação"></div>
       <div id="sol-grupos"></div>
-      ${sol.truncado ? `<p class="muted" style="font-size:11.5px">Mostrando as mais recentes de cada tipo. As mais antigas continuam no portal.</p>` : ''}`;
+      `;
 
     // cartões dos tipos: quantas em aberto em cada tipo (com a busca e a situação aplicadas) e quantas esperam você
     // (na Tabela, contam tudo o que a tabela mostra, inclusive as encerradas; nos outros modos, só as em aberto)
@@ -49,14 +50,25 @@ export function montarSolicitacoes(C) {
       const tab = F.vis === 'tabela';
       const l = tab ? vis.filter(i => (!F.motivo || motivoDe.get(i) === F.motivo) && busca(i))
         : prio.filter(p => p.motivo !== 'concluida' && (!F.motivo || p.motivo === F.motivo) && busca(p.item)).map(p => p.item);
+      const dados = (xs) => ({ suas: xs.filter(i => i.estado === 'aguardando').length, abertas: xs.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length });
       const cartao = (k, rot, xs) => {
-        const suas = xs.filter(i => i.estado === 'aguardando').length, abertas = xs.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length;
+        const { suas, abertas } = dados(xs);
         const sub = suas ? `<em>${suas} ${suas === 1 ? 'espera' : 'esperam'} você</em>` : abertas ? (tab ? `${abertas} em aberto` : 'com o escritório') : xs.length ? 'todas encerradas' : tab ? 'nenhuma' : 'nenhuma em aberto';
         return `<button type="button" class="tipo-c ${k ? `fam-${familiaTipo(k)}` : 'fam-todos'}${F.tipo === k ? ' on' : ''}${!xs.length ? ' zero' : ''}" data-tipo-sol="${esc(k)}" aria-pressed="${F.tipo === k}">
           <span class="tipo-topo">${k ? icTipo(k) : `<span class="tp-ic fam-todos">${icon('list', 'ic-sm')}</span>`}<span class="tipo-rot">${esc(rot)}</span></span>
           <b>${xs.length}</b><span class="tipo-sub">${sub}</span></button>`;
       };
-      return cartao('', 'Todos os tipos', l) + Object.keys(R.tipos).map(k => cartao(k, nomeTipo(k), l.filter(i => i.tipo === k))).join('');
+      // faixa de uma linha: só "Todos os tipos" e os tipos que têm solicitação (o escolhido nunca some)
+      const chip = (k, rot, xs) => {
+        const { suas } = dados(xs), txt = `${suas} ${suas === 1 ? 'espera' : 'esperam'} você`;
+        return `<button type="button" class="tipo-f ${k ? `fam-${familiaTipo(k)}` : 'fam-todos'}${F.tipo === k ? ' on' : ''}" data-tipo-sol="${esc(k)}" aria-pressed="${F.tipo === k}"${suas ? ` title="${txt}"` : ''}>
+          ${k ? icTipo(k) : `<span class="tp-ic fam-todos" aria-hidden="true">${icon('list', 'ic-sm')}</span>`}<span class="tipo-rot">${esc(rot)}</span><b>${xs.length}</b>${suas ? `<i class="tipo-suas" role="img" aria-label="${txt}"></i>` : ''}</button>`;
+      };
+      const lista = [['', 'Todos os tipos', l], ...Object.keys(R.tipos).map(k => [k, nomeTipo(k), l.filter(i => i.tipo === k)])];
+      const nZero = lista.filter(([k, , xs]) => k && !xs.length && F.tipo !== k).length;
+      if (F.tiposVis === 'todos') return `<div class="tipos-barra"><span class="tipos-tit">Todos os tipos</span><button type="button" class="btn btn-sm btn-ghost" data-tipos-vis="faixa">${icon('list', 'ic-sm')} Mostrar só com pedidos</button></div>
+        <div class="tipos">${lista.map(([k, r, xs]) => cartao(k, r, xs)).join('')}</div>`;
+      return `<div class="tipos-barra faixa"><div class="tipos-faixa">${lista.filter(([k, , xs]) => !k || xs.length || F.tipo === k).map(([k, r, xs]) => chip(k, r, xs)).join('')}</div>${nZero ? `<button type="button" class="btn btn-sm btn-ghost tipos-ver" data-tipos-vis="todos" title="Mostra também os ${nZero} tipos sem pedidos">${icon('grid', 'ic-sm')} Ver todos os tipos</button>` : ''}</div>`;
     };
     const sitsHtml = () => {
       const l = prio.filter(p => (!F.tipo || p.item.tipo === F.tipo) && busca(p.item));
@@ -119,6 +131,7 @@ export function montarSolicitacoes(C) {
       if (F.tipo || F.motivo || F.q) $('#sol-sits').insertAdjacentHTML('beforeend', `<button type="button" class="hj-sit sol-limpar" data-limpar-sol title="Mostrar todas as solicitações">${icon('x', 'ic-sm')}<span class="hj-sit-l">Limpar filtros</span></button>`);
       $('#sol-sits').querySelector('[data-limpar-sol]')?.addEventListener('click', () => { F.tipo = ''; F.motivo = null; F.q = ''; const q = $('#sol-q'); if (q) q.value = ''; desenhar(); });
       viewEl.querySelectorAll('[data-tipo-sol]').forEach(b => b.addEventListener('click', () => { F.tipo = F.tipo === b.dataset.tipoSol ? '' : b.dataset.tipoSol; desenhar(); }));
+      viewEl.querySelectorAll('[data-tipos-vis]').forEach(b => b.addEventListener('click', () => { F.tiposVis = b.dataset.tiposVis; gravarPref('solTipos', F.tiposVis); desenhar(); viewEl.querySelector('#sol-tipos [data-tipos-vis]')?.focus(); }));
       viewEl.querySelectorAll('[data-sit]').forEach(b => b.addEventListener('click', () => { F.motivo = F.motivo === b.dataset.sit ? null : b.dataset.sit; desenhar(); }));
       $('#sol-grupos').querySelectorAll('[data-card]').forEach(b => b.addEventListener('click', () => abrirDetalhe(mostrados[+b.dataset.card])));
       $('#sol-grupos').querySelectorAll('[data-mais]').forEach(b => b.addEventListener('click', () => { F.motivo = b.dataset.mais; desenhar(); viewEl.scrollTop = 0; }));
@@ -127,6 +140,7 @@ export function montarSolicitacoes(C) {
     viewEl.querySelectorAll('[data-vis-sol]').forEach(b => b.addEventListener('click', () => { F.vis = b.dataset.visSol; gravarPref('solVis', F.vis); renderSolicitacoes(); }));
     $('#sol-q').addEventListener('input', A.debounce((e) => { F.q = e.target.value; desenhar(); }, 200));
     ligarSeletorEmpresa(viewEl);
+    ligarDicas(viewEl);
     $('#sol-ref').addEventListener('click', () => { S.plat.sol = null; renderSolicitacoes(); P.carregarSolicitacoes(true); });
     $('#sol-tentar')?.addEventListener('click', () => { S.plat.sol = null; renderSolicitacoes(); P.carregarSolicitacoes(true); });
     $('#sol-portal')?.addEventListener('click', () => send({ type: 'verPortal' }));
