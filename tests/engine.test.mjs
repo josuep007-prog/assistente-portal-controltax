@@ -1717,6 +1717,59 @@ t('sino: textos e limites existem nas regras', () => {
   for (const k of ['esperam', 'prescrevem', 'novos']) assert.equal(rules.mensagens.trilhoResumo[k].length, 2);
 });
 
+t('detalhe (2.19): tempo relativo, separador de intervalo longo e data completa na dica', () => {
+  const ag = new Date(2026, 9, 29, 15, 0);   // quinta-feira, 29/10/2026 15:00
+  const r = (y, m, d, h, mi) => E.tempoRelativo(new Date(y, m, d, h, mi), ag);
+  assert.equal(r(2026, 9, 29, 14, 59), 'agora há pouco');
+  assert.equal(r(2026, 9, 29, 14, 40), 'há 20 min');
+  assert.equal(r(2026, 9, 29, 9, 5), 'hoje às 09:05');
+  assert.equal(r(2026, 9, 28, 14, 30), 'ontem às 14:30');
+  assert.equal(r(2026, 9, 27, 10, 0), 'há 2 dias');
+  assert.equal(r(2026, 9, 12, 10, 0), 'há 2 semanas');
+  assert.equal(r(2026, 8, 1, 10, 0), 'em 01/09/2026');
+  assert.equal(E.tempoRelativo('2026-10-29T10:00:00', ag), 'hoje às 10:00', 'texto ISO do portal');
+  assert.equal(E.tempoRelativo('', ag), '');
+  assert.match(r(2026, 10, 3, 10, 0), /^03\/11\/2026 às 10:00$/, 'relógio adiantado: mostra a data, sem inventar futuro');
+  assert.equal(E.dataHoraLonga(new Date(2026, 9, 27, 19, 21)), 'terça-feira, 27/10/2026 às 19:21');
+  assert.equal(E.intervaloEntre('2026-10-26T10:00:00', '2026-10-29T08:00:00', rules), '3 dias depois');
+  assert.equal(E.intervaloEntre('2026-10-28T23:00:00', '2026-10-29T08:00:00', rules), '', 'de um dia para o outro não é intervalo longo');
+  assert.equal(E.intervaloEntre('2026-10-28T10:00:00', '2026-10-29T08:00:00', { config: { detalheConversa: { intervaloDias: 1 } } }), '1 dia depois', 'o limite vem das regras');
+});
+
+t('detalhe (2.19): destaques em chips por tipo, só com o que existe e nunca dado de saúde', () => {
+  const h = new Date(2026, 9, 29);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  // férias: início, pagamento (calculado dois dias antes, em dia útil), dias, abono; "prescreve em" tem vaga reservada
+  const av = N({ id: 'a', identifier: 5, genericStatus: 4, lastUpdated: '2026-10-26', created: '2026-10-20', vacationStartDate: '2026-11-16T00:00:00', vacationDays: 20, bonusDays: 10, clientEmployeeExpanded: { name: 'JOAO' } }, 'avisoFerias');
+  const l = E.destaquesDetalhe(av, av.datas, null, rules, h);
+  assert.deepEqual(l.map(x => x.k), ['Início das férias', 'Pagamento até', 'Dias de férias', 'Prescreve em'], 'o abono sai quando a vaga é do prescreve');
+  assert.equal(l[0].v, '16/11/2026'); assert.equal(l[1].v, '13/11/2026'); assert.equal(l[2].v, '20 dias'); assert.equal(l[3].v, '27 dias');
+  assert.ok(!l.some(x => x.alerta));
+  // concluída: não prescreve, o abono entra
+  const ok = N({ id: 'b', identifier: 6, genericStatus: 5, lastUpdated: '2026-10-26', vacationStartDate: '2026-11-16T00:00:00', vacationDays: 20, bonusDays: 10 }, 'avisoFerias');
+  assert.deepEqual(E.destaquesDetalhe(ok, ok.datas, null, rules, h).map(x => x.k), ['Início das férias', 'Pagamento até', 'Dias de férias', 'Dias de abono']);
+  // prazo de pagamento que já passou fica em alerta
+  const velho = N({ id: 'c', identifier: 7, genericStatus: 5, lastUpdated: '2026-10-01', vacationStartDate: '2026-10-20T00:00:00' }, 'calculoFerias');
+  assert.ok(E.destaquesDetalhe(velho, velho.datas, null, rules, h).find(x => x.k === 'Pagamento até').alerta);
+  // rescisão: último dia + pagamento (10 dias depois, dia útil anterior)
+  const re = N({ id: 'd', identifier: 8, genericStatus: 2, lastUpdated: '2026-10-27', resignationDate: '2026-11-02T00:00:00', adviceDate: '2026-10-01T00:00:00' }, 'avisoRescisao');
+  const lr = E.destaquesDetalhe(re, re.datas, null, rules, h);
+  assert.deepEqual(lr.map(x => x.k), ['Data do aviso', 'Último dia', 'Pagamento até']);
+  // afastamento: início e dias vêm do detalhe cru; CID, médico e CRM nunca aparecem, nem por regra mal escrita
+  const af = N({ id: 'e', identifier: 9, genericStatus: 2, lastUpdated: '2026-10-27', leaveDate: '2026-10-20T00:00:00' }, 'afastamento');
+  const bruto = { leaveDays: 5, cid: 'Z76', doctorName: 'DR EXEMPLO', crm: '123' };
+  const la = E.destaquesDetalhe(af, af.datas, bruto, rules, h);
+  assert.deepEqual(la.map(x => [x.k, x.v]), [['Início', '20/10/2026'], ['Dias', '5 dias']]);
+  const ruim = JSON.parse(JSON.stringify(rules)); ruim.config.destaquesDetalhe.campos.cid = { rotulo: 'CID', fonte: 'bruto.cid' }; ruim.config.destaquesDetalhe.campos.dr = { rotulo: 'Dias', fonte: 'bruto.doctorName' };
+  ruim.config.destaquesDetalhe.porTipo.afastamento = ['cid', 'dr', 'inicioAfastamento'];
+  assert.deepEqual(E.destaquesDetalhe(af, af.datas, bruto, ruim, h).map(x => x.k), ['Início'], 'chave de saúde é ignorada');
+  assert.ok(!JSON.stringify(la).match(/Z76|EXEMPLO|123/));
+  // sem dado nenhum e sem regra: nada aparece
+  const g = N({ id: 'f', identifier: 10, genericStatus: 1, lastUpdated: '2026-10-28', created: '2026-10-28' }, 'geral');
+  assert.deepEqual(E.destaquesDetalhe(g, g.datas, null, rules, h), []);
+  assert.deepEqual(E.destaquesDetalhe(av, av.datas, null, { config: {} }, h), [], 'sem config.destaquesDetalhe, nada');
+});
+
 t('comando do cliente → células da grade real (dicionário + nomes das rubricas da própria grade)', () => {
   const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '247 - HORA INTERJORNADA', '37 - COMISSOES', '434 - COMISSOES (MES ANTERIOR)', '440 - PREMIO', '449 - PREMIO MES ANTERIOR', '240 - FERIADO TRABALHADO'];
   const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ARTUR MENDES DE MORAES', 'CAIO SANTANA VIEIRA'];

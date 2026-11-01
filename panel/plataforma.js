@@ -12,6 +12,7 @@ import { montarDialogos } from './plataforma/dialogos.js';
 import { montarEventos } from './plataforma/eventos.js';
 import { montarHoje } from './plataforma/hoje.js';
 import { montarSolicitacoes } from './plataforma/solicitacoes.js';
+import { montarDetalhe } from './plataforma/detalhe.js';
 import { montarNovopedido } from './plataforma/novopedido.js';
 import { montarEmpresa } from './plataforma/empresa.js';
 import { montarFuncionarios } from './plataforma/funcionarios.js';
@@ -30,6 +31,7 @@ export function montarPlataforma(A) {
   montarEventos(C);
   montarHoje(C);
   montarSolicitacoes(C);
+  montarDetalhe(C);
   montarNovopedido(C);
   montarEmpresa(C);
   montarFuncionarios(C);

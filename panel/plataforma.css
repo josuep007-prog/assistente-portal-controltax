@@ -764,6 +764,34 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .rail-logo, .mast .logo, .cmdk-in input, .cmdk-res, .modal .sheet { border-radius: 4px; }
 .plat-drop > div { border-radius: 4px; }
 .chip, .rail-badge, .tab .dot, .ag-day.today .ag-n { border-radius: 3px; }
+
+/* ===== detalhe da solicitação (2.19): navegação, destaques, aviso da conversa, foco que pisca ===== */
+.dlg:focus { outline: none; }
+.dt-nav { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.dt-nav .btn { min-width: 30px; padding-inline: 6px; }
+.dt-nav .btn:disabled { opacity: .4; cursor: not-allowed; }
+.dt-nav-n { min-width: 56px; text-align: center; font: 500 12px var(--f-mono); color: var(--ink-2); }
+.dt-nav-n b { color: var(--ink); font-weight: 600; }
+.dt-dq .dq small { font-size: 11px; }
+.dt-dq .dq b { font-family: var(--f-mono); }
+.dt-dq .dq.alerta { background: var(--err-bg); border-color: color-mix(in srgb, var(--brand-red) 45%, var(--rule)); }
+.dt-dq .dq.alerta small { color: var(--ink-2); }
+.dt-aviso { display: grid; }
+.dt-aviso[hidden] { display: none; }
+.dt-aviso .aviso-linha { align-items: flex-start; }
+.dt-aviso .aviso-linha > span { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.dt-aviso .aviso-linha small { font-size: 11.5px; color: var(--ink-3); }
+.dt-aviso .aviso-linha .btn { flex: none; align-self: center; }
+.tr-quando { cursor: help; }
+.tr-ext { font: 600 9.5px var(--f-mono); font-style: normal; letter-spacing: .04em; padding: 1px 4px; border-radius: 3px; background: var(--blue-pale); color: var(--blue-deep); }
+.tr-mais:focus-visible, .dt-nav .btn:focus-visible, .tr-arq:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.tr-item.ultimo .tr-bolha { box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue-deep) 40%, transparent); }
+/* solicitação escolhida em outro lugar (aviso, sino, busca): contorno vermelho que pisca ao chegar na lista */
+.foco-pisca { position: relative; z-index: 1; outline: 2px solid var(--brand-red); outline-offset: 2px; animation: foco-pisca .7s ease-in-out 3 both; }
+.dp-row.foco-pisca, .prio.foco-pisca { outline-offset: -2px; }
+@keyframes foco-pisca { 0%, 100% { outline-color: var(--brand-red); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-red) 25%, transparent); } 50% { outline-color: transparent; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .foco-pisca { animation: none; } }
+
 /* Planilha de rubricas da plataforma (2.20.0): funcionários nas linhas, uma rubrica por coluna; nome e títulos fixos */
 .plan-rub .plan-barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .plan-rub .plan-barra input[type=search] { width: 240px; max-width: 100%; }
@@ -788,3 +816,16 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .plan-cmd-res .tips { margin: 0; padding-left: 18px; }
 
 .plan-tabela td.plan-falhou { box-shadow: inset 0 0 0 2px var(--brand-red, #C2000C); }
+/* o detalhe cabe em telas baixas: a conversa nunca some (altura mínima) e as abas ficam à vista ao rolar */
+.dlg-detalhe .dlg-body { display: flex; flex-direction: column; gap: 10px; }
+.dlg-detalhe .dt-body { flex: 0 0 auto; min-height: 200px; }
+.dlg-detalhe .dt-tabs { position: sticky; top: -14px; z-index: 2; background: var(--surface); }
+@media (max-height: 760px) {
+  .dlg-detalhe .dt-porque { display: none; }
+  .dlg-detalhe .dt-meta { gap: 2px 14px; }
+  .dlg-detalhe .dt-body { max-height: 38vh; }
+  .dlg-detalhe .dt-resp textarea { min-height: 44px; max-height: 80px; }
+}
+.dlg-detalhe .dlg-body > * { flex-shrink: 0; }
+/* contraste ≥ 4,5:1 nos dois temas: o texto miúdo dos chips e da hora fica em --ink-2 (a hora cai em bolha azul) */
+.dt-dq .dq small, .tr-quando { color: var(--ink-2); }
