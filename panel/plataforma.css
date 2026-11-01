@@ -876,6 +876,84 @@ body.plat .dock .more-menu .menu { z-index: 6; }
   .hj-passos-l { max-height: 138px; gap: 4px; }
   .hj-step { padding: 5px 10px; }
   .hj-zen { padding: 8px 12px; }
+
+/* ===== Agenda com calendário do mês ===== */
+/* Calendário seg–dom, um ponto por evento (até 3 + "+N"), painel do dia e legenda que liga e desliga cada tipo.
+   Cada tipo tem cor e forma (círculo, quadrado, losango, triângulo, anel): a cor nunca é a única pista, e o texto
+   fica sempre com a tinta de texto. Cores dos pontos: tokens --viz-* (claro e escuro). */
+:root {
+  --ag-legal: var(--viz-s1); --ag-prescricao: var(--viz-crit); --ag-exp: var(--pessoal);
+  /* no claro, o verde-água e o laranja dos gráficos ficam abaixo de 3:1 sobre os fundos do calendário: escurecidos */
+  --ag-pedido: color-mix(in srgb, var(--viz-s3) 72%, #000); --ag-lembrete: color-mix(in srgb, var(--viz-s2) 78%, #000);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ag-pedido: var(--viz-s3); --ag-lembrete: var(--viz-s2); } }
+:root[data-theme="dark"] { --ag-pedido: var(--viz-s3); --ag-lembrete: var(--viz-s2); }
+.ag-pt { display: inline-block; width: 8px; height: 8px; flex: none; background: var(--c, var(--ink-3)); border-radius: 50%; }
+.ag-pt.t-legal { --c: var(--ag-legal); }
+.ag-pt.t-pedido { --c: var(--ag-pedido); border-radius: 2px; }
+.ag-pt.t-prescricao { --c: var(--ag-prescricao); border-radius: 0; transform: rotate(45deg) scale(.82); }
+.ag-pt.t-exp { --c: var(--ag-exp); border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.ag-pt.t-lembrete { --c: var(--ag-lembrete); background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+
+.ag-bar .dp-month-label { margin: 0; }
+.ag-tipos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 12px; }
+.ag-tipo { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); color: var(--ink); font: 500 12px var(--f-body); cursor: pointer; }
+.ag-tipo:hover { background: var(--surface-2); }
+.ag-tipo:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.ag-tipo[aria-pressed="false"] { background: transparent; border-style: dashed; color: var(--ink-3); }
+.ag-tipo[aria-pressed="false"] .ag-pt { opacity: .45; }
+.ag-tipo-fer { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; font-size: 12px; color: var(--ink-3); }
+.ag-fer-sw { width: 14px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--brand-red) 12%, var(--surface-2)); box-shadow: inset 0 0 0 1px var(--rule-strong); }
+
+.ag-cal { overflow: hidden; }
+.ag-sem { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.ag-wd span { text-align: left; }
+.ag-day { min-height: 76px; gap: 2px; position: relative; }
+.ag-day .ag-n { font: 600 12px var(--f-mono); line-height: 18px; align-self: flex-start; }
+.ag-day .ag-fer { display: block; max-width: 100%; font-size: 10.5px; line-height: 1.25; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ag-day .ag-pts { display: flex; align-items: center; gap: 4px; margin-top: auto; min-height: 10px; }
+.ag-day .ag-mais { font: 600 10.5px var(--f-mono); color: var(--ink-2); }
+.ag-day.nu { background: var(--surface-2); }
+.ag-day.feriado { background: color-mix(in srgb, var(--brand-red) 7%, var(--surface-2)); }
+.ag-day.feriado .ag-n { color: var(--dp-late); }
+.ag-day.out { background: color-mix(in srgb, var(--surface-2) 70%, transparent); color: var(--ink-3); }
+.ag-day.out .ag-pt { opacity: .6; }
+.ag-day:hover { background: var(--surface-3); }
+.ag-day.sel { background: var(--info-bg); box-shadow: inset 0 0 0 2px var(--blue-deep); }
+.ag-day:focus-visible { outline: 2px solid var(--ink); outline-offset: -5px; }
+.ag-day.today .ag-n { background: var(--brand-red); color: #fff; border-radius: 10px; padding: 0 7px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ag-day.today .ag-n { background: var(--brand-red-deep); } }
+:root[data-theme="dark"] .ag-day.today .ag-n { background: var(--brand-red-deep); }
+.ag-rodape { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--ink-3); }
+
+#ag-dia .pn-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+#ag-dia-t { margin: 0; }
+#ag-dia-t:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 3px; }
+.ag-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.ag-nota { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 10px; font-size: 12px; color: var(--ink-2); }
+.ag-nota .ic { flex: none; margin-top: 2px; }
+.ag-ev-lista { display: grid; gap: 8px; margin-bottom: 12px; }
+.ag-ev-li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; padding: 9px 10px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); }
+.ag-ev-li > .ag-pt { margin-top: 5px; }
+.ag-ev-tx { min-width: 0; }
+.ag-ev-tx b { display: block; font-size: 12.5px; overflow-wrap: anywhere; }
+.ag-ev-tx small { display: block; color: var(--ink-3); font-size: 11.5px; overflow-wrap: anywhere; }
+.ag-ev-tp { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.ag-ev-ac { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-ev-ac:empty { display: none; }
+.ag-ev-li.feito .ag-ev-tx b { text-decoration: line-through; color: var(--ink-3); }
+
+.hj-prazo { background: none; border: 0; padding: 0; font: inherit; color: var(--ink-2); cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; text-align: left; }
+.hj-prazo span { font-family: var(--f-mono); font-size: 12px; }
+.hj-prazo:hover { color: var(--blue-deep); text-decoration-color: currentColor; }
+.hj-prazo:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; border-radius: 2px; }
+
+@media (max-height: 700px) { .ag-day { min-height: 64px; } }
+@media (max-width: 720px) {
+  .ag-day { min-height: 56px; padding: 4px; }
+  .ag-day .ag-fer { display: none; }
+  .ag-wd span { padding: 6px 4px; }
+  .ag-tipo-fer { margin-left: 0; }
 }
 
 /* Planilha de rubricas da plataforma (2.20.0): funcionários nas linhas, uma rubrica por coluna; nome e títulos fixos */
@@ -915,3 +993,8 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .dlg-detalhe .dlg-body > * { flex-shrink: 0; }
 /* contraste ≥ 4,5:1 nos dois temas: o texto miúdo dos chips e da hora fica em --ink-2 (a hora cai em bolha azul) */
 .dt-dq .dq small, .tr-quando { color: var(--ink-2); }
+
+/* a coluna do lado nunca alarga a tela: títulos longos cortam com reticências */
+.ag-grid > * { min-width: 0; }
+.ag-side, .ag-side > * { min-width: 0; max-width: 100%; }
+.ag-side .pn-li { min-width: 0; }

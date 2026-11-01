@@ -19,6 +19,7 @@ Desde a 2.16.2 o motor é dividido por assunto. `panel/engine.js` é só uma **f
 | `textolivre.js` | Texto livre: quantidades, datas, cartões de escolha, palpites, leitura do pedido, vários pedidos |
 | `planilhas.js` | Variáveis da folha, grade e planilha de rubricas, catálogo da Solicitação Geral |
 | `plataforma.js` | Solicitações, equipe, conversa, atenção, prazos legais, observações |
+| `agenda.js` | Agenda em calendário do mês (puro): `montarMes` (semanas seg–dom, pontos, feriado e dia útil), `eventosDasSolicitacoes`, `eventosDaEquipe`, `mesclarEventos`, `descreverDia`, navegação por teclado e ações nos lembretes (`concluirLembrete`, `adiarLembrete`); textos em `mensagens.agenda`, feriados em `feriadosNomes`/`feriadosMunicipais` |
 | `portal.js` | Documentos publicados pelo escritório (resposta da API) e a forma da resposta |
 | `sino.js` | Sino de novidades: foto mínima (`fotoSino`), o que mudou (`novidadesSino`), `marcarVistas`; textos em `mensagens.sino` |
 
@@ -45,7 +46,7 @@ Desde a 2.16.3 a plataforma em tela cheia é dividida por tela. `panel/plataform
 | `solicitacoes.js` | Cartões, situações, lista e tabela das solicitações (publica `S.plat.listaSol`, o que está na tela) |
 | `detalhe.js` | Detalhe da solicitação (Conversa, Dados, O que observar), navegação ‹ › entre a lista vista, destaques em chips (`config.destaquesDetalhe`) e o foco que pisca (`P.focarSolicitacao(ref)`: o sino e os avisos chamam para levar o cliente ao cartão na lista) |
 | `novopedido.js`, `empresa.js` | Novo pedido; escolha e troca da empresa do pedido |
-| `funcionarios.js`, `agenda.js` | Funcionários e ficha; agenda e lembretes |
+| `funcionarios.js`, `agenda.js` | Funcionários e ficha; Agenda: calendário do mês (grade `role=grid`, teclado, legenda que liga e desliga tipos), painel do dia, lembretes e "próximo prazo" do Hoje (`C.proximoPrazoHtml`, uma chamada em `hoje.js`) |
 | `documentos.js` | Documentos (das solicitações, do escritório, modelos, listas) |
 | `busca.js` | Busca (Ctrl+K) |
 

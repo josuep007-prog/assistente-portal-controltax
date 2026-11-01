@@ -1817,6 +1817,135 @@ t('regras: ajudas do Hoje e config.movimento existem', () => {
   for (const k of ['folha', 'terminar', 'legais', 'avisos', 'experiencia', 'ferias', 'documentos', 'casos', 'truncado']) assert.ok(rules.config.hoje.ajudas[k], k);
 });
 
+t('Agenda em calendário: mês seg–dom, pontos (até 3 + N), feriado e dia útil', () => {
+  const fer = E.feriadosDaAgenda(rules, 'EMPRESA EXEMPLO');
+  const cal = E.makeCalendar(fer.datas);
+  const ev = (d, tipo, titulo, extra = {}) => ({ d: new Date(2026, 9, d), tipo, titulo, detalhe: '', ...extra });
+  const evs = [ev(12, 'legal', 'A'), ev(14, 'legal', 'B'), ev(14, 'lembrete', 'C'), ev(14, 'exp', 'D'), ev(14, 'pedido', 'E'), ev(14, 'lembrete', 'F', { feito: true }), ev(20, 'lembrete', 'G')];
+  const m = E.montarMes(2026, 9, evs, { hoje: new Date(2026, 9, 29), cal, nomes: fer.nomes });
+  assert.equal(m.rotulo, 'outubro de 2026');
+  assert.equal(m.semanas.length, 5);
+  assert.ok(m.semanas.every(s => s.length === 7));
+  assert.equal(m.semanas[0][0].iso, '2026-09-28');          // segunda-feira
+  assert.equal(m.semanas[4][6].iso, '2026-11-01');          // domingo
+  assert.equal(m.semanas[0][0].doMes, false);
+  const dia = (k) => m.semanas.flat().find(x => x.iso === k);
+  assert.equal(dia('2026-10-12').feriado, 'Nossa Senhora Aparecida');
+  assert.equal(dia('2026-10-12').util, false);               // segunda, mas feriado
+  assert.equal(dia('2026-10-13').util, true);
+  assert.equal(dia('2026-10-17').util, false);               // sábado
+  assert.equal(dia('2026-10-29').hoje, true);
+  const d14 = dia('2026-10-14');
+  assert.equal(d14.pendentes, 4); assert.equal(d14.concluidos, 1);
+  assert.deepEqual(d14.pontos, ['legal', 'pedido', 'exp']);   // ordem dos tipos, no máximo 3
+  assert.equal(d14.mais, 1);
+  assert.equal(m.total, 6);
+  // legenda: tipo escondido some dos pontos
+  const m2 = E.montarMes(2026, 9, evs, { cal, ocultos: ['lembrete'] });
+  assert.deepEqual(m2.semanas.flat().find(x => x.iso === '2026-10-14').pontos, ['legal', 'pedido', 'exp']);
+  assert.equal(m2.semanas.flat().find(x => x.iso === '2026-10-20').pendentes, 0);
+  // fevereiro de 2027 começa numa segunda e fecha em 4 semanas
+  assert.equal(E.montarMes(2027, 1, [], { cal }).semanas.length, 4);
+  // frase do dia para leitor de tela
+  const f = E.descreverDia(d14, E.msgAgenda(rules));
+  assert.match(f, /quarta-feira, 14 de outubro de 2026/);
+  assert.match(f, /4 eventos: 1 prazo legal, 1 data de solicitação, 1 fim de experiência, 1 lembrete/);
+  assert.match(f, /1 concluído/);
+  const fer12 = E.descreverDia(dia('2026-10-12'), E.msgAgenda(rules));
+  assert.match(fer12, /feriado: Nossa Senhora Aparecida, dia não útil, 1 evento: 1 prazo legal/);
+  assert.match(E.descreverDia(dia('2026-10-29'), E.msgAgenda({})), /, hoje,/);   // sem textos nas regras, valem os padrão
+});
+
+t('Agenda: navegação (dia, mês no fim do mês curto, semana) e próximo prazo', () => {
+  assert.equal(E.moverDia('2026-10-31', 1), '2026-11-01');
+  assert.equal(E.moverDia('2026-10-01', -7), '2026-09-24');
+  assert.equal(E.moverMes('2027-01-31', 1), '2027-02-28');
+  assert.equal(E.moverMes('2026-01-15', -1), '2025-12-15');
+  assert.deepEqual(E.semanaDe('2026-10-29'), ['2026-10-26', '2026-11-01']);
+  assert.deepEqual(E.semanaDe('2026-11-01'), ['2026-10-26', '2026-11-01']);
+  const evs = [{ d: new Date(2026, 9, 28), tipo: 'legal', titulo: 'passou' }, { d: new Date(2026, 9, 30), tipo: 'lembrete', titulo: 'lembrete' },
+    { d: new Date(2026, 10, 3), tipo: 'exp', titulo: 'exp', feito: false }, { d: new Date(2026, 10, 2), tipo: 'legal', titulo: 'legal 2' }];
+  const p = E.proximoPrazo(evs, new Date(2026, 9, 29));
+  assert.equal(p.titulo, 'legal 2'); assert.equal(p.falta, 4);
+  assert.equal(E.quandoTexto(0), 'hoje'); assert.equal(E.quandoTexto(1), 'amanhã'); assert.equal(E.quandoTexto(4), 'em 4 dias');
+  assert.equal(E.proximoPrazo([], new Date(2026, 9, 29)), null);
+});
+
+t('Agenda: feriados municipais por empresa e nomes', () => {
+  const r = { feriados: ['2026-11-02'], feriadosNomes: { _comentario: 'x', '2026-11-02': 'Finados' }, feriadosMunicipais: { itens: [{ data: '2026-12-08', nome: 'Aniversário da cidade', empresa: 'exemplo' }, { data: '2026-12-09', nome: 'Outro', empresa: 'zzz' }] } };
+  const a = E.feriadosDaAgenda(r, 'EMPRESA EXEMPLO LTDA');
+  assert.deepEqual(a.datas, ['2026-11-02', '2026-12-08']);
+  assert.equal(a.nomes['2026-12-08'], 'Aniversário da cidade'); assert.equal(a.nomes['2026-11-02'], 'Finados');
+  assert.ok(!('_comentario' in a.nomes));
+  assert.equal(E.calendarioDaAgenda(r, 'EMPRESA EXEMPLO').isBusiness(new Date(2026, 11, 8)), false);
+  assert.equal(E.calendarioDaAgenda(r, 'OUTRA').isBusiness(new Date(2026, 11, 8)), true);
+  assert.deepEqual(E.eventosDosFeriados(new Date(2026, 10, 1), new Date(2026, 11, 31), a).map(e => [E.iso(e.d), e.titulo]), [['2026-11-02', 'Finados'], ['2026-12-08', 'Aniversário da cidade']]);
+  // as regras de verdade trazem o nome de cada feriado nacional
+  const nac = E.feriadosDaAgenda(rules, '');
+  assert.ok(rules.feriados.every(f => nac.nomes[f]), 'todo feriado nacional tem nome');
+});
+
+t('Agenda: datas das solicitações lidas (férias, rescisão, eSocial, prescrição) sem repetir o histórico', () => {
+  const h = new Date(2026, 9, 16);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  const af = N({ id: 'a', identifier: 10, genericStatus: 4, lastUpdated: '2026-10-05', created: '2026-10-01', clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, vacationStartDate: '2026-11-09T00:00:00', vacationDays: 20 }, 'avisoFerias');
+  const cr = N({ id: 'b', identifier: 11, genericStatus: 2, lastUpdated: '2026-10-14', created: '2026-10-14', clientEmployeeExpanded: { name: 'MARIA' }, resignationDate: '2026-10-20T00:00:00' }, 'calculoRescisao');
+  const ad = N({ id: 'c', identifier: 12, genericStatus: 2, created: '2026-10-15', name: 'NOVA', admissionDate: '2026-10-26T00:00:00' }, 'cadastroEmpregado');
+  const cx = N({ id: 'd', identifier: 13, genericStatus: 5, created: '2026-10-01', clientEmployeeExpanded: { name: 'ANA' }, vacationStartDate: '2026-11-20T00:00:00' }, 'avisoFerias');
+  cx.estado = 'cancelada';
+  assert.ok(af.prescreveEm != null);
+  const evs = E.eventosDasSolicitacoes([af, cr, ad, cx], h, rules);
+  const por = (t) => evs.filter(e => e.titulo === t || e.titulo.startsWith(t));
+  assert.equal(E.iso(por('Início das férias')[0].d), '2026-11-09');
+  assert.equal(E.iso(por('Retorno das férias')[0].d), '2026-11-29');
+  assert.equal(E.iso(por('Pagamento das férias')[0].d), '2026-11-06');   // 2 dias antes (sábado 07/11 → sexta)
+  assert.equal(E.iso(por('Pagamento das verbas')[0].d), '2026-10-30');   // 10 dias do desligamento
+  assert.equal(E.iso(por('Admissão no eSocial')[0].d), '2026-10-25');     // dia anterior ao início (domingo)
+  assert.ok(evs.every(e => e.item && e.item !== cx), 'cancelada não entra');
+  assert.ok(evs.filter(e => e.tipo === 'prescricao').every(e => e.item === af));
+  assert.match(por('Prescrição')[0].titulo, /nº 10/);
+  // a mesma data lida do histórico deste computador e do portal vale uma vez só (fica a do portal)
+  const doHist = { d: new Date(2026, 10, 9), tipo: 'pedido', titulo: 'Início das férias', detalhe: 'JOAO DA SILVA', quem: 'João da Silva' };
+  const mescla = E.mesclarEventos([doHist, ...evs]);
+  assert.equal(mescla.filter(e => e.titulo === 'Início das férias').length, 1);
+  assert.ok(mescla.find(e => e.titulo === 'Início das férias').item);
+  // concluída há muito: só vale o que ainda não passou
+  const ok = N({ id: 'e', identifier: 14, genericStatus: 4, created: '2026-08-01', lastUpdated: '2026-08-05', clientEmployeeExpanded: { name: 'BIA' }, vacationStartDate: '2026-08-10T00:00:00' }, 'avisoFerias');
+  ok.estado = 'concluida';
+  assert.equal(E.eventosDasSolicitacoes([ok], h, rules).length, 0);
+});
+
+t('Agenda: experiência dos funcionários (sem os efetivados) e ações nos lembretes', () => {
+  const emp = [{ nome: 'JOAO DA SILVA', admissao: '2026-10-05', ativo: true }, { nome: 'MARIA', admissao: '2026-10-05', ativo: false }];
+  const x = E.eventosDaEquipe(emp, new Date(2026, 9, 29), rules);
+  assert.deepEqual(x.map(e => [e.n, E.iso(e.d)]), [[45, '2026-11-18'], [90, '2027-01-02']]);
+  assert.equal(E.eventosDaEquipe(emp, new Date(2026, 9, 29), rules, { dispensado: (nome, n) => n === 45 }).length, 1);
+  // feito: some das ocorrências comuns (Hoje) e aparece com { comFeitos: true } (Agenda)
+  const l = { id: 'a', texto: 'x', data: '2026-10-10', rep: 'semanal', pular: [], feitos: [] };
+  const L = E.concluirLembrete([l], 'a', '2026-10-17');
+  assert.deepEqual(L[0].feitos, ['2026-10-17']);
+  assert.equal(l.feitos.length, 0, 'a lista original não muda');
+  const de = new Date(2026, 9, 10), ate = new Date(2026, 9, 31);
+  assert.deepEqual(E.ocorrencias(L[0], de, ate).map(E.iso), ['2026-10-10', '2026-10-24', '2026-10-31']);
+  assert.equal(E.ocorrencias(L[0], de, ate, undefined, { comFeitos: true }).length, 4);
+  assert.deepEqual(E.reabrirLembrete(L, 'a', '2026-10-17')[0].feitos, []);
+  // adiar: de uma vez só muda a data; o que repete pula o dia e ganha uma cópia
+  const um = [{ id: 'u', texto: 'y', data: '2026-10-10', rep: 'nao' }];
+  assert.equal(E.adiarLembrete(um, 'u', '2026-10-10', '2026-10-11', 'n1')[0].data, '2026-10-11');
+  const rep = E.adiarLembrete([l], 'a', '2026-10-17', '2026-10-18', 'n2');
+  assert.equal(rep.length, 2);
+  assert.deepEqual(rep[0].pular, ['2026-10-17']);
+  assert.deepEqual([rep[1].id, rep[1].data, rep[1].rep, rep[1].texto], ['n2', '2026-10-18', 'nao', 'x']);
+  assert.deepEqual(E.ocorrencias(rep[0], de, ate).map(E.iso), ['2026-10-10', '2026-10-24', '2026-10-31']);
+});
+
+t('Agenda: os textos das regras cobrem todos os tipos e os padrão batem com as regras', () => {
+  const m = E.msgAgenda(rules);
+  for (const k of E.TIPOS_AGENDA) assert.ok(m.tipos[k].rotulo && m.tipos[k].legenda && m.tipos[k].um && m.tipos[k].varios, k);
+  for (const k of Object.keys(E.MSG_AGENDA)) assert.ok(k in rules.mensagens.agenda, `mensagens.agenda.${k} falta nas regras`);
+  assert.equal(E.textoAgenda(m.titulo, { mes: 'outubro de 2026' }), 'Calendário de outubro de 2026');
+});
+
 t('comando do cliente → células da grade real (dicionário + nomes das rubricas da própria grade)', () => {
   const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '247 - HORA INTERJORNADA', '37 - COMISSOES', '434 - COMISSOES (MES ANTERIOR)', '440 - PREMIO', '449 - PREMIO MES ANTERIOR', '240 - FERIADO TRABALHADO'];
   const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ARTUR MENDES DE MORAES', 'CAIO SANTANA VIEIRA'];

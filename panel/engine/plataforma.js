@@ -375,24 +375,30 @@ export function casosCliente(itens, regras) {
    Pagamento dos cálculos em aberto (férias: 2 dias antes do início, CLT 145; rescisão: 10 dias do desligamento,
    CLT 477 §6º, antecipando para o dia útil anterior) e o eSocial das admissões (empregado: até o dia anterior ao
    início; estagiário: até config.estagiarioPrazoDias depois). Datas vindas do detalhe ou da lista. */
-export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
+/** O prazo legal de uma solicitação (sem janela de dias): { alvo, titulo, ref } ou null. Usado pelo Hoje e pela Agenda. */
+export function prazoLegalDoItem(i, regras = {}, cal = makeCalendar(regras?.feriados)) {
   const c = regras?.config || {};
+  const dt = i.datas || {};
+  if (i.tipo === 'calculoFerias' && dt.inicioFerias) return { alvo: pagamentoFerias(dt.inicioFerias, regras, cal), titulo: 'Pagamento das férias', ref: `início em ${fmtDate(dt.inicioFerias)}` };
+  if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) {
+    const b = dt.desligamento || dt.avisoPrevio;
+    return { alvo: pagamentoRescisao(b, regras, cal), titulo: 'Pagamento da rescisão', ref: dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}` };
+  }
+  if (/^cadastro(Empregado|Estagiario)$/.test(i.tipo) && dt.admissao) {
+    const est = i.tipo === 'cadastroEstagiario';
+    return { alvo: est ? addDays(dt.admissao, c.estagiarioPrazoDias ?? 15) : addDays(dt.admissao, -1), titulo: 'Admissão no eSocial', ref: `início em ${fmtDate(dt.admissao)}${est ? ' (estágio)' : ''}` };
+  }
+  return null;
+}
+export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
   const out = [];
   for (const i of itens || []) {
     if (!['aguardando', 'andamento'].includes(i.estado)) continue;
-    const dt = i.datas || {};
-    let alvo = null, titulo = '', ref = '';
-    if (i.tipo === 'calculoFerias' && dt.inicioFerias) { alvo = pagamentoFerias(dt.inicioFerias, regras, cal); titulo = 'Pagamento das férias'; ref = `início em ${fmtDate(dt.inicioFerias)}`; }
-    else if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) { const b = dt.desligamento || dt.avisoPrevio; alvo = pagamentoRescisao(b, regras, cal); titulo = 'Pagamento da rescisão'; ref = dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}`; }
-    else if (/^cadastro(Empregado|Estagiario)$/.test(i.tipo) && dt.admissao) {
-      const est = i.tipo === 'cadastroEstagiario';
-      alvo = est ? addDays(dt.admissao, c.estagiarioPrazoDias ?? 15) : addDays(dt.admissao, -1);
-      titulo = 'Admissão no eSocial'; ref = `início em ${fmtDate(dt.admissao)}${est ? ' (estágio)' : ''}`;
-    }
-    if (!alvo) continue;
-    const falta = diffDays(hoje, alvo);
+    const p = prazoLegalDoItem(i, regras, cal);
+    if (!p?.alvo) continue;
+    const falta = diffDays(hoje, p.alvo);
     if (falta > 15 || falta < -10) continue;
-    out.push({ item: i, titulo, alvo, ref, falta, retroativa: !!(i.criado && dt.admissao && dt.admissao < i.criado) });
+    out.push({ item: i, titulo: p.titulo, alvo: p.alvo, ref: p.ref, falta, retroativa: !!(i.criado && i.datas?.admissao && i.datas.admissao < i.criado) });
   }
   return out.sort((a, b) => a.falta - b.falta);
 }
@@ -562,11 +568,12 @@ export function progressoCliente(i, regras = {}) {
 }
 
 /* Lembretes do cliente (guardados só no computador) com repetição.
-   l = { data:'AAAA-MM-DD', rep:'nao'|'diaria'|'util'|'semanal'|'mensal'|'anual', intervalo?, ate?, pular?:[iso] } */
-export function ocorrencias(l, de, ate, cal = makeCalendar()) {
+   l = { data:'AAAA-MM-DD', rep:'nao'|'diaria'|'util'|'semanal'|'mensal'|'anual', intervalo?, ate?, pular?:[iso], feitos?:[iso] }
+   Os dias marcados como feitos (Agenda) não contam, a não ser com { comFeitos: true } (a Agenda os mostra riscados). */
+export function ocorrencias(l, de, ate, cal = makeCalendar(), { comFeitos = false } = {}) {
   const ini = parseDate(l?.data); if (!ini || !de || !ate) return [];
   const fim = l.ate ? parseDate(l.ate) : null;
-  const pular = new Set(l.pular || []);
+  const pular = new Set([...(l.pular || []), ...(comFeitos ? [] : l.feitos || [])]);
   const passo = Math.max(1, parseInt(l.intervalo, 10) || 1);
   const out = [];
   const ok = (d) => d >= de && d <= ate && (!fim || d <= fim) && !pular.has(iso(d));
