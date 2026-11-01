@@ -578,10 +578,6 @@ details.pn-card > summary { cursor: pointer; padding: 12px 14px; font: 600 14px 
 .hj-hero .hj-tick { background: color-mix(in srgb, var(--surface) 90%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent); }
 .hj-hero .hj-passos { background: color-mix(in srgb, var(--surface) 75%, transparent); }
 .hj-hero .hj-step { background: var(--surface); }
-/* o destaque do Hoje inverte o tema: escuro no tema claro e claro no tema escuro (cada tema tem o seu contraste) */
-.hj-hero { --surface:#131A21; --surface-2:#182129; --surface-3:#1E2831; --ink:#E8EDF2; --ink-2:#AAB7C2; --ink-3:#7A8791; --rule:#242F39; --rule-strong:#35434E; --brand-red:#E8474B; --blue-deep:#8CC6EC; --ok:#4ECC8B; --warn:#FF9D42; --hj-late:#E8474B; --hj-today:#FF9D42; --shadow-1:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.35); color-scheme: dark; }
-:root[data-theme="dark"] .hj-hero { --surface:#FFFFFF; --surface-2:#F5F8FA; --surface-3:#EAEFF3; --ink:#101820; --ink-2:#47545F; --ink-3:#5F6D77; --rule:#DCE3E9; --rule-strong:#C2CCD5; --brand-red:#C2000C; --blue-deep:#3C659B; --ok:#167A45; --warn:#B5530C; --hj-late:#C2000C; --hj-today:#B5530C; --shadow-1:0 1px 2px rgba(16,24,32,.05), 0 6px 16px rgba(16,24,32,.06); color-scheme: light; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hj-hero { --surface:#FFFFFF; --surface-2:#F5F8FA; --surface-3:#EAEFF3; --ink:#101820; --ink-2:#47545F; --ink-3:#5F6D77; --rule:#DCE3E9; --rule-strong:#C2CCD5; --brand-red:#C2000C; --blue-deep:#3C659B; --ok:#167A45; --warn:#B5530C; --hj-late:#C2000C; --hj-today:#B5530C; --shadow-1:0 1px 2px rgba(16,24,32,.05), 0 6px 16px rgba(16,24,32,.06); color-scheme: light; } }
 /* ícone e cor por família de solicitação */
 .tp-ic { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 3px; margin-right: 6px; vertical-align: -6px; color: var(--fc); background: color-mix(in srgb, var(--fc) 13%, var(--surface)); }
 .tp-ic .ic { width: 13px; height: 13px; }
@@ -801,3 +797,28 @@ body.plat .dock .more-menu .menu { z-index: 6; }
   .ag-wd span { padding: 6px 4px; }
   .ag-tipo-fer { margin-left: 0; }
 }
+
+/* Planilha de rubricas da plataforma (2.20.0): funcionários nas linhas, uma rubrica por coluna; nome e títulos fixos */
+.plan-rub .plan-barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.plan-rub .plan-barra input[type=search] { width: 240px; max-width: 100%; }
+.plan-rub .plan-barra .spacer { flex: 1; }
+.plan-rolagem { max-height: calc(100vh - 330px); min-height: 280px; overflow: auto; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); }
+.plan-tabela { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 12.5px; }
+.plan-tabela th, .plan-tabela td { border-bottom: 1px solid var(--rule); border-right: 1px solid var(--rule); padding: 0; background: var(--surface); }
+.plan-tabela thead th { position: sticky; top: 0; z-index: 2; padding: 8px 8px; min-width: 112px; max-width: 150px; font: 600 11.5px var(--f-body, inherit); text-align: left; vertical-align: bottom; line-height: 1.25; background: var(--surface-2); white-space: normal; }
+.plan-tabela .plan-nome { position: sticky; left: 0; z-index: 1; min-width: 230px; max-width: 280px; padding: 0 10px; text-align: left; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--surface-2); }
+.plan-tabela thead .plan-nome { z-index: 3; }
+.plan-tabela td input { display: block; width: 100%; min-width: 0; box-sizing: border-box; height: 34px; border: 0; padding: 0 8px; background: transparent; color: inherit; font: 500 12.5px var(--f-mono, monospace); text-align: right; }
+.plan-tabela td input:focus { outline: 2px solid var(--blue-deep); outline-offset: -2px; background: var(--surface); }
+.plan-tabela tbody tr:hover th, .plan-tabela tbody tr:hover td { background: var(--surface-3); }
+.plan-tabela tbody tr[hidden] { display: none; }
+
+/* Planilha de rubricas — bloco Comando (2.21.0) */
+.plan-cmd { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line, #d9dee3); border-radius: 4px; background: color-mix(in srgb, var(--blue-deep, #3C659B) 6%, transparent); }
+.plan-cmd label { display: block; margin-bottom: 6px; }
+.plan-cmd-linha { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.plan-cmd-linha textarea { flex: 1 1 320px; min-height: 44px; resize: vertical; font: inherit; padding: 8px 10px; border: 1px solid var(--line, #cfd6dc); border-radius: 4px; background: var(--surface, #fff); color: inherit; }
+.plan-cmd-res { margin-top: 8px; font-size: 13px; }
+.plan-cmd-res .tips { margin: 0; padding-left: 18px; }
+
+.plan-tabela td.plan-falhou { box-shadow: inset 0 0 0 2px var(--brand-red, #C2000C); }

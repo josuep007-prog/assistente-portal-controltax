@@ -130,7 +130,7 @@ export function montarEntrada(C) {
     const trocou = P.ultimaVista !== v; P.ultimaVista = v;   // entrada suave só ao trocar de tela
     if (v !== 'preencher') S.plat.escolher = false;
     viewEl.className = `view plat-view v-${v}${trocou ? ' entra' : ''}`;
-    ({ inicio: renderPainel, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();
+    return ({ inicio: renderPainel, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();
   };
 
   Object.assign(C, { avisoLeitura, continuarRascunho, fazerAgora, passosAbertos });

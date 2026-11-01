@@ -96,12 +96,12 @@ const routeChanged = () => {
     const r = routeInfo();
     // formulário fechou e voltou à lista → provável envio concluído
     if (ultimoForm && !href.includes('/add') && r.mode === 'list') { post({ type: 'formClosed', from: ultimoForm, to: href }); ultimoForm = ''; }
-    sendContext(); atualizarLauncher(); avisarDesfazer();
+    sendContext(); atualizarLauncher(); avisarDesfazer(); atualizarGrade();
   }, 600);
 };
 setInterval(routeChanged, 500);
 let formTimer = null;
-new MutationObserver(() => { clearTimeout(formTimer); formTimer = setTimeout(() => { sendContext(); verAtencao(); }, 700); })
+new MutationObserver(() => { clearTimeout(formTimer); formTimer = setTimeout(() => { sendContext(); verAtencao(); atualizarGrade(); }, 700); })
   .observe(document.documentElement, { childList: true, subtree: true });
 
 /* ============ Regras e mensagens do service worker ============ */
@@ -128,5 +128,7 @@ Promise.all([loadRules(), modoInicial()]).then(([, inicial]) => {
   // ganchos para o simulador (soltar exemplos, abrir o painel, trocar o modo)
   plat.expose?.({ openPanel: () => setPanel(true), modo: (m) => setModo(m), modoAtual: () => modo, sendFiles: async (files) => { setPanel(true); const go = () => sendFiles(files, 'arrastar'); if (port) go(); else setTimeout(go, 800); },
     // testes do simulador: o mesmo preenchimento que o painel pede (nunca envia)
-    preencher: (tipo, values, opts) => comboLock(() => fillForm(tipo, values || {}, [], opts || {})) });
+    preencher: (tipo, values, opts) => comboLock(() => fillForm(tipo, values || {}, [], opts || {})),
+    // testes do simulador: a grade lida pela posição na tela (grade em blocos, como a do portal real)
+    grade: { ler: async () => { atualizarGrade(); if (!lerGradeDiv()) return null; const t = await gradeLerTudo(); return { titulos: t.titulos, empregados: t.empregados }; }, escrever: (c) => preencherGrade(c) } });
 });

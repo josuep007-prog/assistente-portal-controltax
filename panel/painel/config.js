@@ -127,9 +127,10 @@ export function avisarAtualizacao(info) {
 }
 
 export async function renderConfig() {
-  const info = await chrome.runtime.sendMessage({ type: 'getSettings' });
-  const pack = await chrome.runtime.sendMessage({ type: 'getRules' });
-  const s = info.settings;
+  viewEl.innerHTML = `<div class="empty"><div class="spin" style="margin:auto"></div><p>Carregando…</p></div>`;   // a tela troca já; os dados chegam em seguida
+  const doServico = (m) => Promise.race([chrome.runtime.sendMessage(m), new Promise((_, no) => setTimeout(() => no(new Error('a extensão não respondeu (recarregue o portal com F5)')), 6000))]);
+  const [info, pack] = await Promise.all([doServico({ type: 'getSettings' }), doServico({ type: 'getRules' })]);
+  const s = info?.settings || {};
   const origemTxt = { dev: 'servidor de desenvolvimento (sua pasta)', remota: 'arquivo remoto', cache: 'cópia salva do arquivo remoto', embutida: 'regras que vieram com a extensão' }[pack.origem] || pack.origem;
   viewEl.innerHTML = `
     <p class="hello">Configurações</p>

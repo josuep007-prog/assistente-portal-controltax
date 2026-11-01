@@ -448,6 +448,84 @@
     // 1ª coluna e um evento da empresa (código - nome) por coluna, um campo por célula
     grid.querySelector('[data-all]').addEventListener('click', function () {
       if (!ci.value) { ci.classList.add('p-invalid'); toast('Informe a competência antes de adicionar funcionários.', 'err'); return; }
+      var modoDiv = null; try { modoDiv = localStorage.getItem('ct-sim-grade'); } catch (e) { /* sem armazenamento */ }
+      if (modoDiv === 'div-flat') {
+        // células soltas lado a lado (CSS grid, sem bloco por linha): caixa de marcar + nome + eventos, tudo filho direto da grade
+        var cel = function (html, extra) { return '<div style="box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc;border-top:1px solid #ccc;height:50px;' + (extra || '') + '">' + html + '</div>'; };
+        var flat = cel('<input type="checkbox" aria-label="Todos">') + cel('<b>Nome</b>') + EVENTOS.map(function (ev) { return cel('<b>' + esc(ev) + '</b>'); }).join('');
+        EMP3.forEach(function (e, n) { flat += cel('<input type="checkbox">') + cel('<span>' + esc(e) + '</span><i title="info" style="margin-left:8px">i</i>') + EVENTOS.map(function () { return cel('<input type="text" class="p-grade-v" data-lin="' + n + '" style="width:100%;border:0">'); }).join(''); });
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div class="p-gd-rolagem" style="overflow:auto;height:300px;width:100%;text-align:left"><div style="display:grid;grid-template-columns:50px 250px repeat(' + EVENTOS.length + ',150px);width:max-content">' + flat + '</div></div></div>';
+        return;
+      }
+      if (modoDiv === 'wijmo-virtual' || modoDiv === 'wijmo-api') {
+        // planilha virtualizada (Wijmo): só as linhas e colunas que cabem na tela existem; rolagem nos dois sentidos, nome e cabeçalho fixos
+        var NOMES = []; for (var q = 0; q < 14; q++) NOMES.push('FUNCIONARIO ' + String.fromCharCode(65 + q) + ' TESTE');
+        var EVS = []; for (var q2 = 0; q2 < 10; q2++) EVS.push(String(100 + q2 * 10) + ' - RUBRICA ' + String.fromCharCode(65 + q2));
+        var LW = 200, CW = 150, RH = 40, VH = 220, VW = 620;
+        window.__vals = {};
+        var vsc = document.createElement('div'); vsc.className = 'vsc'; vsc.style.cssText = 'overflow:auto;height:' + VH + 'px;width:' + VW + 'px;position:relative;text-align:left;background:#fff';
+        var raiz = document.createElement('div'); raiz.className = 'wj-cells'; raiz.setAttribute('role', 'grid'); raiz.style.cssText = 'position:relative;width:' + (LW + CW * EVS.length) + 'px;height:' + (RH * (NOMES.length + 1)) + 'px';
+        vsc.appendChild(raiz);
+        var cel = function (txt, role, left, w, extra) { var d = document.createElement('div'); d.className = 'wj-cell'; d.setAttribute('role', role); d.style.cssText = 'position:absolute;top:0;left:' + left + 'px;width:' + w + 'px;height:' + RH + 'px;box-sizing:border-box;border:1px solid #ddd;display:flex;align-items:center;padding:0 6px;background:#fff;' + (extra || ''); d.textContent = txt; return d; };
+        var desenha = function () {
+          raiz.innerHTML = '';
+          var r0 = Math.max(0, Math.floor(vsc.scrollTop / RH) - 1), r1 = Math.min(NOMES.length - 1, Math.ceil((vsc.scrollTop + VH) / RH));
+          var c0 = Math.max(0, Math.floor(vsc.scrollLeft / CW) - 1), c1 = Math.min(EVS.length - 1, Math.ceil((vsc.scrollLeft + VW) / CW));
+          var cab = document.createElement('div'); cab.className = 'wj-row'; cab.setAttribute('role', 'row'); cab.style.cssText = 'position:sticky;top:0;left:0;z-index:3;height:' + RH + 'px;width:' + (LW + CW * EVS.length) + 'px';
+          cab.appendChild(cel('Nome', 'columnheader', 0, LW, 'position:sticky;left:0;z-index:4;font-weight:bold'));
+          for (var j = c0; j <= c1; j++) cab.appendChild(cel(EVS[j], 'columnheader', LW + j * CW, CW, 'font-weight:bold'));
+          raiz.appendChild(cab);
+          for (var i = r0; i <= r1; i++) {
+            var lin = document.createElement('div'); lin.className = 'wj-row'; lin.setAttribute('role', 'row'); lin.style.cssText = 'position:absolute;left:0;top:' + (RH * (i + 1)) + 'px;height:' + RH + 'px;width:' + (LW + CW * EVS.length) + 'px';
+            var nc = cel('', 'gridcell', 0, LW, 'position:sticky;left:0;z-index:2'); var ni = document.createElement('input'); ni.type = 'text'; ni.readOnly = true; ni.value = NOMES[i]; ni.style.cssText = 'width:100%;border:0'; nc.appendChild(ni); lin.appendChild(nc);
+            for (var j2 = c0; j2 <= c1; j2++) {
+              (function (ii, jj) {
+                var k = NOMES[ii] + '|' + EVS[jj], c = cel(window.__vals[k] || '', 'gridcell', LW + jj * CW, CW);
+                c.addEventListener('click', function () { if (c.querySelector('input')) return; c.textContent = ''; var inp = document.createElement('input'); inp.type = 'text'; inp.className = 'p-grade-v'; inp.style.cssText = 'width:100%;border:0'; c.appendChild(inp); inp.focus({ preventScroll: true }); inp.addEventListener('blur', function () { window.__vals[k] = inp.value; c.textContent = inp.value; }); });
+                lin.appendChild(c);
+              })(i, j2);
+            }
+            raiz.appendChild(lin);
+          }
+        };
+        vsc.addEventListener('scroll', desenha);
+        if (modoDiv === 'wijmo-api') {   // como o Wijmo: a instância da planilha fica numa propriedade do elemento que a hospeda
+          var ed = null, cur = null;
+          var fake = {
+            isReadOnly: false,
+            rows: { length: NOMES.length }, columns: (function () { var c = [{ header: 'Nome' }]; EVS.forEach(function (e) { c.push({ header: e }); }); return c; })(),
+            getCellData: function (r, c) { return c === 0 ? NOMES[r] : (window.__vals[NOMES[r] + '|' + EVS[c - 1]] || ''); },
+            setCellData: function (r, c, v) { window.__vals[NOMES[r] + '|' + EVS[c - 1]] = v == null ? '' : String(v); window.__apiUsada = (window.__apiUsada || 0) + 1; desenha(); return true; },
+            select: function () {}, scrollIntoView: function () {},
+            startEditing: function (full, r, c) { cur = { r: r, c: c }; ed = document.createElement('input'); return true; },
+            get activeEditor() { return ed; },
+            finishEditing: function () { if (!cur) return false; fake.setCellData(cur.r, cur.c, ed.value); cur = null; ed = null; return true; },
+            cancelEdit: function () { cur = null; ed = null; }
+          };
+          fake.columns.length = EVS.length + 1;
+          raiz.parentElement['wj-Control'] = fake;
+        }
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"></div>'; grid.querySelector('.content__grid').appendChild(vsc); desenha();
+        return;
+      }
+      if (modoDiv === 'wijmo' || modoDiv === 'wijmo-campo') {
+        // planilha Wijmo do Onvio real (visto no diagnóstico de 30/10/2026): div.wj-cells[role=grid] > div.wj-row[role=row] > div.wj-cell; a célula só vira campo ao clicar
+        var wc = function (html, role, w) { return '<div class="wj-cell" role="' + role + '" style="flex:none;width:' + w + 'px;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc;height:40px">' + html + '</div>'; };
+        var wh = '<div class="wj-row" role="row" style="display:flex">' + wc('', 'columnheader', 50) + wc('Nome', 'columnheader', 250) + EVENTOS.map(function (ev) { return wc(esc(ev), 'columnheader', 150); }).join('') + '</div>';
+        var wb = EMP3.map(function (e) { return '<div class="wj-row" role="row" style="display:flex">' + wc('<input type="checkbox">', 'gridcell', 50) + wc(modoDiv === 'wijmo-campo' ? '<input type="text" readonly value="' + esc(e) + '" style="width:100%;border:0">' : esc(e), 'gridcell', 250) + EVENTOS.map(function () { return wc('', 'gridcell', 150); }).join('') + '</div>'; }).join('');
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div style="overflow:auto;height:300px;width:100%;text-align:left"><div class="wj-cells" role="grid">' + wh + wb + '</div></div></div>';
+        grid.querySelectorAll('.wj-cell[role=gridcell]').forEach(function (c) { c.addEventListener('click', function () { if (c.querySelector('input') || c.querySelector('input,b') || c.children.length) return; var i = document.createElement('input'); i.type = 'text'; i.className = 'p-grade-v'; i.style.cssText = 'width:100%;border:0'; c.appendChild(i); i.focus(); i.addEventListener('blur', function () { c.dataset.v = i.value; c.textContent = i.value; }); }); });
+        return;
+      }
+      if (modoDiv === 'div' || modoDiv === 'div-edit') {
+        // grade em blocos, como o portal real (div em div.content__grid): caixa de marcar + nome + eventos; 'div-edit': a célula só vira campo ao clicar
+        var larg = function (w, html, cls) { return '<div class="' + (cls || '') + '" style="flex:none;width:' + w + 'px;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;border-right:1px solid #ccc">' + html + '</div>'; };
+        var cab = larg(50, '<input type="checkbox" aria-label="Todos">') + larg(250, '<b>Nome</b>') + EVENTOS.map(function (ev) { return larg(150, '<b>' + esc(ev) + '</b>'); }).join('');
+        var corpo = EMP3.map(function (e) { return '<div class="p-gd-row" style="display:flex;min-width:max-content;height:50px;border-top:1px solid #ccc">' + larg(50, '<input type="checkbox">') + larg(250, '<span>' + esc(e) + '</span><i title="info" style="margin-left:8px">i</i>') + EVENTOS.map(function (ev) { return larg(150, modoDiv === 'div' ? '<input type="text" class="p-grade-v" style="width:100%;border:0">' : '', 'p-gd-cel'); }).join('') + '</div>'; }).join('');
+        grid.querySelector('.p-grid-b').innerHTML = '<div class="content__grid"><div class="p-gd-rolagem" style="overflow:auto;height:300px;width:100%;text-align:left"><div style="display:flex;min-width:max-content;height:50px">' + cab + '</div>' + corpo + '</div></div>';
+        if (modoDiv === 'div-edit') grid.querySelectorAll('.p-gd-cel').forEach(function (c) { c.addEventListener('dblclick', function () { if (c.querySelector('input')) return; var i = document.createElement('input'); i.type = 'text'; i.className = 'p-grade-v'; i.style.cssText = 'width:100%;border:0'; c.appendChild(i); i.focus(); }); });
+        return;
+      }
       grid.querySelector('.p-grid-b').innerHTML = '<table class="p-table p-grade" role="grid" aria-label="Rubricas"><thead><tr><th>Empregado</th>' + EVENTOS.map(function (ev) { return '<th>' + esc(ev) + '</th>'; }).join('') + '</tr></thead><tbody>' +
         EMP3.map(function (e) { return '<tr><td>' + esc(e) + '</td>' + EVENTOS.map(function (ev) { return '<td><input type="text" class="p-grade-v" inputmode="decimal" aria-label="' + esc(ev + ' de ' + e) + '"></td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table><small class="p-help">Grade do simulador (a calibrar): no portal real as colunas vêm dos eventos cadastrados para a empresa.</small>';
