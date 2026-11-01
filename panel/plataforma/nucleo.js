@@ -93,7 +93,7 @@ export function montarNucleo(C) {
       document.addEventListener('pointerdown', fora, true);
     });
   }
-  function atualizarBadge() { const n = itensVisiveis().filter(i => i.aguardando).length; send({ type: 'setBadge', n }); badge('pendencias', n); }
+  function atualizarBadge() { const n = itensVisiveis().filter(i => i.aguardando).length; send({ type: 'setBadge', n }); badge('pendencias', n); C.atualizarSino?.(); }
   const editavel = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
   Object.assign(C, { MODULOS, P, TITULOS, atualizarBadge, cap, editavel, esperar, familiaTipo, fmt, icTipo, itensVisiveis, ligarSeletorEmpresa, loading, nomeTipo, quando, rotEmpresa, seletorEmpresa, variasEmpresas });

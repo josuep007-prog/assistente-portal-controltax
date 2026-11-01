@@ -1267,12 +1267,83 @@ async def teste_contraste(b):
     if os.environ.get('CT_JSON'): json.dump(todas, open(os.environ['CT_JSON'], 'w'), ensure_ascii=False, indent=1)
 
 
+async def teste_sino(b):
+    """Sino de novidades e resumo do trilho (frente A): primeira leitura sem novidade, foto mínima no navegador,
+    contador, balão com até 8 linhas, teclado, marcar como lidas e contraste do balão nos dois temas."""
+    print('\n[sino] novidades e resumo do trilho')
+    lib = open(os.path.join(os.path.dirname(__file__), 'contraste-lib.js'), encoding='utf-8').read()
+    medir = "(src) => { const m = { exports: null }; new Function('module', src)(m); return m.exports(4.5); }"
+    fotos = os.environ.get('CT_FOTOS', '/tmp')
+    ctx = await b.new_context(viewport={'width': 1366, 'height': 650})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3000)
+    pn = lambda: next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def espera(cond, s=20):
+        for _ in range(s * 4):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(250)
+        return False
+    foto = lambda: pn().evaluate("localStorage.getItem('ct.sinoVisto')")
+    ok = await espera(lambda: foto())
+    check(ok and await pn().locator('#sino-b').count() == 1, 'sino: aparece no cabeçalho e guarda o ponto de partida na primeira leitura')
+    check(await pn().locator('#sino-n').is_hidden(), 'sino: primeira abertura da plataforma não acende nada')
+    bruto = await foto() or '{}'
+    f = json.loads(bruto)
+    check(f.get('v') == 1 and all(len(v) == 3 for v in f['itens'].values()) and all(k.count(':') == 1 for k in f['itens']), 'sino: a foto guarda só tipo:id, situação, data e estado')
+    check('EMPRESA' not in bruto.upper(), 'sino: a foto não leva empresa nem assunto')
+    # trilho: resumo de uma linha na etiqueta
+    await espera(lambda: pn().evaluate("!!document.querySelector('[data-resumo=pendencias]:not([hidden])')"), 10)
+    await pn().hover('.rail-i[data-mod="pendencias"]'); await pg.wait_for_timeout(300)
+    res = await pn().locator('[data-resumo="pendencias"]').inner_text()
+    check('esper' in res and await pn().locator('[data-resumo="pendencias"]').is_visible(), f'trilho: Solicitações mostra o resumo ao passar o mouse ({res})')
+    await pg.screenshot(path=fotos + '/trilho-resumo.png')
+    # simula que o escritório mexeu em tudo desde a última vez: foto antiga com outra situação e estado "em andamento"
+    for k in f['itens']: f['itens'][k] = ['Situação antiga', 1, 'andamento']
+    await pn().evaluate("(v) => localStorage.setItem('ct.sinoVisto', v)", json.dumps(f))
+    await pg.reload(); await pg.wait_for_timeout(3000)
+    ok = await espera(lambda: pn().evaluate("!document.querySelector('#sino-n')?.hidden"), 25)
+    total = int(await pn().locator('#sino-n').inner_text()) if ok else 0
+    check(ok and total > 8, f'sino: contador vermelho com as novidades ({total})')
+    for tema in ('light', 'dark'):
+        await pn().evaluate(f"document.documentElement.setAttribute('data-theme', '{tema}')")
+        await pn().click('#sino-b'); await pg.wait_for_timeout(300)
+        check(await pn().get_attribute('#sino-b', 'aria-expanded') == 'true' and await pn().get_attribute('#sino-b', 'aria-haspopup') == 'dialog', f'sino ({tema}): abre o balão com aria-expanded e aria-haspopup')
+        check(await pn().locator('.sino-li').count() == 8 and await pn().locator('.sino-mais').count() == 1, f'sino ({tema}): até 8 linhas e o aviso de que há mais')
+        await pg.screenshot(path=fotos + f'/sino-{tema}.png')
+        r = await pn().evaluate(medir, lib)
+        check(not r, f'contraste do sino aberto ({tema}): {len(r)} texto(s) abaixo de 4,5:1' + ('' if not r else ' — ' + '; '.join(f"{x['r']} {x['fg']}/{x['bg']} «{x['texto']}» {x['no']}" for x in r[:5])))
+        await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+        check(await pn().get_attribute('#sino-b', 'aria-expanded') == 'false' and await pn().evaluate("document.activeElement?.id") == 'sino-b', f'sino ({tema}): Esc fecha e devolve o foco ao botão')
+    await pn().evaluate("document.documentElement.removeAttribute('data-theme')")
+    # clicar numa linha abre o detalhe e a tira do contador
+    await pn().click('#sino-b'); await pn().locator('.sino-li').first.click()
+    ok = await espera(lambda: pn().evaluate("!!document.querySelector('#modal .dlg, #modal #dt-body')"), 10)
+    n2 = int(await pn().locator('#sino-n').inner_text())
+    check(ok and n2 == total - 1, f'sino: clicar numa novidade abre o detalhe e ela deixa de contar ({total} → {n2})')
+    await pn().evaluate("document.querySelector('#modal .dlg-x')?.click()"); await pg.wait_for_timeout(300)
+    # marcar como lidas: zera, mostra o estado vazio e continua zerado depois de recarregar
+    await pn().click('#sino-b'); await pn().click('#sino-lidas'); await pg.wait_for_timeout(300)
+    check(await pn().locator('#sino-n').is_hidden() and 'Nenhuma novidade' in await pn().locator('#sino-pop').inner_text(), 'sino: Marcar como lidas zera o contador e mostra "Nenhuma novidade"')
+    r = await pn().evaluate(medir, lib)
+    check(not r, f'contraste do sino vazio: {len(r)} texto(s) abaixo de 4,5:1')
+    await pg.keyboard.press('Escape')
+    await pg.reload(); await pg.wait_for_timeout(3500)
+    await espera(lambda: pn().evaluate("!!document.querySelector('#sino-b')"), 10)
+    check(await pn().locator('#sino-n').is_hidden(), 'sino: depois de lidas, recarregar não acende de novo')
+    check(not erros, 'sino: sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
 async def main():
     serve()
     if os.environ.get('SIM_SO') == 'ct':   # SIM_SO=ct roda só o contraste (temas claro e escuro)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_contraste(b); await b.close()
+            await teste_contraste(b); await teste_sino(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         sys.exit(1 if falhas else 0)
     if os.environ.get('SIM_SO') == 'viv':   # SIM_SO=viv roda só a escrita ao vivo e a resposta ao escritório (2.12)
@@ -1680,6 +1751,8 @@ async def main():
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
+        await teste_contraste(b)
+        await teste_sino(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 
