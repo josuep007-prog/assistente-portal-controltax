@@ -796,6 +796,155 @@ async def teste_cadastro(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_grade_div(b):
+    """2.20.1: a grade do portal real é de blocos (div), não de tabela: lida pela posição, sem mudar nada na tela do Onvio."""
+    print('\n[grade em blocos] leitura por posição, escrita e o Onvio intacto')
+    for modo in ('div', 'div-edit', 'div-flat', 'wijmo', 'wijmo-campo'):
+        ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+        pg = await ctx.new_page()
+        erros = []
+        pg.on('pageerror', lambda e: erros.append(str(e)))
+        await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+        await pg.evaluate("(m) => localStorage.setItem('ct-sim-grade', m)", modo)
+        await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/payroll-entries/add')"); await pg.wait_for_timeout(1500)
+        # o portal real não tem o formcontrolname da competência (diagnóstico de 30/10/2026): o campo é achado pelo rótulo
+        await pg.evaluate("document.querySelector('[formcontrolname=basisDate]').removeAttribute('formcontrolname')")
+        await pg.evaluate("window.__ctSim.hooks().preencher('rubricas', { competencia: '11/2026' }, {})"); await pg.wait_for_timeout(800)
+        comp = await pg.evaluate("document.querySelector('#datepicker-dropdown-input')?.value")
+        check(comp == '11/2026', f'competência sem formcontrolname: achada pelo rótulo "Competência" e preenchida ({comp!r}, {modo})')
+        await pg.evaluate("document.querySelector('#datepicker-dropdown-input').dispatchEvent(new Event('input', { bubbles: true }))")
+        await pg.evaluate("document.querySelector('[data-all]').click()"); await pg.wait_for_timeout(1200)
+        antes = await pg.evaluate("document.documentElement.outerHTML.length")
+        g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
+        check(bool(g) and len(g['titulos']) == 6 and g['empregados'] == ['JOAO DA SILVA', 'JORGE OLIVEIRA ALVES', 'RONALDO DE SOUZA'], f'grade em blocos ({modo}): colunas e funcionários lidos pela posição ({g})')
+        r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'JORGE OLIVEIRA ALVES', evento: '0010 - FALTAS', valor: '2' }, { empregado: 'RONALDO DE SOUZA', evento: '0020 - COMISSÕES', valor: '350' }])")
+        if modo.startswith('wijmo'):
+            vals = await pg.evaluate("[...document.querySelectorAll('.wj-row')].slice(1).map(r => [...r.querySelectorAll('.wj-cell')].slice(2).map(c => c.dataset.v || '').join('|'))")
+            check(r.get('ok') and r.get('n') == 2 and vals == ['|||||', '||2|||', '||||350|'] or vals[1].split('|')[2] == '2' and vals[2].split('|')[4] == '350', f'grade Wijmo: valores nas linhas e colunas certas ({vals})')
+            await ctx.close(); continue
+        v = await pg.evaluate("(() => { const ins = [...document.querySelectorAll('input.p-grade-v')]; const ys = [...new Set(ins.map(i => Math.round(i.getBoundingClientRect().top)))].sort((a, b) => a - b); return ys.map(y => ins.filter(i => Math.round(i.getBoundingClientRect().top) === y).map(i => i.value).join('|')); })()")
+        ordem = [k for k, linha in enumerate(v) if linha.replace('|', '')]
+        check(r.get('ok') and r.get('n') == 2 and len(ordem) == 2 and '2' in v[ordem[0]].split('|') and '350' in v[ordem[1]].split('|'), f'grade em blocos ({modo}): os valores caem nas linhas certas, na ordem dos funcionários ({r.get("n")} de 2; {v})')
+        if modo in ('div', 'div-flat'):
+            check(len(v) == 3 and v[1].split('|')[2] == '2' and v[2].split('|')[4] == '350', f'grade em blocos ({modo}): e nas colunas certas ({v})')
+        extra = await pg.evaluate("({ css: !!document.getElementById('ct-grade-css'), btn: !!document.querySelector('.ct-grade-btn, .ct-grade-barra'), cls: !!document.querySelector('.ct-grade-card, .ct-grade-scroll') })")
+        check(not any(extra.values()), f'o Onvio fica do jeito original: nenhum estilo, botão ou classe da extensão na grade ({extra})')
+        check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+        await ctx.close()
+
+async def teste_grade_virtual(b):
+    """2.20.9: a planilha do portal só desenha o que cabe na tela: a leitura rola a grade e junta tudo; a escrita rola até a célula."""
+    print('\n[grade virtualizada] ler tudo rolando e escrever em célula fora da tela')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-virtual')")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/payroll-entries/add')"); await pg.wait_for_timeout(1500)
+    await pg.evaluate("window.__ctSim.hooks().preencher('rubricas', { competencia: '11/2026' }, {})"); await pg.wait_for_timeout(800)
+    await pg.evaluate("document.querySelector('[data-all]').click()"); await pg.wait_for_timeout(1200)
+    g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
+    check(bool(g) and len(g['empregados']) == 14 and len(g['titulos']) == 10, f"grade virtualizada: lê todos os funcionários e rubricas rolando ({len(g['empregados']) if g else None} e {len(g['titulos']) if g else None}; esperado 14 e 10)")
+    check(bool(g) and g['empregados'][0] == 'FUNCIONARIO A TESTE' and g['empregados'][-1] == 'FUNCIONARIO N TESTE' and g['titulos'][-1].endswith('RUBRICA J'), 'grade virtualizada: na ordem da grade, do primeiro ao último')
+    r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'FUNCIONARIO M TESTE', evento: '190 - RUBRICA J', valor: '7' }, { empregado: 'FUNCIONARIO B TESTE', evento: '110 - RUBRICA B', valor: '3' }])")
+    v = await pg.evaluate("window.__vals")
+    check(r.get('ok') and r.get('n') == 2 and v.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7' and v.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '3', f"grade virtualizada: os valores chegam às células que estavam fora da tela ({r.get('n')} de 2; {v})")
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
+async def teste_grade_api(b):
+    """2.22.0: a planilha do portal (Wijmo) existe como objeto na página: lê e lança por ela (por baixo), sem clicar na tela."""
+    print('\n[grade pela planilha do portal] ler e lançar pelo objeto da planilha')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/payroll-entries/add')"); await pg.wait_for_timeout(1500)
+    await pg.evaluate("window.__ctSim.hooks().preencher('rubricas', { competencia: '11/2026' }, {})"); await pg.wait_for_timeout(800)
+    await pg.evaluate("document.querySelector('[data-all]').click()"); await pg.wait_for_timeout(1200)
+    g = await pg.evaluate("window.__ctSim.hooks().grade.ler()")
+    check(bool(g) and len(g['empregados']) == 14 and len(g['titulos']) == 10, f"planilha do portal: lê todos os funcionários e rubricas de uma vez ({len(g['empregados']) if g else None} e {len(g['titulos']) if g else None})")
+    r = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'FUNCIONARIO M TESTE', evento: '190 - RUBRICA J', valor: '7' }, { empregado: 'FUNCIONARIO B TESTE', evento: '110 - RUBRICA B', valor: '3' }, { empregado: 'FUNCIONARIO X', evento: '110 - RUBRICA B', valor: '1' }])")
+    v = await pg.evaluate("window.__vals")
+    usada = await pg.evaluate("window.__apiUsada || 0")
+    check(r.get('ok') and r.get('n') == 2 and v.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7' and v.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '3' and usada == 2, f"planilha do portal: lança pelo objeto da planilha, sem clicar na tela ({r.get('n')} de 3; modelo {v}; usada {usada}x)")
+    check(len(r.get('faltaram', [])) == 1 and 'fora da grade' in (r['faltaram'][0].get('motivo') or ''), f"planilha do portal: funcionário que não existe volta com o motivo ({r.get('faltaram')})")
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
+async def teste_comando_rubricas(b):
+    """2.21.0: bloco "Comando" da planilha: o cliente escreve e a planilha é preenchida sozinha (abre a grade do portal se preciso)."""
+    print('\n[comando] preencher a planilha de rubricas por comando')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto_empresa():   # três empresas no acesso: confirma a que já vem marcada (a do portal)
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa_emp = asyncio.create_task(_auto_empresa())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="rubricas"]')
+    for _ in range(40):
+        if await pn.locator('#plan-cmd-txt').count(): break
+        await pg.wait_for_timeout(300)
+    check(await pn.locator('#plan-cmd-txt').count() == 1 and await pn.locator('#plan-cmd-go').count() == 1, 'comando: o bloco aparece na planilha, mesmo com a grade do portal ainda fechada')
+    ant = await pg.evaluate("document.querySelector('[data-all]') ? 'fechada' : 'aberta'")
+    await pn.fill('#plan-cmd-txt', 'Jorge Oliveira 4 faltas'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(1200)
+    sem = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
+    check('Falta a competência' in sem and await pn.locator('.plan-tabela').count() == 0, f'comando: sem competência no comando nem no portal, pede a competência em vez de tentar às cegas ({sem[:60]!r})')
+    await pn.fill('#plan-cmd-txt', 'Mês passado: Jorge Oliveira 4 faltas, Ronaldo comissão 500 e João 2 horas extras 50%')
+    await pn.click('#plan-cmd-go')
+    ok = False
+    for _ in range(80):
+        if await pn.evaluate("document.querySelectorAll('.plan-tabela tbody tr').length === 3 && (document.querySelector('#plan-cmd-res')?.innerText || '').includes('Preenchi')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    check(ok, 'comando: abre e lê a planilha do portal sozinho e preenche (grade antes: ' + ant + ')')
+    v = await pn.evaluate("(() => { const g = (i, j) => document.querySelector(`.plan-tabela input[data-i='${i}'][data-j='${j}']`)?.value; return [g(1, 2), g(2, 3), g(0, 0)]; })()")
+    check(v[0] == '4' and v[2] == '2', f'comando: faltas do Jorge e horas extras do João nas células certas da planilha ({v})')
+    cel = await pg.evaluate("(() => { const ins = [...document.querySelectorAll('input.p-grade-v')]; return ins.map(i => i.value).filter(Boolean); })()")
+    await pg.wait_for_timeout(1500)
+    cel = await pg.evaluate("[...document.querySelectorAll('input.p-grade-v')].map(i => i.value).filter(Boolean).sort()")
+    check('4' in cel and '2' in cel, f'comando: os valores chegam à grade do portal ({cel})')
+    await pn.fill('#plan-cmd-txt', 'coloque 30 faltas, 5 atrasos, 700 de comissões para RONALDO DE SOUZA'); await pn.click('#plan-cmd-go')
+    ok = False
+    for _ in range(60):
+        if await pn.evaluate("(document.querySelector('#plan-cmd-res')?.innerText || '').includes('Preenchi 3')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    await pg.wait_for_timeout(1500)
+    cel2 = await pg.evaluate("[...document.querySelectorAll('input.p-grade-v')].map(i => i.value).filter(Boolean).sort()")
+    check(ok and all(x in cel2 for x in ('30', '5', '700')), f'comando: o funcionário no fim da frase ("... para RONALDO") vale para todos os itens ({cel2})')
+    await pn.fill('#plan-cmd-txt', 'Jorge 9 xpto zeta'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(1500)
+    txt = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
+    check('Não entendi' in txt, f'comando: o que não foi entendido é avisado, sem inventar valor ({txt[:80]!r})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa_emp.cancel()
+    await ctx.close()
+
+async def teste_tela_muda(b):
+    """2.20.8: se o serviço de fundo da extensão não responde, Configurações não fica muda: avisa e deixa tentar de novo."""
+    print('\n[telas] Configurações com o serviço de fundo parado')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    await pn.evaluate("chrome.runtime.sendMessage = (m) => (m && (m.type === 'getSettings' || m.type === 'getRules')) ? new Promise(() => {}) : Promise.resolve({})")
+    await pn.click('#rail [data-acao="config"]')
+    ok = False
+    for _ in range(40):
+        if await pn.evaluate("!!document.querySelector('#tela-de-novo')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    check(ok, 'Configurações: sem resposta do serviço de fundo, a tela avisa e oferece "Tentar de novo"')
+    await ctx.close()
+
 async def teste_lote6(b):
     """Lote 6: variáveis da folha no Hoje (38), grade de rubricas (45) e resposta preparada no portal (46)."""
     import datetime
@@ -884,6 +1033,20 @@ async def teste_lote6(b):
         return await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA') == '10:30' and await celula('0010 - FALTAS', 'JORGE OLIVEIRA ALVES') == '2' and await celula('0020 - COMISSÕES', 'RONALDO DE SOUZA') == '350,00'
     ok = await espera(planilha_na_grade, 25)
     check(ok, 'planilha → grade: "HE 50", "Faltas (dias)" e "Comissão" nos eventos da empresa' + ('' if ok else f" ({(await pn.locator('#grade-rub').inner_text())!r}, HE {await celula('0001 - HORAS EXTRAS 50%', 'JOAO DA SILVA')!r})"))
+    # 2.20: planilha de rubricas dentro da plataforma — carregar da grade do portal, digitar e lançar célula a célula
+    await pn.click('#plan-carregar') if await pn.locator('#plan-carregar').count() else None
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.plan-tabela tbody tr').length === 3 && document.querySelectorAll('.plan-tabela thead th').length === 7"), 20)
+    resto = '' if ok else await pn.evaluate("[!!document.querySelector('#planilha-rub'), !!document.querySelector('#grade-rub'), document.body.className, document.querySelector('#view')?.className, (document.querySelector('#planilha-rub')?.innerText || '').slice(0, 200)].join(' | ')")
+    check(ok, 'planilha da plataforma: carrega os 3 funcionários e as 6 rubricas da grade do portal' + ('' if ok else f' ({resto!r})'))
+    check(await pn.evaluate("document.querySelector('.plan-tabela input[data-i=\"0\"][data-j=\"0\"]').value") == '10:30', 'planilha da plataforma: traz o que já veio da planilha arrastada (HE 50 do JOAO)')
+    await pn.fill('.plan-tabela input[data-i="0"][data-j="3"]', '7'); await pg.wait_for_timeout(500)
+    ok = await espera(lambda: celula('0011 - ATRASOS', 'JOAO DA SILVA'), 15) and await celula('0011 - ATRASOS', 'JOAO DA SILVA') == '7'
+    check(ok, 'planilha da plataforma: o valor digitado vai para a célula certa da grade do portal')
+    await pn.focus('.plan-tabela input[data-i="1"][data-j="2"]'); await pg.keyboard.press('Enter')
+    check(await pn.evaluate("document.activeElement?.dataset.i") == '2' and await pn.evaluate("document.activeElement?.dataset.j") == '2', 'planilha da plataforma: Enter desce para o funcionário de baixo na mesma rubrica')
+    await pn.fill('#plan-q', 'ronaldo')
+    check(await pn.evaluate("[...document.querySelectorAll('.plan-tabela tbody tr')].filter(t => !t.hidden).length") == 1, 'planilha da plataforma: a busca esconde os outros funcionários')
+    await pn.fill('#plan-q', '')
     ok = await espera(lambda: pn.evaluate("(document.querySelector('#grade-rub')?.innerText || '').includes('Bônus de Natal')"), 5)
     check(ok, 'rubrica sem evento na empresa fica para o cliente (com aviso)')
     # envio: só pelo botão do portal, depois do resumo; o aviso do Hoje some com o lançamento da competência no portal
@@ -1355,7 +1518,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -1748,6 +1911,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)

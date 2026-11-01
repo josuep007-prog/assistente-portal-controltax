@@ -10,6 +10,25 @@ function setNative(el, v) {
   el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
   el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
 }
+/** Digita como uma pessoa (tecla a tecla): campos de data com máscara do portal só registram o valor assim. */
+async function digitar(el, texto) {
+  el.focus?.(); el.select?.();
+  const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const set = (v) => Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+  set(''); el.dispatchEvent(new Event('input', { bubbles: true }));
+  let acum = '';
+  for (const ch of String(texto)) {
+    const k = { key: ch, bubbles: true, cancelable: true };
+    el.dispatchEvent(new KeyboardEvent('keydown', k)); el.dispatchEvent(new KeyboardEvent('keypress', k));
+    el.dispatchEvent(new InputEvent('beforeinput', { data: ch, inputType: 'insertText', bubbles: true, cancelable: true }));
+    acum += ch; set(acum);
+    el.dispatchEvent(new InputEvent('input', { data: ch, inputType: 'insertText', bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', k));
+    await sleep(15);
+  }
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('blur', { bubbles: true })); el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+}
 function mark(el) { const t = el?.tagName === 'BENTO-COMBOBOX' ? el.querySelector('input') : el; if (!t) return; t.classList.add('ct-filled'); setTimeout(() => t.classList.remove('ct-filled'), 2500); }
 function flash(el) { if (!el) return; reveal(el).then(() => { const t = el.tagName === 'BENTO-COMBOBOX' ? el.querySelector('input') : el; t.classList.add('ct-flash'); t.focus?.(); setTimeout(() => t.classList.remove('ct-flash'), 1800); }); }
 
@@ -278,7 +297,8 @@ async function fillForm(tipoKey, values, files, opts) {
       if (cur && opts.naoSobrescrever && cur !== String(v)) return { ok: false, motivo: 'já preenchido (mantido)' };
       let val = String(v);
       if (def.tipo === 'moeda') val = val.replace(/[^\d,.]/g, '');
-      setNative(el, val); mark(el);
+      if (def.tipo === 'competencia' && el.tagName === 'INPUT') await digitar(el, val); else setNative(el, val);
+      mark(el);
       await sleep(40);
       return { ok: true, valor: el.value };
     } catch (e) {

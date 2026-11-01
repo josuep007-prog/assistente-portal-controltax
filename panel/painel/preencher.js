@@ -9,6 +9,7 @@ import { atualizarEstadosPlat, botaoModelo, calcBox, chaveCampos, enviarPendente
 import { bindDrop, entenderTexto, openTipo } from './inicio.js';
 import { loadEmpregados, msgAproximada, render, rotuloDe, setView, tipoDef, w } from './modo.js';
 import { savePrefs } from './conexao.js';
+import { renderPlanilhaRubricas } from './planilha.js';
 
 export function renderPreencher() {
   const { route, tipo } = S.ctx;
@@ -64,7 +65,7 @@ export function renderPreencher() {
     </div>`;
   // plataforma: o formulário é daqui (o portal fica por baixo); encaixado: o portal é o formulário e aqui fica o resumo
   viewEl.innerHTML = plat ? `
-    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div><div id="confira-leituras"></div><div id="grade-rub"></div>
+    <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div><div id="confira-leituras"></div><div id="grade-rub"></div><div id="planilha-rub"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
         <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
@@ -80,6 +81,7 @@ export function renderPreencher() {
     <div id="dica-pedido"></div>
     <div id="confira-leituras"></div>
     <div id="grade-rub"></div>
+    <div id="planilha-rub"></div>
     ${drop}
     ${livre}
     ${arquivos}
@@ -108,7 +110,7 @@ export function renderPreencher() {
   $('#free-form').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ff(); } });
   document.querySelectorAll('.more-menu .menu button').forEach(b => b.addEventListener('click', () => b.closest('details').removeAttribute('open')));
   renderFilesOnly(); renderFieldsOnly(); updateChecks(); renderFillResult(); renderLote();
-  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo); renderGradeRubricas(tipo);
+  renderModoSeguro(tipo); ofertaRascunho(tipo); atualizarBotaoDesfazer(); renderSugestoesCadastro(tipo); renderGradeRubricas(tipo); renderPlanilhaRubricas(tipo);
 }
 
 /* Rubricas (lote 6): as linhas da planilha, do texto ou do mês passado vão para a grade do portal quando o cliente pede
