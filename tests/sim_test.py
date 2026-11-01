@@ -86,7 +86,11 @@ async def teste_plataforma(b):
     check(await pn.locator('.an-svg .an-f').count() >= 2, 'Hoje: rosca por situação')
     # a rosca leva às Solicitações já filtradas (situações e cartões por tipo, como no Control Onvio)
     await pn.dispatch_event('.an-f[data-motivo="prescreve"]', 'click'); await pg.wait_for_timeout(600)
-    check(await pn.locator('.hj-sit[data-sit="prescreve"].on').count() == 1 and await pn.locator('.tipos .tipo-c').count() == 11, 'rosca → Solicitações filtradas, com os cartões dos tipos')
+    # (desde a 2.19 os tipos vêm numa faixa de uma linha: só os que têm pedidos; "Ver todos os tipos" abre a grade com os 10 + "Todos")
+    check(await pn.locator('.hj-sit[data-sit="prescreve"].on').count() == 1 and 1 < await pn.locator('#sol-tipos .tipo-f').count() < 11, 'rosca → Solicitações filtradas, com a faixa dos tipos que têm pedidos')
+    await pn.click('[data-tipos-vis="todos"]'); await pg.wait_for_timeout(200)
+    check(await pn.locator('.tipos .tipo-c').count() == 11, 'Ver todos os tipos: a grade com os cartões dos 10 tipos e "Todos"')
+    await pn.click('[data-tipos-vis="faixa"]'); await pg.wait_for_timeout(200)
     cards = pn.locator('#sol-grupos .hj-card')
     check(await cards.count() == 1 and 'CAMILA ROCHA' in await cards.inner_text() and 'PRESCREVE EM' in (await cards.inner_text()).upper(), 'Hoje: filtro "Responda antes de prescrever" mostra o cartão com o prazo')
     check('O escritório pediu' in await cards.inner_text() and 'abono pecuniário' in await cards.inner_text(), 'Hoje: o cartão mostra o que o escritório pediu')
@@ -1363,8 +1367,105 @@ async def teste_lote5(b):
     await ctx.close()
 
 
+async def teste_hoje_enxuto(b):
+    """2.19: Hoje e Solicitações enxutos (seções recolhíveis, dica ⓘ, faixa de tipos, telas baixas) e o cartão Movimento."""
+    print('\n[2.19] Hoje e Solicitações mais enxutos, gráficos')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    await espera(lambda: pn.evaluate("!!document.querySelector('.hj-hero[data-pronto]')"), 15)
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#eq-movimento .mv-kpi') && !!document.querySelector('#eq-avisos .eq-li')"), 25)
+    check(ok, 'Hoje: leituras prontas (movimento e avisos)')
+    # seções recolhíveis: estado coerente, padrão pela ação do cliente, escolha guardada só como ids → true/false
+    info = await pn.evaluate("""() => [...document.querySelectorAll('.hj-painel')].map(s => { const b = s.querySelector('.hj-painel-bt'), c = s.querySelector(':scope > .hj-painel-c');
+      return { id: s.id, exp: b.getAttribute('aria-expanded'), oculto: c.hidden, ctrl: b.getAttribute('aria-controls') === c.id, n: s.querySelector('.eq-n')?.textContent }; })""")
+    ids = [x['id'] for x in info]
+    check(len(info) >= 6 and all(x['ctrl'] and (x['exp'] == 'false') == x['oculto'] for x in info), f'Hoje: seções recolhíveis com aria-expanded/aria-controls coerentes ({ids})')
+    ordem = [k for k in ('eq-legais', 'eq-avisos', 'eq-exp', 'eq-ferias', 'eq-movimento', 'eq-docs') if k in ids]
+    check(ordem == sorted(ordem, key=ids.index) and ids.index('eq-docs') > ids.index('eq-legais'), 'Hoje: ordem das seções mantida, com Documentos novos depois de Prazos legais')
+    estado = {x['id']: x['exp'] for x in info}
+    check(estado.get('eq-avisos') == 'true' and estado.get('eq-movimento') == 'false', 'Hoje: abre sozinha a seção com algo a fazer; a informativa vem recolhida')
+    check(all(x['n'] is not None for x in info if x['id'] not in ('eq-folha', 'eq-movimento')), 'Hoje: contador à direita de cada seção')
+    await pn.click('#eq-avisos .hj-painel-bt'); await pn.click('#eq-movimento .hj-painel-bt'); await pg.wait_for_timeout(200)
+    guardado = await pn.evaluate("JSON.parse(localStorage.getItem('ct.hojeSecoes') || '{}')")
+    check(guardado.get('eq-avisos') is False and guardado.get('eq-movimento') is True and all(isinstance(v, bool) for v in guardado.values()), f'Hoje: a escolha fica em ct.hojeSecoes (só ids e true/false): {guardado}')
+    check(await pn.locator('#eq-avisos-c').is_hidden() and await pn.locator('#eq-movimento-c').is_visible(), 'Hoje: recolher esconde o corpo; abrir mostra')
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(400)
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(800)
+    check(await pn.locator('#eq-avisos .hj-painel-bt').get_attribute('aria-expanded') == 'false' and await pn.locator('#eq-movimento .hj-painel-bt').get_attribute('aria-expanded') == 'true', 'Hoje: a escolha volta ao reabrir a tela')
+    await pn.focus('#eq-avisos .hj-painel-bt'); await pg.keyboard.press('Enter'); await pg.wait_for_timeout(200)
+    check(await pn.locator('#eq-avisos .hj-painel-bt').get_attribute('aria-expanded') == 'true', 'Hoje: a seção abre pelo teclado (Enter)')
+    # dica ⓘ: o texto de ajuda vive no botão, também pelo teclado
+    nd = await pn.locator('.hj-painel .dica-i').count()
+    sem = await pn.evaluate("[...document.querySelectorAll('.dica-i')].filter(d => !d.getAttribute('data-tip') || !d.getAttribute('aria-label') || d.tagName !== 'BUTTON').length")
+    check(nd >= 6 and sem == 0, f'Hoje: textos de ajuda viram dica ⓘ ({nd} botões, todos com texto e aria-label)')
+    check(await pn.locator('.hj-painel .pn-card-head small').count() == 0, 'Hoje: sem parágrafos de ajuda sob os títulos das seções')
+    await pn.focus('#eq-legais .dica-i'); await pg.wait_for_timeout(150)
+    txt = await pn.locator('#eq-legais .dica-i').get_attribute('data-tip')
+    check(await pn.locator('#dica').is_visible() and (await pn.locator('#dica').inner_text()).strip() == txt.strip(), 'dica ⓘ: abre pelo foco do teclado com o texto da ajuda')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
+    check(await pn.locator('#dica').is_hidden(), 'dica ⓘ: Esc fecha')
+    # Movimento das suas solicitações
+    m = pn.locator('#eq-movimento')
+    check('Movimento das suas solicitações' in await m.inner_text() and await m.locator('.bv-svg rect.seg').count() >= 4, 'Movimento: barras empilhadas das semanas')
+    lab = await m.locator('.bv-svg').get_attribute('aria-label')
+    check(await m.locator('.bv-svg').get_attribute('role') == 'img' and 'abertas por você' in lab and 'concluídas' in lab and any(c.isdigit() for c in lab), 'Movimento: role="img" e aria-label com os números')
+    check(await m.locator('.bv-svg rect.alvo').count() == 8 and await m.locator('.mb-svg').count() == 1, 'Movimento: 8 semanas, com mini barras no cabeçalho')
+    await m.locator('.bv-svg rect.alvo').nth(1).hover(); await pg.wait_for_timeout(150)
+    tip = (await pn.locator('#dica').inner_text()) if await pn.locator('#dica').is_visible() else ''
+    check('Semana de' in tip and 'Abertas por você:' in tip, f'Movimento: dica ao passar o mouse ({tip!r})')
+    check(await m.locator('.mv-kpi b').count() == 1 and 'dia' in await m.locator('.mv-kpi').inner_text() and await m.locator('.ls-svg').get_attribute('role') == 'img', 'Movimento: tempo até a 1ª resposta (mediana + linha)')
+    check('conversas lidas' in await m.locator('.mv-kpi').inner_text(), 'Movimento: diz de quantas conversas vem o tempo')
+    # telas baixas: destaque compacto, cabeçalho em uma linha, início da 1ª seção à vista
+    for (w, h) in [(1366, 650), (1280, 720)]:
+        await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(700)
+        r = await pn.evaluate("""() => { for (let e = document.querySelector('.hj-hero'); e; e = e.parentElement) e.scrollTop = 0; const hero = document.querySelector('.hj-hero').getBoundingClientRect(), p = document.querySelector('.hj-painel').getBoundingClientRect(), head = document.querySelector('.plat-head').getBoundingClientRect(),
+          an = document.querySelector('.hj-hero .an-svg').getBoundingClientRect(); return { hh: hero.height, painelTopo: p.top, altura: innerHeight, cab: head.height, anel: an.width, leg: getComputedStyle(document.querySelector('.hj-legenda')).display }; }""")
+        check(r['anel'] <= 100 and r['leg'] == 'none' and r['hh'] <= 230, f'{w}×{h}: destaque compacto (rosca {r["anel"]:.0f}px, altura {r["hh"]:.0f}px, sem legenda)')
+        check(r['painelTopo'] + 60 <= r['altura'], f'{w}×{h}: o início da 1ª seção abaixo do destaque fica à vista (topo em {r["painelTopo"]:.0f} de {r["altura"]})')
+        check(r['cab'] <= 70, f'{w}×{h}: cabeçalho da plataforma em uma linha ({r["cab"]:.0f}px)')
+    hero_bg = await pn.evaluate("getComputedStyle(document.querySelector('.hj-hero')).backgroundColor")
+    check(hero_bg != 'rgba(0, 0, 0, 0)', f'destaque mantém a inversão de cores (fundo {hero_bg})')
+    await pg.set_viewport_size({'width': 1400, 'height': 900}); await pg.wait_for_timeout(500)
+    # Solicitações: faixa de uma linha com os tipos que têm pedidos
+    await pn.evaluate("localStorage.removeItem('ct.solTipos')")
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(900)
+    chips = await pn.evaluate("[...document.querySelectorAll('#sol-tipos .tipo-f')].map(c => [c.dataset.tipoSol, +c.querySelector('b').textContent])")
+    check(chips and chips[0][0] == '' and all(n > 0 for k, n in chips if k) and 1 < len(chips) < 11, f'Solicitações: faixa com "Todos os tipos" e só os tipos com pedidos ({len(chips)} chips)')
+    uma = await pn.evaluate("(() => { const f = document.querySelector('.tipos-faixa'); return new Set([...f.children].map(c => Math.round(c.getBoundingClientRect().top))).size; })()")
+    check(uma == 1, 'Solicitações: a faixa tem uma linha só')
+    check(await pn.locator('#sol-tipos .tipo-c').count() == 0 and await pn.locator('[data-tipos-vis="todos"]').count() == 1, 'Solicitações: grade fechada, com o botão "Ver todos os tipos"')
+    await pn.click('#sol-tipos .tipo-f[data-tipo-sol="calculoFerias"]'); await pg.wait_for_timeout(300)
+    check(await pn.locator('#sol-grupos .hj-card').count() == 1 and await pn.locator('#sol-tipos .tipo-f.on[data-tipo-sol="calculoFerias"]').count() == 1, 'Solicitações: o chip do tipo filtra como o cartão filtrava')
+    await pn.click('#sol-tipos .tipo-f[data-tipo-sol="calculoFerias"]')
+    await pn.click('[data-tipos-vis="todos"]'); await pg.wait_for_timeout(200)
+    check(await pn.locator('#sol-tipos .tipo-c').count() == 11 and await pn.evaluate("localStorage.getItem('ct.solTipos')") == 'todos', 'Solicitações: "Ver todos os tipos" abre a grade e guarda a escolha (ct.solTipos)')
+    await pn.click('#rail [data-mod="inicio"]'); await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#sol-tipos .tipo-c').count() == 11, 'Solicitações: a grade continua aberta ao voltar à tela')
+    await pn.click('[data-tipos-vis="faixa"]'); await pg.wait_for_timeout(200)
+    check(await pn.locator('#sol-tipos .tipo-f').count() > 1 and await pn.evaluate("localStorage.getItem('ct.solTipos')") == 'faixa', 'Solicitações: "Mostrar só com pedidos" volta à faixa')
+    check(not erros, f'sem erros de script nas telas {erros[:2]}')
+    await ctx.close()
+
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'hs':   # SIM_SO=hs roda só o Hoje/Solicitações enxutos e o cartão Movimento (2.19)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_hoje_enxuto(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
     if os.environ.get('SIM_SO') == 'viv':   # SIM_SO=viv roda só a escrita ao vivo e a resposta ao escritório (2.12)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
@@ -1771,6 +1872,7 @@ async def main():
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
+        await teste_hoje_enxuto(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 
