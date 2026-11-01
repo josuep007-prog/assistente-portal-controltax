@@ -36,7 +36,12 @@ function labelFor(el) {
 function findField(loc) {
   if (!loc) return null;
   const m = mainEl();
-  if (loc.fc) return m.querySelector(`bento-combobox[formcontrolname="${loc.fc}"], [formcontrolname="${loc.fc}"]:not(bento-combobox *)`) || m.querySelector(`[formcontrolname="${loc.fc}"]`);
+  if (loc.fc) {
+    const el = m.querySelector(`bento-combobox[formcontrolname="${loc.fc}"], [formcontrolname="${loc.fc}"]:not(bento-combobox *)`) || m.querySelector(`[formcontrolname="${loc.fc}"]`);
+    // a competência do Lançamento de Rubricas no portal real não tem o formcontrolname mapeado (visto em 30/10/2026): acha pelo rótulo
+    if (el || loc.tipo !== 'competencia' || !(loc.rotuloCampo || loc.rotulo)) return el;
+    return findField({ rotuloCampo: loc.rotuloCampo || loc.rotulo });
+  }
   if (loc.sel) return m.querySelector(loc.sel);
   if (loc.seletores) { const first = Object.values(loc.seletores)[0]; return first ? m.querySelector(first) : null; }
   if (loc.rotuloCampo) {
@@ -135,7 +140,7 @@ function sendContext() {
   const tipo = r.slug ? tipoBySlug(r.slug) : null;
   const empresa = companyName(); notaEmpresa(empresa);
   if (navInterna) return;   // navegação feita pelo Assistente para buscar dados: a tela de quem usa não mudou
-  post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, modo, form: r.mode === 'form' ? snapshot(tipo) : null });
+  post({ type: 'context', route: r, tipo, empresa, versao: VERSAO, modo, form: r.mode === 'form' ? snapshot(tipo) : null, grade: gradeInfo() });
 }
 /* Texto do botão conforme a tela: no formulário, convida a preencher */
 function atualizarLauncher() {

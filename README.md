@@ -239,7 +239,7 @@ Tipos de verificação disponíveis: `antecedenciaMinima`, `dataPassada`, `dataN
 ```
 manifest.json
 background/service-worker.js   regras (dev → remota → cache → embutida), recarga automática, atalho, selo
-content/*.js (9 scripts)        age no portal: lê a tela, preenche, anexa, confere o envio, arrastar-e-soltar
+content/*.js (10 scripts)        age no portal: lê a tela, preenche, anexa, confere o envio, arrastar-e-soltar
 panel/                         plataforma (plataforma.js/.css) e painel encaixado (panel.*), motor de regras (engine.js), leitura de arquivos (extract.js)
 rules/regras.json              o "cérebro" editável
 lib/                           pdf.js, Tesseract (OCR português), SheetJS — tudo local
