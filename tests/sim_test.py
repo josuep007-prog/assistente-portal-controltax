@@ -127,7 +127,7 @@ async def teste_plataforma(b):
       const visiveis = it.filter(x => x.getBoundingClientRect().bottom <= l.getBoundingClientRect().bottom + 3).length;
       return getComputedStyle(l).overflowY === 'auto' && visiveis === 5 && l.scrollHeight > l.clientHeight; })()"""), 3)
     check(rola, 'Hoje: a partir de 5 itens a lista da Equipe rola')
-    check('Pagamento das férias' in await pn.locator('#eq-legais').inner_text(), 'Hoje: prazos legais (pagamento do cálculo de férias)')
+    check('Pagamento das férias' in await pn.locator('#eq-legais').text_content(), 'Hoje: prazos legais (pagamento do cálculo de férias; a seção vem recolhida quando nenhum prazo está perto)')
     ok = await espera(lambda: pn.evaluate("(document.querySelector('.hj-casos')?.innerText || '').includes('Anexo não chegou')"), 15)
     check(ok, 'Hoje: atenção nas suas solicitações (você falou em anexo e nenhum arquivo chegou)')
     check(await pn.locator('#free-txt').count() == 0 and await pn.locator('#intents').count() == 0, 'Hoje sem a parte de criar solicitações (fica no Novo pedido)')
