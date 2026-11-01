@@ -728,8 +728,12 @@ body.plat .dock .more-menu .menu { z-index: 6; }
    Cada tipo tem cor e forma (círculo, quadrado, losango, triângulo, anel): a cor nunca é a única pista, e o texto
    fica sempre com a tinta de texto. Cores dos pontos: tokens --viz-* (claro e escuro). */
 :root {
-  --ag-legal: var(--viz-s1); --ag-pedido: var(--viz-s3); --ag-prescricao: var(--viz-crit); --ag-exp: var(--pessoal); --ag-lembrete: var(--viz-s2);
+  --ag-legal: var(--viz-s1); --ag-prescricao: var(--viz-crit); --ag-exp: var(--pessoal);
+  /* no claro, o verde-água e o laranja dos gráficos ficam abaixo de 3:1 sobre os fundos do calendário: escurecidos */
+  --ag-pedido: color-mix(in srgb, var(--viz-s3) 72%, #000); --ag-lembrete: color-mix(in srgb, var(--viz-s2) 78%, #000);
 }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ag-pedido: var(--viz-s3); --ag-lembrete: var(--viz-s2); } }
+:root[data-theme="dark"] { --ag-pedido: var(--viz-s3); --ag-lembrete: var(--viz-s2); }
 .ag-pt { display: inline-block; width: 8px; height: 8px; flex: none; background: var(--c, var(--ink-3)); border-radius: 50%; }
 .ag-pt.t-legal { --c: var(--ag-legal); }
 .ag-pt.t-pedido { --c: var(--ag-pedido); border-radius: 2px; }
@@ -822,3 +826,7 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .plan-cmd-res .tips { margin: 0; padding-left: 18px; }
 
 .plan-tabela td.plan-falhou { box-shadow: inset 0 0 0 2px var(--brand-red, #C2000C); }
+/* a coluna do lado nunca alarga a tela: títulos longos cortam com reticências */
+.ag-grid > * { min-width: 0; }
+.ag-side, .ag-side > * { min-width: 0; max-width: 100%; }
+.ag-side .pn-li { min-width: 0; }

@@ -293,11 +293,11 @@ async def teste_plataforma(b):
     await pn.select_option('#lb-rep', 'mensal')
     check('Todo mês, dia 10' in await pn.locator('#lb-resumo').inner_text(), 'resumo da repetição do lembrete')
     await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(600)
-    cel = lambda: pn.locator(f'.ag-day[data-dia="{dia.isoformat()}"]').inner_text()
-    check('Mandar as horas extras' in await cel(), 'lembrete aparece no calendário')
+    cel = lambda: pn.locator(f'.ag-day[data-dia="{dia.isoformat()}"]').get_attribute('aria-label')
+    check('1 lembrete' in await cel(), 'lembrete aparece no calendário')
     await pn.click('#ag-next'); await pg.wait_for_timeout(400)
     prox = (dia.replace(day=1) + datetime.timedelta(days=32)).replace(day=10)
-    check('Mandar as horas extras' in await pn.locator(f'.ag-day[data-dia="{prox.isoformat()}"]').inner_text(), 'lembrete mensal se repete no mês seguinte')
+    check('1 lembrete' in await pn.locator(f'.ag-day[data-dia="{prox.isoformat()}"]').get_attribute('aria-label'), 'lembrete mensal se repete no mês seguinte')
     # Documentos: modelo para assinar
     await pn.click('#rail [data-mod="documentos"]'); await pg.wait_for_timeout(800)
     # 2.5: arquivos trocados nas solicitações (lidos dos trâmites na hora), do escritório e os seus
@@ -1363,8 +1363,126 @@ async def teste_lote5(b):
     await ctx.close()
 
 
+async def teste_agenda(b):
+    """Agenda com calendário do mês: grade seg–dom acessível, painel do dia, ações nos lembretes, legenda, feriados, teclado e Hoje."""
+    import datetime
+    print('\n[Agenda] calendário do mês')
+    pasta = os.environ.get('SIM_CAP', '')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    await pg.set_viewport_size({'width': 1401, 'height': 900}); await pg.wait_for_timeout(200); await pg.set_viewport_size({'width': 1366, 'height': 650}); await pg.wait_for_timeout(500)
+    # Hoje: aviso discreto do próximo prazo (leva à Agenda)
+    ok = False
+    for _ in range(40):
+        if await pn.locator('.hj-saud .hj-prazo').count(): ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok and 'Próximo prazo' in await pn.locator('.hj-saud .hj-prazo').inner_text(), 'Hoje: "Próximo prazo: …" discreto ao lado da saudação')
+    await pn.click('.hj-saud .hj-prazo'); await pg.wait_for_timeout(700)
+    check(await pn.locator('#ag-grade').count() == 1, 'o aviso leva à Agenda')
+    # estrutura acessível
+    check(await pn.get_attribute('#ag-grade', 'role') == 'grid' and await pn.locator('#ag-grade [role=columnheader]').count() == 7, 'grade com role=grid e 7 cabeçalhos de coluna')
+    check((await pn.locator('#ag-grade [role=columnheader]').first.inner_text()).lower() == 'seg', 'a semana começa na segunda')
+    linhas = await pn.locator('#ag-grade .ag-sem').count()
+    check(linhas in (4, 5, 6) and await pn.locator('#ag-grade .ag-day').count() == linhas * 7, f'semanas completas ({linhas} linhas)')
+    await pn.click('#ag-hoje'); await pg.wait_for_timeout(500)
+    hoje = datetime.date.today()
+    cel_hoje = pn.locator(f'.ag-day[data-dia="{hoje.isoformat()}"]')
+    rot = await cel_hoje.get_attribute('aria-label')
+    check(str(hoje.year) in rot and ' de ' in rot and 'hoje' in rot, f'cada dia tem aria-label completo ({rot[:70]}…)')
+    check(await cel_hoje.get_attribute('aria-selected') == 'true' and await cel_hoje.get_attribute('tabindex') == '0', 'hoje já vem escolhido (e é o único com tabindex 0)')
+    check(await pn.locator('.ag-day[tabindex="0"]').count() == 1, 'só um dia na ordem do Tab')
+    check('hoje' in (await pn.locator('#ag-dia').inner_text()).lower(), 'painel do dia mostra Hoje')
+    # novo lembrete no dia escolhido: a data já vem preenchida
+    await pn.click('#ag-novo-dia'); await pg.wait_for_timeout(300)
+    check(await pn.input_value('#lb-data') == hoje.isoformat(), '"Novo lembrete neste dia" abre com a data do dia')
+    await pn.fill('#lb-texto', 'Conferir banco de horas')
+    await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(600)
+    check('1 lembrete' in await cel_hoje.get_attribute('aria-label'), 'o dia passa a ter 1 lembrete (aria-label)')
+    check(await cel_hoje.locator('.ag-pt.t-lembrete').count() == 1, 'ponto de lembrete no dia')
+    check('Conferir banco de horas' in await pn.locator('#ag-dia').inner_text(), 'o painel lista o lembrete')
+    # Feito / Reabrir
+    await pn.click('#ag-dia [data-a="feito"]'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#ag-dia .ag-ev-li.feito').count() == 1 and 'concluído' in await cel_hoje.get_attribute('aria-label'), '"Feito" risca o lembrete e o dia diz "concluído"')
+    check(await cel_hoje.locator('.ag-pt.t-lembrete').count() == 0, 'feito não conta como ponto')
+    await pn.click('#ag-dia [data-a="reabrir"]'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#ag-dia .ag-ev-li.feito').count() == 0, '"Reabrir" desfaz')
+    # Adiar +1 dia: sai de hoje e vai para amanhã
+    amanha = hoje + datetime.timedelta(days=1)
+    await pn.click('#ag-dia [data-a="adiar"]'); await pg.wait_for_timeout(600)
+    check(await pn.locator(f'.ag-day[data-dia="{amanha.isoformat()}"] .ag-pt.t-lembrete').count() == 1 or amanha.month != hoje.month, '"Adiar +1 dia" move o lembrete para amanhã')
+    # legenda liga e desliga o tipo (e lembra a escolha)
+    if amanha.month == hoje.month:
+        await pn.click('#ag-tipos [data-tipo="lembrete"]'); await pg.wait_for_timeout(400)
+        check(await pn.get_attribute('#ag-tipos [data-tipo="lembrete"]', 'aria-pressed') == 'false' and await pn.locator('#ag-grade .ag-pt.t-lembrete').count() == 0, 'legenda: desligar "Lembretes" tira os pontos')
+        check(await pn.evaluate("localStorage.getItem('ct.agOcultos')") == '["lembrete"]', 'a escolha da legenda fica neste computador')
+        await pn.click('#ag-tipos [data-tipo="lembrete"]'); await pg.wait_for_timeout(400)
+        check(await pn.locator('#ag-grade .ag-pt.t-lembrete').count() >= 1, 'legenda: ligar de novo traz os pontos')
+    # teclado: setas, Home/End, Page Down, Enter
+    sel = lambda: pn.evaluate("document.querySelector('.ag-day.sel').dataset.dia")
+    await pn.locator('.ag-day.sel').focus()
+    ini = datetime.date.fromisoformat(await sel())
+    await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(200)
+    check(await sel() == (ini + datetime.timedelta(days=1)).isoformat(), 'seta para a direita move um dia')
+    await pg.keyboard.press('ArrowDown'); await pg.wait_for_timeout(200)
+    check(await sel() == (ini + datetime.timedelta(days=8)).isoformat(), 'seta para baixo move uma semana')
+    check(await pn.evaluate("document.activeElement.classList.contains('ag-day') && document.activeElement.dataset.dia === document.querySelector('.ag-day.sel').dataset.dia"), 'o foco acompanha o dia escolhido')
+    mes0 = await pn.inner_text('#ag-mes')
+    await pg.keyboard.press('PageDown'); await pg.wait_for_timeout(500)
+    check(await pn.inner_text('#ag-mes') != mes0, 'Page Down muda o mês')
+    check(await pn.evaluate("document.activeElement.classList.contains('ag-day')"), 'depois de trocar o mês o foco continua no calendário')
+    await pg.keyboard.press('PageUp'); await pg.wait_for_timeout(500)
+    check(await pn.inner_text('#ag-mes') == mes0, 'Page Up volta o mês')
+    await pg.keyboard.press('Enter'); await pg.wait_for_timeout(300)
+    check(await pn.evaluate("document.activeElement.id") == 'ag-dia-t', 'Enter leva o foco ao painel do dia')
+    # feriado: novembro de 2026 tem Finados (02/11, segunda) e a conta de dia útil muda
+    async def ir_para(rotulo):
+        for _ in range(40):
+            if (await pn.inner_text('#ag-mes')).lower() == rotulo: return True
+            ant = datetime.date.today() > datetime.date(2026, 11, 1)
+            await pn.click('#ag-prev' if ant else '#ag-next'); await pg.wait_for_timeout(250)
+        return False
+    check(await ir_para('novembro de 2026'), 'navega até novembro de 2026')
+    fin = pn.locator('.ag-day[data-dia="2026-11-02"]')
+    check('Finados' in await fin.inner_text() and 'feriado: Finados' in await fin.get_attribute('aria-label') and 'dia não útil' in await fin.get_attribute('aria-label'), 'Finados aparece como feriado e dia não útil')
+    check('feriado' in (await fin.get_attribute('class')), 'dia de feriado marcado')
+    check(await pn.locator('#ag-grade .ag-pt.t-legal').count() >= 3, 'prazos fixos (salário, FGTS, INSS) aparecem como pontos')
+    await fin.click(); await pg.wait_for_timeout(300)
+    txt = await pn.inner_text('#ag-dia')
+    check('Feriado: Finados' in txt and 'Dia não útil' in txt, 'painel do dia explica o feriado')
+    d9 = pn.locator('.ag-day[data-dia="2026-11-09"]')
+    await d9.click(); await pg.wait_for_timeout(300)
+    check('Pagamento dos salários' in await pn.inner_text('#ag-dia'), '5º dia útil de novembro (09/11, pulando Finados) lista o pagamento dos salários')
+    # sem rolagem horizontal e capturas nos dois temas
+    for (w, h) in [(1280, 720), (1366, 650)]:
+        await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(500)
+        largo = await pn.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth, document.querySelector('#view').scrollWidth, document.querySelector('#view').clientWidth]")
+        check(largo[0] <= largo[1] + 1 and (largo[2] or 0) <= (largo[3] or 0) + 1, f'{w}x{h}: sem rolagem horizontal {largo}')
+        for tema in ['light', 'dark']:
+            await pn.evaluate(f"document.documentElement.setAttribute('data-theme','{tema}')"); await pg.wait_for_timeout(300)
+            if pasta: await pg.screenshot(path=f'{pasta}/agenda-{tema}-{w}x{h}.png')
+    await pn.evaluate("document.documentElement.setAttribute('data-theme','light')")
+    # tela estreita: painel do dia empilhado abaixo do calendário
+    await pg.set_viewport_size({'width': 1000, 'height': 720}); await pg.wait_for_timeout(500)
+    emp = await pn.evaluate("(() => { const c = document.querySelector('.ag-cal').getBoundingClientRect(), d = document.querySelector('#ag-dia').getBoundingClientRect(); return d.top >= c.bottom - 1 && Math.abs(d.left - c.left) < 4; })()")
+    check(emp, 'em tela estreita o painel do dia fica embaixo do calendário')
+    check(await pn.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"), '1000px: sem rolagem horizontal')
+    if pasta: await pg.screenshot(path=f'{pasta}/agenda-estreita-1000.png')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'ag':   # SIM_SO=ag roda só a Agenda em calendário do mês
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_agenda(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
     if os.environ.get('SIM_SO') == 'viv':   # SIM_SO=viv roda só a escrita ao vivo e a resposta ao escritório (2.12)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
@@ -1763,6 +1881,7 @@ async def main():
 
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await teste_plataforma(b)
+        await teste_agenda(b)
         await teste_mecanica(b)
         await teste_cadastro(b)
         await teste_lote4(b)
