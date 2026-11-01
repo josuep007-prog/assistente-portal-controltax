@@ -1673,4 +1673,48 @@ t('documentos do escritório (2.17.2): competência pelo nome do arquivo', () =>
   assert.equal(r.itens[0].competencia, '09/2026'); assert.equal(r.itens[1].competencia, '');
 });
 
+/* Sino de novidades: só o que muda para o cliente; a foto guardada não leva nomes nem assuntos */
+t('sino: foto mínima, primeira leitura sem novidade e transições que contam', () => {
+  const d = (n) => new Date(2026, 9, n);
+  const sol = (id, tipo, status, estado, dia, extra = {}) => ({ id, numero: String(id), tipo, status, estado, atualizado: d(dia), empregado: 'FULANO DE TAL', assunto: 'assunto secreto', empresa: 'EMPRESA X', ...extra });
+  const antes = [sol(1, 'calculoFerias', 'Em análise', 'andamento', 1), sol(2, 'afastamento', 'Em análise', 'andamento', 2), sol(3, 'geral', 'Aguardando cliente', 'aguardando', 3), sol(4, 'afastamento', 'Em análise', 'andamento', 4), sol(5, 'geral', 'Em análise', 'andamento', 5)];
+  const foto = E.fotoSino(antes, rules, 1000);
+  assert.deepEqual(Object.keys(foto.itens).sort(), ['afastamento:2', 'afastamento:4', 'calculoFerias:1', 'geral:3', 'geral:5']);
+  assert.deepEqual(foto.itens['geral:3'].slice(0, 1), ['Aguardando cliente']);
+  const bruto = JSON.stringify(foto);
+  assert.ok(!/FULANO|secreto|EMPRESA/.test(bruto), 'a foto não guarda nome, assunto nem empresa');
+  assert.deepEqual(E.novidadesSino(antes, null, rules), [], 'primeira leitura: nada acende');
+  assert.deepEqual(E.novidadesSino(antes, foto, rules), [], 'sem mudança: nada');
+  const depois = [
+    sol(1, 'calculoFerias', 'Aguardando cliente', 'aguardando', 8),        // o escritório respondeu e pede algo
+    sol(2, 'afastamento', 'Concluída', 'concluida', 9),                     // concluída
+    sol(3, 'geral', 'Em análise', 'andamento', 10),                         // o cliente respondeu: não conta
+    sol(4, 'afastamento', 'Em andamento', 'andamento', 11),                 // o escritório mexeu
+    sol(5, 'geral', 'Cancelada', 'cancelada', 12),
+    sol(6, 'geral', 'Em análise', 'andamento', 12)                          // pedido novo do próprio cliente: não conta
+  ];
+  const n = E.novidadesSino(depois, foto, rules);
+  assert.deepEqual(n.map(x => [x.item.id, x.tipo]), [[1, 'respondeu'], [2, 'concluida'], [5, 'cancelada'], [4, 'andamento']]);
+  assert.equal(n[0].texto, `O escritório respondeu ${rules.tipos.calculoFerias.nome} nº 1 e espera a sua resposta.`);
+  assert.equal(n[1].texto, `${rules.tipos.afastamento.nome} nº 2 foi concluída.`);
+  assert.ok(/em andamento\./.test(n[3].texto));
+  // lida uma: só ela some; marcar tudo zera
+  const umaLida = E.marcarVistas(foto, depois, [n[0].chave], rules, 2000);
+  assert.deepEqual(E.novidadesSino(depois, umaLida, rules).map(x => x.item.id), [2, 5, 4]);
+  assert.deepEqual(E.novidadesSino(depois, E.marcarVistas(foto, depois, null, rules, 2000), rules), []);
+  // resposta que não pede nada tem texto próprio
+  const semPedido = [sol(1, 'calculoFerias', 'Aguardando cliente', 'aguardando', 8, { veredito: { ultimoLado: 'esc', pede: false } })];
+  assert.equal(E.novidadesSino(semPedido, foto, rules)[0].tipo, 'respondeuSemPedido');
+  // limite da foto
+  const muitas = Array.from({ length: 450 }, (_, k) => sol(1000 + k, 'geral', 'Em análise', 'andamento', 1 + (k % 28)));
+  assert.equal(Object.keys(E.fotoSino(muitas, rules).itens).length, rules.config.sino.maxGuardadas);
+});
+
+t('sino: textos e limites existem nas regras', () => {
+  const m = rules.mensagens.sino;
+  for (const k of ['titulo', 'vazio', 'marcarLidas', 'respondeu', 'respondeuSemPedido', 'concluida', 'cancelada', 'prescrita', 'andamento']) assert.ok(m[k], k);
+  assert.equal(rules.config.sino.maxLinhas, 8);
+  for (const k of ['esperam', 'prescrevem', 'novos']) assert.equal(rules.mensagens.trilhoResumo[k].length, 2);
+});
+
 console.log(`\n${n} testes ok`);

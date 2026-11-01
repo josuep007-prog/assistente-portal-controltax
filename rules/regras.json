@@ -270,6 +270,7 @@
     "prescricaoDias": 30,
     "prescricaoAvisoDias": 10,
     "leituraAutomaticaSegundos": 30,
+    "sino": { "maxLinhas": 8, "maxGuardadas": 400 },
     "escolherUnicaOpcao": {
       "_comentario": "Listas do portal em que o Assistente escolhe sozinho quando há uma opção só (no fim de um preenchimento, se o campo estiver vazio). A fonte aparece como 'única opção do portal'.",
       "revisarComEscritorio": true,
@@ -5410,6 +5411,26 @@
     }
   ],
   "mensagens": {
+    "sino": {
+      "titulo": "Novidades",
+      "botao": "Novidades",
+      "vazio": "Nenhuma novidade",
+      "vazioSub": "Quando o escritório responder ou concluir algo, aparece aqui.",
+      "marcarLidas": "Marcar como lidas",
+      "maisN": "e mais {n} novidades. Veja todas em Solicitações.",
+      "primeira": "Daqui em diante o sino avisa o que mudar nas suas solicitações.",
+      "respondeu": "O escritório respondeu {tipo} nº {numero} e espera a sua resposta.",
+      "respondeuSemPedido": "O escritório respondeu {tipo} nº {numero}. Confira a resposta e conclua no portal.",
+      "concluida": "{tipo} nº {numero} foi concluída.",
+      "cancelada": "{tipo} nº {numero} foi cancelada.",
+      "prescrita": "{tipo} nº {numero} foi encerrada pelo portal. Se ainda precisar, é só fazer um novo pedido.",
+      "andamento": "O escritório atualizou {tipo} nº {numero}: {status}."
+    },
+    "trilhoResumo": {
+      "esperam": ["{n} espera você", "{n} esperam você"],
+      "prescrevem": ["{n} perto de prescrever", "{n} perto de prescrever"],
+      "novos": ["{n} novo", "{n} novos"]
+    },
     "comprovanteOutraPessoa": "O comprovante de residência está em nome de {titular}. Tudo bem se for de um parente (pai, mãe, cônjuge): nesse caso o escritório pode pedir uma declaração de residência assinada pelo titular.",
     "filiacaoConfira": "Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira (e troque no campo Nome da mãe, se for o outro).",
     "envioOk": "Tudo certo! Pode enviar.",
