@@ -73,13 +73,14 @@ Desde a 2.16.4 o painel também é dividido por assunto. `panel/panel.js` ficou 
 | `portal.js` | Portal ↔ Assistente, resumo antes de enviar, modelos |
 | `facilidades.js` | Rascunho, repetir, colar, diagnóstico |
 | `historico.js` | Histórico e Pendências |
+| `planilha.js` | Planilha de rubricas da plataforma (2.20.0): grade editável que lança célula a célula na grade do portal |
 | `config.js` | Calculadoras e Configurações |
 
 Regras: (1) nada chama função de outro módulo na hora do carregamento; (2) variáveis soltas que mudavam (`lastKey`, `reqId`…) agora ficam em `S.pv`; (3) os ouvintes de eventos de cada módulo ficam em `ligar()`, chamado por `panel.js` na ordem de antes; (4) `P` (a plataforma) é um atalho em `base.js`, preenchido por `definirPlat` no fim de `panel.js`.
 
 ## Conteúdo (`content/*.js`)
 
-Desde a 2.17.0 o conteúdo que roda dentro do Onvio é dividido em 9 scripts comuns (o Chrome não carrega módulos como script de conteúdo). Eles **compartilham o escopo do mundo isolado**: o que um declara (`const`, `let`, `function`) os seguintes enxergam, como na época do arquivo único. A **ordem de carga** é a do `manifest.json` (e a do `simulador/index.html`): `opcoes`, `nucleo`, `interface`, `canal`, `leitura`, `preenchimento`, `desfazer`, `portal`, `api`, `final`. `pagina.js` continua à parte (mundo da página).
+Desde a 2.17.0 o conteúdo que roda dentro do Onvio é dividido em 10 scripts comuns (o Chrome não carrega módulos como script de conteúdo). Eles **compartilham o escopo do mundo isolado**: o que um declara (`const`, `let`, `function`) os seguintes enxergam, como na época do arquivo único. A **ordem de carga** é a do `manifest.json` (e a do `simulador/index.html`): `opcoes`, `nucleo`, `interface`, `canal`, `leitura`, `preenchimento`, `desfazer`, `rubricas`, `portal`, `api`, `final`. `pagina.js` continua à parte (mundo da página).
 
 | Script | O que tem |
 |---|---|
@@ -89,6 +90,7 @@ Desde a 2.17.0 o conteúdo que roda dentro do Onvio é dividido em 9 scripts com
 | `leitura.js` | Leitura da tela e revelar etapas/abas |
 | `preenchimento.js` | Preencher campos, combos, rádios, anexos; marcar o que falta |
 | `desfazer.js` | Grade de rubricas e desfazer |
+| `rubricas.js` | Acha e lê a grade do Lançamento de Rubricas (blocos ou tabela) para a planilha da plataforma; nunca muda o visual do Onvio |
 | `portal.js` | Trocar de empresa, pendências, adaptador da plataforma |
 | `api.js` | Leituras da API com o acesso do portal, documentos, resposta |
 | `final.js` | Conferência antes de enviar, arrastar e soltar, rotas, mensagens do service worker e a partida |

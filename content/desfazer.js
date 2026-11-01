@@ -8,31 +8,121 @@
 const cfgGrade = () => ({ tabela: "table[aria-label='Rubricas'], [role=grid][aria-label='Rubricas']", botaoAdicionarTodos: 'Adicionar todos os funcionários', colunaEmpregado: 0, ...(rules?.tipos?.rubricas?.grade || {}) });
 const acharGrade = () => mainEl().querySelector(cfgGrade().tabela);
 function lerTabelaGrade(tab) {
-  const ce = +cfgGrade().colunaEmpregado || 0;
   const titulos = [...tab.querySelectorAll('thead th, [role=columnheader]')].map(th => (th.innerText || '').trim());
+  // a coluna do funcionário: a que se chama Nome/Empregado/Funcionário (no portal real há uma coluna de marcar antes dela); senão a das regras
+  const porTitulo = titulos.findIndex(t => /^(nome|empregad|funcionari)/i.test(norm(t)));
+  const ce = porTitulo >= 0 ? porTitulo : (+cfgGrade().colunaEmpregado || 0);
   const linhas = [...tab.querySelectorAll('tbody tr, [role=row]')].filter(r => r.querySelector('input'));
   const celulas = (r) => [...r.querySelectorAll('td, [role=gridcell], [role=rowheader]')];
   const empregados = linhas.map(r => (celulas(r)[ce]?.innerText || '').trim());
-  return { titulos, linhas, empregados, celulas, eventos: titulos.filter((_, i) => i !== ce) };
+  return { titulos, linhas, empregados, celulas, eventos: titulos.filter((t, i) => i !== ce && t) };   // sem a coluna de marcar (título vazio)
+}
+/** A grade em blocos (div), quando o portal não usa <table>: a achada por rubricas.js, lida pela posição das colunas e linhas. */
+const lerGradeDiv = () => { atualizarGrade(); const g = gradeDivLer(gradeAmpla.scroller); return g && g.linhas.length ? g : null; };
+let gradeAddInfo = '';
+/** Clique como o de uma pessoa (o portal pode ouvir o mouse, não só o "click"). */
+function cliqueCompleto(el) {
+  const o = { bubbles: true, cancelable: true, view: window };
+  for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) el.dispatchEvent(new (t.startsWith('pointer') ? PointerEvent : MouseEvent)(t, o));
+  el.click();
+}
+/** Antes de adicionar os funcionários o portal exige o Tipo de lançamento e a Competência no formulário dele: confere os dois e, se estiverem
+    faltando ou inválidos, refaz (competência digitada tecla a tecla; tipo MENSAL só se nenhum estiver marcado). Nunca troca o que a pessoa escolheu. */
+async function garantirCamposDaGrade(forcar) {
+  try {
+    const radios = [...mainEl().querySelectorAll('input[name=radioBasic]')];
+    if (radios.length && !radios.some(r => r.checked)) {
+      const mensal = radios.find(r => /mensal/i.test(r.closest('label')?.innerText || r.id)) || radios[0];
+      (mensal.closest('label') || mensal).click(); await sleep(150);
+    }
+    const def = resolveTipoLocal('rubricas')?.campos?.competencia, el = def && findField(def);
+    if (el && el.tagName === 'INPUT' && !el.disabled) {
+      const v = (el.value || '').trim();
+      if (v && (forcar || el.classList.contains('ng-invalid'))) { await digitar(el, v); await sleep(150); }
+    }
+  } catch { /* sem os campos: o clique em adicionar mostra o que falta */ }
+}
+/** A grade em blocos lida por inteiro (rola a grade para juntar todas as linhas e colunas). */
+async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados, fonte: t.fonte, api: gradeApiInfo }; }
+/** O que aparece na tela depois de clicar em "Adicionar todos os funcionários": janelas abertas e rótulos de botões (só os nomes dos botões, nenhum dado). */
+function gradeAposAdicionar() {
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const rot = (e) => (e.innerText || e.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  const janelas = [...document.querySelectorAll('[role=dialog], [role=alertdialog], .cdk-overlay-pane, bento-modal, .modal')].filter(vis);
+  const botoes = janelas.flatMap(j => [...j.querySelectorAll('button')].filter(vis).map(rot)).filter(Boolean).slice(0, 8);
+  const barra = [...mainEl().querySelectorAll('button')].filter(x => vis(x) && /adicion/i.test(rot(x))).map(x => `${rot(x)}${x.disabled ? ' [desligado]' : ''}`).slice(0, 4);
+  const avisos = [...document.querySelectorAll('[role=alert], [role=status], [class*=toast], [class*=notification], [class*=invalid], [class*=error]')].filter(vis).map(e => (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80)).filter(Boolean).slice(0, 3);
+  return `${avisos.length ? `avisos na tela: ${avisos.join(' | ')}; ` : ''}${janelas.length} janela(s) aberta(s)${botoes.length ? ` com botões: ${botoes.join(' | ')}` : ''}; botões de adicionar na tela: ${barra.join(' | ') || 'nenhum'}`;
 }
 async function lerGrade(adicionar) {
   const r = routeInfo();
   if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, motivo: 'abra o Lançamento de Rubricas' };
   let tab = acharGrade();
+  if (!tab && lerGradeDiv()) return resultadoGradeDiv();
   if ((!tab || !lerTabelaGrade(tab).linhas.length) && adicionar) {
     const alvo = norm(cfgGrade().botaoAdicionarTodos);
     const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
     if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
-    await reveal(b); b.click();
-    for (let i = 0; i < 20 && !(tab = acharGrade()); i++) await sleep(250);
+    await garantirCamposDaGrade();
+    await reveal(b); cliqueCompleto(b);
+    gradeAddInfo = '';
+    let segunda = false;
+    for (let i = 0; i < 64 && !(tab = acharGrade()) && !lerGradeDiv(); i++) {   // até 16 s: o portal busca os funcionários antes de mostrar a grade
+      await sleep(250);
+      if (!segunda && i === 10 && /obrigat/i.test(gradeAposAdicionar())) { segunda = true; await garantirCamposDaGrade(true); cliqueCompleto(b); }   // o portal pediu um campo: refaz e tenta de novo, uma vez
+    }
   }
-  if (!tab) return { ok: false, motivo: 'a grade não apareceu (a competência está preenchida?)' };
+  if (!tab && lerGradeDiv()) return resultadoGradeDiv();
+  if (!tab) {
+    atualizarGrade();
+    const sc = gradeAmpla.scroller;
+    gradeAddInfo = gradeAposAdicionar();
+    if (sc && /obrigat/i.test(gradeAddInfo)) return { ok: false, motivo: 'o portal respondeu "Campo obrigatório" ao adicionar os funcionários: escolha você mesmo o Tipo de lançamento e a Competência no portal (clicando no campo), clique nele em "Adicionar todos os funcionários" e só então em "Carregar funcionários e rubricas" aqui' };
+    return { ok: false, motivo: sc ? `achei a grade na tela (${gradeAmpla.achada}), mas não consegui ler as linhas dos funcionários (${gradeAriaInfo || 'sem detalhe'}; depois do clique em adicionar: ${gradeAddInfo || '-'}): copie o diagnóstico em Configurações e mande ao escritório` : 'a grade não apareceu na tela (a competência está preenchida? use "Adicionar todos os funcionários" no portal)' };
+  }
   const g = lerTabelaGrade(tab);
   return { ok: true, eventos: g.eventos, empregados: g.empregados };
 }
 /** celulas: [{ empregado, evento, valor }] com os nomes exatos da grade (o painel casa os nomes antes). */
+async function preencherGradeDiv(celulas) {
+  const antes = [], faltaram = [];
+  // pela própria planilha do portal (seleciona, abre o editor, digita e confirma, como o portal faz); sem o ajudante, pela tela
+  const api = await pedirGrade('escrever', { celulas }, 60000);
+  if (api?.ok) {
+    const feitas = api.feitas.map(f => ({ empregado: f.empregado, evento: f.evento, antes: f.antes }));
+    if (feitas.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: feitas }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
+    return { ok: true, n: api.feitas.length, mudou: feitas.length, faltaram: api.faltaram, via: 'planilha do portal' };
+  }
+  for (const c of celulas) {
+    await gradeIrPara(c.empregado, c.evento);   // a grade só desenha o que cabe na tela: rola até a célula
+    const g = lerGradeDiv();   // lê de novo a cada célula: o portal pode redesenhar a grade ao editar
+    const i = g ? g.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1;
+    const j = g ? g.titulos.findIndex(t => norm(t) === norm(c.evento)) : -1;
+    let cel = i >= 0 && j >= 0 ? g.celula(g.linhas[i], j) : null;
+    if (cel?.bloco) {   // rolar a grade redesenha as células: traz a célula para a vista, espera o redesenho e a localiza de novo
+      cel.bloco.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); await sleep(200);
+      const g2 = lerGradeDiv(), i2 = g2 ? g2.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1, j2 = g2 ? g2.titulos.findIndex(t => norm(t) === norm(c.evento)) : -1;
+      cel = i2 >= 0 && j2 >= 0 ? g2.celula(g2.linhas[i2], j2) : null;
+    }
+    const campo = cel ? await gradeCampoDaCelula(cel) : null;
+    if (!campo || campo.disabled || campo.readOnly) {
+      faltaram.push({ ...c, motivo: i < 0 ? 'funcionário fora da grade' : j < 0 ? 'rubrica fora da grade' : !campo ? 'não consegui abrir a célula para digitar' : 'célula bloqueada pelo portal' });
+      continue;
+    }
+    const v0 = campo.value ?? campo.textContent ?? '';
+    if (v0 === String(c.valor)) continue;
+    if (campo.isContentEditable) { campo.textContent = String(c.valor); campo.dispatchEvent(new Event('input', { bubbles: true })); } else setNative(campo, String(c.valor));
+    campo.dispatchEvent(new Event('change', { bubbles: true }));
+    if (campo.closest?.('.wj-cell, [role=gridcell]')) campo.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));   // a planilha do portal confirma a edição com Enter
+    campo.dispatchEvent(new Event('blur', { bubbles: true })); mark(campo); await sleep(30);
+    antes.push({ empregado: c.empregado, evento: c.evento, antes: v0 });
+  }
+  if (antes.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: antes }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
+  return { ok: true, n: celulas.length - faltaram.length, mudou: antes.length, faltaram };
+}
 async function preencherGrade(celulas) {
-  const tab = acharGrade(); if (!tab) return { ok: false, n: 0, mudou: 0, faltaram: celulas };
+  const tab = acharGrade();
+  if (!tab) return lerGradeDiv() ? preencherGradeDiv(celulas) : { ok: false, n: 0, mudou: 0, faltaram: celulas };
   await reveal(tab);
   const g = lerTabelaGrade(tab);
   const antes = [], faltaram = [];
@@ -104,6 +194,12 @@ async function desfazer() {
     for (const n of d.anexos) { if (await removerAnexo(n)) anexos.push(n); else falhas.push('anexo:' + n); }
     // grade de rubricas: cada célula volta ao valor de antes
     const tab = d.grade?.length ? acharGrade() : null;
+    if (d.grade?.length && !tab) {   // grade sem <table> (a planilha do portal): cada célula volta pelo ajudante da página
+      const v = await pedirGrade('escrever', { celulas: d.grade.map(c => ({ empregado: c.empregado, evento: c.evento, valor: c.antes })) }, 60000);
+      for (const f of v?.faltaram || []) falhas.push('grade:' + f.evento);
+      if (!v?.ok) for (const c of d.grade) falhas.push('grade:' + c.evento);
+      d.grade = [];
+    }
     const g = tab ? lerTabelaGrade(tab) : null;
     for (const c of d.grade || []) {
       const i = g ? g.empregados.findIndex(e => norm(e) === norm(c.empregado)) : -1;
