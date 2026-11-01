@@ -774,3 +774,16 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .plan-cmd-res .tips { margin: 0; padding-left: 18px; }
 
 .plan-tabela td.plan-falhou { box-shadow: inset 0 0 0 2px var(--brand-red, #C2000C); }
+/* o detalhe cabe em telas baixas: a conversa nunca some (altura mínima) e as abas ficam à vista ao rolar */
+.dlg-detalhe .dlg-body { display: flex; flex-direction: column; gap: 10px; }
+.dlg-detalhe .dt-body { flex: 0 0 auto; min-height: 200px; }
+.dlg-detalhe .dt-tabs { position: sticky; top: -14px; z-index: 2; background: var(--surface); }
+@media (max-height: 760px) {
+  .dlg-detalhe .dt-porque { display: none; }
+  .dlg-detalhe .dt-meta { gap: 2px 14px; }
+  .dlg-detalhe .dt-body { max-height: 38vh; }
+  .dlg-detalhe .dt-resp textarea { min-height: 44px; max-height: 80px; }
+}
+.dlg-detalhe .dlg-body > * { flex-shrink: 0; }
+/* contraste ≥ 4,5:1 nos dois temas: o texto miúdo dos chips e da hora fica em --ink-2 (a hora cai em bolha azul) */
+.dt-dq .dq small, .tr-quando { color: var(--ink-2); }

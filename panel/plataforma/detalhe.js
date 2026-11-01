@@ -49,7 +49,7 @@ export function montarDetalhe(C) {
     };
     const teclas = (e) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
-      if (editavel(e.target) || e.target.closest?.('details, [role="tab"]') || !$('#cmdk').hidden) return;
+      if (editavel(e.target) || e.target.closest?.('details') || !$('#cmdk').hidden) return;
       e.preventDefault(); irPara(e.key === 'ArrowLeft' ? -1 : 1);
     };
     const navHtml = fila.length > 1 ? `<nav class="dt-nav" aria-label="Navegar entre as solicitações da lista">
@@ -81,6 +81,7 @@ export function montarDetalhe(C) {
         '|', { rotulo: 'Fechar' }]
     });
     const el = dlg.el, body = el.querySelector('#dt-body');
+    el.classList.add('dlg-detalhe');
     document.addEventListener('keydown', teclas);
     el.querySelectorAll('[data-dt-nav]').forEach(b => b.addEventListener('click', () => irPara(+b.dataset.dtNav)));
     const chipAnexo = (a) => { const ext = (/\.([a-z0-9]{2,5})$/i.exec(a || '') || [])[1]; return `<span class="tr-arq" title="${esc(a)}">${icon('clip', 'ic-sm')}${ext ? `<em class="tr-ext">${esc(ext.toUpperCase())}</em>` : ''}<span>${esc(a)}</span></span>`; };

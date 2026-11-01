@@ -1457,14 +1457,9 @@ async def teste_detalhe(b):
     alvo = '[data-dt-nav="1"]' if await pn.locator('[data-dt-nav="1"]').is_enabled() else '[data-dt-nav="-1"]'
     await pn.click(alvo); await pg.wait_for_timeout(400)
     check(await nav_txt() == antes and await pn.locator('#rl-texto').count() == 1, 'com resposta escrita, trocar de solicitação é barrado (nada se perde)')
-    # o botão do aviso abre a solicitação no portal por baixo (o mesmo "Responder no portal")
     await pn.fill('#rl-texto', ''); await pn.dispatch_event('#rl-texto', 'input'); await pg.wait_for_timeout(300)
-    await pn.click('#dt-aviso-resp')
-    ok = await espera(lambda: pg.evaluate("window.__ctPlatform.path().includes('/vacation-notice/1041')"), 15)
-    check(ok, 'o botão do aviso leva ao portal, na solicitação certa')
-    await pg.wait_for_timeout(600)
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
     # afastamento: início e dias, e nenhum dado de saúde
-    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
     await pn.locator('#sol-grupos [data-card]', has_text='nº 1039').first.click()
     ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dt-dq .dq').length >= 2"), 15)
     chips = await pn.evaluate("[...document.querySelectorAll('#dt-dq .dq')].map(x => x.innerText.replace(/\\s+/g, ' ').trim().toUpperCase())")
@@ -1501,6 +1496,14 @@ async def teste_detalhe(b):
     check(vis, 'o cartão que pisca está à vista (rolou até ele)')
     ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.foco-pisca').length === 0"), 6)
     check(ok, 'o pisca termina (cerca de 2 s)')
+    # o botão do aviso abre a solicitação no portal (o mesmo "Responder no portal"): a plataforma se recolhe para o portal aparecer
+    if await pn.locator('[data-limpar-sol]').count(): await pn.click('[data-limpar-sol]')
+    await pg.wait_for_timeout(300)
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1041').first.click()
+    await espera(lambda: pn.evaluate("!!document.querySelector('#dt-aviso-resp')"), 15)
+    await pn.click('#dt-aviso-resp')
+    ok = await espera(lambda: pg.evaluate("window.__ctPlatform.path().includes('/vacation-notice/1041')"), 15)
+    check(ok, 'o botão do aviso leva ao portal, na solicitação certa')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
