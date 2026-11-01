@@ -20,6 +20,7 @@ Desde a 2.16.2 o motor é dividido por assunto. `panel/engine.js` é só uma **f
 | `planilhas.js` | Variáveis da folha, grade e planilha de rubricas, catálogo da Solicitação Geral |
 | `plataforma.js` | Solicitações, equipe, conversa, atenção, prazos legais, observações |
 | `portal.js` | Documentos publicados pelo escritório (resposta da API) e a forma da resposta |
+| `sino.js` | Sino de novidades: foto mínima (`fotoSino`), o que mudou (`novidadesSino`), `marcarVistas`; textos em `mensagens.sino` |
 
 Os módulos se importam entre si (há dependências em ciclo, como no arquivo único de antes). Isso funciona porque os módulos só definem funções e constantes: **nada deve chamar função de outro módulo na hora do carregamento** (no nível de cima do arquivo), só dentro de funções.
 
@@ -36,7 +37,7 @@ Desde a 2.16.3 a plataforma em tela cheia é dividida por tela. `panel/plataform
 | Parte | O que tem |
 |---|---|
 | `nucleo.js` | Estado (`S.plat`), `P`, funções de apoio (empresa, tipo, datas, carregando) |
-| `casca.js` | Trilho, cabeçalho, indicador de leitura, seletor de empresa |
+| `casca.js` | Trilho (com resumo de uma linha na etiqueta), cabeçalho, indicador de leitura, sino de novidades (`ct.sinoVisto` no localStorage), seletor de empresa |
 | `dados.js` | Leitura das solicitações e dos funcionários, leitura automática |
 | `entrada.js` | Entrada, contexto, avisos, troca de tela (`P.render`) |
 | `dialogos.js`, `eventos.js` | Diálogo genérico; eventos da agenda |
