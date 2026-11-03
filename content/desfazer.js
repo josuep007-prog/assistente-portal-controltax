@@ -43,7 +43,7 @@ async function garantirCamposDaGrade(forcar) {
   } catch { /* sem os campos: o clique em adicionar mostra o que falta */ }
 }
 /** A grade em blocos lida por inteiro (rola a grade para juntar todas as linhas e colunas). */
-async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados, fonte: t.fonte, api: gradeApiInfo }; }
+async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados, fonte: t.fonte, api: gradeApiInfo, bloqueadas: t.bloqueadas || [], meta: t.meta || [] }; }
 /** O que aparece na tela depois de clicar em "Adicionar todos os funcionários": janelas abertas e rótulos de botões (só os nomes dos botões, nenhum dado). */
 function gradeAposAdicionar() {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -91,7 +91,7 @@ async function preencherGradeDiv(celulas) {
   if (api?.ok) {
     const feitas = api.feitas.map(f => ({ empregado: f.empregado, evento: f.evento, antes: f.antes }));
     if (feitas.length) { desfazerPilha.push({ path: currentPath(), tipo: 'rubricas', antes: {}, anexos: [], grade: feitas }); if (desfazerPilha.length > 10) desfazerPilha.shift(); }
-    return { ok: true, n: api.feitas.length, mudou: feitas.length, faltaram: api.faltaram, via: 'planilha do portal' };
+    return { ok: true, n: api.feitas.length, mudou: feitas.length, faltaram: api.faltaram, via: 'planilha do portal', recusas: api.recusas || [], formas: api.formas || {} };
   }
   for (const c of celulas) {
     await gradeIrPara(c.empregado, c.evento);   // a grade só desenha o que cabe na tela: rola até a célula

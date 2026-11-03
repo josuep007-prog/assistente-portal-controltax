@@ -40,7 +40,9 @@
     const h = cabecalhos(g), ni = colunaNome(h);
     const titulos = h.filter(x => rotEvento.test(x)).map(x => x.trim());
     const empregados = nomesDasLinhas(g, ni).filter(Boolean);
-    return { ok: ni >= 0 && titulos.length > 0, titulos, empregados, colunas: h.length, linhas: g.rows.length, colunaDoNome: ni };
+    // quais rubricas o portal não deixa lançar (coluna somente leitura) e como cada coluna guarda o valor (tipo e formato; nunca valores)
+    const meta = h.map((t, c) => ({ titulo: t.trim(), c })).filter(x => rotEvento.test(x.titulo)).map(({ titulo, c }) => ({ titulo, somenteLeitura: !!(g.isReadOnly || g.columns[c].isReadOnly), tipoDado: g.columns[c].dataType ?? null, formato: String(g.columns[c].format || ''), mascara: String(g.columns[c].mask || '') }));
+    return { ok: ni >= 0 && titulos.length > 0, titulos, empregados, colunas: h.length, linhas: g.rows.length, colunaDoNome: ni, bloqueadas: meta.filter(m => m.somenteLeitura).map(m => m.titulo), meta };
   }
 
   /** Os valores que a grade tem agora (só as células preenchidas): para o resumo antes de enviar. */
@@ -53,10 +55,34 @@
     return { ok: true, celulas };
   }
 
-  /** Lança cada valor como o portal faz: seleciona a célula, abre o editor, digita e confirma (o portal recalcula e valida). valor '' limpa a célula. */
+  const aceito = (g, r, col) => { const d = g.getCellData(r, col, false); return !(d == null || d === '' || (typeof d === 'number' && Number.isNaN(d))); };
+  /** Formas de escrever o mesmo valor: como veio, horas ↔ decimal e número puro. Colunas numéricas começam pelo decimal. */
+  function formas(valor, tipoDado) {
+    const v = String(valor).trim(), out = [{ nome: 'como digitado', v }];
+    const hm = /^(\d{1,3}):(\d{2})$/.exec(v);
+    if (hm) { const dec = +hm[1] + +hm[2] / 60, txt = String(Math.round(dec * 100) / 100).replace('.', ','); out.push({ nome: 'horas em decimal', v: txt }, { nome: 'número', v: Math.round(dec * 100) / 100 }); }
+    else if (/^\d+([.,]\d+)?$/.test(v)) { const n = parseFloat(v.replace(',', '.')), hh = Math.floor(n), mm = Math.round((n - hh) * 60); out.push({ nome: 'horas HH:MM', v: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}` }, { nome: 'número', v: n }); }
+    return tipoDado === 2 && hm ? [out[1], out[0], ...out.slice(2)] : out;   // coluna numérica: o decimal antes
+  }
+  /** Uma tentativa, do jeito do portal: seleciona, abre o editor, digita e confirma; sem editor, grava no modelo. Devolve de onde veio o valor aceito ('' = recusado). */
+  function tentar(g, r, col, valor) {
+    g.select(r, col); g.scrollIntoView?.(r, col);
+    if (typeof g.startEditing === 'function' && g.startEditing(true, r, col, true)) {
+      const ed = g.activeEditor;
+      if (ed) {
+        ed.value = String(valor); ed.dispatchEvent(new Event('input', { bubbles: true }));
+        const fim = g.finishEditing();
+        if (fim === false) { try { g.cancelEdit?.(); } catch { /* nada a cancelar */ } } else if (aceito(g, r, col)) return 'editor';
+      } else g.cancelEdit?.();
+    }
+    g.setCellData(r, col, valor, true);
+    return aceito(g, r, col) ? 'modelo' : '';
+  }
+
+  /** Lança cada valor como o portal faz; se o portal recusar o formato, tenta os outros (horas ↔ decimal). valor '' limpa a célula. */
   function escrever(g, celulas) {
     const h = cabecalhos(g), ni = colunaNome(h), nomes = nomesDasLinhas(g, ni).map(norm);
-    const feitas = [], faltaram = [];
+    const feitas = [], faltaram = [], recusas = [], formasUsadas = {};
     for (const c of celulas) {
       const r = nomes.indexOf(norm(c.empregado)), col = h.findIndex(x => norm(x) === norm(c.evento));
       if (r < 0) { faltaram.push({ ...c, motivo: 'funcionário fora da grade' }); continue; }
@@ -64,24 +90,28 @@
       if (g.isReadOnly || g.columns[col].isReadOnly) { faltaram.push({ ...c, motivo: 'célula bloqueada pelo portal' }); continue; }
       const antes = String(g.getCellData(r, col, true) ?? '');
       const vazio = String(c.valor ?? '') === '';
-      let ok = false, via = '';
+      let via = '', forma = '';
       try {
-        g.select(r, col); g.scrollIntoView?.(r, col);
-        if (!vazio && typeof g.startEditing === 'function' && g.startEditing(true, r, col, true)) {
-          const ed = g.activeEditor;
-          if (ed) { ed.value = String(c.valor); ed.dispatchEvent(new Event('input', { bubbles: true })); ok = g.finishEditing() !== false; via = 'editor'; }
-          else g.cancelEdit?.();
+        if (vazio) { g.select(r, col); g.setCellData(r, col, null, true); via = 'modelo'; forma = 'limpar'; }
+        else for (const f of formas(c.valor, g.columns[col].dataType)) {
+          via = tentar(g, r, col, f.v);
+          if (via) { forma = f.nome; break; }
+          try { g.setCellData(r, col, null, true); } catch { /* nada a limpar */ }   // não deixa um valor inválido para trás
         }
-        if (!ok) { g.setCellData(r, col, vazio ? null : c.valor, true); ok = true; via = 'modelo'; }
       } catch (e) {
         try { g.cancelEdit?.(); } catch { /* nada a cancelar */ }
         faltaram.push({ ...c, motivo: `erro ao digitar (${String(e?.message || e).slice(0, 50)})` }); continue;
       }
-      const depois = g.getCellData(r, col, false);
-      if (!vazio && (depois == null || depois === '' || (typeof depois === 'number' && Number.isNaN(depois)))) { faltaram.push({ ...c, motivo: 'o portal não aceitou o valor' }); continue; }
-      feitas.push({ empregado: c.empregado, evento: c.evento, antes, via });
+      if (!via) {
+        faltaram.push({ ...c, motivo: 'o portal não aceitou o valor' });
+        const info = { tipoDado: g.columns[col].dataType ?? null, formato: String(g.columns[col].format || ''), mascara: String(g.columns[col].mask || '') };
+        if (!recusas.some(x => x.tipoDado === info.tipoDado && x.formato === info.formato && x.mascara === info.mascara)) recusas.push(info);
+        continue;
+      }
+      formasUsadas[forma] = (formasUsadas[forma] || 0) + 1;
+      feitas.push({ empregado: c.empregado, evento: c.evento, antes, via, forma });
     }
-    return { ok: true, feitas, faltaram };
+    return { ok: true, feitas, faltaram, recusas, formas: formasUsadas };
   }
 
   document.addEventListener('ct-grade-pedido', (e) => {

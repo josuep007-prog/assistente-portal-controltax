@@ -876,6 +876,12 @@ async def teste_grade_api(b):
     usada = await pg.evaluate("window.__apiUsada || 0")
     check(r.get('ok') and r.get('n') == 2 and v.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7' and v.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '3' and usada == 2, f"planilha do portal: lança pelo objeto da planilha, sem clicar na tela ({r.get('n')} de 3; modelo {v}; usada {usada}x)")
     check(len(r.get('faltaram', [])) == 1 and 'fora da grade' in (r['faltaram'][0].get('motivo') or ''), f"planilha do portal: funcionário que não existe volta com o motivo ({r.get('faltaram')})")
+    # 2.25.1: rubricas que o portal bloqueia e formato que o portal recusa (horas × decimal)
+    check(g.get('bloqueadas') == ['180 - RUBRICA I'], f"planilha do portal: a leitura diz quais rubricas o portal bloqueia ({g.get('bloqueadas')})")
+    r2 = await pg.evaluate("window.__ctSim.hooks().grade.escrever([{ empregado: 'FUNCIONARIO M TESTE', evento: '170 - RUBRICA H', valor: '01:30' }, { empregado: 'FUNCIONARIO M TESTE', evento: '180 - RUBRICA I', valor: '5' }])")
+    v2 = await pg.evaluate("window.__vals")
+    check(r2.get('n') == 1 and v2.get('FUNCIONARIO M TESTE|170 - RUBRICA H') == '1,5' and r2.get('formas', {}).get('horas em decimal') == 1, f"planilha do portal: horas 01:30 recusadas na coluna numérica entram como decimal 1,5 ({v2.get('FUNCIONARIO M TESTE|170 - RUBRICA H')!r}; {r2.get('formas')})")
+    check(len(r2.get('faltaram', [])) == 1 and 'bloqueada' in (r2['faltaram'][0].get('motivo') or '') and not v2.get('FUNCIONARIO M TESTE|180 - RUBRICA I'), f"planilha do portal: rubrica bloqueada não é lançada e volta com o motivo ({r2.get('faltaram')})")
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
@@ -1048,6 +1054,18 @@ async def teste_excel_rubricas(b):
         nomes_abas = z.read('xl/workbook.xml').decode('utf-8')
     check(d.suggested_filename == 'lancamento-de-rubricas-2026-11.xlsx', f'excel: o arquivo se chama como a competência ({d.suggested_filename})')
     check('FUNCIONARIO B TESTE' in textos and 'FUNCIONARIO N TESTE' in textos and '110 - RUBRICA B' in textos and '190 - RUBRICA J' in textos and 'Rubricas' in nomes_abas and 'Como usar' in nomes_abas, 'excel: o .xlsx tem todos os funcionários e todas as rubricas da grade do portal, e a aba "Como usar"')
+    # 2.25.1: a rubrica bloqueada pelo portal fica travada na planilha, e o comando avisa em vez de tentar
+    bl = await pn.evaluate("[...document.querySelectorAll('.plan-tabela tbody tr:first-child input')].map(i => i.disabled)")
+    check(bl.count(True) == 1 and bl[8] is True, f'excel: só a rubrica bloqueada pelo portal fica travada na planilha ({bl})')
+    await pn.fill('#plan-cmd-txt', 'funcionario b teste 5 rubrica i'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(2500)
+    cm = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
+    check('não deixa lançar' in cm and not (await pg.evaluate("window.__vals || {}")).get('FUNCIONARIO B TESTE|180 - RUBRICA I'), f'excel: o comando avisa da rubrica bloqueada e não a lança ({cm[:90]!r})')
+    # a marca vermelha sai sozinha quando o portal passa a aceitar o valor
+    await pn.fill('.plan-tabela input[data-i="1"][data-j="7"]', 'abc'); await pg.wait_for_timeout(2500)
+    marcada = await pn.evaluate("document.querySelector('.plan-tabela input[data-i=\"1\"][data-j=\"7\"]').closest('td').classList.contains('plan-falhou')")
+    await pn.fill('.plan-tabela input[data-i="1"][data-j="7"]', '2'); await pg.wait_for_timeout(2500)
+    marcada2 = await pn.evaluate("document.querySelector('.plan-tabela input[data-i=\"1\"][data-j=\"7\"]').closest('td').classList.contains('plan-falhou')")
+    check(marcada and not marcada2, f'excel: a marca vermelha aparece quando o portal recusa e sai quando ele aceita ({marcada}, {marcada2})')
     # fixar uma planilha preenchida: o Excel em português salva .csv com ponto e vírgula
     csv = 'Funcionário;110 - RUBRICA B;190 - RUBRICA J;Total\nFUNCIONARIO B TESTE;4;;9\nFUNCIONARIO M TESTE;;7;\nFULANO NAO EXISTE;1;;\n'.encode('utf-8')
     await pn.set_input_files('#plan-arquivo', files=[{'name': 'preenchida.csv', 'mimeType': 'text/csv', 'buffer': csv}])
