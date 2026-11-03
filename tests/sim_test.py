@@ -1503,8 +1503,9 @@ async def teste_sino(b):
     # marcar como lidas: zera, mostra o estado vazio e continua zerado depois de recarregar
     await pn().click('#sino-b'); await pn().click('#sino-lidas'); await pg.wait_for_timeout(300)
     check(await pn().locator('#sino-n').is_hidden() and 'Nenhuma novidade' in await pn().locator('#sino-pop').inner_text(), 'sino: Marcar como lidas zera o contador e mostra "Nenhuma novidade"')
+    await pg.wait_for_timeout(600)   # as transições (balão, toast, cartões) terminam antes de medir
     r = await pn().evaluate(medir, lib)
-    check(not r, f'contraste do sino vazio: {len(r)} texto(s) abaixo de 4,5:1')
+    check(not r, f'contraste do sino vazio: {len(r)} texto(s) abaixo de 4,5:1 {[(x["texto"][:28], x["r"], x["fg"], x["bg"]) for x in r[:4]]}')
     await pg.keyboard.press('Escape')
     await pg.reload(); await pg.wait_for_timeout(3500)
     await espera(lambda: pn().evaluate("!!document.querySelector('#sino-b')"), 10)
