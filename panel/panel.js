@@ -9,7 +9,7 @@ import { admissaoDe, gerarTextos, valoresParaChecar } from './painel/valores.js'
 import { renderFieldsOnly, renderPreencher } from './painel/preencher.js';
 import { aplicarSugestoes, contextoModelo, fillPortal, gerarPeloModelo, maskInput } from './painel/formulario.js';
 import { renderModelosInicio } from './painel/portal.js';
-import { carregarHistorico, comecarDoZeroSeAbandonado, copiarDiagnostico, guardarEquipe, nomeCurto, renderAvisosInicio, renderFaq, renderRepetir, ligar as ligarFacilidades } from './painel/facilidades.js';
+import { carregarHistorico, comecarDoZeroSeAbandonado, copiarDiagnostico, guardarEquipe, nomeCurto, renderAvisosInicio, renderFaq, renderRepetir, retomarPlanilha, ligar as ligarFacilidades } from './painel/facilidades.js';
 import { prazosDoHistorico } from './painel/historico.js';
 import { mensagemAdmissao, renderConfig, renderFerramentas } from './painel/config.js';
 
@@ -25,7 +25,7 @@ definirPlat(montarPlataforma({
   setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
   renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
   prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado, copiarDiagnostico,
-  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar, renderFieldsOnly, packFiles
+  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar, renderFieldsOnly, packFiles, retomarPlanilha
 }));
 
 /* =================== Início =================== */

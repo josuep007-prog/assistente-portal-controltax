@@ -17,7 +17,7 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
-## Novidades da 2.23 — o melhor do desenho do Control Onvio, adaptado ao cliente
+## Novidades da 2.24 — o melhor do desenho do Control Onvio, adaptado ao cliente
 
 - **Contraste:** tokens `--ink-2`/`--ink-3` mais fortes e fundos cheios com texto branco (`--red-solid`, `--blue-solid`, `--grey-solid`, `--on-solid`); `tests/contraste-lib.js` mede todo texto visível nos dois temas (`SIM_SO=ct`).
 - **Sino e trilho:** `ct.sinoVisto` guarda só tipo, id, situação e data (`mensagens.sino`, `config.sino`); resumo de uma linha na dica do trilho (`mensagens.trilhoResumo`).

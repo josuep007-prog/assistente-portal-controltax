@@ -1008,3 +1008,10 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 /* Janela de resumo antes de enviar (2.22.1): por cima da barra lateral, com largura própria e centralizada (antes ocupava a tela toda e a barra cobria a borda esquerda) */
 body.plat .modal { z-index: 60; padding: 16px; }
 body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(100vh - 32px); }
+
+/* Resumo antes de enviar — valores do Lançamento de Rubricas (2.23.0) */
+.resumo-valores { margin-top: 12px; }
+.resumo-valores .rv-rolagem { max-height: 240px; overflow: auto; margin-top: 4px; border: 1px solid var(--rule); border-radius: 4px; padding: 0 8px; }
+.resumo-valores .tbl-linhas { margin: 0; }
+.resumo-valores .tbl-linhas th { position: sticky; top: 0; background: var(--surface); }
+.ok-txt { color: var(--ok, #1f7a4d); } .warn-txt { color: var(--warn, #b45309); }

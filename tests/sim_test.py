@@ -940,6 +940,74 @@ async def teste_comando_rubricas(b):
     tarefa_emp.cancel()
     await ctx.close()
 
+async def teste_rascunho_rubricas(b):
+    """2.23.0: o resumo mostra os valores conferidos com a grade do portal; o rascunho guarda a planilha e volta ao reabrir."""
+    print('\n[rascunho] resumo com os valores e rascunho da planilha de rubricas')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e) + ' @ ' + str(getattr(e, 'stack', '') or '').replace(chr(10), ' | ')[:260]))
+    async def abrir():
+        pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+        async def _auto():
+            while True:
+                try:
+                    if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+                except Exception: pass
+                await asyncio.sleep(0.15)
+        t = asyncio.create_task(_auto())
+        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+        await pn.click('.pd-escolha .intent[data-tipo="rubricas"]')
+        return pn, t
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
+    pn, tarefa = await abrir()
+    for _ in range(40):
+        if await pn.locator('#plan-cmd-txt').count(): break
+        await pg.wait_for_timeout(300)
+    await pn.fill('#plan-cmd-txt', 'Mês passado: funcionario b teste 4 rubrica b e funcionario m teste 7 rubrica j'); await pn.click('#plan-cmd-go')
+    ok = False
+    for _ in range(80):
+        if await pn.evaluate("(document.querySelector('#plan-cmd-res')?.innerText || '').includes('Preenchi 2')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    await pg.wait_for_timeout(1500)
+    v = await pg.evaluate("window.__vals")
+    check(ok and v.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '4' and v.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7', f'rascunho: o comando preenche a planilha e a grade do portal ({v})')
+    await pn.click('#plan-rascunho'); await pg.wait_for_timeout(800)
+    st = await pn.evaluate("document.querySelector('#plan-status')?.innerText || ''")
+    gravado = await pn.evaluate("chrome.storage.local.get('rascunhos').then(r => JSON.stringify(r.rascunhos || {}))")
+    check('Rascunho salvo' in st and '"planilha"' in gravado and 'FUNCIONARIO M TESTE' in gravado, f'rascunho: "Salvar rascunho" guarda a planilha neste computador ({st[:50]!r})')
+    await pn.click('#btn-send')
+    for _ in range(30):
+        if await pn.locator('#modal .resumo-valores').count(): break
+        await pg.wait_for_timeout(300)
+    linhas = await pn.evaluate("[...document.querySelectorAll('#modal .resumo-valores tbody tr')].map(t => t.innerText.replace(/\\s+/g, ' ').trim())")
+    check(len(linhas) == 2 and all('na grade' in x for x in linhas), f'resumo: mostra os valores lançados e confere com a grade do portal ({linhas})')
+    check(await pn.locator('#m-rasc').count() == 1, 'resumo: tem o botão "Salvar rascunho"')
+    await pn.click('#m-rasc'); await pg.wait_for_timeout(600)
+    check(await pn.locator('#modal .sheet').count() == 0, 'resumo: "Salvar rascunho" guarda e fecha a janela')
+    tarefa.cancel()
+    # sair e voltar: a página é recarregada (tudo da memória some); o rascunho continua guardado
+    await pg.reload(); await pg.wait_for_timeout(3500)
+    await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/payroll-entries/add')"); await pg.wait_for_timeout(1500)
+    pn, tarefa = await abrir()
+    for _ in range(40):
+        if await pn.locator('#rasc-sim').count(): break
+        await pg.wait_for_timeout(300)
+    check(await pn.locator('#rasc-sim').count() == 1, 'rascunho: ao reabrir as rubricas, oferece "Continuar"')
+    if await pn.locator('#rasc-sim').count():
+        await pn.click('#rasc-sim')
+        ok = False
+        for _ in range(100):
+            vv = await pg.evaluate("window.__vals || {}")
+            if vv.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '4' and vv.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7': ok = True; break
+            await pg.wait_for_timeout(300)
+        check(ok, f'rascunho: "Continuar" abre a planilha do portal e devolve os valores guardados ({vv})')
+    tarefa.cancel()
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_tela_muda(b):
     """2.20.8: se o serviço de fundo da extensão não responde, Configurações não fica muda: avisa e deixa tentar de novo."""
     print('\n[telas] Configurações com o serviço de fundo parado')
@@ -1901,7 +1969,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2295,7 +2363,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
