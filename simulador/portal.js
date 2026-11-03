@@ -502,7 +502,7 @@
             isReadOnly: false,
             rows: { length: NOMES.length }, columns: (function () { var c = [{ header: 'Nome' }]; EVS.forEach(function (e, j) { c.push({ header: e, isReadOnly: j === 8, dataType: j === 7 ? 2 : 1, format: j === 7 ? 'n2' : '' }); }); return c; })(),   // RUBRICA I só leitura; RUBRICA H numérica (recusa 01:30, como o portal real recusava as horas)
             getCellData: function (r, c) { return c === 0 ? NOMES[r] : (window.__vals[NOMES[r] + '|' + EVS[c - 1]] || ''); },
-            setCellData: function (r, c, v) { var txt = v == null ? '' : String(v); if (fake.columns[c].dataType === 2 && txt !== '' && !/^-?\d+([.,]\d+)?$/.test(txt)) txt = ''; window.__vals[NOMES[r] + '|' + EVS[c - 1]] = txt; window.__apiUsada = (window.__apiUsada || 0) + 1; desenha(); return true; },
+            setCellData: function (r, c, v) { var txt = v == null ? '' : String(v); if (c === 7 && /^\d{1,2}:\d{2}$/.test(txt)) txt = txt.replace(/^(\d{1,2}):/, function (m, h) { return ('00' + h).slice(-3) + ':'; }); if (fake.columns[c].dataType === 2 && txt !== '' && !/^-?\d+([.,]\d+)?$/.test(txt)) txt = ''; window.__vals[NOMES[r] + '|' + EVS[c - 1]] = txt; window.__apiUsada = (window.__apiUsada || 0) + 1; desenha(); return true; },
             select: function () {}, scrollIntoView: function () {},
             startEditing: function (full, r, c) { cur = { r: r, c: c }; ed = document.createElement('input'); return true; },
             get activeEditor() { return ed; },

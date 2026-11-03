@@ -1173,6 +1173,56 @@ async def teste_competencia_comando(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def teste_resumo_conferencia(b):
+    """2.25.5: o resumo antes de enviar não acusa o mesmo valor em outro formato (12:45 × 012:45) e oferece "Relançar os que não conferem"."""
+    print('\n[resumo] conferência dos valores com a grade do portal')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="rubricas"]')
+    for _ in range(40):
+        if await pn.locator('#plan-carregar').count(): break
+        await pg.wait_for_timeout(300)
+    await pg.evaluate("window.__ctSim.hooks().preencher('rubricas', { competencia: '11/2026' }, {})"); await pg.wait_for_timeout(800)
+    await pn.click('#plan-carregar')
+    for _ in range(80):
+        if await pn.evaluate("document.querySelectorAll('.plan-tabela tbody tr').length === 14"): break
+        await pg.wait_for_timeout(300)
+    await pn.fill('.plan-tabela input[data-i="1"][data-j="6"]', '12:45'); await pg.wait_for_timeout(2500)   # o portal guarda 012:45
+    await pn.fill('.plan-tabela input[data-i="1"][data-j="0"]', '4'); await pg.wait_for_timeout(2500)
+    guardado = (await pg.evaluate("window.__vals || {}")).get('FUNCIONARIO B TESTE|160 - RUBRICA G')
+    await pg.evaluate("window.__vals['FUNCIONARIO B TESTE|100 - RUBRICA A'] = '9'")   # algo mexeu na grade do portal: o valor agora é outro
+    await pn.click('#btn-send')
+    for _ in range(40):
+        if await pn.locator('#modal .resumo-valores').count(): break
+        await pg.wait_for_timeout(300)
+    linhas = await pn.evaluate("[...document.querySelectorAll('#modal .resumo-valores tbody tr')].map(t => t.innerText.replace(/\\s+/g, ' ').trim())")
+    check(guardado == '012:45' and any('RUBRICA G' in x and 'na grade' in x for x in linhas), f'resumo: o mesmo valor em outro formato (12:45 × {guardado}) conta como conferido ({linhas})')
+    check(any('RUBRICA A' in x and 'grade tem 9' in x for x in linhas) and await pn.locator('#m-relancar').count() == 1, 'resumo: o valor que realmente mudou é acusado e aparece "Relançar os que não conferem"')
+    await pn.click('#m-relancar')
+    for _ in range(60):
+        if await pn.locator('#modal .resumo-valores').count(): break
+        await pg.wait_for_timeout(300)
+    await pg.wait_for_timeout(800)
+    linhas2 = await pn.evaluate("[...document.querySelectorAll('#modal .resumo-valores tbody tr')].map(t => t.innerText.replace(/\\s+/g, ' ').trim())")
+    v = await pg.evaluate("window.__vals || {}")
+    check(v.get('FUNCIONARIO B TESTE|100 - RUBRICA A') == '4' and linhas2 and all('na grade' in x for x in linhas2) and await pn.locator('#m-relancar').count() == 0, f'resumo: "Relançar" corrige a grade e o resumo reabre sem pendências ({v.get("FUNCIONARIO B TESTE|100 - RUBRICA A")!r}; {linhas2})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
 async def teste_tela_muda(b):
     """2.20.8: se o serviço de fundo da extensão não responde, Configurações não fica muda: avisa e deixa tentar de novo."""
     print('\n[telas] Configurações com o serviço de fundo parado')
@@ -2141,7 +2191,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2535,7 +2585,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)

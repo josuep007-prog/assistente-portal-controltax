@@ -251,6 +251,25 @@ export function lerPlanilhaDaGrade(abas, eventos, empregados) {
   return { formato: 'grade', aba: aba.nome || '', celulas, semEmpregado, semEvento };
 }
 
+/** O valor da planilha e o que a grade do portal tem são o mesmo? O portal reescreve o formato ("12:45" fica "012:45", "350" fica "350,00", horas podem virar
+ *  decimal): horas comparam em minutos, números pelo valor (vírgula decimal, ponto de milhar), o resto como texto sem acento e sem caixa. */
+export function mesmoValorGrade(a, b) {
+  const minutos = (x) => { const m = /^\s*(\d{1,3}):(\d{2})\s*$/.exec(String(x ?? '')); return m ? +m[1] * 60 + +m[2] : null; };
+  const numero = (x) => {
+    let v = String(x ?? '').trim().replace(/^R\$\s*/i, '');
+    if (!/^-?[\d.,]+$/.test(v)) return null;
+    if (v.includes(',')) v = v.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(v)) v = v.replace(/\./g, '');
+    const n = parseFloat(v); return Number.isFinite(n) ? n : null;
+  };
+  const ma = minutos(a), mb = minutos(b);
+  if (ma != null && mb != null) return ma === mb;
+  if (ma != null || mb != null) { const h = ma != null ? ma : mb, n = numero(ma != null ? b : a); return n != null && Math.abs(h - n * 60) < 0.5; }   // horas × decimal
+  const na = numero(a), nb = numero(b);
+  if (na != null && nb != null) return Math.abs(na - nb) < 0.005;
+  return norm(String(a ?? '')) === norm(String(b ?? ''));
+}
+
 /** Comando escrito pelo cliente ("Ronaldo 10 horas extras, Carla 2 faltas e prêmio 200 para o Artur") → células da grade do portal.
  *  Primeiro o dicionário das regras (horas extras, faltas…); depois o nome das rubricas da própria grade ("440 - PREMIO", "37 - COMISSOES"),
  *  que cobre os eventos de cada empresa. O funcionário é o da grade (nome inteiro ou só o primeiro, se for único); sem funcionário na frase vale o
