@@ -90,20 +90,15 @@ export function aoDesfazer(m) {
   if (S.view === 'preencher') render();
 }
 
-/** Valores iguais? "350" e "350,00" são o mesmo número; "10:30" compara como texto. */
-const mesmoValor = (a, b) => {
-  const n = (x) => parseFloat(String(x).replace(/\./g, '').replace(',', '.'));
-  return Number.isFinite(n(a)) && Number.isFinite(n(b)) && !/:/.test(String(a) + String(b)) ? n(a) === n(b) : E.norm(a) === E.norm(b);
-};
 /** Lançamento de Rubricas: o que a planilha lançou, conferido com o que a grade do portal tem agora (quando dá para ler). */
 function tabelaDeValores(plan, doPortal) {
   const linhas = Object.entries(plan.valores).filter(([, v]) => String(v).trim()).map(([k, v]) => { const [i, j] = k.split('|').map(Number); return { i, j, e: plan.empregados[i], r: plan.eventos[j], v: String(v) }; }).filter(x => x.e && x.r).sort((a, b) => a.i - b.i || a.j - b.j);
   const noPortal = (e, r) => (doPortal || []).find(c => E.norm(c.empregado) === E.norm(e) && E.norm(c.evento) === E.norm(r));
-  let conferidos = 0;
+  let conferidos = 0; const erradas = [];
   const trs = linhas.map(l => {
     const p = doPortal ? noPortal(l.e, l.r) : null;
-    const ok = !!p && mesmoValor(p.valor, l.v);
-    if (ok) conferidos++;
+    const ok = !!p && E.mesmoValorGrade(p.valor, l.v);
+    if (ok) conferidos++; else erradas.push(`${l.i}|${l.j}`);
     const estado = !doPortal ? '' : ok ? `<span class="ok-txt">${icon('check', 'ic-sm')} na grade</span>` : p ? `<span class="warn-txt">grade tem ${esc(p.valor)}</span>` : '<span class="warn-txt">não está na grade</span>';
     return `<tr><td>${esc(l.e)}</td><td>${esc(l.r)}</td><td class="mono">${esc(l.v)}</td>${doPortal ? `<td>${estado}</td>` : ''}</tr>`;
   });
@@ -111,12 +106,12 @@ function tabelaDeValores(plan, doPortal) {
   const soNoPortal = (doPortal || []).filter(c => !linhas.some(l => E.norm(l.e) === E.norm(c.empregado) && E.norm(l.r) === E.norm(c.evento)));
   const trs2 = soNoPortal.map(c => `<tr><td>${esc(c.empregado)}</td><td>${esc(c.evento)}</td><td class="mono">${esc(c.valor)}</td><td><span class="muted">só na grade do portal</span></td></tr>`);
   const total = linhas.length + soNoPortal.length;
-  if (!total) return { html: '', problemas: 0, conferidos: 0, total: 0 };
+  if (!total) return { html: '', problemas: 0, conferidos: 0, total: 0, erradas: [] };
   const problemas = doPortal ? linhas.length - conferidos : 0;
   const nota = !doPortal ? '<p class="muted" style="margin:6px 0 0;font-size:12px">Conferido só na planilha: não consegui ler a grade do portal. Olhe a grade do portal antes de enviar.</p>'
-    : problemas ? `<p class="warn-txt" style="margin:6px 0 0;font-size:12px">${problemas} valor(es) da planilha não estão como deveriam na grade do portal. Confira antes de enviar.</p>`
+    : problemas ? ''
     : `<p class="ok-txt" style="margin:6px 0 0;font-size:12px">${icon('check', 'ic-sm')} Os ${conferidos} valor(es) da planilha estão na grade do portal.</p>`;
-  return { html: `<div class="resumo-valores"><b>Valores lançados</b><div class="rv-rolagem"><table class="tbl-linhas"><thead><tr><th>Funcionário</th><th>Rubrica</th><th>Valor</th>${doPortal ? '<th>Na grade do portal</th>' : ''}</tr></thead><tbody>${trs.join('')}${trs2.join('')}</tbody></table></div>${nota}</div>`, problemas, conferidos, total };
+  return { erradas, html: `<div class="resumo-valores"><b>Valores lançados</b><div class="rv-rolagem"><table class="tbl-linhas"><thead><tr><th>Funcionário</th><th>Rubrica</th><th>Valor</th>${doPortal ? '<th>Na grade do portal</th>' : ''}</tr></thead><tbody>${trs.join('')}${trs2.join('')}</tbody></table></div>${nota}</div>`, problemas, conferidos, total };
 }
 
 export async function onSubmitAttempt(m) {
@@ -155,10 +150,18 @@ export async function onSubmitAttempt(m) {
     <div class="actions" style="margin-top:14px">
       ${list.length ? '<button class="btn btn-primary" id="m-fix">Corrigir agora</button>' : '<button class="btn btn-primary" id="m-send">Enviar ao escritório</button><button class="btn" id="m-fix">Voltar</button>'}
       ${list.length && !bloqueia ? '<button class="btn" id="m-send">Enviar assim mesmo</button>' : ''}
+      ${tabela.problemas ? '<button class="btn" id="m-relancar" title="Lança de novo, na grade do portal, só os valores que não conferem">Relançar os que não conferem</button>' : ''}
       <button class="btn btn-ghost" id="m-rasc" title="Guarda o que você preencheu neste computador por 7 dias, para continuar depois">${icon('file', 'ic-sm')} Salvar rascunho</button>
     </div></div>`;
   const close = () => { modal.hidden = true; modal.innerHTML = ''; };
   $('#m-fix').addEventListener('click', () => { close(); setView('preencher'); });
+  $('#m-relancar')?.addEventListener('click', async () => {
+    close(); toast('Relançando na grade do portal os valores que não conferiam…');
+    const { relancarCelulas } = await import('./planilha.js');
+    const r = await relancarCelulas(tipo, tabela.erradas);
+    toast(r.falhas ? `Relancei ${r.total}; ${r.falhas} o portal ainda recusou (estão em vermelho na planilha).` : `Relancei ${r.total} valor(es). Conferindo de novo…`);
+    S.pedirResumo = true; send({ type: 'requestSubmit' });   // abre o resumo de novo, já conferido
+  });
   $('#m-rasc')?.addEventListener('click', async () => {
     const q = await salvarRascunhoAgora(tipo);
     close();

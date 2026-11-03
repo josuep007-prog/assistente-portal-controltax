@@ -2036,4 +2036,13 @@ t('comando: "comissoes do mes anterior" vai para a rubrica do mês anterior; dú
   assert.equal(d.duvidas.length, 1); assert.equal(d.duvidas[0].valor, '30'); assert.equal(d.duvidas[0].empregado, 'CAIO SANTANA VIEIRA'); assert.deepEqual([...d.duvidas[0].opcoes].sort(), [...ev2].sort());
 });
 
+t('conferência com a grade do portal: o mesmo valor em outro formato não é erro', () => {
+  const ok = (a, b) => assert.equal(E.mesmoValorGrade(a, b), true, `${a} = ${b}`), nao = (a, b) => assert.equal(E.mesmoValorGrade(a, b), false, `${a} ≠ ${b}`);
+  ok('12:45', '012:45'); ok('01:15', '1:15'); ok('05:45', '05:45');   // o portal guarda horas com três dígitos
+  ok('403,91', '403,910'); ok('350', '350,00'); ok('1500', '1.500,00'); ok('R$ 859,67', '859,67'); ok('403.91', '403,91');
+  ok('12:45', '12,75'); ok('06:00', '6');   // horas × decimal
+  nao('12:45', '12:46'); nao('403,91', '403,92'); nao('350', '35'); nao('12:45', '13,75'); nao('5', '');
+  ok('Faltou', 'faltou');
+});
+
 console.log(`\n${n} testes ok`);

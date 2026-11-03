@@ -297,6 +297,16 @@ const agendar = (tipo) => { const P = estado(tipo); clearTimeout(P.timer); P.sta
 function marcar(tipo) { const s = $('#plan-status'); if (s) s.textContent = statusHtml(estado(tipo)); }
 
 /** As células digitadas desde a última vez vão para a grade do portal (só elas; nada que o cliente escreveu direto no portal é apagado). */
+/** Lança de novo, agora, as células pedidas (as que o resumo achou diferentes na grade do portal); devolve quantas foram e quantas o portal recusou. */
+export async function relancarCelulas(tipo, chaves) {
+  const P = estado(tipo);
+  const lista = (chaves || []).filter(k => String(P.valores[k] ?? '').trim());
+  lista.forEach(k => P.pend.add(k));
+  clearTimeout(P.timer);
+  await enviarCelulas(tipo);
+  const falhas = lista.filter(k => P.falhas.has(k)).length;
+  return { total: lista.length, falhas };
+}
 async function enviarCelulas(tipo) {
   const P = estado(tipo); if (!P.pend.size) return;
   if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) { P.status = 'Volte ao Lançamento de Rubricas no portal para lançar os valores.'; marcar(tipo); return; }
