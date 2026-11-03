@@ -747,3 +747,7 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .plan-cmd-res .tips { margin: 0; padding-left: 18px; }
 
 .plan-tabela td.plan-falhou { box-shadow: inset 0 0 0 2px var(--brand-red, #C2000C); }
+
+/* Janela de resumo antes de enviar (2.22.1): por cima da barra lateral, com largura própria e centralizada (antes ocupava a tela toda e a barra cobria a borda esquerda) */
+body.plat .modal { z-index: 60; padding: 16px; }
+body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(100vh - 32px); }
