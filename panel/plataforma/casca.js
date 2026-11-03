@@ -5,16 +5,16 @@ import { anel } from '../graficos.js';
 
 export function montarCasca(C) {
   const { A, S, $, esc, icon, request, send, toast, viewEl } = C;
-  const { MODULOS, P, TITULOS, editavel, nomeTipo, quando } = C;   // definidos em partes que montam antes
+  const { MODULOS, P, TITULOS, editavel, icTipo, itensVisiveis, nomeTipo, quando } = C;   // definidos em partes que montam antes
   const abrirBusca = (...a) => C.abrirBusca(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const montarBusca = (...a) => C.montarBusca(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   /* =================== Casca: trilho, cabeçalho, busca =================== */
   let montada = false;
   function montarCasca() {
     if (montada) return; montada = true;
-    $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" title="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t">${t}</span><span class="rail-badge" data-badge="${v}" hidden></span></button>`).join('');
+    $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>`).join('');
     $('#rail-bottom').innerHTML = [['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
-      .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" title="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t">${t}</span></button>`).join('');
+      .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b></span></button>`).join('');
     document.querySelectorAll('#rail [data-mod]').forEach(b => b.addEventListener('click', () => {
       // "Novo pedido" de novo, com o formulário na tela: volta para a escolha do tipo (o pedido aberto pode ser retomado)
       if (b.dataset.mod === 'preencher' && S.view === 'preencher' && S.ctx.route?.mode === 'form' && !S.plat.escolher) { S.plat.escolher = true; P.render('preencher'); return; }
@@ -43,6 +43,8 @@ export function montarCasca(C) {
       const files = [...(e.dataTransfer?.files || [])]; if (!files.length) return;
       e.preventDefault(); S.plat.escolher = false; A.handleFiles(files, 'arrastar');
     });
+    montarSino();
+    atualizarResumos(); setInterval(atualizarResumos, 2000);
     montarBusca();
   }
   function marcarModulo(v) {
@@ -100,7 +102,77 @@ export function montarCasca(C) {
     el.querySelectorAll('[data-sync-anel]').forEach(x => { x.style.setProperty('--p', falta == null ? '0%' : `${Math.round((1 - falta / total) * 100)}%`); });
     el.querySelectorAll('[data-sync-prox]').forEach(x => { x.textContent = falta == null ? 'automática' : falta < 1000 ? 'agora' : `em ${Math.ceil(falta / 1000)} s`; });
   }
+  /* Resumo de uma linha na etiqueta do trilho (ao passar o mouse ou focar): o que importa em cada seção, só quando há algo. */
+  function atualizarResumos() {
+    const m = S.rules?.mensagens?.trilhoResumo || {};
+    const frase = (k, n) => n ? ((m[k] || [])[n === 1 ? 0 : 1] || '').replace('{n}', n) : '';
+    const itens = itensVisiveis();
+    const hoje = E.today();
+    const resumos = {
+      pendencias: frase('esperam', itens.filter(i => i.aguardando).length),
+      inicio: frase('prescrevem', itens.filter(i => E.motivoCliente(i, hoje, S.rules) === 'prescreve').length),
+      documentos: frase('novos', S.plat.docs?.disponivel ? S.plat.docs.itens.filter(x => x.lido === false).length : 0)
+    };
+    document.querySelectorAll('[data-resumo]').forEach(el => {
+      const t = resumos[el.dataset.resumo] || '';
+      if (el.textContent !== t) el.textContent = t;
+      el.hidden = !t;
+    });
+  }
+
+  /* Sino de novidades (lógica em engine/sino.js): solicitações cujo estado mudou desde a última leitura do cliente.
+     No navegador fica só uma foto mínima (ids, situação, data) em localStorage ('ct.sinoVisto'); nada de nomes nem assuntos.
+     A primeira leitura só marca o ponto de partida. As novidades ficam até serem lidas (clicar em uma ou "Marcar como lidas"). */
+  const CHAVE_SINO = 'ct.sinoVisto';
+  const lerSino = () => { try { const v = JSON.parse(localStorage.getItem(CHAVE_SINO)); return v && v.v === 1 && v.itens ? v : null; } catch { return null; } };
+  const gravarSino = (f) => { try { localStorage.setItem(CHAVE_SINO, JSON.stringify(f)); } catch { /* sem armazenamento */ } };
+  const msgSino = (k) => S.rules?.mensagens?.sino?.[k] || '';
+  let novidades = [], pontoDePartida = false;
+  function montarSino() {
+    const el = $('#plat-sino'); if (!el || el.firstElementChild) return;
+    el.innerHTML = `<button type="button" class="sino-b" id="sino-b" aria-haspopup="dialog" aria-expanded="false" aria-controls="sino-pop">${icon('bell')}<span class="sino-n" id="sino-n" hidden></span></button>
+      <div class="sino-pop" id="sino-pop" role="dialog" aria-label="${esc(msgSino('titulo') || 'Novidades')}" hidden></div>`;
+    const b = $('#sino-b'), pop = $('#sino-pop');
+    const abrir = (sim) => { pop.hidden = !sim; b.setAttribute('aria-expanded', String(sim)); if (sim) { desenharSino(); pop.querySelector('button')?.focus(); } };
+    b.addEventListener('click', () => abrir(pop.hidden));
+    el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) { e.stopPropagation(); abrir(false); b.focus(); } });
+    el.addEventListener('focusout', (e) => { if (!pop.hidden && e.relatedTarget && !el.contains(e.relatedTarget)) abrir(false); });
+    document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !el.contains(e.target)) abrir(false); }, true);
+    pop.addEventListener('click', (e) => {
+      const li = e.target.closest('[data-sino]'), todas = e.target.closest('#sino-lidas');
+      if (todas) { gravarSino(E.marcarVistas(lerSino(), S.plat.sol?.itens || [], null, S.rules)); atualizarSino(); return; }
+      if (!li) return;
+      const n = novidades[+li.dataset.sino]; if (!n) return;
+      gravarSino(E.marcarVistas(lerSino(), S.plat.sol?.itens || [], [n.chave], S.rules));
+      abrir(false); atualizarSino();
+      C.abrirDetalhe?.(n.item);
+    });
+  }
+  function desenharSino() {
+    const pop = $('#sino-pop'); if (!pop || pop.hidden) return;
+    const max = +S.rules?.config?.sino?.maxLinhas || 8;
+    const linhas = novidades.slice(0, max);
+    const dia = (i) => { if (!i.atualizado) return ''; const d = E.diffDays(new Date(i.atualizado.toDateString()), E.today()); return d <= 0 ? 'hoje' : d === 1 ? 'ontem' : `há ${d} dias`; };
+    pop.innerHTML = `<div class="sino-head"><b>${esc(msgSino('titulo') || 'Novidades')}</b>${novidades.length ? `<button type="button" class="btn btn-sm btn-ghost" id="sino-lidas">${esc(msgSino('marcarLidas') || 'Marcar como lidas')}</button>` : ''}</div>
+      ${linhas.length ? `<ul class="sino-lista">${linhas.map((n, k) => `<li><button type="button" class="sino-li sino-${n.tipo}" data-sino="${k}">${icTipo(n.item.tipo)}<span class="sino-tx">${esc(n.texto)}<small>${esc([dia(n.item), n.item.empresa && C.variasEmpresas?.(S.plat.sol?.itens) ? n.item.empresa : ''].filter(Boolean).join(' · '))}</small></span></button></li>`).join('')}</ul>
+        ${novidades.length > max ? `<p class="sino-mais">${esc(msgSino('maisN').replace('{n}', novidades.length - max))}</p>` : ''}`
+      : `<div class="sino-vazio"><b>${esc(msgSino('vazio') || 'Nenhuma novidade')}</b><span>${esc(pontoDePartida ? msgSino('primeira') : msgSino('vazioSub'))}</span></div>`}`;
+  }
+  function atualizarSino() {
+    atualizarResumos();
+    const sol = S.plat.sol; if (!sol?.ok || sol.semAcesso) return;
+    let visto = lerSino();
+    if (!visto) {   // primeira leitura: só o ponto de partida (e só com a leitura completa)
+      if (sol.erros.length) return;
+      visto = E.fotoSino(sol.itens, S.rules); gravarSino(visto); pontoDePartida = true;
+    }
+    novidades = E.novidadesSino(sol.itens, visto, S.rules);
+    const n = novidades.length, c = $('#sino-n'), b = $('#sino-b'); if (!c || !b) return;
+    c.hidden = !n; c.textContent = n > 99 ? '99+' : String(n);
+    b.setAttribute('aria-label', n ? `${msgSino('botao') || 'Novidades'}: ${n} ${n === 1 ? 'nova' : 'novas'}` : (msgSino('botao') || 'Novidades'));
+    desenharSino();
+  }
   function atualizarCabecalho() { const e = $('#plat-empresa'); if (e) e.textContent = S.ctx.empresa || 'Portal do Cliente'; }
 
-  Object.assign(C, { atualizarCabecalho, atualizarSync, badge, estadoLeitura, hora, marcarModulo, montarCasca });
+  Object.assign(C, { atualizarCabecalho, atualizarSino, atualizarSync, badge, estadoLeitura, hora, marcarModulo, montarCasca });
 }

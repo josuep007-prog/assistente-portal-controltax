@@ -1,7 +1,7 @@
 /* Plataforma — Tela Hoje e atalhos que abrem um pedido já com dados.
  * Recebe o contexto compartilhado (C) e registra nele o que outras partes usam. */
 import * as E from '../engine.js';
-import { anel, animarNumeros, ligarDicas, cor } from '../graficos.js';
+import { anel, animarNumeros, barrasEmpilhadas, cor, ligarDicas, linhaSimples, miniBarras } from '../graficos.js';
 
 export function montarHoje(C) {
   const { A, S, $, esc, icon, request, send, toast, viewEl } = C;
@@ -27,6 +27,29 @@ export function montarHoje(C) {
   const empDe = (i) => (i.empregado && !E.norm(i.assunto).includes(E.norm(i.empregado)) ? i.empregado : '');   // sem repetir o nome que já está no assunto
   const saudacao = () => { const h = new Date().getHours(); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
   const lembretesDeHoje = () => { const h = E.today(); const cal = E.makeCalendar(S.rules.feriados); return S.plat.lembretes.filter(l => E.ocorrencias(l, h, h, cal).length); };
+
+  /* ---------- Seções recolhíveis e dica ⓘ ----------
+     Cada seção abaixo do destaque é um painel com cabeçalho clicável (seta, aria-expanded, contador à direita). Abre sozinho
+     quando há algo para o cliente fazer; o que ele abrir ou fechar fica neste navegador (ct.hojeSecoes: só ids e true/false).
+     Os textos de ajuda ficam na dica ⓘ (data-tip, também pelo teclado) e vêm das regras (config.hoje.ajudas). */
+  const lerSecoes = () => { try { const o = JSON.parse(localStorage.getItem('ct.hojeSecoes') || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };
+  const gravarSecao = (id, aberto) => { try { localStorage.setItem('ct.hojeSecoes', JSON.stringify({ ...lerSecoes(), [id]: !!aberto })); } catch { /* sem armazenamento: vale só nesta visita */ } };
+  const ajuda = (k) => S.rules.config?.hoje?.ajudas?.[k] || '';
+  const dicaI = (texto, rot = 'Ajuda') => texto ? `<button type="button" class="dica-i" data-tip="${esc(texto)}" aria-label="${esc(`${rot}: ${texto}`)}">${icon('info', 'ic-sm')}</button>` : '';
+  /** { id, titulo (HTML), resumo (texto curto ao lado do título), contador, direita (HTML), dica, padrao (abre sozinha?), cls, corpo, corpoCls } */
+  function painel({ id, titulo, resumo = '', contador = null, direita = '', dica = '', padrao = false, cls = '', corpo, corpoCls = 'pn-card-body eq-body' }) {
+    const guardado = lerSecoes()[id], aberto = typeof guardado === 'boolean' ? guardado : !!padrao;
+    return `<section class="pn-card hj-painel${aberto ? ' aberto' : ''}${cls ? ' ' + cls : ''}" id="${id}" data-painel="${id}">
+      <div class="hj-painel-h"><button type="button" class="hj-painel-bt" aria-expanded="${aberto}" aria-controls="${id}-c"><span class="hj-seta">${icon('right', 'ic-sm')}</span><span class="hj-painel-t">${titulo}</span>${resumo ? `<span class="hj-painel-r">${esc(resumo)}</span>` : ''}<span class="spacer"></span>${direita}${contador != null ? `<span class="eq-n">${contador}</span>` : ''}</button>${dicaI(dica, 'Sobre esta seção')}</div>
+      <div class="hj-painel-c ${corpoCls}" id="${id}-c"${aberto ? '' : ' hidden'}>${corpo}</div></section>`;
+  }
+  function ligarPaineis(raiz) {
+    raiz.querySelectorAll('.hj-painel-bt').forEach(b => b.addEventListener('click', () => {
+      const sec = b.closest('.hj-painel'), c = sec.querySelector(':scope > .hj-painel-c');
+      const abrir = c.hidden; c.hidden = !abrir; sec.classList.toggle('aberto', abrir); b.setAttribute('aria-expanded', String(abrir));
+      gravarSecao(sec.dataset.painel, abrir);
+    }));
+  }
 
   /* ---------- Atalhos que abrem um pedido já com dados (20, 21, 40) ---------- */
   const admissaoDe = (nome) => A.admissaoDe?.(nome) || E.parseDate((S.plat.emp?.lista || []).find(e => E.norm(e.nome) === E.norm(nome))?.admissao) || null;
@@ -244,7 +267,7 @@ export function montarHoje(C) {
       <div id="avisos-esc"></div>
       <div id="lote"></div>
       ${enviado}${aviso}<div id="proximo"></div>
-      <p class="hj-saud"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</p>
+      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}</p>
       <div class="dp-toolbar hj-barra">
         ${seletorEmpresa()}
         <span class="dp-count">${lido ? plural(base.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length, 'em aberto', 'em aberto') : ''}</span>
@@ -330,7 +353,9 @@ export function montarHoje(C) {
           ? (x.pagamento ? `Férias${x.inicio ? ` em ${fmt(x.inicio).slice(0, 5)}` : ''} · pedir o cálculo até ${fmt(x.enviarAte).slice(0, 5)} · pagar até ${fmt(x.pagamento).slice(0, 5)}` : 'Aviso de férias sem o cálculo · confira as datas no aviso')
           : (x.pagamento ? `Rescisão · pedir o cálculo até ${fmt(x.enviarAte).slice(0, 5)} · pagar até ${fmt(x.pagamento).slice(0, 5)} (aviso indenizado)` : 'Aviso de rescisão sem o cálculo · confira as datas no aviso'),
         pillQ(x.enviarAte || x.pagamento), S.rules.tipos[x.calculo] ? { rotulo: 'Pedir o cálculo', fn: () => pedirCalculoDoAviso(x.item) } : null, () => abrirDetalhe(x.item)));
-      const card = (id, titulo, sub, linhas, txtVazio) => `<section class="pn-card" id="${id}"><div class="pn-card-head"><h3>${titulo} <span class="eq-n">${linhas.length}</span></h3><small>${esc(sub)}</small></div><div class="pn-card-body eq-body">${linhas.length ? `<div class="eq-lista">${linhas.join('')}</div>` : vazio(txtVazio)}</div></section>`;
+      // abre sozinho quando há algo a fazer (padrao); senão fica recolhido, com o contador à vista
+      const card = (id, titulo, ajudaK, linhas, txtVazio, padrao = linhas.length > 0) => painel({ id, titulo: esc(titulo), contador: linhas.length, dica: ajuda(ajudaK), padrao: padrao && linhas.length > 0,
+        corpo: linhas.length ? `<div class="eq-lista">${linhas.join('')}</div>` : vazio(txtVazio) });
       const leg = legais.map(x => linha(x.item.empregado || x.item.assunto || nomeTipo(x.item.tipo), `${x.titulo} até ${fmt(x.alvo)} · ${x.ref}${x.retroativa ? ' · pedido depois do início' : ''}`, pillQ(x.alvo), null, () => abrirDetalhe(x.item, { aba: 'observar' })));
       // o que foi preenchido e não enviado nos últimos 7 dias e os rascunhos da empresa
       const term = paraTerminar().map(x => linha(x.titulo, x.sub, `<span class="pill pill-today">${x.quando}</span>`, { rotulo: 'Continuar', cls: 'btn-primary', fn: x.fn }));
@@ -338,9 +363,10 @@ export function montarHoje(C) {
       const folhaCard = () => {
         if (!folha) return '';
         const n = (fn) => { acoesEq.push({ acao: fn }); return acoesEq.length - 1; };
-        return `<section class="pn-card hj-folha" id="eq-folha"><div class="pn-card-head"><h3>Variáveis da folha de ${esc(folha.competencia)}</h3><small>Ainda não enviadas · envie até ${fmt(folha.limite)}</small></div>
-          <div class="pn-card-body eq-body"><div class="pn-li eq-li folha-drop"><div class="main"><b>Horas extras, faltas, comissões… do mês</b><small>Arraste a planilha aqui ou prepare o lançamento (${esc(folha.tipoLancamento)}, competência ${esc(folha.competencia)}, para você conferir).</small></div><div class="eq-acoes">${pillQ(folha.limite)}</div></div>
-          <div class="eq-acoes folha-acoes"><button type="button" class="btn btn-sm btn-primary" data-eq="${n(() => prepararFolha(folha))}" data-folha="preparar">Preparar</button><button type="button" class="btn btn-sm" data-eq="${n(() => usarMesPassado(folha))}" data-folha="passado">Usar o lançamento do mês passado</button><button type="button" class="btn btn-sm btn-ghost" data-eq="${n(() => nadaALancar(folha))}" data-folha="nada">Nada a lançar este mês</button></div></div></section>`;
+        return painel({ id: 'eq-folha', cls: 'hj-folha', titulo: `Variáveis da folha de ${esc(folha.competencia)}`, resumo: `Ainda não enviadas · envie até ${fmt(folha.limite)}`, direita: pillQ(folha.limite), padrao: true,
+          dica: `${ajuda('folha')} Preparar abre o Lançamento de Rubricas (${folha.tipoLancamento}, competência ${folha.competencia}) para você conferir.`,
+          corpo: `<div class="pn-li eq-li folha-drop"><div class="main"><b>Horas extras, faltas, comissões… do mês</b><small>Arraste a planilha aqui ou use um dos botões.</small></div></div>
+          <div class="eq-acoes folha-acoes"><button type="button" class="btn btn-sm btn-primary" data-eq="${n(() => prepararFolha(folha))}" data-folha="preparar">Preparar</button><button type="button" class="btn btn-sm" data-eq="${n(() => usarMesPassado(folha))}" data-folha="passado">Usar o lançamento do mês passado</button><button type="button" class="btn btn-sm btn-ghost" data-eq="${n(() => nadaALancar(folha))}" data-folha="nada">Nada a lançar este mês</button></div>` });
       };
       // documentos que o escritório publicou e o portal ainda mostra como não lidos (como a aba Não lidos do portal)
       const docsCard = () => {
@@ -349,23 +375,42 @@ export function montarHoje(C) {
         const nl = (D.itens || []).filter(x => x.lido === false);
         S.plat.docsHojeLista = nl.slice(0, 5);
         const linhas = S.plat.docsHojeLista.map((x, n) => { const [cls, rot] = tipoArquivo(x.arquivo || x.nome || 'x.pdf'); return `<div class="dn-li" data-dn-abrir="${n}"><span class="arq-ext ext-${cls}">${rot}</span><div class="main"><b title="${esc(x.nome)}">${esc(x.nome)}</b><small>${esc(x.pasta || x.categoria || 'Documento')}</small><small class="mono">${esc([x.data, x.vencimento && `vence ${x.vencimento}`].filter(Boolean).join(' · '))}</small></div><button type="button" class="btn btn-sm dn-bx" data-dn="${n}" title="${D.baixar === false ? 'Abrir no portal' : 'Baixar'}" aria-label="Baixar ${esc(x.nome)}">${icon(D.baixar === false ? 'external' : 'download', 'ic-sm')}</button></div>`; }).join('');
-        return `<section class="pn-card hj-docs" id="eq-docs"><div class="pn-card-head"><h3>Documentos novos <span class="eq-n">${nl.length}</span></h3><small>Publicados pelo escritório e ainda não lidos no portal.</small></div><div class="pn-card-body eq-body">${linhas || `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhum documento novo.</div>`}${nl.length > S.plat.docsHojeLista.length ? `<button type="button" class="btn btn-sm btn-ghost dn-todos" id="dn-todos">Ver os ${nl.length} não lidos ${icon('right', 'ic-sm')}</button>` : ''}</div></section>`;
+        return painel({ id: 'eq-docs', cls: 'hj-docs', titulo: 'Documentos novos', contador: nl.length, dica: ajuda('documentos'), padrao: nl.length > 0,
+          corpo: `${linhas || `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhum documento novo.</div>`}${nl.length > S.plat.docsHojeLista.length ? `<button type="button" class="btn btn-sm btn-ghost dn-todos" id="dn-todos">Ver os ${nl.length} não lidos ${icon('right', 'ic-sm')}</button>` : ''}` });
       };
+      // o que mais exige o cliente vem aberto: prazo legal a menos de 5 dias e férias a conceder em até 30
       return `<div class="hj-equipe">
         ${folhaCard()}
-        ${term.length ? card('eq-terminar', 'Para terminar', 'Pedidos começados e não enviados (7 dias, neste computador).', term, '') : ''}
-        ${card('eq-legais', 'Prazos legais', 'Pagamento dos cálculos em aberto e eSocial das admissões.', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…')}
-        ${card('eq-avisos', 'Aviso sem cálculo', 'Férias e rescisões perto do pagamento com só o aviso no portal.', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
-        ${card('eq-exp', 'Experiência vencendo', 'Próximos 30 dias, pela data de admissão.', exp, 'Nenhuma experiência vencendo.')}
-        ${card('eq-ferias', 'Férias a vencer', 'Prazo para conceder em até 60 dias (estimativa: o portal não informa as férias já tiradas).', fer, 'Nenhuma férias a vencer.')}
+        ${term.length ? card('eq-terminar', 'Para terminar', 'terminar', term, '') : ''}
+        ${card('eq-legais', 'Prazos legais', 'legais', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…', legais.some(x => x.falta <= 5))}
+        ${card('eq-avisos', 'Aviso sem cálculo', 'avisos', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
+        ${card('eq-exp', 'Experiência vencendo', 'experiencia', exp, 'Nenhuma experiência vencendo.')}
+        ${card('eq-ferias', 'Férias a vencer', 'ferias', fer, 'Nenhuma férias a vencer.', equipe.ferias.some(x => x.falta <= 30))}
+        ${movimentoHtml()}
         ${docsCard()}
       </div>`;
+    }
+    /* Movimento das suas solicitações: barras empilhadas das últimas semanas (abertas × concluídas) e, quando as conversas
+       já lidas trazem as datas, o tempo até a 1ª resposta do escritório. Só em memória; aparece com 3+ solicitações no período. */
+    function movimentoHtml() {
+      if (!lido) return '';
+      const m = E.movimentoSemanal(base, hoje, R); if (!m.ok) return '';
+      const semanas = m.semanas;
+      const barras = barrasEmpilhadas(semanas.map(w => ({ rotulo: w.rotulo, valores: { abertas: w.abertas, concluidas: w.concluidas } })),
+        [{ chave: 'abertas', nome: 'Abertas por você', cor: 's1' }, { chave: 'concluidas', nome: 'Concluídas', cor: 's3' }], { titulo: `Solicitações por semana, a partir de ${semanas[0].rotulo}` });
+      const d = (v) => `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${v === 1 ? 'dia' : 'dias'}`;
+      const resp = m.resposta.ok ? `<div class="mv-bloco"><h4>Tempo até a 1ª resposta do escritório</h4>
+          <div class="mv-kpi"><b>${esc(d(m.resposta.mediana))}</b><small>mediana de ${plural(m.resposta.n, 'conversa lida', 'conversas lidas')}</small></div>
+          ${linhaSimples(semanas.map(w => ({ rot: w.rotulo, y: w.resposta.mediana })), { nome: 'Dias até a 1ª resposta', sufixo: ' d', cor: 's2', titulo: 'Dias até a 1ª resposta do escritório, por semana em que a solicitação foi aberta' })}</div>` : '';
+      return painel({ id: 'eq-movimento', cls: 'hj-movimento', titulo: 'Movimento das suas solicitações', resumo: `${plural(m.abertas, 'aberta', 'abertas')} · ${plural(m.concluidas, 'concluída', 'concluídas')} em ${semanas.length} semanas`,
+        direita: `<span class="mv-mini">${miniBarras(semanas.map(w => ({ rot: `semana de ${w.rotulo}`, n: w.abertas })), { titulo: 'Abertas por semana' })}</span>`, dica: S.rules.config?.movimento?.ajuda || '', padrao: false, corpoCls: 'pn-card-body',
+        corpo: `<div class="mv-grade${resp ? '' : ' so-barras'}"><div class="mv-bloco"><h4>Abertas por você × concluídas, por semana</h4>${barras}</div>${resp}</div>` });
     }
     // Atenção nas suas solicitações (casos do Control Onvio na visão do cliente)
     function casosHtml() {
       if (!casos.length) return '';
-      return `<section class="pn-card hj-casos"><div class="pn-card-head"><h3>Atenção nas suas solicitações <span class="eq-n">${casos.length}</span></h3><small>O que pode atrasar o atendimento, lido nas conversas e nos pedidos.</small></div>
-        <div class="pn-card-body eq-body"><div class="eq-lista">${casos.map(c => {
+      return painel({ id: 'hj-casos', cls: 'hj-casos', titulo: 'Atenção nas suas solicitações', contador: casos.length, dica: ajuda('casos'), padrao: true,
+        corpo: `<div class="eq-lista">${casos.map(c => {
           const i = c.item;
           const acao = c.tipo === 'abaErrada' ? { rotulo: `Pedir em ${S.rules.tipos[c.aba]?.nome || 'outra aba'}`, fn: () => P.novoPedido(c.aba) }
             : c.tipo === 'duplicada' ? { rotulo: `Ver a nº ${c.outra.numero}`, fn: () => abrirDetalhe(c.outra) }
@@ -373,7 +418,7 @@ export function montarHoje(C) {
           acoesEq.push({ acao: acao.fn, abrir: () => abrirDetalhe(i) });
           const n = acoesEq.length - 1;
           return `<div class="pn-li eq-li caso-${c.tipo}" data-eq-abrir="${n}"><span class="pill pill-${c.tipo === 'anexo' ? 'late' : 'today'}">${ROT_CASO[c.tipo]}</span><div class="main"><b>${esc([i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '))}</b><small>${esc(c.porque)}</small></div><div class="eq-acoes"><button type="button" class="btn btn-sm" data-eq="${n}">${esc(acao.rotulo)}</button></div></div>`;
-        }).join('')}</div></div></section>`;
+        }).join('')}</div>` });
     }
 
     // ---------- interações ----------
@@ -404,6 +449,7 @@ export function montarHoje(C) {
     }
     $('#hj-tentar')?.addEventListener('click', () => { S.plat.sol = null; renderPainel(); P.carregarSolicitacoes(true); });
     ligarSeletorEmpresa(viewEl);
+    ligarPaineis(viewEl);
     ligarDicas(viewEl);
     if (animar) { viewEl.classList.remove('hj-anim'); void viewEl.offsetWidth; viewEl.classList.add('hj-anim'); setTimeout(() => viewEl.classList.remove('hj-anim'), 1600); animarNumeros(viewEl); }
     iniciarCarrossel($('#hj-tick'));
@@ -428,6 +474,7 @@ export function montarHoje(C) {
   // Listas da Equipe e dos casos: a altura vai até o fim do 5º item (as linhas mudam de altura conforme a largura do cartão).
   function limitarCinco(lst) {
     const ajusta = () => {
+      if (!lst.getClientRects().length) { lst.style.maxHeight = ''; return; }   // seção recolhida: mede quando abrir (o ResizeObserver avisa)
       const quinto = lst.children[4];
       lst.style.maxHeight = lst.children.length > 5 && quinto ? `${Math.ceil(quinto.getBoundingClientRect().bottom - lst.getBoundingClientRect().top + lst.scrollTop) + 2}px` : '';
     };
@@ -455,5 +502,5 @@ export function montarHoje(C) {
       A.setView(b.dataset.ir);
     }));
   }
-  Object.assign(C, { ICONE_MOT, MOT, acoesExperiencia, gravarPref, lerPref, ligarIr, pedirCalculoDoAviso, pedirDeNovo, plural, prepararResposta, programarFerias, renderPainel });
+  Object.assign(C, { ICONE_MOT, MOT, acoesExperiencia, dicaI, gravarPref, lerPref, ligarIr, ligarPaineis, painel, pedirCalculoDoAviso, pedirDeNovo, plural, prepararResposta, programarFerias, renderPainel });
 }
