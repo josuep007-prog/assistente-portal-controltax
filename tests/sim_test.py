@@ -1011,6 +1011,13 @@ async def teste_tela_muda(b):
     pg = await ctx.new_page()
     await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
     pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    # 2.23.1: "Ver Onvio" no canto do cabeçalho, ao lado da busca (saiu da barra lateral)
+    b2 = await pn.evaluate("(() => { const a = document.querySelector('#plat-ver-portal'), s = document.querySelector('#plat-busca'); if (!a || !s) return null; const ra = a.getBoundingClientRect(), rs = s.getBoundingClientRect(); return { txt: a.innerText.trim(), esq: ra.left >= rs.right - 1, mesmaLinha: Math.abs((ra.top + ra.bottom) / 2 - (rs.top + rs.bottom) / 2) < 6, direita: innerWidth - ra.right < 40, olho: !!a.querySelector('use[href=\"#i-eye\"]'), naBarra: !!document.querySelector('#rail [data-acao=\"portal\"]') }; })()")
+    check(bool(b2) and b2['txt'] == 'Ver Onvio' and b2['esq'] and b2['mesmaLinha'] and b2['direita'] and b2['olho'] and not b2['naBarra'], f'"Ver Onvio": botão com olho no canto superior direito, ao lado da busca, e fora da barra lateral ({b2})')
+    await pn.click('#plat-ver-portal'); await pg.wait_for_timeout(800)
+    check(await pg.evaluate("window.__ctSim.hooks().modoAtual()") == 'fechado', '"Ver Onvio" recolhe a extensão e mostra o portal')
+    await pg.evaluate("window.__ctSim.hooks().modo('plataforma')")
+    await pg.wait_for_timeout(300)
     await pn.evaluate("chrome.runtime.sendMessage = (m) => (m && (m.type === 'getSettings' || m.type === 'getRules')) ? new Promise(() => {}) : Promise.resolve({})")
     await pn.click('#rail [data-acao="config"]')
     ok = False
