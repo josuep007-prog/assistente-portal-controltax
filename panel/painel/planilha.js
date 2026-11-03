@@ -305,9 +305,11 @@ export async function carregar(tipo) {
   for (let k = 0; k < 150 && S.preenchendo; k++) await esperar(200);
   await enviarPendenteAgora(tipo);   // a competência digitada aqui vai antes (o portal pede antes de adicionar os funcionários)
   S.preenchendo = true; let g = null;
-  try { g = await request({ type: 'lerGrade', adicionar: true }, 60000); } finally { S.preenchendo = false; }
+  try { g = await request({ type: 'lerGrade', adicionar: true }, 130000); } finally { S.preenchendo = false; }
   P.lendo = false;
+  if (g) P.tentativas = { n: g.tentativas || 1, motivos: g.motivos || [] };
   if (!g?.ok) { P.erro = `Não consegui ler a grade do portal: ${g?.motivo || 'o portal não respondeu'}.`; renderPlanilhaRubricas(tipo); return; }
+  P.tentativas = { n: g.tentativas || 1, motivos: g.motivos || [] };
   P.fonte = g.fonte || ''; P.api = g.api || null; P.bloqueadas = new Set(g.bloqueadas || []); P.meta = g.meta || [];
   const antes = { ...P.valores }, empAntes = P.empregados, evAntes = P.eventos;
   P.eventos = g.eventos || []; P.empregados = g.empregados || []; P.carregada = true; P.valores = {};
