@@ -1673,6 +1673,279 @@ t('documentos do escritório (2.17.2): competência pelo nome do arquivo', () =>
   assert.equal(r.itens[0].competencia, '09/2026'); assert.equal(r.itens[1].competencia, '');
 });
 
+/* Sino de novidades: só o que muda para o cliente; a foto guardada não leva nomes nem assuntos */
+t('sino: foto mínima, primeira leitura sem novidade e transições que contam', () => {
+  const d = (n) => new Date(2026, 9, n);
+  const sol = (id, tipo, status, estado, dia, extra = {}) => ({ id, numero: String(id), tipo, status, estado, atualizado: d(dia), empregado: 'FULANO DE TAL', assunto: 'assunto secreto', empresa: 'EMPRESA X', ...extra });
+  const antes = [sol(1, 'calculoFerias', 'Em análise', 'andamento', 1), sol(2, 'afastamento', 'Em análise', 'andamento', 2), sol(3, 'geral', 'Aguardando cliente', 'aguardando', 3), sol(4, 'afastamento', 'Em análise', 'andamento', 4), sol(5, 'geral', 'Em análise', 'andamento', 5)];
+  const foto = E.fotoSino(antes, rules, 1000);
+  assert.deepEqual(Object.keys(foto.itens).sort(), ['afastamento:2', 'afastamento:4', 'calculoFerias:1', 'geral:3', 'geral:5']);
+  assert.deepEqual(foto.itens['geral:3'].slice(0, 1), ['Aguardando cliente']);
+  const bruto = JSON.stringify(foto);
+  assert.ok(!/FULANO|secreto|EMPRESA/.test(bruto), 'a foto não guarda nome, assunto nem empresa');
+  assert.deepEqual(E.novidadesSino(antes, null, rules), [], 'primeira leitura: nada acende');
+  assert.deepEqual(E.novidadesSino(antes, foto, rules), [], 'sem mudança: nada');
+  const depois = [
+    sol(1, 'calculoFerias', 'Aguardando cliente', 'aguardando', 8),        // o escritório respondeu e pede algo
+    sol(2, 'afastamento', 'Concluída', 'concluida', 9),                     // concluída
+    sol(3, 'geral', 'Em análise', 'andamento', 10),                         // o cliente respondeu: não conta
+    sol(4, 'afastamento', 'Em andamento', 'andamento', 11),                 // o escritório mexeu
+    sol(5, 'geral', 'Cancelada', 'cancelada', 12),
+    sol(6, 'geral', 'Em análise', 'andamento', 12)                          // pedido novo do próprio cliente: não conta
+  ];
+  const n = E.novidadesSino(depois, foto, rules);
+  assert.deepEqual(n.map(x => [x.item.id, x.tipo]), [[1, 'respondeu'], [2, 'concluida'], [5, 'cancelada'], [4, 'andamento']]);
+  assert.equal(n[0].texto, `O escritório respondeu ${rules.tipos.calculoFerias.nome} nº 1 e espera a sua resposta.`);
+  assert.equal(n[1].texto, `${rules.tipos.afastamento.nome} nº 2 foi concluída.`);
+  assert.ok(/em andamento\./.test(n[3].texto));
+  // lida uma: só ela some; marcar tudo zera
+  const umaLida = E.marcarVistas(foto, depois, [n[0].chave], rules, 2000);
+  assert.deepEqual(E.novidadesSino(depois, umaLida, rules).map(x => x.item.id), [2, 5, 4]);
+  assert.deepEqual(E.novidadesSino(depois, E.marcarVistas(foto, depois, null, rules, 2000), rules), []);
+  // resposta que não pede nada tem texto próprio
+  const semPedido = [sol(1, 'calculoFerias', 'Aguardando cliente', 'aguardando', 8, { veredito: { ultimoLado: 'esc', pede: false } })];
+  assert.equal(E.novidadesSino(semPedido, foto, rules)[0].tipo, 'respondeuSemPedido');
+  // limite da foto
+  const muitas = Array.from({ length: 450 }, (_, k) => sol(1000 + k, 'geral', 'Em análise', 'andamento', 1 + (k % 28)));
+  assert.equal(Object.keys(E.fotoSino(muitas, rules).itens).length, rules.config.sino.maxGuardadas);
+});
+
+t('sino: textos e limites existem nas regras', () => {
+  const m = rules.mensagens.sino;
+  for (const k of ['titulo', 'vazio', 'marcarLidas', 'respondeu', 'respondeuSemPedido', 'concluida', 'cancelada', 'prescrita', 'andamento']) assert.ok(m[k], k);
+  assert.equal(rules.config.sino.maxLinhas, 8);
+  for (const k of ['esperam', 'prescrevem', 'novos']) assert.equal(rules.mensagens.trilhoResumo[k].length, 2);
+});
+
+t('detalhe (2.19): tempo relativo, separador de intervalo longo e data completa na dica', () => {
+  const ag = new Date(2026, 9, 29, 15, 0);   // quinta-feira, 29/10/2026 15:00
+  const r = (y, m, d, h, mi) => E.tempoRelativo(new Date(y, m, d, h, mi), ag);
+  assert.equal(r(2026, 9, 29, 14, 59), 'agora há pouco');
+  assert.equal(r(2026, 9, 29, 14, 40), 'há 20 min');
+  assert.equal(r(2026, 9, 29, 9, 5), 'hoje às 09:05');
+  assert.equal(r(2026, 9, 28, 14, 30), 'ontem às 14:30');
+  assert.equal(r(2026, 9, 27, 10, 0), 'há 2 dias');
+  assert.equal(r(2026, 9, 12, 10, 0), 'há 2 semanas');
+  assert.equal(r(2026, 8, 1, 10, 0), 'em 01/09/2026');
+  assert.equal(E.tempoRelativo('2026-10-29T10:00:00', ag), 'hoje às 10:00', 'texto ISO do portal');
+  assert.equal(E.tempoRelativo('', ag), '');
+  assert.match(r(2026, 10, 3, 10, 0), /^03\/11\/2026 às 10:00$/, 'relógio adiantado: mostra a data, sem inventar futuro');
+  assert.equal(E.dataHoraLonga(new Date(2026, 9, 27, 19, 21)), 'terça-feira, 27/10/2026 às 19:21');
+  assert.equal(E.intervaloEntre('2026-10-26T10:00:00', '2026-10-29T08:00:00', rules), '3 dias depois');
+  assert.equal(E.intervaloEntre('2026-10-28T23:00:00', '2026-10-29T08:00:00', rules), '', 'de um dia para o outro não é intervalo longo');
+  assert.equal(E.intervaloEntre('2026-10-28T10:00:00', '2026-10-29T08:00:00', { config: { detalheConversa: { intervaloDias: 1 } } }), '1 dia depois', 'o limite vem das regras');
+});
+
+t('detalhe (2.19): destaques em chips por tipo, só com o que existe e nunca dado de saúde', () => {
+  const h = new Date(2026, 9, 29);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  // férias: início, pagamento (calculado dois dias antes, em dia útil), dias, abono; "prescreve em" tem vaga reservada
+  const av = N({ id: 'a', identifier: 5, genericStatus: 4, lastUpdated: '2026-10-26', created: '2026-10-20', vacationStartDate: '2026-11-16T00:00:00', vacationDays: 20, bonusDays: 10, clientEmployeeExpanded: { name: 'JOAO' } }, 'avisoFerias');
+  const l = E.destaquesDetalhe(av, av.datas, null, rules, h);
+  assert.deepEqual(l.map(x => x.k), ['Início das férias', 'Pagamento até', 'Dias de férias', 'Prescreve em'], 'o abono sai quando a vaga é do prescreve');
+  assert.equal(l[0].v, '16/11/2026'); assert.equal(l[1].v, '13/11/2026'); assert.equal(l[2].v, '20 dias'); assert.equal(l[3].v, '27 dias');
+  assert.ok(!l.some(x => x.alerta));
+  // concluída: não prescreve, o abono entra
+  const ok = N({ id: 'b', identifier: 6, genericStatus: 5, lastUpdated: '2026-10-26', vacationStartDate: '2026-11-16T00:00:00', vacationDays: 20, bonusDays: 10 }, 'avisoFerias');
+  assert.deepEqual(E.destaquesDetalhe(ok, ok.datas, null, rules, h).map(x => x.k), ['Início das férias', 'Pagamento até', 'Dias de férias', 'Dias de abono']);
+  // prazo de pagamento que já passou fica em alerta
+  const velho = N({ id: 'c', identifier: 7, genericStatus: 5, lastUpdated: '2026-10-01', vacationStartDate: '2026-10-20T00:00:00' }, 'calculoFerias');
+  assert.ok(E.destaquesDetalhe(velho, velho.datas, null, rules, h).find(x => x.k === 'Pagamento até').alerta);
+  // rescisão: último dia + pagamento (10 dias depois, dia útil anterior)
+  const re = N({ id: 'd', identifier: 8, genericStatus: 2, lastUpdated: '2026-10-27', resignationDate: '2026-11-02T00:00:00', adviceDate: '2026-10-01T00:00:00' }, 'avisoRescisao');
+  const lr = E.destaquesDetalhe(re, re.datas, null, rules, h);
+  assert.deepEqual(lr.map(x => x.k), ['Data do aviso', 'Último dia', 'Pagamento até']);
+  // afastamento: início e dias vêm do detalhe cru; CID, médico e CRM nunca aparecem, nem por regra mal escrita
+  const af = N({ id: 'e', identifier: 9, genericStatus: 2, lastUpdated: '2026-10-27', leaveDate: '2026-10-20T00:00:00' }, 'afastamento');
+  const bruto = { leaveDays: 5, cid: 'Z76', doctorName: 'DR EXEMPLO', crm: '123' };
+  const la = E.destaquesDetalhe(af, af.datas, bruto, rules, h);
+  assert.deepEqual(la.map(x => [x.k, x.v]), [['Início', '20/10/2026'], ['Dias', '5 dias']]);
+  const ruim = JSON.parse(JSON.stringify(rules)); ruim.config.destaquesDetalhe.campos.cid = { rotulo: 'CID', fonte: 'bruto.cid' }; ruim.config.destaquesDetalhe.campos.dr = { rotulo: 'Dias', fonte: 'bruto.doctorName' };
+  ruim.config.destaquesDetalhe.porTipo.afastamento = ['cid', 'dr', 'inicioAfastamento'];
+  assert.deepEqual(E.destaquesDetalhe(af, af.datas, bruto, ruim, h).map(x => x.k), ['Início'], 'chave de saúde é ignorada');
+  assert.ok(!JSON.stringify(la).match(/Z76|EXEMPLO|123/));
+  // sem dado nenhum e sem regra: nada aparece
+  const g = N({ id: 'f', identifier: 10, genericStatus: 1, lastUpdated: '2026-10-28', created: '2026-10-28' }, 'geral');
+  assert.deepEqual(E.destaquesDetalhe(g, g.datas, null, rules, h), []);
+  assert.deepEqual(E.destaquesDetalhe(av, av.datas, null, { config: {} }, h), [], 'sem config.destaquesDetalhe, nada');
+});
+
+t('movimento das solicitações: últimas 8 semanas, abertas × concluídas e 1ª resposta', () => {
+  const h = new Date(2026, 9, 29);   // quinta-feira; a semana de hoje começa na segunda 26/10
+  const it = (criado, estado, atualizado, v) => ({ criado: new Date(...criado), estado, atualizado: new Date(...atualizado), veredito: v });
+  const itens = [
+    it([2026, 9, 27], 'andamento', [2026, 9, 28], { primeiraResposta: '2026-10-28T10:00', abertura: '2026-10-27T09:00' }),   // semana de hoje, 1ª resposta em 1 dia
+    it([2026, 9, 20], 'concluida', [2026, 9, 27], { primeiraResposta: '2026-10-23T10:00', abertura: '2026-10-20T09:00' }),   // aberta em 20/10 (3 dias), concluída na semana de hoje
+    it([2026, 9, 21], 'aguardando', [2026, 9, 22], null),
+    it([2026, 8, 22], 'concluida', [2026, 8, 23], { primeiraResposta: '2026-09-24T10:00', abertura: '2026-09-22T09:00' }),   // semana de 21/09 (2 dias)
+    it([2026, 5, 1], 'concluida', [2026, 5, 2], null),   // fora do período
+    it([2026, 9, 22], 'cancelada', [2026, 9, 23], null)
+  ];
+  const m = E.movimentoSemanal(itens, h);
+  assert.equal(m.semanas.length, 8);
+  assert.equal(m.semanas[7].rotulo, '26/10'); assert.equal(m.semanas[0].rotulo, '07/09');
+  assert.equal(m.semanas[7].abertas, 1); assert.equal(m.semanas[7].concluidas, 1);
+  assert.equal(m.semanas[6].abertas, 3); assert.equal(m.semanas[6].concluidas, 0);   // 20, 21 e 22/10 (a cancelada conta como aberta, nunca como concluída)
+  assert.equal(m.semanas[2].abertas, 1); assert.equal(m.semanas[2].concluidas, 1);
+  assert.equal(m.total, 5); assert.ok(m.ok);   // a de junho fica de fora
+  assert.equal(m.abertas, 5); assert.equal(m.concluidas, 2);
+  // 1ª resposta: 1, 3 e 2 dias → mediana 2 (3 respostas bastam)
+  assert.equal(m.resposta.n, 3); assert.equal(m.resposta.mediana, 2); assert.ok(m.resposta.ok);
+  assert.equal(m.semanas[6].resposta.mediana, 3); assert.equal(m.semanas[7].resposta.n, 1);
+  // menos de 3 solicitações no período: o cartão não aparece
+  assert.ok(!E.movimentoSemanal(itens.slice(0, 2), h).ok);
+  assert.ok(!E.movimentoSemanal([], h).ok);
+  // sem as datas das conversas, não há tempo de resposta (só as barras)
+  const sem = E.movimentoSemanal(itens.map(i => ({ ...i, veredito: null })), h);
+  assert.ok(sem.ok && sem.resposta.n === 0 && sem.resposta.mediana === null && !sem.resposta.ok);
+  // as regras mudam o número de semanas e os mínimos
+  const r4 = E.movimentoSemanal(itens, h, { config: { movimento: { semanas: 4, minimoSolicitacoes: 9 } } });
+  assert.equal(r4.semanas.length, 4); assert.ok(!r4.ok); assert.equal(r4.semanas[0].rotulo, '05/10');
+  // domingo ainda é da semana que começou na segunda anterior
+  assert.equal(E.movimentoSemanal([], new Date(2026, 10, 1)).semanas[7].rotulo, '26/10');
+});
+
+t('vereditoConversa guarda a data da 1ª resposta do escritório', () => {
+  const tr = E.tramitesDe([{ created: '2026-10-01T09:00', status: 1, description: 'Segue.' }, { created: '2026-10-03T09:00', status: 4, description: 'Recebido.' }, { created: '2026-10-04T09:00', status: 3, description: 'Obrigado.' }], 'avisoFerias', rules);
+  const v = E.vereditoConversa(tr, rules);
+  assert.equal(v.primeiraResposta, '2026-10-03T09:00'); assert.equal(v.abertura, '2026-10-01T09:00');
+  assert.equal(E.vereditoConversa(E.tramitesDe([{ created: '2026-10-01', status: 1, description: 'x' }], 'avisoFerias', rules), rules).primeiraResposta, undefined);
+});
+
+t('regras: ajudas do Hoje e config.movimento existem', () => {
+  assert.ok(rules.config.movimento.semanas >= 2 && rules.config.movimento.minimoSolicitacoes >= 1);
+  for (const k of ['folha', 'terminar', 'legais', 'avisos', 'experiencia', 'ferias', 'documentos', 'casos', 'truncado']) assert.ok(rules.config.hoje.ajudas[k], k);
+});
+
+t('Agenda em calendário: mês seg–dom, pontos (até 3 + N), feriado e dia útil', () => {
+  const fer = E.feriadosDaAgenda(rules, 'EMPRESA EXEMPLO');
+  const cal = E.makeCalendar(fer.datas);
+  const ev = (d, tipo, titulo, extra = {}) => ({ d: new Date(2026, 9, d), tipo, titulo, detalhe: '', ...extra });
+  const evs = [ev(12, 'legal', 'A'), ev(14, 'legal', 'B'), ev(14, 'lembrete', 'C'), ev(14, 'exp', 'D'), ev(14, 'pedido', 'E'), ev(14, 'lembrete', 'F', { feito: true }), ev(20, 'lembrete', 'G')];
+  const m = E.montarMes(2026, 9, evs, { hoje: new Date(2026, 9, 29), cal, nomes: fer.nomes });
+  assert.equal(m.rotulo, 'outubro de 2026');
+  assert.equal(m.semanas.length, 5);
+  assert.ok(m.semanas.every(s => s.length === 7));
+  assert.equal(m.semanas[0][0].iso, '2026-09-28');          // segunda-feira
+  assert.equal(m.semanas[4][6].iso, '2026-11-01');          // domingo
+  assert.equal(m.semanas[0][0].doMes, false);
+  const dia = (k) => m.semanas.flat().find(x => x.iso === k);
+  assert.equal(dia('2026-10-12').feriado, 'Nossa Senhora Aparecida');
+  assert.equal(dia('2026-10-12').util, false);               // segunda, mas feriado
+  assert.equal(dia('2026-10-13').util, true);
+  assert.equal(dia('2026-10-17').util, false);               // sábado
+  assert.equal(dia('2026-10-29').hoje, true);
+  const d14 = dia('2026-10-14');
+  assert.equal(d14.pendentes, 4); assert.equal(d14.concluidos, 1);
+  assert.deepEqual(d14.pontos, ['legal', 'pedido', 'exp']);   // ordem dos tipos, no máximo 3
+  assert.equal(d14.mais, 1);
+  assert.equal(m.total, 6);
+  // legenda: tipo escondido some dos pontos
+  const m2 = E.montarMes(2026, 9, evs, { cal, ocultos: ['lembrete'] });
+  assert.deepEqual(m2.semanas.flat().find(x => x.iso === '2026-10-14').pontos, ['legal', 'pedido', 'exp']);
+  assert.equal(m2.semanas.flat().find(x => x.iso === '2026-10-20').pendentes, 0);
+  // fevereiro de 2027 começa numa segunda e fecha em 4 semanas
+  assert.equal(E.montarMes(2027, 1, [], { cal }).semanas.length, 4);
+  // frase do dia para leitor de tela
+  const f = E.descreverDia(d14, E.msgAgenda(rules));
+  assert.match(f, /quarta-feira, 14 de outubro de 2026/);
+  assert.match(f, /4 eventos: 1 prazo legal, 1 data de solicitação, 1 fim de experiência, 1 lembrete/);
+  assert.match(f, /1 concluído/);
+  const fer12 = E.descreverDia(dia('2026-10-12'), E.msgAgenda(rules));
+  assert.match(fer12, /feriado: Nossa Senhora Aparecida, dia não útil, 1 evento: 1 prazo legal/);
+  assert.match(E.descreverDia(dia('2026-10-29'), E.msgAgenda({})), /, hoje,/);   // sem textos nas regras, valem os padrão
+});
+
+t('Agenda: navegação (dia, mês no fim do mês curto, semana) e próximo prazo', () => {
+  assert.equal(E.moverDia('2026-10-31', 1), '2026-11-01');
+  assert.equal(E.moverDia('2026-10-01', -7), '2026-09-24');
+  assert.equal(E.moverMes('2027-01-31', 1), '2027-02-28');
+  assert.equal(E.moverMes('2026-01-15', -1), '2025-12-15');
+  assert.deepEqual(E.semanaDe('2026-10-29'), ['2026-10-26', '2026-11-01']);
+  assert.deepEqual(E.semanaDe('2026-11-01'), ['2026-10-26', '2026-11-01']);
+  const evs = [{ d: new Date(2026, 9, 28), tipo: 'legal', titulo: 'passou' }, { d: new Date(2026, 9, 30), tipo: 'lembrete', titulo: 'lembrete' },
+    { d: new Date(2026, 10, 3), tipo: 'exp', titulo: 'exp', feito: false }, { d: new Date(2026, 10, 2), tipo: 'legal', titulo: 'legal 2' }];
+  const p = E.proximoPrazo(evs, new Date(2026, 9, 29));
+  assert.equal(p.titulo, 'legal 2'); assert.equal(p.falta, 4);
+  assert.equal(E.quandoTexto(0), 'hoje'); assert.equal(E.quandoTexto(1), 'amanhã'); assert.equal(E.quandoTexto(4), 'em 4 dias');
+  assert.equal(E.proximoPrazo([], new Date(2026, 9, 29)), null);
+});
+
+t('Agenda: feriados municipais por empresa e nomes', () => {
+  const r = { feriados: ['2026-11-02'], feriadosNomes: { _comentario: 'x', '2026-11-02': 'Finados' }, feriadosMunicipais: { itens: [{ data: '2026-12-08', nome: 'Aniversário da cidade', empresa: 'exemplo' }, { data: '2026-12-09', nome: 'Outro', empresa: 'zzz' }] } };
+  const a = E.feriadosDaAgenda(r, 'EMPRESA EXEMPLO LTDA');
+  assert.deepEqual(a.datas, ['2026-11-02', '2026-12-08']);
+  assert.equal(a.nomes['2026-12-08'], 'Aniversário da cidade'); assert.equal(a.nomes['2026-11-02'], 'Finados');
+  assert.ok(!('_comentario' in a.nomes));
+  assert.equal(E.calendarioDaAgenda(r, 'EMPRESA EXEMPLO').isBusiness(new Date(2026, 11, 8)), false);
+  assert.equal(E.calendarioDaAgenda(r, 'OUTRA').isBusiness(new Date(2026, 11, 8)), true);
+  assert.deepEqual(E.eventosDosFeriados(new Date(2026, 10, 1), new Date(2026, 11, 31), a).map(e => [E.iso(e.d), e.titulo]), [['2026-11-02', 'Finados'], ['2026-12-08', 'Aniversário da cidade']]);
+  // as regras de verdade trazem o nome de cada feriado nacional
+  const nac = E.feriadosDaAgenda(rules, '');
+  assert.ok(rules.feriados.every(f => nac.nomes[f]), 'todo feriado nacional tem nome');
+});
+
+t('Agenda: datas das solicitações lidas (férias, rescisão, eSocial, prescrição) sem repetir o histórico', () => {
+  const h = new Date(2026, 9, 16);
+  const N = (it, tipo) => E.normalizarSolicitacao(it, tipo, rules, h);
+  const af = N({ id: 'a', identifier: 10, genericStatus: 4, lastUpdated: '2026-10-05', created: '2026-10-01', clientEmployeeExpanded: { name: 'JOAO DA SILVA' }, vacationStartDate: '2026-11-09T00:00:00', vacationDays: 20 }, 'avisoFerias');
+  const cr = N({ id: 'b', identifier: 11, genericStatus: 2, lastUpdated: '2026-10-14', created: '2026-10-14', clientEmployeeExpanded: { name: 'MARIA' }, resignationDate: '2026-10-20T00:00:00' }, 'calculoRescisao');
+  const ad = N({ id: 'c', identifier: 12, genericStatus: 2, created: '2026-10-15', name: 'NOVA', admissionDate: '2026-10-26T00:00:00' }, 'cadastroEmpregado');
+  const cx = N({ id: 'd', identifier: 13, genericStatus: 5, created: '2026-10-01', clientEmployeeExpanded: { name: 'ANA' }, vacationStartDate: '2026-11-20T00:00:00' }, 'avisoFerias');
+  cx.estado = 'cancelada';
+  assert.ok(af.prescreveEm != null);
+  const evs = E.eventosDasSolicitacoes([af, cr, ad, cx], h, rules);
+  const por = (t) => evs.filter(e => e.titulo === t || e.titulo.startsWith(t));
+  assert.equal(E.iso(por('Início das férias')[0].d), '2026-11-09');
+  assert.equal(E.iso(por('Retorno das férias')[0].d), '2026-11-29');
+  assert.equal(E.iso(por('Pagamento das férias')[0].d), '2026-11-06');   // 2 dias antes (sábado 07/11 → sexta)
+  assert.equal(E.iso(por('Pagamento das verbas')[0].d), '2026-10-30');   // 10 dias do desligamento
+  assert.equal(E.iso(por('Admissão no eSocial')[0].d), '2026-10-25');     // dia anterior ao início (domingo)
+  assert.ok(evs.every(e => e.item && e.item !== cx), 'cancelada não entra');
+  assert.ok(evs.filter(e => e.tipo === 'prescricao').every(e => e.item === af));
+  assert.match(por('Prescrição')[0].titulo, /nº 10/);
+  // a mesma data lida do histórico deste computador e do portal vale uma vez só (fica a do portal)
+  const doHist = { d: new Date(2026, 10, 9), tipo: 'pedido', titulo: 'Início das férias', detalhe: 'JOAO DA SILVA', quem: 'João da Silva' };
+  const mescla = E.mesclarEventos([doHist, ...evs]);
+  assert.equal(mescla.filter(e => e.titulo === 'Início das férias').length, 1);
+  assert.ok(mescla.find(e => e.titulo === 'Início das férias').item);
+  // concluída há muito: só vale o que ainda não passou
+  const ok = N({ id: 'e', identifier: 14, genericStatus: 4, created: '2026-08-01', lastUpdated: '2026-08-05', clientEmployeeExpanded: { name: 'BIA' }, vacationStartDate: '2026-08-10T00:00:00' }, 'avisoFerias');
+  ok.estado = 'concluida';
+  assert.equal(E.eventosDasSolicitacoes([ok], h, rules).length, 0);
+});
+
+t('Agenda: experiência dos funcionários (sem os efetivados) e ações nos lembretes', () => {
+  const emp = [{ nome: 'JOAO DA SILVA', admissao: '2026-10-05', ativo: true }, { nome: 'MARIA', admissao: '2026-10-05', ativo: false }];
+  const x = E.eventosDaEquipe(emp, new Date(2026, 9, 29), rules);
+  assert.deepEqual(x.map(e => [e.n, E.iso(e.d)]), [[45, '2026-11-18'], [90, '2027-01-02']]);
+  assert.equal(E.eventosDaEquipe(emp, new Date(2026, 9, 29), rules, { dispensado: (nome, n) => n === 45 }).length, 1);
+  // feito: some das ocorrências comuns (Hoje) e aparece com { comFeitos: true } (Agenda)
+  const l = { id: 'a', texto: 'x', data: '2026-10-10', rep: 'semanal', pular: [], feitos: [] };
+  const L = E.concluirLembrete([l], 'a', '2026-10-17');
+  assert.deepEqual(L[0].feitos, ['2026-10-17']);
+  assert.equal(l.feitos.length, 0, 'a lista original não muda');
+  const de = new Date(2026, 9, 10), ate = new Date(2026, 9, 31);
+  assert.deepEqual(E.ocorrencias(L[0], de, ate).map(E.iso), ['2026-10-10', '2026-10-24', '2026-10-31']);
+  assert.equal(E.ocorrencias(L[0], de, ate, undefined, { comFeitos: true }).length, 4);
+  assert.deepEqual(E.reabrirLembrete(L, 'a', '2026-10-17')[0].feitos, []);
+  // adiar: de uma vez só muda a data; o que repete pula o dia e ganha uma cópia
+  const um = [{ id: 'u', texto: 'y', data: '2026-10-10', rep: 'nao' }];
+  assert.equal(E.adiarLembrete(um, 'u', '2026-10-10', '2026-10-11', 'n1')[0].data, '2026-10-11');
+  const rep = E.adiarLembrete([l], 'a', '2026-10-17', '2026-10-18', 'n2');
+  assert.equal(rep.length, 2);
+  assert.deepEqual(rep[0].pular, ['2026-10-17']);
+  assert.deepEqual([rep[1].id, rep[1].data, rep[1].rep, rep[1].texto], ['n2', '2026-10-18', 'nao', 'x']);
+  assert.deepEqual(E.ocorrencias(rep[0], de, ate).map(E.iso), ['2026-10-10', '2026-10-24', '2026-10-31']);
+});
+
+t('Agenda: os textos das regras cobrem todos os tipos e os padrão batem com as regras', () => {
+  const m = E.msgAgenda(rules);
+  for (const k of E.TIPOS_AGENDA) assert.ok(m.tipos[k].rotulo && m.tipos[k].legenda && m.tipos[k].um && m.tipos[k].varios, k);
+  for (const k of Object.keys(E.MSG_AGENDA)) assert.ok(k in rules.mensagens.agenda, `mensagens.agenda.${k} falta nas regras`);
+  assert.equal(E.textoAgenda(m.titulo, { mes: 'outubro de 2026' }), 'Calendário de outubro de 2026');
+});
+
 t('comando do cliente → células da grade real (dicionário + nomes das rubricas da própria grade)', () => {
   const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '247 - HORA INTERJORNADA', '37 - COMISSOES', '434 - COMISSOES (MES ANTERIOR)', '440 - PREMIO', '449 - PREMIO MES ANTERIOR', '240 - FERIADO TRABALHADO'];
   const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ARTUR MENDES DE MORAES', 'CAIO SANTANA VIEIRA'];

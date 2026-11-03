@@ -86,7 +86,11 @@ async def teste_plataforma(b):
     check(await pn.locator('.an-svg .an-f').count() >= 2, 'Hoje: rosca por situação')
     # a rosca leva às Solicitações já filtradas (situações e cartões por tipo, como no Control Onvio)
     await pn.dispatch_event('.an-f[data-motivo="prescreve"]', 'click'); await pg.wait_for_timeout(600)
-    check(await pn.locator('.hj-sit[data-sit="prescreve"].on').count() == 1 and await pn.locator('.tipos .tipo-c').count() == 11, 'rosca → Solicitações filtradas, com os cartões dos tipos')
+    # (desde a 2.19 os tipos vêm numa faixa de uma linha: só os que têm pedidos; "Ver todos os tipos" abre a grade com os 10 + "Todos")
+    check(await pn.locator('.hj-sit[data-sit="prescreve"].on').count() == 1 and 1 < await pn.locator('#sol-tipos .tipo-f').count() < 11, 'rosca → Solicitações filtradas, com a faixa dos tipos que têm pedidos')
+    await pn.click('[data-tipos-vis="todos"]'); await pg.wait_for_timeout(200)
+    check(await pn.locator('.tipos .tipo-c').count() == 11, 'Ver todos os tipos: a grade com os cartões dos 10 tipos e "Todos"')
+    await pn.click('[data-tipos-vis="faixa"]'); await pg.wait_for_timeout(200)
     cards = pn.locator('#sol-grupos .hj-card')
     check(await cards.count() == 1 and 'CAMILA ROCHA' in await cards.inner_text() and 'PRESCREVE EM' in (await cards.inner_text()).upper(), 'Hoje: filtro "Responda antes de prescrever" mostra o cartão com o prazo')
     check('O escritório pediu' in await cards.inner_text() and 'abono pecuniário' in await cards.inner_text(), 'Hoje: o cartão mostra o que o escritório pediu')
@@ -123,7 +127,7 @@ async def teste_plataforma(b):
       const visiveis = it.filter(x => x.getBoundingClientRect().bottom <= l.getBoundingClientRect().bottom + 3).length;
       return getComputedStyle(l).overflowY === 'auto' && visiveis === 5 && l.scrollHeight > l.clientHeight; })()"""), 3)
     check(rola, 'Hoje: a partir de 5 itens a lista da Equipe rola')
-    check('Pagamento das férias' in await pn.locator('#eq-legais').inner_text(), 'Hoje: prazos legais (pagamento do cálculo de férias)')
+    check('Pagamento das férias' in await pn.locator('#eq-legais').text_content(), 'Hoje: prazos legais (pagamento do cálculo de férias; a seção vem recolhida quando nenhum prazo está perto)')
     ok = await espera(lambda: pn.evaluate("(document.querySelector('.hj-casos')?.innerText || '').includes('Anexo não chegou')"), 15)
     check(ok, 'Hoje: atenção nas suas solicitações (você falou em anexo e nenhum arquivo chegou)')
     check(await pn.locator('#free-txt').count() == 0 and await pn.locator('#intents').count() == 0, 'Hoje sem a parte de criar solicitações (fica no Novo pedido)')
@@ -293,11 +297,11 @@ async def teste_plataforma(b):
     await pn.select_option('#lb-rep', 'mensal')
     check('Todo mês, dia 10' in await pn.locator('#lb-resumo').inner_text(), 'resumo da repetição do lembrete')
     await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(600)
-    cel = lambda: pn.locator(f'.ag-day[data-dia="{dia.isoformat()}"]').inner_text()
-    check('Mandar as horas extras' in await cel(), 'lembrete aparece no calendário')
+    cel = lambda: pn.locator(f'.ag-day[data-dia="{dia.isoformat()}"]').get_attribute('aria-label')
+    check('1 lembrete' in await cel(), 'lembrete aparece no calendário')
     await pn.click('#ag-next'); await pg.wait_for_timeout(400)
     prox = (dia.replace(day=1) + datetime.timedelta(days=32)).replace(day=10)
-    check('Mandar as horas extras' in await pn.locator(f'.ag-day[data-dia="{prox.isoformat()}"]').inner_text(), 'lembrete mensal se repete no mês seguinte')
+    check('1 lembrete' in await pn.locator(f'.ag-day[data-dia="{prox.isoformat()}"]').get_attribute('aria-label'), 'lembrete mensal se repete no mês seguinte')
     # Documentos: modelo para assinar
     await pn.click('#rail [data-mod="documentos"]'); await pg.wait_for_timeout(800)
     # 2.5: arquivos trocados nas solicitações (lidos dos trâmites na hora), do escritório e os seus
@@ -930,7 +934,7 @@ async def teste_comando_rubricas(b):
     for _ in range(30):
         if await pn.locator('#modal .sheet').count(): break
         await pg.wait_for_timeout(300)
-    g = await pn.evaluate("(() => { const s = document.querySelector('#modal .sheet'); if (!s) return null; const r = s.getBoundingClientRect(), rail = document.querySelector('#rail').getBoundingClientRect(), topo = document.elementFromPoint(r.left + 8, r.top + 40); return { l: r.left, t: r.top, r: r.right, b: r.bottom, rail: rail.right, w: innerWidth, h: innerHeight, topo: !!topo && s.contains(topo) }; })()")
+    g = await pn.evaluate("(() => { const s = document.querySelector('#modal .sheet'); if (!s) return null; const r = s.getBoundingClientRect(), rail = document.querySelector('#rail').getBoundingClientRect(), topo = document.elementFromPoint(r.left + 8, r.top + 40); return { cls: s.className, ww: getComputedStyle(s).width, pos: getComputedStyle(document.querySelector('#modal')).position, z: getComputedStyle(document.querySelector('#modal')).zIndex, quem: topo && (topo.id || topo.className), l: r.left, t: r.top, r: r.right, b: r.bottom, rail: rail.right, w: innerWidth, h: innerHeight, topo: !!topo && s.contains(topo) }; })()")
     check(bool(g) and g['l'] >= g['rail'] and g['r'] <= g['w'] and g['t'] >= 0 and g['b'] <= g['h'] and g['topo'], f"resumo antes de enviar: a janela fica inteira na tela, centralizada e por cima da barra lateral ({g})")
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa_emp.cancel()
@@ -1438,8 +1442,524 @@ async def teste_lote5(b):
     await ctx.close()
 
 
+async def teste_contraste(b):
+    """Contraste (WCAG 4,5:1) nos dois temas, em todas as telas da plataforma. O medidor é o do Control Onvio
+    (tests/contraste-lib.js) e roda dentro do iframe do painel. Falha se houver qualquer texto abaixo de 4,5:1."""
+    print('\n[contraste] 4,5:1 nos temas claro e escuro')
+    lib = open(os.path.join(os.path.dirname(__file__), 'contraste-lib.js'), encoding='utf-8').read()
+    medir = "(src) => { const m = { exports: null }; new Function('module', src)(m); return m.exports(4.5); }"
+    todas = {}
+    for tema in ('light', 'dark'):
+        ctx = await b.new_context(viewport={'width': 1366, 'height': 768})
+        pg = await ctx.new_page()
+        await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+        pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+        await pn.evaluate(f"document.documentElement.setAttribute('data-theme', '{tema}')")
+        async def espera(cond, s=15):
+            for _ in range(s * 4):
+                try:
+                    if await cond(): return True
+                except Exception: pass
+                await pg.wait_for_timeout(250)
+            return False
+        async def fechar():
+            await pn.evaluate("document.querySelector('#modal .dlg-x')?.click()"); await pg.wait_for_timeout(300)
+        async def medir_tela(nome):
+            await pg.wait_for_timeout(900)
+            r = await pn.evaluate(medir, lib)
+            todas[f'{nome}-{tema}'] = r
+            check(not r, f'contraste {nome} ({tema}): {len(r)} texto(s) abaixo de 4,5:1' + ('' if not r else ' — ' + '; '.join(f"{x['r']} {x['fg']}/{x['bg']} «{x['texto']}» {x['no']}" for x in r[:6])))
+        await espera(lambda: pn.evaluate("!!document.querySelector('.hj-hero[data-pronto]')"))
+        await medir_tela('hoje')
+        for mod, nome in (('pendencias', 'solicitacoes'), ('funcionarios', 'funcionarios'), ('documentos', 'documentos'), ('ferramentas', 'calcular'), ('historico', 'agenda')):
+            await pn.click(f'#rail [data-mod="{mod}"]'); await pg.wait_for_timeout(500)
+            await medir_tela(nome)
+        # variações: solicitações em lista e tabela, documentos do escritório, ficha do funcionário, busca (Ctrl+K), configurações
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(500)
+        for vis in ('lista', 'tabela'):
+            await pn.click(f'[data-vis-sol="{vis}"]'); await medir_tela(f'solicitacoes-{vis}')
+        await pn.click('[data-vis-sol="cartoes"]')
+        await pn.click('#rail [data-mod="documentos"]'); await pg.wait_for_timeout(500)
+        await pn.click('[data-doc-aba="escritorio"]'); await medir_tela('documentos-escritorio')
+        await pn.click('#rail [data-mod="funcionarios"]'); await pg.wait_for_timeout(500)
+        if await pn.locator('[data-ficha]').count():
+            await pn.locator('[data-ficha]').first.click(); await medir_tela('ficha-funcionario'); await fechar()
+        await pn.click('#plat-busca'); await pg.wait_for_timeout(400)
+        await medir_tela('busca'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(300)
+        await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(500)
+        await medir_tela('configuracoes')
+        # detalhe de uma solicitação, em cada aba
+        await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
+        await pn.locator('#sol-grupos .hj-card').first.click()
+        await espera(lambda: pn.evaluate("!!document.querySelector('#dt-body .tr-item')"))
+        await medir_tela('detalhe-conversa')
+        for aba in ('dados', 'observar'):
+            await pn.click(f'#modal [data-dt="{aba}"]'); await medir_tela(f'detalhe-{aba}')
+        await fechar()
+        # Novo pedido: a escolha do tipo e o formulário
+        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+        await medir_tela('novo-pedido')
+        await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click()
+        if await espera(lambda: pn.evaluate("!!document.querySelector('.ee-lista')"), 4):
+            await medir_tela('escolha-empresa')
+            await pn.click('.dlg [data-acao="2"]')
+        await espera(lambda: pn.evaluate("!!document.querySelector('.v-preencher #pd-voltar')"), 8)
+        await medir_tela('formulario')
+        # planilha de rubricas (2.20/2.21): outro tipo de tela, com a grade e o bloco Comando
+        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+        await pn.locator('.pd-escolha .intent[data-tipo="rubricas"]').click()
+        if await espera(lambda: pn.evaluate("!!document.querySelector('.ee-lista')"), 4): await pn.click('.dlg [data-acao="2"]')
+        if await espera(lambda: pn.evaluate("!!document.querySelector('#plan-cmd-txt')"), 12):
+            await medir_tela('planilha-rubricas')
+        else:
+            check(False, f'contraste: a planilha de rubricas não abriu ({tema})')
+        await ctx.close()
+    if os.environ.get('CT_JSON'): json.dump(todas, open(os.environ['CT_JSON'], 'w'), ensure_ascii=False, indent=1)
+
+
+async def teste_sino(b):
+    """Sino de novidades e resumo do trilho (frente A): primeira leitura sem novidade, foto mínima no navegador,
+    contador, balão com até 8 linhas, teclado, marcar como lidas e contraste do balão nos dois temas."""
+    print('\n[sino] novidades e resumo do trilho')
+    lib = open(os.path.join(os.path.dirname(__file__), 'contraste-lib.js'), encoding='utf-8').read()
+    medir = "(src) => { const m = { exports: null }; new Function('module', src)(m); return m.exports(4.5); }"
+    fotos = os.environ.get('CT_FOTOS', '/tmp')
+    ctx = await b.new_context(viewport={'width': 1366, 'height': 650})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3000)
+    pn = lambda: next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def espera(cond, s=20):
+        for _ in range(s * 4):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(250)
+        return False
+    foto = lambda: pn().evaluate("localStorage.getItem('ct.sinoVisto')")
+    ok = await espera(lambda: foto())
+    check(ok and await pn().locator('#sino-b').count() == 1, 'sino: aparece no cabeçalho e guarda o ponto de partida na primeira leitura')
+    check(await pn().locator('#sino-n').is_hidden(), 'sino: primeira abertura da plataforma não acende nada')
+    bruto = await foto() or '{}'
+    f = json.loads(bruto)
+    check(f.get('v') == 1 and all(len(v) == 3 for v in f['itens'].values()) and all(k.count(':') == 1 for k in f['itens']), 'sino: a foto guarda só tipo:id, situação, data e estado')
+    check('EMPRESA' not in bruto.upper(), 'sino: a foto não leva empresa nem assunto')
+    # trilho: resumo de uma linha na etiqueta
+    await espera(lambda: pn().evaluate("!!document.querySelector('[data-resumo=pendencias]:not([hidden])')"), 10)
+    await pn().hover('.rail-i[data-mod="pendencias"]'); await pg.wait_for_timeout(300)
+    res = await pn().locator('[data-resumo="pendencias"]').inner_text()
+    check('esper' in res and await pn().locator('[data-resumo="pendencias"]').is_visible(), f'trilho: Solicitações mostra o resumo ao passar o mouse ({res})')
+    await pg.screenshot(path=fotos + '/trilho-resumo.png')
+    # simula que o escritório mexeu em tudo desde a última vez: foto antiga com outra situação e estado "em andamento"
+    for k in f['itens']: f['itens'][k] = ['Situação antiga', 1, 'andamento']
+    await pn().evaluate("(v) => localStorage.setItem('ct.sinoVisto', v)", json.dumps(f))
+    await pg.reload(); await pg.wait_for_timeout(3000)
+    ok = await espera(lambda: pn().evaluate("!document.querySelector('#sino-n')?.hidden"), 25)
+    total = int(await pn().locator('#sino-n').inner_text()) if ok else 0
+    check(ok and total > 8, f'sino: contador vermelho com as novidades ({total})')
+    for tema in ('light', 'dark'):
+        await pn().evaluate(f"document.documentElement.setAttribute('data-theme', '{tema}')")
+        await pn().click('#sino-b'); await pg.wait_for_timeout(300)
+        check(await pn().get_attribute('#sino-b', 'aria-expanded') == 'true' and await pn().get_attribute('#sino-b', 'aria-haspopup') == 'dialog', f'sino ({tema}): abre o balão com aria-expanded e aria-haspopup')
+        check(await pn().locator('.sino-li').count() == 8 and await pn().locator('.sino-mais').count() == 1, f'sino ({tema}): até 8 linhas e o aviso de que há mais')
+        await pg.screenshot(path=fotos + f'/sino-{tema}.png')
+        r = await pn().evaluate(medir, lib)
+        check(not r, f'contraste do sino aberto ({tema}): {len(r)} texto(s) abaixo de 4,5:1' + ('' if not r else ' — ' + '; '.join(f"{x['r']} {x['fg']}/{x['bg']} «{x['texto']}» {x['no']}" for x in r[:5])))
+        await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+        check(await pn().get_attribute('#sino-b', 'aria-expanded') == 'false' and await pn().evaluate("document.activeElement?.id") == 'sino-b', f'sino ({tema}): Esc fecha e devolve o foco ao botão')
+    await pn().evaluate("document.documentElement.removeAttribute('data-theme')")
+    # clicar numa linha abre o detalhe e a tira do contador
+    await pn().click('#sino-b'); await pn().locator('.sino-li').first.click()
+    ok = await espera(lambda: pn().evaluate("!!document.querySelector('#modal .dlg, #modal #dt-body')"), 10)
+    n2 = int(await pn().locator('#sino-n').inner_text())
+    check(ok and n2 == total - 1, f'sino: clicar numa novidade abre o detalhe e ela deixa de contar ({total} → {n2})')
+    await pn().evaluate("document.querySelector('#modal .dlg-x')?.click()"); await pg.wait_for_timeout(300)
+    # marcar como lidas: zera, mostra o estado vazio e continua zerado depois de recarregar
+    await pn().click('#sino-b'); await pn().click('#sino-lidas'); await pg.wait_for_timeout(300)
+    check(await pn().locator('#sino-n').is_hidden() and 'Nenhuma novidade' in await pn().locator('#sino-pop').inner_text(), 'sino: Marcar como lidas zera o contador e mostra "Nenhuma novidade"')
+    await pg.wait_for_timeout(600)   # as transições (balão, toast, cartões) terminam antes de medir
+    r = await pn().evaluate(medir, lib)
+    check(not r, f'contraste do sino vazio: {len(r)} texto(s) abaixo de 4,5:1 {[(x["texto"][:28], x["r"], x["fg"], x["bg"]) for x in r[:4]]}')
+    await pg.keyboard.press('Escape')
+    await pg.reload(); await pg.wait_for_timeout(3500)
+    await espera(lambda: pn().evaluate("!!document.querySelector('#sino-b')"), 10)
+    check(await pn().locator('#sino-n').is_hidden(), 'sino: depois de lidas, recarregar não acende de novo')
+    check(not erros, 'sino: sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+async def teste_detalhe(b):
+    """2.19: detalhe da solicitação — navegação ‹ ›, chips por tipo, conversa (tempo relativo, ver mais), aviso do pedido, foco que pisca, foco preso."""
+    print('\n[2.19] detalhe da solicitação')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    ativo_na_janela = lambda: pn.evaluate("!!document.activeElement && !!document.activeElement.closest('#modal .sheet')")
+    nav_txt = lambda: pn.evaluate("(document.querySelector('.dt-nav-n')?.innerText || '').replace(/\\s+/g, ' ')")
+    aba_ativa = lambda: pn.evaluate("document.querySelector('#modal .dp-tab.active')?.dataset.dt")
+    numero = lambda: pn.evaluate("(document.querySelector('#modal #dlg-t .mono')?.innerText || '')")
+    await espera(lambda: pn.evaluate("!!document.querySelector('.hj-hero[data-pronto]')"), 15)
+    await pn.click('#rail [data-mod="pendencias"]')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#sol-grupos [data-card]').length >= 4"), 20)
+    total = await pn.locator('#sol-grupos [data-card]').count()
+    check(ok, f'Solicitações: {total} cartões na tela')
+    # --- 1. navegação pela lista que o cliente via ---
+    await pn.locator('#sol-grupos [data-card]').first.click()
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.dt-nav')"), 10)
+    check(ok and (await nav_txt()) == f'1 de {total}', f'detalhe: navegação "1 de {total}" (a lista que estava na tela) — {await nav_txt()!r}')
+    check(await pn.locator('[data-dt-nav="-1"]').is_disabled() and await pn.locator('[data-dt-nav="1"]').is_enabled(), 'detalhe: "anterior" desligado na primeira, "próxima" ligado')
+    check(bool(await pn.locator('[data-dt-nav="1"]').get_attribute('aria-label')) and bool(await pn.locator('[data-dt-nav="-1"]').get_attribute('aria-label')), 'detalhe: botões ‹ › com aria-label')
+    n1 = await numero()
+    await pn.click('#modal [data-dt="dados"]'); await pg.wait_for_timeout(300)
+    await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(500)
+    check(await nav_txt() == f'2 de {total}' and await numero() != n1, f'seta → leva à próxima ({await nav_txt()!r})')
+    check(await aba_ativa() == 'dados', 'a aba aberta (Dados) continua ao trocar de solicitação')
+    await pg.keyboard.press('ArrowLeft'); await pg.wait_for_timeout(500)
+    check(await nav_txt() == f'1 de {total}' and await numero() == n1, 'seta ← volta à anterior')
+    await pn.click('[data-dt-nav="1"]'); await pg.wait_for_timeout(500)
+    check(await nav_txt() == f'2 de {total}', 'botão › também avança')
+    check(await pn.evaluate("document.activeElement?.dataset?.dtNav") == '1', 'o foco continua no botão usado')
+    # pontas: vai até o fim com o teclado e a "próxima" desliga
+    for _ in range(total + 2):
+        await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(120)
+    check(await nav_txt() == f'{total} de {total}' and await pn.locator('[data-dt-nav="1"]').is_disabled(), 'na última, "próxima" desligada (e as setas não passam do fim)')
+    # --- 5. acessibilidade: foco preso, Esc fecha e devolve o foco ---
+    dentro = True
+    for k in range(40):
+        await pg.keyboard.press('Tab')
+        dentro = dentro and await ativo_na_janela()
+    check(dentro, 'Tab: o foco fica preso na janela do detalhe (40 vezes)')
+    await pg.keyboard.press('Shift+Tab')
+    check(await ativo_na_janela(), 'Shift+Tab também fica na janela')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#modal .sheet').count() == 0, 'Esc fecha o detalhe')
+    # --- 3. voltando para a lista, o cartão da última solicitação vista pisca ---
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#sol-grupos .foco-pisca').length === 1"), 5)
+    check(ok, 'ao fechar o detalhe, o cartão da solicitação vista pisca na lista')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.foco-pisca').length === 0"), 6)
+    check(ok, 'o contorno some sozinho em poucos segundos')
+    # --- 2 e 4. chips, conversa e aviso (aviso de férias 1041: o escritório pede a data; texto longo; 2 dias entre trâmites) ---
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1041').first.click()
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dt-body .tr-item').length >= 2"), 15)
+    check(ok, 'detalhe do aviso de férias 1041: conversa carregada')
+    await pg.wait_for_timeout(1200)
+    chips = await pn.evaluate("[...document.querySelectorAll('#dt-dq .dq')].map(x => x.innerText.replace(/\\s+/g, ' ').trim())")
+    ks = ' | '.join(chips)
+    check(any(c.upper().startswith('INÍCIO DAS FÉRIAS') for c in chips) and any(c.upper().startswith('PAGAMENTO ATÉ') for c in chips) and any(c.upper().startswith('DIAS DE FÉRIAS') for c in chips) and any(c.upper().startswith('PRESCREVE EM') for c in chips),
+          f'chips do aviso de férias: início, pagamento, dias e prescreve em ({ks})')
+    check(len(chips) <= 4, f'no máximo 4 chips ({len(chips)})')
+    qd = await pn.evaluate("document.querySelector('.tr-quando')?.innerText")
+    tt = await pn.evaluate("document.querySelector('.tr-quando')?.title")
+    check(bool(qd) and qd.startswith('há ') and ' às ' in (tt or '') and '/' in tt, f'conversa: tempo relativo ({qd!r}) com a data completa na dica ({tt!r})')
+    check('2 dias depois' in await pn.locator('#dt-body').inner_text(), 'conversa: separador "2 dias depois" entre os trâmites')
+    longo = pn.locator('#dt-body .tr-mais:visible')
+    check(await longo.count() == 1 and (await longo.inner_text()) == 'Ver mais', 'conversa: texto longo recolhido com "Ver mais"')
+    await longo.click(); await pg.wait_for_timeout(200)
+    check(await longo.inner_text() == 'Ver menos' and await longo.get_attribute('aria-expanded') == 'true', 'conversa: "Ver menos" abre o texto todo (aria-expanded)')
+    check(await pn.locator('#dt-body .tr-item.ultimo').count() == 1, 'conversa: a última mensagem tem o destaque (anel)')
+    aviso = await pn.locator('#dt-aviso').inner_text()
+    check('O escritório está pedindo' in aviso and 'ajuda o pedido a andar' in aviso, f'aviso acima da conversa: o que o escritório pede, em tom educativo ({aviso[:90]!r})')
+    check(await pn.locator('#dt-aviso #dt-aviso-resp').is_visible() and bool(await pn.locator('#dt-aviso-resp').get_attribute('aria-label')), 'aviso tem o botão "Responder no portal"')
+    # o aviso só aparece na aba Conversa
+    await pn.click('#modal [data-dt="dados"]'); await pg.wait_for_timeout(300)
+    check(await pn.locator('#dt-aviso').is_hidden(), 'o aviso só aparece na aba Conversa')
+    await pn.click('#modal [data-dt="conversa"]'); await pg.wait_for_timeout(300)
+    # setas dentro da caixa de resposta não trocam de solicitação e ‹ › não descarta o que foi escrito
+    await pn.click('#rl-texto'); await pn.type('#rl-texto', 'abc', delay=20)
+    antes = await nav_txt()
+    await pg.keyboard.press('ArrowLeft'); await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(300)
+    check(await nav_txt() == antes and await pn.input_value('#rl-texto') == 'abc', 'setas na caixa de texto só movem o cursor (não trocam de solicitação)')
+    alvo = '[data-dt-nav="1"]' if await pn.locator('[data-dt-nav="1"]').is_enabled() else '[data-dt-nav="-1"]'
+    await pn.click(alvo); await pg.wait_for_timeout(400)
+    check(await nav_txt() == antes and await pn.locator('#rl-texto').count() == 1, 'com resposta escrita, trocar de solicitação é barrado (nada se perde)')
+    await pn.fill('#rl-texto', ''); await pn.dispatch_event('#rl-texto', 'input'); await pg.wait_for_timeout(300)
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
+    # afastamento: início e dias, e nenhum dado de saúde
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1039').first.click()
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dt-dq .dq').length >= 2"), 15)
+    chips = await pn.evaluate("[...document.querySelectorAll('#dt-dq .dq')].map(x => x.innerText.replace(/\\s+/g, ' ').trim().toUpperCase())")
+    check(ok and any(c.startswith('INÍCIO') for c in chips) and any(c.startswith('DIAS') for c in chips), f'chips do afastamento: início e dias ({chips})')
+    todo = (await pn.locator('#modal').inner_text()).upper()
+    check('Z76' not in todo and 'MEDICO DE EXEMPLO' not in todo and '00000' not in todo, 'sem CID, médico ou CRM no detalhe do afastamento')
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
+    # --- 4b. anexos como chips com o tipo do arquivo ---
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1060').first.click()
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dt-body .tr-arq').length >= 1"), 15)
+    chip = (await pn.locator('#dt-body .tr-arq').first.inner_text()).replace('\n', ' ') if ok else ''
+    check(ok and 'PDF' in chip and 'Informe de rendimentos 2025.pdf' in chip, f'anexo da conversa vira chip com o tipo do arquivo ({chip!r})')
+    check('está pedindo' not in await pn.locator('#modal').inner_text(), 'resposta sem pedido: sem o aviso de "está pedindo"')
+    await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
+    # --- vindo da busca: só a própria ---
+    await pn.click('#plat-busca'); await pn.fill('#cmdk-q', '1041'); await pg.wait_for_timeout(500)
+    await pn.locator('#cmdk-res [data-r]', has_text='1041').first.click(); await pg.wait_for_timeout(800)
+    check(await pn.locator('#modal .dt-nav').count() == 0 and '1041' in await numero(), 'vindo da busca, o detalhe é só da própria solicitação (sem ‹ ›)')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(300)
+    # --- 3. foco que pisca a partir de outra tela ("Ver na lista"), mesmo com filtro escondendo o cartão ---
+    await pn.click('[data-tipo-sol="afastamento"]'); await pg.wait_for_timeout(300)   # filtro que esconde o aviso de férias
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(800)
+    await pn.locator('#hj-passos .hj-step').first.click()
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#modal .sheet')"), 8)
+    check(ok and await pn.locator('#modal .dt-nav').count() == 1, 'vindo do Hoje, o detalhe navega pela lista do Hoje')
+    num = await numero()
+    await pn.click('#modal .dt-na-lista')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#sol-grupos .foco-pisca').length === 1"), 8)
+    check(ok and await pn.locator('#rail [data-mod="pendencias"].on').count() == 1, 'Ver na lista: vai para Solicitações e a solicitação pisca')
+    txt = await pn.locator('#sol-grupos .foco-pisca').inner_text() if ok else ''
+    check(num.replace('nº ', '') in txt, f'… e é a mesma solicitação ({num})')
+    check(await pn.locator('.tipo-c.fam-todos.on, .tipo-f.fam-todos.on').count() == 1, 'o filtro que a escondia foi tirado')   # cartão ou faixa de tipos (2.23)
+    vis = await pn.evaluate("(() => { const r = document.querySelector('#sol-grupos .foco-pisca')?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= innerHeight; })()")
+    check(vis, 'o cartão que pisca está à vista (rolou até ele)')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.foco-pisca').length === 0"), 6)
+    check(ok, 'o pisca termina (cerca de 2 s)')
+    # o botão do aviso abre a solicitação no portal (o mesmo "Responder no portal"): a plataforma se recolhe para o portal aparecer
+    if await pn.locator('[data-limpar-sol]').count(): await pn.click('[data-limpar-sol]')
+    await pg.wait_for_timeout(300)
+    await pn.locator('#sol-grupos [data-card]', has_text='nº 1041').first.click()
+    await espera(lambda: pn.evaluate("!!document.querySelector('#dt-aviso-resp')"), 15)
+    await pn.click('#dt-aviso-resp')
+    ok = await espera(lambda: pg.evaluate("window.__ctPlatform.path().includes('/vacation-notice/1041')"), 15)
+    check(ok, 'o botão do aviso leva ao portal, na solicitação certa')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
+async def teste_agenda(b):
+    """Agenda com calendário do mês: grade seg–dom acessível, painel do dia, ações nos lembretes, legenda, feriados, teclado e Hoje."""
+    import datetime
+    print('\n[Agenda] calendário do mês')
+    pasta = os.environ.get('SIM_CAP', '')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    await pg.set_viewport_size({'width': 1401, 'height': 900}); await pg.wait_for_timeout(200); await pg.set_viewport_size({'width': 1366, 'height': 650}); await pg.wait_for_timeout(500)
+    # Hoje: aviso discreto do próximo prazo (leva à Agenda)
+    ok = False
+    for _ in range(40):
+        if await pn.locator('.hj-saud .hj-prazo').count(): ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok and 'Próximo prazo' in await pn.locator('.hj-saud .hj-prazo').inner_text(), 'Hoje: "Próximo prazo: …" discreto ao lado da saudação')
+    await pn.click('.hj-saud .hj-prazo'); await pg.wait_for_timeout(700)
+    check(await pn.locator('#ag-grade').count() == 1, 'o aviso leva à Agenda')
+    # estrutura acessível
+    check(await pn.get_attribute('#ag-grade', 'role') == 'grid' and await pn.locator('#ag-grade [role=columnheader]').count() == 7, 'grade com role=grid e 7 cabeçalhos de coluna')
+    check((await pn.locator('#ag-grade [role=columnheader]').first.inner_text()).lower() == 'seg', 'a semana começa na segunda')
+    linhas = await pn.locator('#ag-grade .ag-sem').count()
+    check(linhas in (4, 5, 6) and await pn.locator('#ag-grade .ag-day').count() == linhas * 7, f'semanas completas ({linhas} linhas)')
+    await pn.click('#ag-hoje'); await pg.wait_for_timeout(500)
+    hoje = datetime.date.today()
+    cel_hoje = pn.locator(f'.ag-day[data-dia="{hoje.isoformat()}"]')
+    rot = await cel_hoje.get_attribute('aria-label')
+    check(str(hoje.year) in rot and ' de ' in rot and 'hoje' in rot, f'cada dia tem aria-label completo ({rot[:70]}…)')
+    check(await cel_hoje.get_attribute('aria-selected') == 'true' and await cel_hoje.get_attribute('tabindex') == '0', 'hoje já vem escolhido (e é o único com tabindex 0)')
+    check(await pn.locator('.ag-day[tabindex="0"]').count() == 1, 'só um dia na ordem do Tab')
+    check('hoje' in (await pn.locator('#ag-dia').inner_text()).lower(), 'painel do dia mostra Hoje')
+    # novo lembrete no dia escolhido: a data já vem preenchida
+    await pn.click('#ag-novo-dia'); await pg.wait_for_timeout(300)
+    check(await pn.input_value('#lb-data') == hoje.isoformat(), '"Novo lembrete neste dia" abre com a data do dia')
+    await pn.fill('#lb-texto', 'Conferir banco de horas')
+    await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(600)
+    check('1 lembrete' in await cel_hoje.get_attribute('aria-label'), 'o dia passa a ter 1 lembrete (aria-label)')
+    check(await cel_hoje.locator('.ag-pt.t-lembrete').count() == 1, 'ponto de lembrete no dia')
+    check('Conferir banco de horas' in await pn.locator('#ag-dia').inner_text(), 'o painel lista o lembrete')
+    # Feito / Reabrir
+    await pn.click('#ag-dia [data-a="feito"]'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#ag-dia .ag-ev-li.feito').count() == 1 and 'concluído' in await cel_hoje.get_attribute('aria-label'), '"Feito" risca o lembrete e o dia diz "concluído"')
+    check(await cel_hoje.locator('.ag-pt.t-lembrete').count() == 0, 'feito não conta como ponto')
+    await pn.click('#ag-dia [data-a="reabrir"]'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#ag-dia .ag-ev-li.feito').count() == 0, '"Reabrir" desfaz')
+    # Adiar +1 dia: sai de hoje e vai para amanhã
+    amanha = hoje + datetime.timedelta(days=1)
+    await pn.click('#ag-dia [data-a="adiar"]'); await pg.wait_for_timeout(600)
+    check(await pn.locator(f'.ag-day[data-dia="{amanha.isoformat()}"] .ag-pt.t-lembrete').count() == 1 or amanha.month != hoje.month, '"Adiar +1 dia" move o lembrete para amanhã')
+    # legenda liga e desliga o tipo (e lembra a escolha)
+    if amanha.month == hoje.month:
+        await pn.click('#ag-tipos [data-tipo="lembrete"]'); await pg.wait_for_timeout(400)
+        check(await pn.get_attribute('#ag-tipos [data-tipo="lembrete"]', 'aria-pressed') == 'false' and await pn.locator('#ag-grade .ag-pt.t-lembrete').count() == 0, 'legenda: desligar "Lembretes" tira os pontos')
+        check(await pn.evaluate("localStorage.getItem('ct.agOcultos')") == '["lembrete"]', 'a escolha da legenda fica neste computador')
+        await pn.click('#ag-tipos [data-tipo="lembrete"]'); await pg.wait_for_timeout(400)
+        check(await pn.locator('#ag-grade .ag-pt.t-lembrete').count() >= 1, 'legenda: ligar de novo traz os pontos')
+    # teclado: setas, Home/End, Page Down, Enter
+    sel = lambda: pn.evaluate("document.querySelector('.ag-day.sel').dataset.dia")
+    await pn.locator('.ag-day.sel').focus()
+    ini = datetime.date.fromisoformat(await sel())
+    await pg.keyboard.press('ArrowRight'); await pg.wait_for_timeout(200)
+    check(await sel() == (ini + datetime.timedelta(days=1)).isoformat(), 'seta para a direita move um dia')
+    await pg.keyboard.press('ArrowDown'); await pg.wait_for_timeout(200)
+    check(await sel() == (ini + datetime.timedelta(days=8)).isoformat(), 'seta para baixo move uma semana')
+    check(await pn.evaluate("document.activeElement.classList.contains('ag-day') && document.activeElement.dataset.dia === document.querySelector('.ag-day.sel').dataset.dia"), 'o foco acompanha o dia escolhido')
+    mes0 = await pn.inner_text('#ag-mes')
+    await pg.keyboard.press('PageDown'); await pg.wait_for_timeout(500)
+    check(await pn.inner_text('#ag-mes') != mes0, 'Page Down muda o mês')
+    check(await pn.evaluate("document.activeElement.classList.contains('ag-day')"), 'depois de trocar o mês o foco continua no calendário')
+    await pg.keyboard.press('PageUp'); await pg.wait_for_timeout(500)
+    check(await pn.inner_text('#ag-mes') == mes0, 'Page Up volta o mês')
+    await pg.keyboard.press('Enter'); await pg.wait_for_timeout(300)
+    check(await pn.evaluate("document.activeElement.id") == 'ag-dia-t', 'Enter leva o foco ao painel do dia')
+    # feriado: novembro de 2026 tem Finados (02/11, segunda) e a conta de dia útil muda
+    async def ir_para(rotulo):
+        for _ in range(40):
+            if (await pn.inner_text('#ag-mes')).lower() == rotulo: return True
+            ant = datetime.date.today() > datetime.date(2026, 11, 1)
+            await pn.click('#ag-prev' if ant else '#ag-next'); await pg.wait_for_timeout(250)
+        return False
+    check(await ir_para('novembro de 2026'), 'navega até novembro de 2026')
+    fin = pn.locator('.ag-day[data-dia="2026-11-02"]')
+    check('Finados' in await fin.inner_text() and 'feriado: Finados' in await fin.get_attribute('aria-label') and 'dia não útil' in await fin.get_attribute('aria-label'), 'Finados aparece como feriado e dia não útil')
+    check('feriado' in (await fin.get_attribute('class')), 'dia de feriado marcado')
+    check(await pn.locator('#ag-grade .ag-pt.t-legal').count() >= 3, 'prazos fixos (salário, FGTS, INSS) aparecem como pontos')
+    await fin.click(); await pg.wait_for_timeout(300)
+    txt = await pn.inner_text('#ag-dia')
+    check('Feriado: Finados' in txt and 'Dia não útil' in txt, 'painel do dia explica o feriado')
+    d9 = pn.locator('.ag-day[data-dia="2026-11-09"]')
+    await d9.click(); await pg.wait_for_timeout(300)
+    check('Pagamento dos salários' in await pn.inner_text('#ag-dia'), '5º dia útil de novembro (09/11, pulando Finados) lista o pagamento dos salários')
+    # sem rolagem horizontal e capturas nos dois temas
+    for (w, h) in [(1280, 720), (1366, 650)]:
+        await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(500)
+        largo = await pn.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth, document.querySelector('#view').scrollWidth, document.querySelector('#view').clientWidth]")
+        check(largo[0] <= largo[1] + 1 and (largo[2] or 0) <= (largo[3] or 0) + 1, f'{w}x{h}: sem rolagem horizontal {largo}')
+        for tema in ['light', 'dark']:
+            await pn.evaluate(f"document.documentElement.setAttribute('data-theme','{tema}')"); await pg.wait_for_timeout(300)
+            if pasta: await pg.screenshot(path=f'{pasta}/agenda-{tema}-{w}x{h}.png')
+    await pn.evaluate("document.documentElement.setAttribute('data-theme','light')")
+    # tela estreita: painel do dia empilhado abaixo do calendário
+    await pg.set_viewport_size({'width': 1000, 'height': 720}); await pg.wait_for_timeout(500)
+    emp = await pn.evaluate("(() => { const c = document.querySelector('.ag-cal').getBoundingClientRect(), d = document.querySelector('#ag-dia').getBoundingClientRect(); return d.top >= c.bottom - 1 && Math.abs(d.left - c.left) < 4; })()")
+    check(emp, 'em tela estreita o painel do dia fica embaixo do calendário')
+    check(await pn.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"), '1000px: sem rolagem horizontal')
+    if pasta: await pg.screenshot(path=f'{pasta}/agenda-estreita-1000.png')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+
+async def teste_hoje_enxuto(b):
+    """2.19: Hoje e Solicitações enxutos (seções recolhíveis, dica ⓘ, faixa de tipos, telas baixas) e o cartão Movimento."""
+    print('\n[2.19] Hoje e Solicitações mais enxutos, gráficos')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    await espera(lambda: pn.evaluate("!!document.querySelector('.hj-hero[data-pronto]')"), 15)
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#eq-movimento .mv-kpi') && !!document.querySelector('#eq-avisos .eq-li')"), 25)
+    check(ok, 'Hoje: leituras prontas (movimento e avisos)')
+    # seções recolhíveis: estado coerente, padrão pela ação do cliente, escolha guardada só como ids → true/false
+    info = await pn.evaluate("""() => [...document.querySelectorAll('.hj-painel')].map(s => { const b = s.querySelector('.hj-painel-bt'), c = s.querySelector(':scope > .hj-painel-c');
+      return { id: s.id, exp: b.getAttribute('aria-expanded'), oculto: c.hidden, ctrl: b.getAttribute('aria-controls') === c.id, n: s.querySelector('.eq-n')?.textContent }; })""")
+    ids = [x['id'] for x in info]
+    check(len(info) >= 6 and all(x['ctrl'] and (x['exp'] == 'false') == x['oculto'] for x in info), f'Hoje: seções recolhíveis com aria-expanded/aria-controls coerentes ({ids})')
+    ordem = [k for k in ('eq-legais', 'eq-avisos', 'eq-exp', 'eq-ferias', 'eq-movimento', 'eq-docs') if k in ids]
+    check(ordem == sorted(ordem, key=ids.index) and ids.index('eq-docs') > ids.index('eq-legais'), 'Hoje: ordem das seções mantida, com Documentos novos depois de Prazos legais')
+    estado = {x['id']: x['exp'] for x in info}
+    check(estado.get('eq-avisos') == 'true' and estado.get('eq-movimento') == 'false', 'Hoje: abre sozinha a seção com algo a fazer; a informativa vem recolhida')
+    check(all(x['n'] is not None for x in info if x['id'] not in ('eq-folha', 'eq-movimento')), 'Hoje: contador à direita de cada seção')
+    await pn.click('#eq-avisos .hj-painel-bt'); await pn.click('#eq-movimento .hj-painel-bt'); await pg.wait_for_timeout(200)
+    guardado = await pn.evaluate("JSON.parse(localStorage.getItem('ct.hojeSecoes') || '{}')")
+    check(guardado.get('eq-avisos') is False and guardado.get('eq-movimento') is True and all(isinstance(v, bool) for v in guardado.values()), f'Hoje: a escolha fica em ct.hojeSecoes (só ids e true/false): {guardado}')
+    check(await pn.locator('#eq-avisos-c').is_hidden() and await pn.locator('#eq-movimento-c').is_visible(), 'Hoje: recolher esconde o corpo; abrir mostra')
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(400)
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(800)
+    check(await pn.locator('#eq-avisos .hj-painel-bt').get_attribute('aria-expanded') == 'false' and await pn.locator('#eq-movimento .hj-painel-bt').get_attribute('aria-expanded') == 'true', 'Hoje: a escolha volta ao reabrir a tela')
+    await pn.focus('#eq-avisos .hj-painel-bt'); await pg.keyboard.press('Enter'); await pg.wait_for_timeout(200)
+    check(await pn.locator('#eq-avisos .hj-painel-bt').get_attribute('aria-expanded') == 'true', 'Hoje: a seção abre pelo teclado (Enter)')
+    # dica ⓘ: o texto de ajuda vive no botão, também pelo teclado
+    nd = await pn.locator('.hj-painel .dica-i').count()
+    sem = await pn.evaluate("[...document.querySelectorAll('.dica-i')].filter(d => !d.getAttribute('data-tip') || !d.getAttribute('aria-label') || d.tagName !== 'BUTTON').length")
+    check(nd >= 6 and sem == 0, f'Hoje: textos de ajuda viram dica ⓘ ({nd} botões, todos com texto e aria-label)')
+    check(await pn.locator('.hj-painel .pn-card-head small').count() == 0, 'Hoje: sem parágrafos de ajuda sob os títulos das seções')
+    await pn.focus('#eq-legais .dica-i'); await pg.wait_for_timeout(150)
+    txt = await pn.locator('#eq-legais .dica-i').get_attribute('data-tip')
+    check(await pn.locator('#dica').is_visible() and (await pn.locator('#dica').inner_text()).strip() == txt.strip(), 'dica ⓘ: abre pelo foco do teclado com o texto da ajuda')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
+    check(await pn.locator('#dica').is_hidden(), 'dica ⓘ: Esc fecha')
+    # Movimento das suas solicitações
+    m = pn.locator('#eq-movimento')
+    check('Movimento das suas solicitações' in await m.inner_text() and await m.locator('.bv-svg rect.seg').count() >= 4, 'Movimento: barras empilhadas das semanas')
+    lab = await m.locator('.bv-svg').get_attribute('aria-label')
+    check(await m.locator('.bv-svg').get_attribute('role') == 'img' and 'abertas por você' in lab and 'concluídas' in lab and any(c.isdigit() for c in lab), 'Movimento: role="img" e aria-label com os números')
+    check(await m.locator('.bv-svg rect.alvo').count() == 8 and await m.locator('.mb-svg').count() == 1, 'Movimento: 8 semanas, com mini barras no cabeçalho')
+    await m.locator('.bv-svg rect.alvo').nth(1).hover(); await pg.wait_for_timeout(150)
+    tip = (await pn.locator('#dica').inner_text()) if await pn.locator('#dica').is_visible() else ''
+    check('Semana de' in tip and 'Abertas por você:' in tip, f'Movimento: dica ao passar o mouse ({tip!r})')
+    check(await m.locator('.mv-kpi b').count() == 1 and 'dia' in await m.locator('.mv-kpi').inner_text() and await m.locator('.ls-svg').get_attribute('role') == 'img', 'Movimento: tempo até a 1ª resposta (mediana + linha)')
+    check('conversas lidas' in await m.locator('.mv-kpi').inner_text(), 'Movimento: diz de quantas conversas vem o tempo')
+    # telas baixas: destaque compacto, cabeçalho em uma linha, início da 1ª seção à vista
+    for (w, h) in [(1366, 650), (1280, 720)]:
+        await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(700)
+        r = await pn.evaluate("""() => { for (let e = document.querySelector('.hj-hero'); e; e = e.parentElement) e.scrollTop = 0; const hero = document.querySelector('.hj-hero').getBoundingClientRect(), p = document.querySelector('.hj-painel').getBoundingClientRect(), head = document.querySelector('.plat-head').getBoundingClientRect(),
+          an = document.querySelector('.hj-hero .an-svg').getBoundingClientRect(); return { hh: hero.height, painelTopo: p.top, altura: innerHeight, cab: head.height, anel: an.width, leg: getComputedStyle(document.querySelector('.hj-legenda')).display }; }""")
+        check(r['anel'] <= 100 and r['leg'] == 'none' and r['hh'] <= 230, f'{w}×{h}: destaque compacto (rosca {r["anel"]:.0f}px, altura {r["hh"]:.0f}px, sem legenda)')
+        check(r['painelTopo'] + 60 <= r['altura'], f'{w}×{h}: o início da 1ª seção abaixo do destaque fica à vista (topo em {r["painelTopo"]:.0f} de {r["altura"]})')
+        check(r['cab'] <= 70, f'{w}×{h}: cabeçalho da plataforma em uma linha ({r["cab"]:.0f}px)')
+    hero_bg = await pn.evaluate("getComputedStyle(document.querySelector('.hj-hero')).backgroundColor")
+    check(hero_bg != 'rgba(0, 0, 0, 0)', f'destaque mantém a inversão de cores (fundo {hero_bg})')
+    await pg.set_viewport_size({'width': 1400, 'height': 900}); await pg.wait_for_timeout(500)
+    # Solicitações: faixa de uma linha com os tipos que têm pedidos
+    await pn.evaluate("localStorage.removeItem('ct.solTipos')")
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(900)
+    chips = await pn.evaluate("[...document.querySelectorAll('#sol-tipos .tipo-f')].map(c => [c.dataset.tipoSol, +c.querySelector('b').textContent])")
+    check(chips and chips[0][0] == '' and all(n > 0 for k, n in chips if k) and 1 < len(chips) < 11, f'Solicitações: faixa com "Todos os tipos" e só os tipos com pedidos ({len(chips)} chips)')
+    uma = await pn.evaluate("(() => { const f = document.querySelector('.tipos-faixa'); return new Set([...f.children].map(c => Math.round(c.getBoundingClientRect().top))).size; })()")
+    check(uma == 1, 'Solicitações: a faixa tem uma linha só')
+    check(await pn.locator('#sol-tipos .tipo-c').count() == 0 and await pn.locator('[data-tipos-vis="todos"]').count() == 1, 'Solicitações: grade fechada, com o botão "Ver todos os tipos"')
+    await pn.click('#sol-tipos .tipo-f[data-tipo-sol="calculoFerias"]'); await pg.wait_for_timeout(300)
+    check(await pn.locator('#sol-grupos .hj-card').count() == 1 and await pn.locator('#sol-tipos .tipo-f.on[data-tipo-sol="calculoFerias"]').count() == 1, 'Solicitações: o chip do tipo filtra como o cartão filtrava')
+    await pn.click('#sol-tipos .tipo-f[data-tipo-sol="calculoFerias"]')
+    await pn.click('[data-tipos-vis="todos"]'); await pg.wait_for_timeout(200)
+    check(await pn.locator('#sol-tipos .tipo-c').count() == 11 and await pn.evaluate("localStorage.getItem('ct.solTipos')") == 'todos', 'Solicitações: "Ver todos os tipos" abre a grade e guarda a escolha (ct.solTipos)')
+    await pn.click('#rail [data-mod="inicio"]'); await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(500)
+    check(await pn.locator('#sol-tipos .tipo-c').count() == 11, 'Solicitações: a grade continua aberta ao voltar à tela')
+    await pn.click('[data-tipos-vis="faixa"]'); await pg.wait_for_timeout(200)
+    check(await pn.locator('#sol-tipos .tipo-f').count() > 1 and await pn.evaluate("localStorage.getItem('ct.solTipos')") == 'faixa', 'Solicitações: "Mostrar só com pedidos" volta à faixa')
+    check(not erros, f'sem erros de script nas telas {erros[:2]}')
+    await ctx.close()
+
+
 async def main():
     serve()
+    if os.environ.get('SIM_SO') == 'ct':   # SIM_SO=ct roda só o contraste (temas claro e escuro)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_contraste(b); await teste_sino(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
+    if os.environ.get('SIM_SO') == 'dt':   # SIM_SO=dt roda só o detalhe da solicitação (2.19)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_detalhe(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
+    if os.environ.get('SIM_SO') == 'hs':   # SIM_SO=hs roda só o Hoje/Solicitações enxutos e o cartão Movimento (2.19)
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_hoje_enxuto(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
+    if os.environ.get('SIM_SO') == 'ag':   # SIM_SO=ag roda só a Agenda em calendário do mês
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_agenda(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        sys.exit(1 if falhas else 0)
     if os.environ.get('SIM_SO') == 'viv':   # SIM_SO=viv roda só a escrita ao vivo e a resposta ao escritório (2.12)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
@@ -1838,6 +2358,7 @@ async def main():
 
         print('\n'.join(l for l in logs if 'rror' in l or 'PAGEERR' in l)[:2500])
         await teste_plataforma(b)
+        await teste_agenda(b)
         await teste_mecanica(b)
         await teste_cadastro(b)
         await teste_lote4(b)
@@ -1846,6 +2367,10 @@ async def main():
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
+        await teste_contraste(b)
+        await teste_sino(b)
+        await teste_detalhe(b)
+        await teste_hoje_enxuto(b)
         await b.close()
     print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
 

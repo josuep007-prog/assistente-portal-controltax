@@ -1,57 +1,207 @@
-/* Plataforma — Agenda de prazos e lembretes.
- * Recebe o contexto compartilhado (C) e registra nele o que outras partes usam. */
+/* Plataforma — Agenda: calendário do mês, painel do dia, lembretes e prazos.
+ * Recebe o contexto compartilhado (C) e registra nele o que outras partes usam.
+ * A conta do mês (dias, semanas, eventos por dia, dia útil e feriado) é pura e fica em panel/engine/agenda.js; aqui só há tela. */
 import * as E from '../engine.js';
 
 export function montarAgenda(C) {
   const { A, S, $, esc, icon, request, send, toast, viewEl } = C;
   const { ROT_EV, cap, dialogo, eventosEntre, fazerAgora, hora, linhaEvento, nomeTipo, renderPainel } = C;   // definidos em partes que montam antes
-  /* =================== AGENDA =================== */
-  function renderAgenda() {
-    const G = S.plat.agenda;
-    const ini = new Date(G.ano, G.mes, 1), fim = new Date(G.ano, G.mes + 1, 0);
-    const g0 = E.addDays(ini, -ini.getDay()), g1 = E.addDays(fim, 6 - fim.getDay());
-    const todos = eventosEntre(g0, g1);
-    const evs = todos.filter(e => !G.filtro || e.tipo === G.filtro || e.tipo === 'feriado');
-    const porDia = new Map(); for (const e of evs) { const k = E.iso(e.d); if (!porDia.has(k)) porDia.set(k, []); porDia.get(k).push(e); }
-    const hoje = E.iso(E.today());
-    const dias = []; for (let d = g0; d <= g1; d = E.addDays(d, 1)) dias.push(d);
+  const abrirDetalhe = (...a) => C.abrirDetalhe(...a);   // definido numa parte que monta antes (chamado só em tempo de uso)
+  /* =================== AGENDA (calendário do mês) =================== */
+  // tipos escondidos na legenda: preferência desta tela, neste computador
+  const lerOcultos = () => { try { const v = JSON.parse(localStorage.getItem('ct.agOcultos') || '[]'); return Array.isArray(v) ? v.filter(k => E.TIPOS_AGENDA.includes(k)) : []; } catch { return []; } };
+  const gravarOcultos = (l) => { try { localStorage.setItem('ct.agOcultos', JSON.stringify(l)); } catch { /* sem armazenamento: vale só nesta tela */ } };
+  const admissaoDe = (nome) => A.admissaoDe?.(nome) || E.parseDate((S.plat.emp?.lista || []).find(e => E.norm(e.nome) === E.norm(nome))?.admissao) || null;
+  let D = null;   // o mês montado na última vez que desenhou: { G, msg, todos, mes }
+
+  function estado() {
+    const G = S.plat.agenda, hoje = E.today();
+    if (!G.ocultos) G.ocultos = lerOcultos();
+    if (!E.parseDate(G.sel)) G.sel = E.iso(hoje);
+    // o dia escolhido fica sempre dentro do mês mostrado (senão o teclado não teria por onde entrar na grade)
+    const s = E.parseDate(G.sel);
+    if (s.getFullYear() !== G.ano || s.getMonth() !== G.mes) G.sel = E.iso(hoje.getFullYear() === G.ano && hoje.getMonth() === G.mes ? hoje : new Date(G.ano, G.mes, 1));
+    return G;
+  }
+  function montar() {
+    const G = estado(), msg = E.msgAgenda(S.rules);
+    const fer = E.feriadosDaAgenda(S.rules, S.ctx.empresa), cal = E.makeCalendar(fer.datas);
+    const vazio = E.montarMes(G.ano, G.mes, [], { cal, nomes: fer.nomes });
+    const todos = eventosEntre(E.parseDate(vazio.de), E.parseDate(vazio.ate), { completo: true }).filter(e => e.tipo !== 'feriado');
+    D = { G, msg, todos, mes: E.montarMes(G.ano, G.mes, todos, { cal, nomes: fer.nomes, ocultos: G.ocultos }) };
+    return D;
+  }
+  const diaDe = (k) => D.mes.semanas.flat().find(x => x.iso === k);
+
+  /* ---------- Grade do mês ---------- */
+  function celula(dia) {
+    const sel = dia.iso === D.G.sel;
+    const cls = ['ag-day', !dia.doMes && 'out', dia.hoje && 'today', !dia.util && 'nu', dia.feriado && 'feriado', sel && 'sel'].filter(Boolean).join(' ');
+    return `<button type="button" role="gridcell" class="${cls}" data-dia="${dia.iso}" tabindex="${sel ? 0 : -1}" aria-selected="${sel}" aria-label="${esc(E.descreverDia(dia, D.msg))}">
+      <span class="ag-n">${dia.numero}</span>${dia.feriado ? `<span class="ag-fer">${esc(dia.feriado)}</span>` : ''}
+      <span class="ag-pts" aria-hidden="true">${dia.pontos.map(t => `<i class="ag-pt t-${t}"></i>`).join('')}${dia.mais ? `<b class="ag-mais">+${dia.mais}</b>` : ''}</span></button>`;
+  }
+  function desenharGrade() {
+    const { mes, msg } = D;
+    $('#ag-grade').innerHTML = `<div class="ag-wd" role="row">${E.DIAS_SEMANA.map(([c, l]) => `<span role="columnheader" aria-label="${l}">${c}</span>`).join('')}</div>
+      ${mes.semanas.map(sem => `<div class="ag-sem" role="row">${sem.map(celula).join('')}</div>`).join('')}`;
+    $('#ag-grade').setAttribute('aria-label', E.textoAgenda(msg.titulo, { mes: mes.rotulo }));
+    $('#ag-mes').textContent = cap(mes.rotulo);
+  }
+  // a legenda liga e desliga cada tipo no calendário
+  function desenharLegenda() {
+    const { msg, G } = D;
+    $('#ag-tipos').innerHTML = E.TIPOS_AGENDA.map(k => { const off = G.ocultos.includes(k); return `<button type="button" class="ag-tipo${off ? ' off' : ''}" data-tipo="${k}" aria-pressed="${!off}" title="${esc(msg.legendaAjuda)}"><i class="ag-pt t-${k}" aria-hidden="true"></i>${esc(msg.tipos[k].legenda)}</button>`; }).join('')
+      + `<span class="ag-tipo-fer"><i class="ag-fer-sw" aria-hidden="true"></i>${esc(msg.legendaFeriado)}</span>`;
+    $('#ag-tipos').querySelectorAll('[data-tipo]').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.tipo;
+      G.ocultos = G.ocultos.includes(k) ? G.ocultos.filter(x => x !== k) : [...G.ocultos, k];
+      gravarOcultos(G.ocultos);
+      renderAgenda({ foco: `[data-tipo="${k}"]` });
+    }));
+  }
+
+  /* ---------- Painel do dia: os eventos do dia escolhido, com as ações que já existem em cada tipo ---------- */
+  function acoesDoEvento(e, n, hoje) {
+    const { msg } = D, b = (a, rot, cls = '') => `<button type="button" class="btn btn-sm${cls ? ' ' + cls : ''}" data-a="${a}" data-i="${n}">${rot}</button>`;
+    const out = [];
+    if (e.pedir) out.push(b('fazer', esc(msg.fazerAgora), 'btn-primary'));
+    if (e.item) out.push(b('abrir', esc(msg.abrir)));
+    if (e.tipo === 'exp' && e.empregado && C.acoesExperiencia) C.acoesExperiencia(e.empregado, admissaoDe(e.empregado), e.n).forEach((x, k) => out.push(`<button type="button" class="btn btn-sm${x.cls ? ' ' + x.cls : ''}" data-a="exp" data-i="${n}" data-k="${k}"${x.titulo ? ` title="${esc(x.titulo)}"` : ''}>${esc(x.rotulo)}</button>`));
+    if (e.lembrete) {
+      if (e.feito) out.push(b('reabrir', esc(msg.reabrir)));
+      else {
+        out.push(b('feito', `${icon('check', 'ic-sm')} ${esc(msg.feito)}`));
+        out.push(b('adiar', esc(msg.adiarDia)));
+        if (E.iso(E.addDays(hoje, 1)) !== E.iso(E.addDays(e.d, 1))) out.push(b('amanha', esc(msg.amanha)));   // senão seria o mesmo botão
+      }
+      out.push(b('editar', 'Editar', 'btn-ghost'));
+    }
+    return out.join('');
+  }
+  function desenharDia() {
+    const { G, msg } = D, hoje = E.today();
+    const dia = diaDe(G.sel) || { eventos: [], util: true, hoje: false, feriado: '' };
+    const d = E.parseDate(G.sel);
+    const escondidos = D.todos.filter(e => E.iso(e.d) === G.sel && G.ocultos.includes(e.tipo)).length;
+    const evs = dia.eventos;
+    const chips = [dia.hoje && '<span class="pill pill-today">Hoje</span>',
+      dia.feriado && `<span class="pill pill-late">${esc(dia.feriado === 'Feriado' ? msg.feriadoGenerico : `${msg.feriadoGenerico}: ${dia.feriado}`)}</span>`,
+      !dia.util && !dia.feriado && `<span class="pill pill-muted">${esc(cap(msg.naoUtil))}</span>`].filter(Boolean).join(' ');
+    $('#ag-dia').innerHTML = `<div class="pn-card-head"><h3 id="ag-dia-t" tabindex="-1">${esc(cap(d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</h3>${chips ? `<span class="ag-chips">${chips}</span>` : ''}</div>
+      <div class="pn-card-body">
+        ${!dia.util ? `<p class="ag-nota">${icon('info', 'ic-sm')} ${esc(msg.diaNaoUtil)}</p>` : ''}
+        ${evs.length ? `<div class="ag-ev-lista">${evs.map((e, n) => `<div class="ag-ev-li${e.feito ? ' feito' : ''}" data-ev="${n}"><i class="ag-pt t-${e.tipo}" aria-hidden="true"></i>
+          <div class="ag-ev-tx"><b>${esc(e.titulo)}</b>${e.detalhe ? `<small>${esc(e.detalhe)}</small>` : ''}<span class="ag-ev-tp">${esc(msg.tipos[e.tipo].rotulo)}${e.feito ? ` · ${esc(msg.feito)}` : ''}</span></div>
+          <div class="ag-ev-ac">${acoesDoEvento(e, n, hoje)}</div></div>`).join('')}</div>` : `<div class="pn-vazio">${icon('calendar', 'ic-sm')} ${esc(msg.diaVazio)}</div>`}
+        ${escondidos ? `<p class="ag-nota">${escondidos} ${escondidos === 1 ? 'evento escondido' : 'eventos escondidos'} pela legenda.</p>` : ''}
+        <button type="button" class="btn btn-sm" id="ag-novo-dia">${icon('plus', 'ic-sm')} ${esc(msg.novoLembrete)}</button>
+      </div>`;
+    $('#ag-novo-dia').addEventListener('click', () => editarLembrete(null, G.sel));
+    $('#ag-dia').querySelectorAll('[data-a]').forEach(btn => btn.addEventListener('click', () => acaoDoEvento(evs[+btn.dataset.i], btn.dataset.a, btn)));
+  }
+  async function gravarLembretes(lista) {
+    S.plat.lembretes = lista;
+    try { await chrome.storage.local.set({ lembretes: lista }); } catch { /* fica só nesta sessão */ }
+  }
+  async function acaoDoEvento(e, a, btn) {
+    if (!e) return;
+    const { msg } = D, k = E.iso(e.d), L = S.plat.lembretes;
+    if (a === 'fazer') return fazerAgora(e.pedir);
+    if (a === 'abrir') return abrirDetalhe(e.item);
+    if (a === 'editar') return editarLembrete(e.lembrete, k);
+    if (a === 'exp') { const x = C.acoesExperiencia?.(e.empregado, admissaoDe(e.empregado), e.n)[+btn.dataset.k]; return x?.fn(); }
+    if (a === 'feito') { await gravarLembretes(E.concluirLembrete(L, e.lembrete.id, k)); toast(msg.feitoToast); }
+    else if (a === 'reabrir') { await gravarLembretes(E.reabrirLembrete(L, e.lembrete.id, k)); toast(msg.reabertoToast); }
+    else if (a === 'adiar' || a === 'amanha') {
+      const novo = a === 'adiar' ? E.addDays(e.d, 1) : E.addDays(E.today(), 1);
+      await gravarLembretes(E.adiarLembrete(L, e.lembrete.id, k, E.iso(novo), Date.now().toString(36)));
+      toast(E.textoAgenda(msg.adiadoToast, { data: E.fmtDate(novo).slice(0, 5) }));
+    }
+    renderAgenda({ foco: 'painel' });
+  }
+
+  /* ---------- Próximos 30 dias (ao lado do calendário; embaixo, em tela estreita) ---------- */
+  function desenharProximos() {
+    const hoje = E.today(), { G } = D;
+    const prox = eventosEntre(hoje, E.addDays(hoje, 30), { completo: true }).filter(e => e.tipo !== 'feriado' && !e.feito && !G.ocultos.includes(e.tipo)).slice(0, 14);
+    $('#ag-prox').innerHTML = prox.map((e, n) => linhaEvento(e, n)).join('') || `<div class="pn-vazio">${icon('calendar', 'ic-sm')} ${esc(D.msg.proximosVazio)}</div>`;
+    $('#ag-prox').querySelectorAll('[data-ev-iso]').forEach(b => b.addEventListener('click', (ev) => { if (!ev.target.closest('[data-fazer]')) abrirDia(b.dataset.evIso); }));
+    $('#ag-prox').querySelectorAll('[data-fazer]').forEach(b => b.addEventListener('click', () => fazerAgora(prox[+b.dataset.fazer]?.pedir)));
+  }
+
+  /* ---------- Escolher o dia e andar pelo teclado ---------- */
+  // mês igual: só troca a marca e o painel; outro mês: desenha de novo
+  function selecionar(k, { foco = null } = {}) {
+    const G = estado(), d = E.parseDate(k); if (!d) return;
+    G.sel = k;
+    if (d.getFullYear() !== G.ano || d.getMonth() !== G.mes) { G.ano = d.getFullYear(); G.mes = d.getMonth(); return renderAgenda({ foco: foco || 'dia' }); }
+    $('#ag-grade').querySelectorAll('.ag-day').forEach(c => { const s = c.dataset.dia === k; c.classList.toggle('sel', s); c.tabIndex = s ? 0 : -1; c.setAttribute('aria-selected', String(s)); });
+    desenharDia();
+    if (foco) aplicarFoco(foco);
+  }
+  // foco: 'dia' (célula escolhida), 'painel' (título do dia) ou um seletor
+  function aplicarFoco(foco) {
+    const el = foco === 'dia' ? $('#ag-grade .ag-day.sel') : foco === 'painel' ? $('#ag-dia-t') : $(foco);
+    if (!el) return;
+    el.focus({ preventScroll: foco !== 'painel' });
+    if (foco === 'painel') el.scrollIntoView({ block: 'nearest' });
+  }
+  function ligarGrade() {
+    const grade = $('#ag-grade');
+    grade.addEventListener('click', (ev) => {
+      const c = ev.target.closest('.ag-day'); if (!c) return;
+      selecionar(c.dataset.dia);
+      if (matchMedia('(max-width: 1080px)').matches) $('#ag-dia').scrollIntoView({ block: 'nearest' });   // painel embaixo: leva até ele
+    });
+    grade.addEventListener('keydown', (ev) => {
+      const c = ev.target.closest('.ag-day'); if (!c || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+      const k = c.dataset.dia;
+      const alvo = { ArrowLeft: () => E.moverDia(k, -1), ArrowRight: () => E.moverDia(k, 1), ArrowUp: () => E.moverDia(k, -7), ArrowDown: () => E.moverDia(k, 7),
+        PageUp: () => E.moverMes(k, -1), PageDown: () => E.moverMes(k, 1), Home: () => E.semanaDe(k)[0], End: () => E.semanaDe(k)[1] }[ev.key];
+      if (alvo) { ev.preventDefault(); selecionar(alvo(), { foco: 'dia' }); }
+      else if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selecionar(k, { foco: 'painel' }); }
+    });
+  }
+
+  function renderAgenda({ foco = null } = {}) {
+    montar();
+    const { G, msg } = D;
     const inacabados = (S.historico || []).filter(h => h.status === 'preenchido' && Date.now() - h.quando < 7 * 864e5 && (!S.ctx.empresa || h.empresa === S.ctx.empresa));
     viewEl.innerHTML = `
-      <div class="dp-toolbar">
-        <div class="dp-month" role="group" aria-label="Mês da agenda"><button type="button" id="ag-prev" aria-label="Mês anterior">${icon('left', 'ic-sm')}</button><span class="dp-month-label">${cap(ini.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }))}</span><button type="button" id="ag-next" aria-label="Próximo mês">${icon('right', 'ic-sm')}</button></div>
+      <div class="dp-toolbar ag-bar">
+        <div class="dp-month" role="group" aria-label="Mês da agenda"><button type="button" id="ag-prev" aria-label="Mês anterior">${icon('left', 'ic-sm')}</button><h2 class="dp-month-label" id="ag-mes" aria-live="polite" tabindex="-1"></h2><button type="button" id="ag-next" aria-label="Próximo mês">${icon('right', 'ic-sm')}</button></div>
         <button type="button" class="btn btn-sm" id="ag-hoje">Hoje</button>
-        <select id="ag-filtro" aria-label="Mostrar"><option value="">Tudo</option>${['legal', 'pedido', 'exp', 'lembrete'].map(k => `<option value="${k}"${G.filtro === k ? ' selected' : ''}>${ROT_EV[k]}${k === 'lembrete' ? 's' : k === 'legal' ? 's' : ''}</option>`).join('')}</select>
         <span class="sp"></span>
         <button type="button" class="btn btn-sm btn-primary" id="ag-novo">${icon('plus', 'ic-sm')} Lembrete</button>
       </div>
+      <div class="ag-tipos" id="ag-tipos" role="group" aria-label="Tipos de evento"></div>
       <div class="ag-grid">
-        <div class="list-card">
-          <div class="ag-wd">${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => `<span>${d}</span>`).join('')}</div>
-          <div class="ag-days">${dias.map(d => { const k = E.iso(d); const l = porDia.get(k) || []; const fer = l.some(e => e.tipo === 'feriado'); const vis = l.filter(e => e.tipo !== 'feriado');
-            return `<button type="button" class="ag-day${d.getMonth() !== G.mes ? ' out' : ''}${k === hoje ? ' today' : ''}${fer ? ' feriado' : ''}" data-dia="${k}" aria-label="${E.fmtDate(d)}: ${vis.length} evento(s)"><span class="ag-n">${d.getDate()}</span>${fer ? '<span class="ag-ev ev-feriado">Feriado</span>' : ''}${vis.slice(0, 3).map(e => `<span class="ag-ev ev-${e.tipo}" title="${esc(e.titulo)}">${esc(e.titulo)}</span>`).join('')}${vis.length > 3 ? `<span class="ag-more">+${vis.length - 3} mais</span>` : ''}</button>`; }).join('')}</div>
-          <div class="ag-legenda">${['legal', 'pedido', 'exp', 'lembrete'].map(k => `<span><i class="ev-${k}" style="background:currentColor"></i>${ROT_EV[k]}</span>`).join('')}</div>
+        <div class="list-card ag-cal">
+          <div class="ag-calendario" id="ag-grade" role="grid"></div>
+          <div class="ag-rodape">${icon('info', 'ic-sm')} <span>${esc(msg.teclado)}</span></div>
         </div>
         <aside class="ag-side">
-          <section class="pn-card"><div class="pn-card-head"><h3>Próximos 30 dias</h3></div><div class="pn-card-body" id="ag-prox"></div></section>
+          <section class="pn-card" id="ag-dia" aria-label="Dia escolhido"></section>
+          <section class="pn-card"><div class="pn-card-head"><h3>${esc(msg.proximos)}</h3></div><div class="pn-card-body" id="ag-prox"></div></section>
           ${inacabados.length ? `<section class="pn-card"><div class="pn-card-head"><h3>Começou e não enviou</h3><small>Preenchidas no portal, mas o envio não foi confirmado.</small></div><div class="pn-card-body">${inacabados.map((h, n) => `<button type="button" class="pn-li" data-cont="${n}"><div class="main"><b>${esc(h.resumo)}</b><small>${esc(nomeTipo(h.tipo))} · ${new Date(h.quando).toLocaleDateString('pt-BR')}</small></div><span class="pill pill-today">continuar</span></button>`).join('')}</div></section>` : ''}
           <details class="pn-card"><summary>Histórico deste computador</summary><div class="pn-card-body" id="ag-hist"></div></details>
         </aside>
       </div>`;
-    const prox = eventosEntre(E.today(), E.addDays(E.today(), 30)).filter(e => e.tipo !== 'feriado' && (!G.filtro || e.tipo === G.filtro));
-    $('#ag-prox').innerHTML = prox.slice(0, 12).map((e, n) => linhaEvento(e, n)).join('') || `<div class="pn-vazio">${icon('calendar', 'ic-sm')} Nada nos próximos 30 dias.</div>`;
-    $('#ag-prox').querySelectorAll('[data-ev-iso]').forEach(b => b.addEventListener('click', (ev) => { if (!ev.target.closest('[data-fazer]')) abrirDia(b.dataset.evIso); }));
-    $('#ag-prox').querySelectorAll('[data-fazer]').forEach(b => b.addEventListener('click', () => fazerAgora(prox[+b.dataset.fazer]?.pedir)));
+    desenharLegenda(); desenharGrade(); desenharDia(); desenharProximos(); ligarGrade();
     const hist = S.historico || [];
     $('#ag-hist').innerHTML = hist.length ? hist.slice(0, 40).map((h, n) => `<button type="button" class="pn-li" data-hist="${n}"><div class="main"><b>${esc(h.resumo)}</b><small>${esc(nomeTipo(h.tipo))} · ${new Date(h.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</small></div><span class="pill pill-${h.status === 'enviado' ? 'ok' : 'soon'}">${esc(h.status)}</span></button>`).join('') : '<div class="pn-vazio">As solicitações que você fizer com o Assistente aparecem aqui.</div>';
-    viewEl.querySelectorAll('[data-dia]').forEach(b => b.addEventListener('click', () => abrirDia(b.dataset.dia)));
     viewEl.querySelectorAll('[data-cont]').forEach(b => b.addEventListener('click', () => reaproveitar(inacabados[+b.dataset.cont])));
     viewEl.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => reaproveitar(hist[+b.dataset.hist], true)));
-    $('#ag-prev').addEventListener('click', () => { const d = new Date(G.ano, G.mes - 1, 1); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
-    $('#ag-next').addEventListener('click', () => { const d = new Date(G.ano, G.mes + 1, 1); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
-    $('#ag-hoje').addEventListener('click', () => { const d = E.today(); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda(); });
-    $('#ag-filtro').addEventListener('change', (e) => { G.filtro = e.target.value; renderAgenda(); });
-    $('#ag-novo').addEventListener('click', () => editarLembrete(null, E.iso(E.today())));
+    // trocar de mês leva o dia escolhido junto (no mesmo dia do mês, ou no último dia, se o mês for mais curto)
+    const irMes = (n) => { G.sel = E.moverMes(G.sel, n); const d = E.parseDate(G.sel); G.ano = d.getFullYear(); G.mes = d.getMonth(); renderAgenda({ foco: n < 0 ? '#ag-prev' : '#ag-next' }); };
+    $('#ag-prev').addEventListener('click', () => irMes(-1));
+    $('#ag-next').addEventListener('click', () => irMes(1));
+    $('#ag-hoje').addEventListener('click', () => { const d = E.today(); G.ano = d.getFullYear(); G.mes = d.getMonth(); G.sel = E.iso(d); renderAgenda({ foco: 'dia' }); });
+    $('#ag-novo').addEventListener('click', () => editarLembrete(null, G.sel));
+    if (foco) aplicarFoco(foco);
   }
+
   async function reaproveitar(h, outroPedido = false) {
     if (!h) return;
     const W = A.w(h.tipo);
@@ -63,17 +213,26 @@ export function montarAgenda(C) {
     A.gerarTextos(h.tipo, true);
     await A.openTipo(h.tipo, { manter: true });
   }
+  /** Mostra o dia na Agenda (de outras telas, como o Hoje, leva até ela). */
   function abrirDia(isoDia) {
     const d = E.parseDate(isoDia); if (!d) return;
-    const evs = eventosEntre(d, d);
-    const dlg = dialogo({
-      titulo: cap(d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })),
-      corpo: evs.length ? evs.map((e, n) => `<div class="pn-li"${e.lembrete ? ` data-lb="${n}" style="cursor:pointer"` : ' style="cursor:default"'}><span class="ag-ev ev-${e.tipo}" style="width:10px;padding:8px 0"></span><div class="main"><b>${esc(e.titulo)}</b><small>${esc(e.detalhe || ROT_EV[e.tipo])}</small></div>${e.pedir ? `<button type="button" class="btn btn-sm btn-primary" data-dia-fazer="${n}">Fazer agora</button>` : ''}<span class="pill">${ROT_EV[e.tipo]}</span></div>`).join('') : '<p class="muted" style="margin:0">Nada marcado neste dia.</p>',
-      acoes: [{ rotulo: `${icon('plus', 'ic-sm')} Lembrete neste dia`, cls: 'btn-primary', fn: () => { setTimeout(() => editarLembrete(null, isoDia), 0); } }, '|', { rotulo: 'Fechar' }]
-    });
-    dlg.el.querySelectorAll('[data-lb]').forEach(b => b.addEventListener('click', (ev) => { if (ev.target.closest('[data-dia-fazer]')) return; dlg.fechar(); editarLembrete(evs[+b.dataset.lb].lembrete, isoDia); }));
-    dlg.el.querySelectorAll('[data-dia-fazer]').forEach(b => b.addEventListener('click', () => { dlg.fechar(); fazerAgora(evs[+b.dataset.diaFazer].pedir); }));
+    const G = S.plat.agenda;
+    G.sel = E.iso(d); G.ano = d.getFullYear(); G.mes = d.getMonth();
+    if (S.view === 'historico') renderAgenda({ foco: 'painel' }); else A.setView('historico');
   }
+  /* "Próximo prazo" discreto no Hoje (uma chamada em hoje.js): o primeiro prazo legal, de solicitação ou de experiência
+     a partir de hoje, e um clique leva à Agenda no dia dele. Só texto: nada é guardado. */
+  function proximoPrazoHtml() {
+    try {
+      const msg = E.msgAgenda(S.rules), hoje = E.today();
+      const p = E.proximoPrazo(eventosEntre(hoje, E.addDays(hoje, 60), { completo: true }), hoje);
+      if (!p) return '';
+      const q = E.quandoTexto(p.falta, msg), dd = p.falta > 1 ? ` (${E.fmtDate(p.d).slice(0, 5)})` : '';
+      return `<span class="hj-sep"> · </span><button type="button" class="hj-prazo" data-ag-prox="${E.iso(p.d)}" title="${esc(msg.verAgenda)}">${esc(E.textoAgenda(msg.proximoPrazo, { titulo: p.titulo }))} <span>${esc(q + dd)}</span> ›</button>`;
+    } catch { return ''; }
+  }
+  viewEl.addEventListener('click', (ev) => { const b = ev.target.closest?.('[data-ag-prox]'); if (b) abrirDia(b.dataset.agProx); });
+
   function editarLembrete(l, diaIso) {
     const novo = !l;
     const L = l ? { ...l } : { id: Date.now().toString(36), texto: '', data: diaIso, hora: '', rep: 'nao', intervalo: 1, ate: '', obs: '', pular: [] };
@@ -113,5 +272,5 @@ export function montarAgenda(C) {
     atualizar(); m.querySelector('#lb-texto').focus();
   }
 
-  Object.assign(C, { abrirDia, editarLembrete, reaproveitar, renderAgenda });
+  Object.assign(C, { abrirDia, editarLembrete, proximoPrazoHtml, reaproveitar, renderAgenda });
 }

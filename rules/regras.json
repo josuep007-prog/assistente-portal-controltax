@@ -1,5 +1,5 @@
 {
-  "versao": "2026.10.28-1",
+  "versao": "2026.11.01-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -270,6 +270,29 @@
     "prescricaoDias": 30,
     "prescricaoAvisoDias": 10,
     "leituraAutomaticaSegundos": 30,
+    "sino": { "maxLinhas": 8, "maxGuardadas": 400 },
+    "movimento": {
+      "_comentario": "Cartão 'Movimento das suas solicitações' do Hoje: semanas mostradas, mínimo de solicitações no período para o cartão aparecer e de respostas lidas para mostrar o tempo da 1ª resposta. Só números lidos do portal, em memória.",
+      "revisarComEscritorio": true,
+      "semanas": 8,
+      "minimoSolicitacoes": 3,
+      "minimoRespostas": 3,
+      "ajuda": "Conta as solicitações que você abriu em cada semana e as que foram concluídas nela (a data da conclusão é a da última movimentação no portal). Só entram as solicitações que a leitura automática trouxe. O tempo da 1ª resposta vem das conversas já lidas e pode não incluir todas."
+    },
+    "hoje": {
+      "_comentario": "Textos de ajuda do Hoje e das Solicitações (aparecem na dica ⓘ ao lado do título). Podem ser trocados sem nova versão.",
+      "ajudas": {
+        "folha": "As variáveis da folha (horas extras, faltas, comissões…) devem chegar ao escritório até o dia combinado de cada mês. Prepare o lançamento aqui e confira no portal antes de enviar.",
+        "terminar": "Pedidos que você começou a preencher e não enviou nos últimos 7 dias, guardados só neste computador.",
+        "legais": "Prazos da lei que dependem de você: pagamento dos cálculos de férias e de rescisão em aberto e o eSocial das admissões.",
+        "avisos": "Férias e rescisões perto do pagamento que têm só o aviso no portal. Peça o cálculo para o escritório conseguir pagar no prazo.",
+        "experiencia": "Contratos de experiência que vencem nos próximos 30 dias, pela data de admissão. Prorrogue, encerre no fim ou efetive.",
+        "ferias": "Férias que o prazo para conceder vence em até 60 dias. É uma estimativa: o portal não informa as férias já tiradas.",
+        "documentos": "Documentos que o escritório publicou e que o portal ainda mostra como não lidos.",
+        "casos": "O que pode atrasar o atendimento, lido nas conversas e nos pedidos.",
+        "truncado": "Mostrando as mais recentes de cada tipo. As mais antigas continuam no portal."
+      }
+    },
     "escolherUnicaOpcao": {
       "_comentario": "Listas do portal em que o Assistente escolhe sozinho quando há uma opção só (no fim de um preenchimento, se o campo estiver vazio). A fonte aparece como 'única opção do portal'.",
       "revisarComEscritorio": true,
@@ -1506,6 +1529,48 @@
         ]
       }
     ],
+    "destaquesDetalhe": {
+      "revisarComEscritorio": true,
+      "descricao": "Os dados que o cliente mais procura, em chips no topo do detalhe da solicitação. 'fonte' diz de onde vem (datas.* = datas do aviso, calc.* = prazo calculado, item.* = a solicitação, bruto.* = campo do detalhe do portal; use | para alternativas). O que faltar não aparece. Nunca coloque dados de saúde (CID, médico, CRM).",
+      "max": 4,
+      "alertaDias": 3,
+      "todos": [
+        "prescreve"
+      ],
+      "campos": {
+        "inicioFerias": { "rotulo": "Início das férias", "fonte": "datas.inicioFerias" },
+        "pagamentoFerias": { "rotulo": "Pagamento até", "fonte": "datas.pagamento|calc.pagamentoFerias", "alerta": "passou" },
+        "diasFerias": { "rotulo": "Dias de férias", "fonte": "datas.dias", "formato": "dias" },
+        "abono": { "rotulo": "Dias de abono", "fonte": "datas.abono", "formato": "dias", "omitirZero": true },
+        "dataAviso": { "rotulo": "Data do aviso", "fonte": "datas.aviso|datas.avisoPrevio" },
+        "ultimoDia": { "rotulo": "Último dia", "fonte": "datas.desligamento|bruto.lastWorkDay|bruto.terminationDate" },
+        "pagamentoRescisao": { "rotulo": "Pagamento até", "fonte": "calc.pagamentoRescisao", "alerta": "passou" },
+        "inicioAfastamento": { "rotulo": "Início", "fonte": "datas.afastamento" },
+        "diasAfastamento": { "rotulo": "Dias", "fonte": "bruto.leaveDays|bruto.daysOfLeave", "formato": "dias" },
+        "retorno": { "rotulo": "Retorno previsto", "fonte": "bruto.returnDate|bruto.expectedReturnDate" },
+        "admissao": { "rotulo": "Admissão", "fonte": "datas.admissao" },
+        "competencia": { "rotulo": "Competência", "fonte": "item.competencia" },
+        "expectativa": { "rotulo": "Expectativa de conclusão", "fonte": "item.expectativa" },
+        "prescreve": { "rotulo": "Prescreve em", "fonte": "item.prescreveEm", "formato": "dias", "alerta": "prescricao" }
+      },
+      "porTipo": {
+        "avisoFerias": ["inicioFerias", "pagamentoFerias", "diasFerias", "abono"],
+        "calculoFerias": ["inicioFerias", "pagamentoFerias", "diasFerias", "expectativa"],
+        "avisoRescisao": ["dataAviso", "ultimoDia", "pagamentoRescisao"],
+        "calculoRescisao": ["ultimoDia", "pagamentoRescisao", "dataAviso", "expectativa"],
+        "afastamento": ["inicioAfastamento", "diasAfastamento", "retorno", "expectativa"],
+        "cadastroEmpregado": ["admissao"],
+        "cadastroEstagiario": ["admissao"],
+        "cadastroContribuinte": ["admissao"],
+        "rubricas": ["competencia"],
+        "geral": ["expectativa"]
+      }
+    },
+    "detalheConversa": {
+      "revisarComEscritorio": true,
+      "descricao": "Conversa do detalhe da solicitação: separador 'N dias depois' só a partir deste intervalo (em dias).",
+      "intervaloDias": 2
+    },
     "observacoes": {
       "avisoFerias": [
         "As férias começam em {inicio}. O aviso precisa ser entregue ao empregado com pelo menos {avisoFeriasDias} dias de antecedência (CLT, art. 135).",
@@ -1697,6 +1762,34 @@
     "2027-11-20",
     "2027-12-25"
   ],
+  "feriadosNomes": {
+    "_comentario": "Nome de cada feriado de 'feriados' (a Agenda mostra no dia). Só o nome: quem muda os dias úteis é a lista 'feriados'. Datas sem nome aparecem como 'Feriado'.",
+    "2026-01-01": "Confraternização Universal",
+    "2026-04-03": "Sexta-feira Santa",
+    "2026-04-21": "Tiradentes",
+    "2026-05-01": "Dia do Trabalho",
+    "2026-09-07": "Independência do Brasil",
+    "2026-10-12": "Nossa Senhora Aparecida",
+    "2026-11-02": "Finados",
+    "2026-11-15": "Proclamação da República",
+    "2026-11-20": "Consciência Negra",
+    "2026-12-25": "Natal",
+    "2027-01-01": "Confraternização Universal",
+    "2027-03-26": "Sexta-feira Santa",
+    "2027-04-21": "Tiradentes",
+    "2027-05-01": "Dia do Trabalho",
+    "2027-09-07": "Independência do Brasil",
+    "2027-10-12": "Nossa Senhora Aparecida",
+    "2027-11-02": "Finados",
+    "2027-11-15": "Proclamação da República",
+    "2027-11-20": "Consciência Negra",
+    "2027-12-25": "Natal"
+  },
+  "feriadosMunicipais": {
+    "_comentario": "Feriados municipais para a Agenda: { \"data\": \"AAAA-MM-DD\", \"nome\": \"Aniversário da cidade\", \"empresa\": \"trecho do nome da empresa (opcional)\" }. Aparecem no calendário como dia não útil. Para também mudar as contas de prazo (pagamentos, guias), ponha a mesma data em 'feriados'. Vazio por enquanto: levantar com o escritório.",
+    "revisarComEscritorio": true,
+    "itens": []
+  },
   "aliasesOpcoes": {
     "_comentario": "Quando o documento traz uma forma e o portal mostra outra (ex.: SP → São Paulo). Chave = como vem no documento.",
     "AC": "Acre",
@@ -5410,6 +5503,94 @@
     }
   ],
   "mensagens": {
+    "sino": {
+      "titulo": "Novidades",
+      "botao": "Novidades",
+      "vazio": "Nenhuma novidade",
+      "vazioSub": "Quando o escritório responder ou concluir algo, aparece aqui.",
+      "marcarLidas": "Marcar como lidas",
+      "maisN": "e mais {n} novidades. Veja todas em Solicitações.",
+      "primeira": "Daqui em diante o sino avisa o que mudar nas suas solicitações.",
+      "respondeu": "O escritório respondeu {tipo} nº {numero} e espera a sua resposta.",
+      "respondeuSemPedido": "O escritório respondeu {tipo} nº {numero}. Confira a resposta e conclua no portal.",
+      "concluida": "{tipo} nº {numero} foi concluída.",
+      "cancelada": "{tipo} nº {numero} foi cancelada.",
+      "prescrita": "{tipo} nº {numero} foi encerrada pelo portal. Se ainda precisar, é só fazer um novo pedido.",
+      "andamento": "O escritório atualizou {tipo} nº {numero}: {status}."
+    },
+    "trilhoResumo": {
+      "esperam": ["{n} espera você", "{n} esperam você"],
+      "prescrevem": ["{n} perto de prescrever", "{n} perto de prescrever"],
+      "novos": ["{n} novo", "{n} novos"]
+    },
+    "agenda": {
+      "_comentario": "Textos da Agenda em calendário do mês (aba Agenda da plataforma). Marcadores entre chaves são trocados na tela. Os textos de tipo aparecem na legenda, no painel do dia e na leitura por voz de cada dia.",
+      "revisarComEscritorio": true,
+      "tipos": {
+        "legal": {
+          "rotulo": "Prazo legal",
+          "legenda": "Prazos legais",
+          "um": "prazo legal",
+          "varios": "prazos legais"
+        },
+        "pedido": {
+          "rotulo": "Das solicitações",
+          "legenda": "Das solicitações",
+          "um": "data de solicitação",
+          "varios": "datas de solicitações"
+        },
+        "prescricao": {
+          "rotulo": "Prescrição",
+          "legenda": "Prescrição",
+          "um": "prazo de prescrição",
+          "varios": "prazos de prescrição"
+        },
+        "exp": {
+          "rotulo": "Experiência",
+          "legenda": "Experiência",
+          "um": "fim de experiência",
+          "varios": "fins de experiência"
+        },
+        "lembrete": {
+          "rotulo": "Lembrete",
+          "legenda": "Lembretes",
+          "um": "lembrete",
+          "varios": "lembretes"
+        }
+      },
+      "titulo": "Calendário de {mes}",
+      "hoje": "hoje",
+      "feriado": "feriado",
+      "feriadoGenerico": "Feriado",
+      "naoUtil": "dia não útil",
+      "semEventos": "sem eventos",
+      "evento": "evento",
+      "eventos": "eventos",
+      "concluido": "concluído",
+      "concluidos": "concluídos",
+      "legendaAjuda": "Clique num tipo para mostrá-lo ou escondê-lo no calendário.",
+      "legendaFeriado": "Feriado ou dia não útil",
+      "teclado": "Setas movem o dia · Enter abre o dia · Page Up e Page Down trocam o mês",
+      "diaVazio": "Nada marcado neste dia.",
+      "diaNaoUtil": "Dia não útil (fim de semana ou feriado). Cada prazo diz se antecipa para o dia útil anterior.",
+      "novoLembrete": "Novo lembrete neste dia",
+      "proximos": "Próximos 30 dias",
+      "proximosVazio": "Nada nos próximos 30 dias.",
+      "feito": "Feito",
+      "reabrir": "Reabrir",
+      "adiarDia": "Adiar +1 dia",
+      "amanha": "Para amanhã",
+      "abrir": "Abrir a solicitação",
+      "fazerAgora": "Fazer agora",
+      "feitoToast": "Lembrete marcado como feito.",
+      "adiadoToast": "Lembrete adiado para {data}.",
+      "reabertoToast": "Lembrete reaberto.",
+      "proximoPrazo": "Próximo prazo: {titulo}",
+      "verAgenda": "Ver na Agenda",
+      "quandoHoje": "hoje",
+      "quandoAmanha": "amanhã",
+      "quandoEm": "em {n} dias"
+    },
     "comprovanteOutraPessoa": "O comprovante de residência está em nome de {titular}. Tudo bem se for de um parente (pai, mãe, cônjuge): nesse caso o escritório pode pedir uma declaração de residência assinada pelo titular.",
     "filiacaoConfira": "Na filiação do documento li “{mae}” e “{outro}”. Coloquei “{mae}” como mãe — confira (e troque no campo Nome da mãe, se for o outro).",
     "envioOk": "Tudo certo! Pode enviar.",

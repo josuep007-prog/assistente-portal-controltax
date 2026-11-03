@@ -329,6 +329,8 @@ export function vereditoConversa(trs, regras) {
   const ult = l[l.length - 1];
   if (!ult) return null;
   const out = { ultimoLado: ult.lado, pede: false, frase: '', anexoSemArquivo: false, trecho: '' };
+  // quando o escritório respondeu pela primeira vez (só a data; alimenta o "Movimento das suas solicitações")
+  const prim = l.find(x => x.lado === 'esc'); if (prim?.em) { out.primeiraResposta = prim.em; out.abertura = l[0]?.em || null; }
   if (ult.lado === 'esc') Object.assign(out, pedeAlgo(ult.texto, regras));
   // o cliente fala em anexo depois da última resposta do escritório e nenhum arquivo chegou
   let k = l.length - 1; while (k > 0 && l[k].lado === 'cli') k--;
@@ -373,24 +375,30 @@ export function casosCliente(itens, regras) {
    Pagamento dos cálculos em aberto (férias: 2 dias antes do início, CLT 145; rescisão: 10 dias do desligamento,
    CLT 477 §6º, antecipando para o dia útil anterior) e o eSocial das admissões (empregado: até o dia anterior ao
    início; estagiário: até config.estagiarioPrazoDias depois). Datas vindas do detalhe ou da lista. */
-export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
+/** O prazo legal de uma solicitação (sem janela de dias): { alvo, titulo, ref } ou null. Usado pelo Hoje e pela Agenda. */
+export function prazoLegalDoItem(i, regras = {}, cal = makeCalendar(regras?.feriados)) {
   const c = regras?.config || {};
+  const dt = i.datas || {};
+  if (i.tipo === 'calculoFerias' && dt.inicioFerias) return { alvo: pagamentoFerias(dt.inicioFerias, regras, cal), titulo: 'Pagamento das férias', ref: `início em ${fmtDate(dt.inicioFerias)}` };
+  if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) {
+    const b = dt.desligamento || dt.avisoPrevio;
+    return { alvo: pagamentoRescisao(b, regras, cal), titulo: 'Pagamento da rescisão', ref: dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}` };
+  }
+  if (/^cadastro(Empregado|Estagiario)$/.test(i.tipo) && dt.admissao) {
+    const est = i.tipo === 'cadastroEstagiario';
+    return { alvo: est ? addDays(dt.admissao, c.estagiarioPrazoDias ?? 15) : addDays(dt.admissao, -1), titulo: 'Admissão no eSocial', ref: `início em ${fmtDate(dt.admissao)}${est ? ' (estágio)' : ''}` };
+  }
+  return null;
+}
+export function prazosLegaisCliente(itens, hoje = today(), regras = {}, cal = makeCalendar(regras?.feriados)) {
   const out = [];
   for (const i of itens || []) {
     if (!['aguardando', 'andamento'].includes(i.estado)) continue;
-    const dt = i.datas || {};
-    let alvo = null, titulo = '', ref = '';
-    if (i.tipo === 'calculoFerias' && dt.inicioFerias) { alvo = pagamentoFerias(dt.inicioFerias, regras, cal); titulo = 'Pagamento das férias'; ref = `início em ${fmtDate(dt.inicioFerias)}`; }
-    else if (i.tipo === 'calculoRescisao' && (dt.desligamento || dt.avisoPrevio)) { const b = dt.desligamento || dt.avisoPrevio; alvo = pagamentoRescisao(b, regras, cal); titulo = 'Pagamento da rescisão'; ref = dt.desligamento ? `desligamento em ${fmtDate(b)}` : `aviso em ${fmtDate(b)}`; }
-    else if (/^cadastro(Empregado|Estagiario)$/.test(i.tipo) && dt.admissao) {
-      const est = i.tipo === 'cadastroEstagiario';
-      alvo = est ? addDays(dt.admissao, c.estagiarioPrazoDias ?? 15) : addDays(dt.admissao, -1);
-      titulo = 'Admissão no eSocial'; ref = `início em ${fmtDate(dt.admissao)}${est ? ' (estágio)' : ''}`;
-    }
-    if (!alvo) continue;
-    const falta = diffDays(hoje, alvo);
+    const p = prazoLegalDoItem(i, regras, cal);
+    if (!p?.alvo) continue;
+    const falta = diffDays(hoje, p.alvo);
     if (falta > 15 || falta < -10) continue;
-    out.push({ item: i, titulo, alvo, ref, falta, retroativa: !!(i.criado && dt.admissao && dt.admissao < i.criado) });
+    out.push({ item: i, titulo: p.titulo, alvo: p.alvo, ref: p.ref, falta, retroativa: !!(i.criado && i.datas?.admissao && i.datas.admissao < i.criado) });
   }
   return out.sort((a, b) => a.falta - b.falta);
 }
@@ -416,6 +424,86 @@ export function observacoesCliente(item, datas, regras = {}, hoje = today(), cal
   const preencher = (t) => { let falta = false; const r = String(t).replace(/\{(\w+)\}/g, (_, k) => { const v = vals[k]; if (v == null || v === '') { falta = true; return ''; } return String(v); }); return falta ? null : r; };
   for (const t of c.observacoes?.[item.tipo] || []) { const r = preencher(t); if (r) out.push({ texto: r }); }
   return out;
+}
+
+/* ---------- Detalhe da solicitação: tempo relativo e destaques (2.19, regras: config.destaquesDetalhe) ---------- */
+/** "agora há pouco", "há 12 min", "hoje às 14:30", "ontem às 14:30", "há 3 dias", "há 2 semanas" ou a data (mais de 30 dias). */
+export function tempoRelativo(v, agora = new Date()) {
+  const d = v instanceof Date ? v : new Date(v);
+  if (!v || isNaN(d)) return '';
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const min = Math.round((agora - d) / 60000);
+  if (min < 0) return `${fmtDate(d)} às ${hm}`;   // relógio do portal adiantado: mostra a data, sem inventar "daqui a pouco"
+  if (min < 2) return 'agora há pouco';
+  if (min < 60) return `há ${min} min`;
+  const dias = diffDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()));
+  if (dias <= 0) return `hoje às ${hm}`;
+  if (dias === 1) return `ontem às ${hm}`;
+  if (dias < 7) return `há ${dias} dias`;
+  if (dias < 30) { const s = Math.floor(dias / 7); return `há ${s} ${s === 1 ? 'semana' : 'semanas'}`; }
+  return `em ${fmtDate(d)}`;
+}
+/** "terça-feira, 27/10/2026 às 19:21" (para a dica do tempo relativo). */
+export function dataHoraLonga(v) {
+  const d = v instanceof Date ? v : new Date(v);
+  if (!v || isNaN(d)) return String(v || '');
+  return `${weekday(d)}, ${fmtDate(d)} às ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+/** "3 dias depois" entre dois trâmites, só quando o intervalo é longo (config.detalheConversa.intervaloDias, padrão 2). */
+export function intervaloEntre(a, b, regras = {}) {
+  const x = new Date(a), y = new Date(b);
+  if (isNaN(x) || isNaN(y)) return '';
+  const dias = diffDays(new Date(x.getFullYear(), x.getMonth(), x.getDate()), new Date(y.getFullYear(), y.getMonth(), y.getDate()));
+  if (dias < (+regras?.config?.detalheConversa?.intervaloDias || 2)) return '';
+  return `${dias} ${dias === 1 ? 'dia' : 'dias'} depois`;
+}
+const CHAVE_SENSIVEL = /cid|doctor|medic|m[eé]dic|crm|sa[uú]de|health|diagn|icd|atestado|certificate/i;   // nunca vira destaque
+/** Os 3–4 dados que o cliente mais procura, por tipo de pedido (config.destaquesDetalhe: campos + porTipo + todos).
+ *  Cada campo diz de onde vem (`fonte`: datas.x, calc.x, item.x ou bruto.x, com "|" para alternativas) e como mostrar.
+ *  O que faltar na solicitação simplesmente não aparece. → [{ id, k, v, alerta }] */
+export function destaquesDetalhe(item, datas, bruto, regras = {}, hoje = today(), cal = makeCalendar(regras?.feriados)) {
+  const cfg = regras?.config?.destaquesDetalhe || {};
+  if (!item || !cfg.campos) return [];
+  const d = datas || item.datas || {};
+  const fontes = {
+    datas: d, item,
+    calc: { pagamentoFerias: pagamentoFerias(d.inicioFerias, regras, cal), pagamentoRescisao: d.desligamento ? pagamentoRescisao(d.desligamento, regras, cal) : null },
+    bruto: bruto && typeof bruto === 'object' ? bruto : {}
+  };
+  const lerValor = (fonte) => {
+    for (const alt of String(fonte || '').split('|')) {
+      const [grupo, ...r] = alt.trim().split('.'); const chave = r.join('.');
+      if (!fontes[grupo] || !chave || (grupo === 'bruto' && CHAVE_SENSIVEL.test(chave))) continue;
+      let v = fontes[grupo][chave];
+      if (v && typeof v === 'object' && !(v instanceof Date)) v = texto1(v);
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) v = parseDate(v);
+      if (v == null || v === '' || (typeof v === 'number' && isNaN(v)) || (v instanceof Date && isNaN(v))) continue;
+      return v;
+    }
+    return null;
+  };
+  const dias = (n) => `${n} ${n === 1 ? 'dia' : 'dias'}`;
+  const montar = (id) => {
+    const c = cfg.campos[id]; if (!c || !c.rotulo || CHAVE_SENSIVEL.test(c.rotulo)) return null;
+    let v = lerValor(c.fonte); if (v == null) return null;
+    if (c.omitirZero && +v === 0) return null;
+    let alerta = false, txt;
+    if (v instanceof Date) {
+      txt = fmtDate(v);
+      const falta = diffDays(hoje, v);
+      alerta = c.alerta === 'passou' ? falta < 0 : c.alerta === 'perto' ? falta <= (+cfg.alertaDias || 3) : false;
+    } else if (c.formato === 'dias' && !isNaN(+v)) {
+      txt = dias(+v);
+      alerta = c.alerta === 'prescricao' && +v <= (+regras?.config?.prescricaoAvisoDias || 10);
+    } else txt = String(v);
+    return { id, k: c.rotulo, v: txt, alerta };
+  };
+  const vistos = new Set();
+  const lista = (ids) => (ids || []).map(montar).filter(x => { if (!x || vistos.has(x.id)) return false; vistos.add(x.id); return true; });
+  const comuns = lista(cfg.todos), max = Math.max(1, +cfg.max || 4);
+  const doTipo = lista(cfg.porTipo?.[item.tipo]).slice(0, Math.max(0, max - comuns.length));
+  const out = [...doTipo, ...comuns.slice(0, max)], v2 = new Set();
+  return out.filter(x => { const ch = `${x.k}|${x.v}`; if (v2.has(ch)) return false; v2.add(ch); return true; });
 }
 
 /* "Hoje" do cliente (no formato da tela Hoje do Control Onvio): cada solicitação tem um motivo só,
@@ -480,11 +568,12 @@ export function progressoCliente(i, regras = {}) {
 }
 
 /* Lembretes do cliente (guardados só no computador) com repetição.
-   l = { data:'AAAA-MM-DD', rep:'nao'|'diaria'|'util'|'semanal'|'mensal'|'anual', intervalo?, ate?, pular?:[iso] } */
-export function ocorrencias(l, de, ate, cal = makeCalendar()) {
+   l = { data:'AAAA-MM-DD', rep:'nao'|'diaria'|'util'|'semanal'|'mensal'|'anual', intervalo?, ate?, pular?:[iso], feitos?:[iso] }
+   Os dias marcados como feitos (Agenda) não contam, a não ser com { comFeitos: true } (a Agenda os mostra riscados). */
+export function ocorrencias(l, de, ate, cal = makeCalendar(), { comFeitos = false } = {}) {
   const ini = parseDate(l?.data); if (!ini || !de || !ate) return [];
   const fim = l.ate ? parseDate(l.ate) : null;
-  const pular = new Set(l.pular || []);
+  const pular = new Set([...(l.pular || []), ...(comFeitos ? [] : l.feitos || [])]);
   const passo = Math.max(1, parseInt(l.intervalo, 10) || 1);
   const out = [];
   const ok = (d) => d >= de && d <= ate && (!fim || d <= fim) && !pular.has(iso(d));
@@ -580,4 +669,39 @@ export function situacaoEmpregado(e, hoje = today(), regras = {}) {
   if (exp && exp.falta <= 30) out.proxima = { d: exp.fim, titulo: `Fim da experiência (${exp.n} dias)`, nivel: exp.falta <= 5 ? 'late' : 'soon', falta: exp.falta };
   else if (out.ferias && out.ferias.falta <= 90) out.proxima = { d: out.ferias.limite, titulo: 'Conceder férias até (estimativa)', nivel: out.ferias.falta <= 30 ? 'late' : 'soon', falta: out.ferias.falta };
   return out;
+}
+
+/* ---------- Movimento das suas solicitações (Hoje) ----------
+   As últimas N semanas (segunda a domingo; a última é a de hoje, ainda em curso): quantas você abriu e quantas foram
+   concluídas, e quanto o escritório levou para dar a 1ª resposta (quando o trâmite já foi lido: i.veredito.primeiraResposta).
+   Puro e só em memória. A conclusão usa a data da última movimentação (i.atualizado): é uma aproximação (a calibrar).
+   Devolve { ok, minimo, total, semanas: [{ ini, fim, rotulo, abertas, concluidas, resposta: { n, mediana } }],
+   resposta: { n, mediana, media, minimo } } — "ok" só com solicitações suficientes no período. */
+export function movimentoSemanal(itens, hoje = today(), regras = null) {
+  const cfg = regras?.config?.movimento || {};
+  const N = Math.max(2, Math.min(26, +cfg.semanas || 8)), minimo = +cfg.minimoSolicitacoes || 3, minResp = +cfg.minimoRespostas || 3;
+  const h = parseDate(hoje) || today();
+  const seg = addDays(h, -((h.getDay() + 6) % 7));   // segunda-feira da semana de hoje
+  const semanas = Array.from({ length: N }, (_, k) => { const ini = addDays(seg, -7 * (N - 1 - k)); return { ini, fim: addDays(ini, 6), rotulo: fmtDate(ini).slice(0, 5), abertas: 0, concluidas: 0, resposta: { n: 0, mediana: null }, _dias: [] }; });
+  const onde = (d) => { if (!d) return -1; const k = Math.floor(diffDays(semanas[0].ini, d) / 7); return k >= 0 && k < N ? k : -1; };
+  const vistos = new Set(), todos = [];
+  const mediana = (v) => { if (!v.length) return null; const o = [...v].sort((a, b) => a - b), m = o.length >> 1; return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2; };
+  for (const i of itens || []) {
+    const criado = parseDate(i.criado), fim = parseDate(i.atualizado);
+    const kA = onde(criado), kC = i.estado === 'concluida' ? onde(fim) : -1;
+    if (kA >= 0) semanas[kA].abertas++;
+    if (kC >= 0) semanas[kC].concluidas++;
+    if (kA >= 0 || kC >= 0) vistos.add(i);
+    // 1ª resposta: dias entre a abertura e a primeira resposta do escritório, na semana em que a solicitação foi aberta
+    const v = i.veredito;
+    if (kA >= 0 && v?.primeiraResposta) {
+      const ab = parseDate(v.abertura) || criado, re = parseDate(v.primeiraResposta);
+      if (ab && re) { const d = Math.max(0, diffDays(ab, re)); semanas[kA]._dias.push(d); todos.push(d); }
+    }
+  }
+  for (const s of semanas) { s.resposta = { n: s._dias.length, mediana: mediana(s._dias) }; delete s._dias; }
+  const total = vistos.size;
+  const resposta = { n: todos.length, mediana: mediana(todos), media: todos.length ? todos.reduce((a, b) => a + b, 0) / todos.length : null, ok: todos.length >= minResp };
+  return { ok: total >= minimo, minimo, total, semanas, resposta,
+    abertas: semanas.reduce((a, s) => a + s.abertas, 0), concluidas: semanas.reduce((a, s) => a + s.concluidas, 0) };
 }
