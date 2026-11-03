@@ -929,6 +929,13 @@ async def teste_comando_rubricas(b):
     await pn.fill('#plan-cmd-txt', 'Jorge 9 xpto zeta'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(1500)
     txt = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
     check('Não entendi' in txt, f'comando: o que não foi entendido é avisado, sem inventar valor ({txt[:80]!r})')
+    # 2.22.1: a janela do resumo antes de enviar fica inteira na tela, centralizada e por cima da barra lateral
+    await pn.click('#btn-send')
+    for _ in range(30):
+        if await pn.locator('#modal .sheet').count(): break
+        await pg.wait_for_timeout(300)
+    g = await pn.evaluate("(() => { const s = document.querySelector('#modal .sheet'); if (!s) return null; const r = s.getBoundingClientRect(), rail = document.querySelector('#rail').getBoundingClientRect(), topo = document.elementFromPoint(r.left + 8, r.top + 40); return { l: r.left, t: r.top, r: r.right, b: r.bottom, rail: rail.right, w: innerWidth, h: innerHeight, topo: !!topo && s.contains(topo) }; })()")
+    check(bool(g) and g['l'] >= g['rail'] and g['r'] <= g['w'] and g['t'] >= 0 and g['b'] <= g['h'] and g['topo'], f"resumo antes de enviar: a janela fica inteira na tela, centralizada e por cima da barra lateral ({g})")
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa_emp.cancel()
     await ctx.close()

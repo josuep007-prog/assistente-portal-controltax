@@ -1002,3 +1002,8 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .ag-side, .ag-side > * { min-width: 0; max-width: 100%; }
 .ag-side .pn-li { min-width: 0; }
 @media (max-height: 759px) { .hj-sep { display: none; } }
+
+
+/* Janela de resumo antes de enviar (2.22.1): por cima da barra lateral, com largura própria e centralizada (antes ocupava a tela toda e a barra cobria a borda esquerda) */
+body.plat .modal { z-index: 60; padding: 16px; }
+body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(100vh - 32px); }
