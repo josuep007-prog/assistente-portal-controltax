@@ -54,16 +54,37 @@ function gradeAposAdicionar() {
   const avisos = [...document.querySelectorAll('[role=alert], [role=status], [class*=toast], [class*=notification], [class*=invalid], [class*=error]')].filter(vis).map(e => (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80)).filter(Boolean).slice(0, 3);
   return `${avisos.length ? `avisos na tela: ${avisos.join(' | ')}; ` : ''}${janelas.length} janela(s) aberta(s)${botoes.length ? ` com botões: ${botoes.join(' | ')}` : ''}; botões de adicionar na tela: ${barra.join(' | ') || 'nenhum'}`;
 }
+/** Lê a grade; com `adicionar`, repete sozinha até 3 vezes (o portal às vezes ainda não está pronto na primeira: botão desligado, grade lenta)
+ *  e guarda o motivo de cada tentativa (só texto de estado) para o diagnóstico. */
 async function lerGrade(adicionar) {
+  const motivos = []; let ult = null;
+  const maximo = adicionar ? 3 : 1;
+  for (let t = 1; t <= maximo; t++) {
+    ult = await lerGradeUma(adicionar);
+    if (ult.ok || ult.fatal) return { ...ult, tentativas: t, motivos };
+    motivos.push(String(ult.motivo || '').slice(0, 140));
+    if (t < maximo) await sleep(1500);
+  }
+  return { ...ult, tentativas: motivos.length, motivos };
+}
+async function lerGradeUma(adicionar) {
   const r = routeInfo();
-  if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, motivo: 'abra o Lançamento de Rubricas' };
+  if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, fatal: true, motivo: 'abra o Lançamento de Rubricas' };
   let tab = acharGrade();
   if (!tab && lerGradeDiv()) return resultadoGradeDiv();
   if ((!tab || !lerTabelaGrade(tab).linhas.length) && adicionar) {
     const alvo = norm(cfgGrade().botaoAdicionarTodos);
-    const b = [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo && !x.disabled);
-    if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
+    const acharBotao = () => [...mainEl().querySelectorAll('button')].find(x => norm(x.innerText) === alvo);
     await garantirCamposDaGrade();
+    // logo depois de preencher a Competência o botão do portal pode estar desligado por instantes: espera ele ligar (até 10 s) em vez de desistir
+    let b = null;
+    for (let i = 0; i < 40; i++) {
+      b = acharBotao(); if (b && !b.disabled) break;
+      if (i === 16 && b) await garantirCamposDaGrade(true);   // ainda desligado depois de 4 s: refaz Tipo e Competência
+      await sleep(250);
+    }
+    if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
+    if (b.disabled) return { ok: false, motivo: 'o botão "Adicionar todos os funcionários" continua desligado no portal (falta algum campo, como a Competência)' };
     await reveal(b); cliqueCompleto(b);
     gradeAddInfo = '';
     let segunda = false;

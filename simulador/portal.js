@@ -448,7 +448,12 @@
     grid.innerHTML = '<div class="p-grid-h"><b>Rubricas</b><bento-toolbar><button type="button" data-all>Adicionar todos os funcionários</button><button type="button" data-one>Adicionar funcionários</button></bento-toolbar></div><div class="p-grid-b"><p>Não existem rubricas lançadas.<br>Adicione um funcionário para começar.</p></div>';
     // grade plausível (A CALIBRAR: a grade real não foi mapeada — a empresa de teste do Onvio não tem eventos): o funcionário na
     // 1ª coluna e um evento da empresa (código - nome) por coluna, um campo por célula
+    // 2.25.2: o portal real nem sempre está pronto na primeira tentativa — botão desligado por instantes e primeiro clique ignorado
+    var botaoAll = grid.querySelector('[data-all]'), lento = 0, ignora1 = false;
+    try { lento = +localStorage.getItem('ct-sim-botao-lento') || 0; ignora1 = localStorage.getItem('ct-sim-ignora-1') === '1'; } catch (e) { /* sem armazenamento */ }
+    if (lento) { botaoAll.disabled = true; setTimeout(function () { botaoAll.disabled = false; }, lento); }
     grid.querySelector('[data-all]').addEventListener('click', function () {
+      if (ignora1 && !window.__cliqueIgnorado) { window.__cliqueIgnorado = true; return; }
       if (!ci.value) { ci.classList.add('p-invalid'); toast('Informe a competência antes de adicionar funcionários.', 'err'); return; }
       var modoDiv = null; try { modoDiv = localStorage.getItem('ct-sim-grade'); } catch (e) { /* sem armazenamento */ }
       if (modoDiv === 'div-flat') {
