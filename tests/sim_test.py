@@ -1060,6 +1060,16 @@ async def teste_excel_rubricas(b):
     await pn.fill('#plan-cmd-txt', 'funcionario b teste 5 rubrica i'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(2500)
     cm = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
     check('não deixa lançar' in cm and not (await pg.evaluate("window.__vals || {}")).get('FUNCIONARIO B TESTE|180 - RUBRICA I'), f'excel: o comando avisa da rubrica bloqueada e não a lança ({cm[:90]!r})')
+    # 2.25.3: frase com rubrica em dúvida: pergunta qual (botões) em vez de desistir ou chutar
+    await pn.fill('#plan-cmd-txt', 'funcionario b teste 6 rubrica'); await pn.click('#plan-cmd-go'); await pg.wait_for_timeout(2500)
+    nbot = await pn.locator('#plan-cmd-res [data-duv]').count()
+    antes_v = dict(await pg.evaluate("window.__vals || {}"))
+    check(nbot >= 2, f'comando: frase em dúvida mostra as rubricas candidatas como botões ({nbot})')
+    if nbot:
+        rot = await pn.locator('#plan-cmd-res [data-duv]').first.inner_text()
+        await pn.locator('#plan-cmd-res [data-duv]').first.click(); await pg.wait_for_timeout(2500)
+        v6 = await pg.evaluate("window.__vals || {}")
+        check(v6.get(f'FUNCIONARIO B TESTE|{rot.strip()}') == '6' and 'lançado em' in await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''"), f'comando: escolher a rubrica lança o valor na planilha e no portal ({rot.strip()!r})')
     # a marca vermelha sai sozinha quando o portal passa a aceitar o valor
     await pn.fill('.plan-tabela input[data-i="1"][data-j="7"]', 'abc'); await pg.wait_for_timeout(2500)
     marcada = await pn.evaluate("document.querySelector('.plan-tabela input[data-i=\"1\"][data-j=\"7\"]').closest('td').classList.contains('plan-falhou')")

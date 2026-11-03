@@ -11,7 +11,7 @@ import { salvarRascunho, salvarRascunhoAgora } from './facilidades.js';
 
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 const chave = (i, j) => `${i}|${j}`;
-const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false, falhas: new Set(), ultimo: null, arqMsg: '', arqBusy: false, bloqueadas: new Set(), meta: [] });
+const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false, falhas: new Set(), ultimo: null, arqMsg: '', arqBusy: false, bloqueadas: new Set(), meta: [], cmdDuv: [] });
 
 /** Só na plataforma (no painel encaixado o portal é a própria planilha) e só no Lançamento de Rubricas. */
 const ativa = (tipo) => tipo === 'rubricas' && S.modo === 'plataforma' && tipoDef(tipo)?.grade?.ativo !== false;
@@ -127,7 +127,21 @@ function ligarArquivo(tipo, el) {
   });
 }
 
+/** O cliente escolheu a rubrica de uma frase em dúvida: o valor vai para a planilha (e ao portal) e a dúvida é resolvida. */
+function resolverDuvida(tipo, k, m) {
+  const P = estado(tipo), d = P.cmdDuv?.[k]; if (!d || d.resolvida) return;
+  const evento = d.opcoes[m], i = P.empregados.indexOf(d.empregado), j = P.eventos.indexOf(evento);
+  if (i < 0 || j < 0) return;
+  P.valores[chave(i, j)] = String(d.valor); P.pend.add(chave(i, j)); d.resolvida = true;
+  agendar(tipo); salvarRascunho(tipo, S.ctx.empresa);
+  const li = $('#plan-cmd-res')?.querySelector(`[data-duv-li="${k}"]`);
+  if (li) li.innerHTML = `${icon('check', 'ic-sm')} <b>${esc(d.valor)}</b> lançado em ${esc(evento)} para ${esc(d.empregado)}.`;
+  P.cmdMsg = $('#plan-cmd-res')?.innerHTML || P.cmdMsg;
+  const inp = document.querySelector(`.plan-tabela input[data-i="${i}"][data-j="${j}"]`); if (inp) inp.value = String(d.valor);
+  const n = $('#plan-n'); if (n) n.textContent = `${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)`;
+}
 function ligarComando(tipo) {
+  $('#plan-cmd-res')?.addEventListener('click', (e) => { const b = e.target.closest('[data-duv]'); if (b) { const [k, m] = b.dataset.duv.split(':').map(Number); resolverDuvida(tipo, k, m); } });
   $('#plan-cmd-go')?.addEventListener('click', () => executarComando(tipo));
   $('#plan-cmd-txt')?.addEventListener('input', (e) => { estado(tipo).comando = e.target.value; });
   $('#plan-cmd-txt')?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); executarComando(tipo); } });
@@ -137,9 +151,10 @@ const resumoComando = (r, nCelulas) => {
   if (nCelulas) li.push(`<li><b>Preenchi ${nCelulas} valor(es)</b> na planilha${r.celulas.length > nCelulas ? '' : ''}: ${r.celulas.slice(0, 8).map(c => `${esc(c.empregado)} — ${esc(c.rubrica || c.evento)}: ${esc(c.valor)}`).join('; ')}${r.celulas.length > 8 ? ` e mais ${r.celulas.length - 8}` : ''}. Confira e ajuste na planilha se precisar.</li>`);
   if (r.naoEntendidas.length) li.push(`<li>Não entendi: ${r.naoEntendidas.map(x => `«${esc(x)}»`).join(', ')}. Escreva com o nome do funcionário, a rubrica e o valor.</li>`);
   if (r.semEvento.length) li.push(`<li>Esta rubrica não existe na grade desta empresa: ${r.semEvento.map(esc).join(', ')}. Lance direto no portal, se for o caso.</li>`);
+  (r.duvidas || []).forEach((d, k) => li.push(`<li data-duv-li="${k}">Em dúvida: «${esc(d.frase)}» — <b>${esc(d.valor)}</b> para ${esc(d.empregado)}. Em qual rubrica? ${d.opcoes.map((o, m) => `<button type="button" class="btn btn-sm" data-duv="${k}:${m}">${esc(o)}</button>`).join(' ')}</li>`));
   if (r.bloqueadas?.length) li.push(`<li>O portal não deixa lançar nestas rubricas (bloqueadas na grade): ${r.bloqueadas.map(esc).join(', ')}. Elas ficaram de fora.</li>`);
   if (r.semEmpregado.length) li.push(`<li>Não achei o funcionário em: ${r.semEmpregado.map(x => x === '?' ? 'uma frase sem nome' : esc(x)).join(', ')}. Escreva o nome como aparece na planilha.</li>`);
-  if (!li.length && !r.bloqueadas?.length) li.push('<li>Não entendi nenhum lançamento. Escreva, por exemplo: «Agnaldo 10 horas extras, Artur 2 faltas».</li>');
+  if (!li.length && !r.bloqueadas?.length && !r.duvidas?.length) li.push('<li>Não entendi nenhum lançamento. Escreva, por exemplo: «Agnaldo 10 horas extras, Artur 2 faltas».</li>');
   return `<ul class="tips">${li.join('')}</ul>`;
 };
 
@@ -167,6 +182,8 @@ export async function executarComando(tipo) {
     const r = E.comandoRubricas(texto, P.eventos, P.empregados, S.rules);
     r.bloqueadas = [...new Set(r.celulas.filter(c => P.bloqueadas.has(c.evento)).map(c => c.evento))];
     r.celulas = r.celulas.filter(c => !P.bloqueadas.has(c.evento));   // o portal não deixa lançar nessas rubricas
+    r.duvidas = (r.duvidas || []).map(d => ({ ...d, opcoes: d.opcoes.filter(o => !P.bloqueadas.has(o)) })).filter(d => d.opcoes.length);
+    P.cmdDuv = r.duvidas;
     let n = 0;
     for (const c of r.celulas) {
       const i = P.empregados.indexOf(c.empregado), j = P.eventos.indexOf(c.evento); if (i < 0 || j < 0) continue;

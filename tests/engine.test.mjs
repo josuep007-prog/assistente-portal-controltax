@@ -2011,4 +2011,24 @@ t('planilha preenchida no Excel → células da grade (título igual, só o cód
   assert.equal(E.lerPlanilhaDaGrade([{ nome: 'x', linhas: [['Empregado', 'Rubrica', 'Valor'], ['A', 'B', '1']] }], ev, emp), null, 'sem rubricas da grade nos títulos: não é este formato');
 });
 
+t('comando: "comissoes do mes anterior" vai para a rubrica do mês anterior; dúvida pergunta em vez de chutar', () => {
+  const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '37 - COMISSOES', '434 - COMISSOES (MES ANTERIOR)', '440 - PREMIO', '449 - PREMIO MES ANTERIOR', '249 - REEMBOLSO', '8792 - DIAS FALTAS', '8794 - DIAS FALTAS DSR', '8069 - HORAS FALTAS PARCIAL', '226 - VALE COMPRA'];
+  const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ARTUR MENDES DE MORAES', 'CAIO SANTANA VIEIRA'];
+  const um = (txt) => E.comandoRubricas(txt, ev, emp, rules).celulas.map(c => `${c.empregado.split(' ')[0]}|${c.evento}|${c.valor}`);
+  assert.deepEqual(um('coloque 1000 de comissoes do mes anterior para o artur mendes'), ['ARTUR|434 - COMISSOES (MES ANTERIOR)|1000']);
+  assert.deepEqual(um('comissão do mês anterior 500 para o artur'), ['ARTUR|434 - COMISSOES (MES ANTERIOR)|500']);
+  assert.deepEqual(um('lance 300 de comissões para o Caio'), ['CAIO|37 - COMISSOES|300'], 'sem "mês anterior" vale a comissão simples');
+  assert.deepEqual(um('premio do mes anterior 80 pro caio'), ['CAIO|449 - PREMIO MES ANTERIOR|80']);
+  assert.deepEqual(um('coloque 100 reais de reembolso, 30 faltas, 248 hr de faltas, 259 de vale compras para ANA CAROLINA CARDOSO PACHECO').sort(), ['ANA|226 - VALE COMPRA|259', 'ANA|249 - REEMBOLSO|100', 'ANA|8069 - HORAS FALTAS PARCIAL|248', 'ANA|8792 - DIAS FALTAS|30']);
+  assert.deepEqual(um('artur mendes comissao 1.500 mes anterior'), ['ARTUR|434 - COMISSOES (MES ANTERIOR)|1500'], 'ponto de milhar');
+  assert.deepEqual(um('reembolso de R$ 1.250,50 para caio'), ['CAIO|249 - REEMBOLSO|1250,50']);
+  assert.deepEqual(um('reembolso de 100,50 para caio'), ['CAIO|249 - REEMBOLSO|100,50'], 'vírgula decimal continua');
+  assert.deepEqual(um('reembolso 10.5 para caio'), ['CAIO|249 - REEMBOLSO|10,5'], 'ponto decimal vira vírgula (o portal é em português)');
+  // rubricas parecidas sem nada que desempate: pergunta qual
+  const ev2 = ['10 - AJUDA DE CUSTO', '20 - AJUDA DE ALIMENTACAO'];
+  const d = E.comandoRubricas('caio 30 de ajuda', ev2, emp, rules);
+  assert.equal(d.celulas.length, 0); assert.equal(d.naoEntendidas.length, 0);
+  assert.equal(d.duvidas.length, 1); assert.equal(d.duvidas[0].valor, '30'); assert.equal(d.duvidas[0].empregado, 'CAIO SANTANA VIEIRA'); assert.deepEqual([...d.duvidas[0].opcoes].sort(), [...ev2].sort());
+});
+
 console.log(`\n${n} testes ok`);

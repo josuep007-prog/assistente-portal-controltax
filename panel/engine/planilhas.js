@@ -265,7 +265,9 @@ export function comandoRubricas(texto, eventos, empregados, rules, { hoje = toda
   // palavras de uma frase ou de uma rubrica, sem artigos e sem números, no singular ("vale compras" = "VALE COMPRA", "hr" = "horas")
   const UNIDADE = { hr: 'hora', hrs: 'hora', hs: 'hora', h: 'hora', hora: 'hora', horas: 'hora', dia: 'dia', dias: 'dia', d: 'dia' };
   const LIGACAO = new Set(['de', 'da', 'do', 'dos', 'das', 'e', 'para', 'a', 'o', 'as', 'os', 'em', 'no', 'na', 'com', 'por', 'um', 'uma', 'coloque', 'colocar', 'lance', 'lancar', 'lancamento', 'valor', 'reais', 'real']);
-  const palavras = (x) => limpa(x).split(' ').filter(Boolean).map(w => UNIDADE[w] || (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w)).filter(w => !LIGACAO.has(w) && !/^\d+$/.test(w));
+  // singular simples: comissões/comissão, viagens/viagem, faltas/falta (o acento já saiu: "oes" e "aes" = "ao", "ens" = "em")
+  const singular = (w) => UNIDADE[w] || (w.length > 4 && /(oes|aes)$/.test(w) ? w.slice(0, -3) + 'ao' : w.length > 4 && w.endsWith('ens') ? w.slice(0, -3) + 'em' : w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w);
+  const palavras = (x) => limpa(x).split(' ').filter(Boolean).map(singular).filter(w => !LIGACAO.has(w) && !/^\d+$/.test(w));
   const rubricas = (eventos || []).map(ev => ({ ev, pal: new Set(palavras(semCodigo(ev))) })).filter(x => x.pal.size);
   // o funcionário de cada frase; a frase sem nome fica com o anterior e, no começo, com o primeiro citado ("... para ANA CAROLINA" vale para todas)
   const achados = partes.map(p => (empregados?.length && findEmployeeInText(p, empregados)?.option) || null);
@@ -273,26 +275,29 @@ export function comandoRubricas(texto, eventos, empregados, rules, { hoje = toda
   const primeiro = iPrimeiro >= 0 && /(^|\s)(para|pra|pro|ao|à)\s/i.test(partes[iPrimeiro]) ? achados[iPrimeiro] : null;   // só "… para ANA" vale para as frases de antes; um nome solto não adota as que ficaram sem nome
   let ultEmp = null;
   const quemDe = achados.map(e => { if (e) ultEmp = e; return e || ultEmp || primeiro; });
+  const duvidas = [];
   partes.forEach((p, idx) => {
     const t = limpa(p), emp = achados[idx], quem = quemDe[idx];
-    // 1) a rubrica da própria grade citada por inteiro: o nome com o complemento ("premio mes anterior") ganha do simples
-    let ev = null, nota = 0, trecho = '';
-    for (const x of nomes) {
-      const achou = nasPalavras(t, x.cheio) ? x.cheio : nasPalavras(t, x.curto) ? x.curto : '';
-      if (!achou || (x.cheio !== x.curto && achou !== x.cheio)) continue;   // "comissoes (mes anterior)" só quando a frase diz "mês anterior"
-      if (achou.length > nota) { ev = x.ev; nota = achou.length; trecho = achou; }
-    }
-    // 2) as palavras da frase contra as palavras de cada rubrica da grade ("30 faltas" = DIAS FALTAS; "248 hr de faltas" = HORAS FALTAS PARCIAL); só se uma rubrica for a melhor
+    const dinheiro = (txt) => txt.match(/r\$\s*([\d.]+(?:,\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s*reais/i);
+    const semMilhar = (v) => (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(v) ? v.replace(/\./g, '') : /^\d+\.\d{1,2}$/.test(v) ? v.replace('.', ',') : v);   // 1.500 = 1500 e 1.500,50 = 1500,50 (ponto de milhar)
+    const numeroDe = (txt, tirar) => { const d = dinheiro(txt); if (d) return semMilhar(d[1] || d[2]); const m = plain(txt).replace(new RegExp(escR(tirar || '\u0000'), 'g'), ' ').match(/(?<![\d/:.,])(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d{1,2}:\d{2}|\d{1,6}(?:[.,]\d{1,2})?)(?![\d/])/); return m ? semMilhar(m[1]) : null; };
+    // 1) pontuação por palavras: as palavras da frase contra as de cada rubrica da grade. Palavra da rubrica que a frase tem soma; palavra que falta tira
+    //    um pouco ("comissoes mes anterior" = COMISSOES (MES ANTERIOR); só "comissoes" = COMISSOES). Vence a rubrica que se destaca; empate vira dúvida.
+    const donas = new Set(emp ? palavras(emp) : []);
+    const frase = new Set(palavras(p).filter(w => !donas.has(w)));
+    const pontos = rubricas.map(r => { const ac = [...r.pal].filter(w => frase.has(w)); return { ev: r.ev, ac: ac.length, forte: ac.filter(w => w !== 'hora' && w !== 'dia').length, razao: ac.length / r.pal.size, nota: ac.length - 0.6 * (r.pal.size - ac.length) }; })
+      .filter(x => x.forte >= 1 && x.razao >= 0.5).sort((a, b) => b.nota - a.nota);
+    let ev = pontos.length && (pontos.length === 1 || pontos[0].nota - pontos[1].nota >= 0.3) ? pontos[0].ev : null, trecho = '';
+    // 2) o nome da rubrica inteiro e corrido na frase ("horas extras 100"), que a pontuação não separa por causa dos números
     if (!ev) {
-      const donas = new Set(emp ? palavras(emp) : []);
-      const frase = new Set(palavras(p).filter(w => !donas.has(w)));
-      const pontos = rubricas.map(r => { const ac = [...r.pal].filter(w => frase.has(w)); return { ev: r.ev, ac: ac.length, forte: ac.filter(w => w !== 'hora' && w !== 'dia').length, razao: ac.length / r.pal.size }; }).filter(x => x.forte >= 1 && x.razao >= 0.5);
-      pontos.sort((a, b) => b.razao - a.razao || b.ac - a.ac);
-      if (pontos.length && (pontos.length === 1 || pontos[0].razao > pontos[1].razao || pontos[0].ac > pontos[1].ac)) ev = pontos[0].ev;
+      let nota = 0;
+      for (const x of nomes) {
+        const achou = nasPalavras(t, x.cheio) ? x.cheio : nasPalavras(t, x.curto) ? x.curto : '';
+        if (!achou || (x.cheio !== x.curto && achou !== x.cheio)) continue;
+        if (achou.length > nota) { ev = x.ev; nota = achou.length; trecho = achou; }
+      }
     }
-    const dinheiro = p.match(/r\$\s*([\d.]+(?:,\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s*reais/i);
-    const num = dinheiro ? null : plain(p).replace(new RegExp(escR(trecho || '\u0000'), 'g'), ' ').match(/(?<![\d/:])(\d{1,2}:\d{2}|\d{1,6}(?:[.,]\d{1,2})?)(?![\d/])/);
-    const valor = dinheiro ? (dinheiro[1] || dinheiro[2]) : num ? num[1] : null;
+    const valor = numeroDe(p, trecho);
     if (ev && valor) {
       if (quem) poe(quem, ev, valor, semCodigo(ev)); else if (!semEmpregado.includes('?')) semEmpregado.push('?');
       return;
@@ -306,9 +311,11 @@ export function comandoRubricas(texto, eventos, empregados, rules, { hoje = toda
       g.semEmpregado.forEach(x => { if (!semEmpregado.includes(x)) semEmpregado.push(x); });
       return;
     }
+    // 4) em dúvida entre rubricas parecidas: pergunta qual (com o funcionário e o valor já entendidos) em vez de chutar ou desistir
+    if (valor && quem && pontos.length) { duvidas.push({ frase: p, empregado: quem, valor, opcoes: pontos.slice(0, 4).map(x => x.ev) }); return; }
     if (valor || ev) naoEntendidas.push(p);
   });
-  return { celulas, semEvento, semEmpregado, naoEntendidas, competencia: competenciaDoTexto(texto, hoje, rules) };
+  return { celulas, semEvento, semEmpregado, naoEntendidas, duvidas, competencia: competenciaDoTexto(texto, hoje, rules) };
 }
 /** Linhas de um lançamento já feito (detalhe do portal, {apiDetalhe}/{id}?expand=all) para "Usar o lançamento do mês passado".
  *  O formato real não foi visto (empresa de teste sem eventos): procura listas de funcionários com listas de eventos e valores. A calibrar. */
