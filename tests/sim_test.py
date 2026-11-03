@@ -1136,6 +1136,43 @@ async def teste_leitura_repetida(b):
         tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
         await ctx.close()
 
+async def teste_competencia_comando(b):
+    """2.25.4: "do mês anterior" no meio da frase é parte da rubrica e não muda a Competência do portal (só no começo ou com campo vazio)."""
+    print('\n[comando] "mês anterior" não muda a competência do portal')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="rubricas"]')
+    for _ in range(40):
+        if await pn.locator('#plan-cmd-txt').count(): break
+        await pg.wait_for_timeout(300)
+    await pg.evaluate("window.__ctSim.hooks().preencher('rubricas', { competencia: '11/2026' }, {})"); await pg.wait_for_timeout(800)
+    await pn.fill('#plan-cmd-txt', 'coloque 3 de rubrica b do mes anterior para funcionario b teste'); await pn.click('#plan-cmd-go')
+    ok = False
+    for _ in range(80):
+        if await pn.evaluate("document.querySelectorAll('.plan-tabela tbody tr').length === 14"): ok = True; break
+        await pg.wait_for_timeout(300)
+    await pg.wait_for_timeout(1500)
+    comp = await pg.evaluate("document.querySelector('#datepicker-dropdown-input')?.value")
+    check(ok and comp == '11/2026', f'comando: "do mês anterior" no meio da frase não muda a Competência do portal ({comp!r})')
+    nota = await pn.evaluate("document.querySelector('#plan-cmd-res')?.innerText || ''")
+    check('continua 11/2026' in nota, f'comando: avisa que a Competência do portal continua a mesma ({nota[-120:]!r})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
 async def teste_tela_muda(b):
     """2.20.8: se o serviço de fundo da extensão não responde, Configurações não fica muda: avisa e deixa tentar de novo."""
     print('\n[telas] Configurações com o serviço de fundo parado')
@@ -2104,7 +2141,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2498,7 +2535,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)

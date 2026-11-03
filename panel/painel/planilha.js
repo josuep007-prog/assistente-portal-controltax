@@ -166,7 +166,15 @@ export async function executarComando(tipo) {
   P.cmdBusy = true; P.cmdMsg = '<span class="muted">Entendendo o comando…</span>'; renderPlanilhaRubricas(tipo);
   try {
     // a competência dita no comando ("mês passado") vai ao portal antes de abrir a grade: ele a exige para adicionar os funcionários
-    const comp = E.competenciaDoTexto(texto, undefined, S.rules);
+    // "mês anterior" no meio da frase costuma ser parte do nome da rubrica (COMISSOES (MES ANTERIOR)), não a competência do lançamento: uma expressão
+    // relativa só muda a Competência do portal se o campo estiver vazio ou se ela vier no começo ("Mês passado: …"); mês e ano explícitos sempre valem
+    const dito = E.competenciaDoTexto(texto, undefined, S.rules);
+    const relativa = /m[eê]s\s+(anterior|passado|atual)|[uú]ltimo\s+m[eê]s|(este|esse|neste|nesse)\s+m[eê]s/i.test(texto);
+    const explicita = /\b\d{1,2}\/\d{4}\b|\b(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b/i.test(texto);
+    const noComeco = /^\s*(compet[eê]ncia\s+(de\s+)?)?(do\s+|no\s+|para\s+o\s+)?m[eê]s\s+(anterior|passado|atual)|^\s*(compet[eê]ncia\s+)?(este|esse|neste|nesse)\s+m[eê]s/i.test(texto);
+    const campoVazio = !String(valorPlat(tipo, 'competencia') || '').trim();
+    const comp = dito && (!relativa || explicita || noComeco || campoVazio) ? dito : null;
+    const naoMudou = !!dito && !comp;
     if (comp && !P.carregada) {
       W.valores.competencia = { valor: comp, conf: 1, fonte: 'você' }; W.editados.add('competencia'); W.fonteVerdade.competencia = 'plataforma';
       await fillPortal(tipo, { daPlataforma: true, silencioso: true, so: ['competencia'] });
@@ -191,6 +199,7 @@ export async function executarComando(tipo) {
       P.valores[k] = c.valor; P.pend.add(k); n++;
     }
     P.cmdMsg = resumoComando(r, n);
+    if (naoMudou) P.cmdMsg += `<p class="muted" style="margin:6px 0 0;font-size:12px">Entendi «mês anterior» como parte da rubrica: a Competência do portal continua ${esc(String(valorPlat(tipo, 'competencia') || ''))}. Para mudar a competência, comece o comando com «Mês passado:» ou escreva «competência 10/2026».</p>`;
     if (n) { agendar(tipo); salvarRascunho(tipo, S.ctx.empresa); }
   } catch (e) {
     P.cmdMsg = `<div class="note warn">${icon('alert')}<div>Não consegui preencher agora: ${esc(String(e?.message || e).slice(0, 160))}</div></div>`;

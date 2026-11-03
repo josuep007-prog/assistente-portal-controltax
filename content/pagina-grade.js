@@ -111,6 +111,7 @@
       formasUsadas[forma] = (formasUsadas[forma] || 0) + 1;
       feitas.push({ empregado: c.empregado, evento: c.evento, antes, via, forma });
     }
+    try { g.invalidate?.(); g.refresh?.(); } catch { /* o portal repinta sozinho */ }   // força a planilha do portal a redesenhar com os valores novos
     return { ok: true, feitas, faltaram, recusas, formas: formasUsadas };
   }
 
