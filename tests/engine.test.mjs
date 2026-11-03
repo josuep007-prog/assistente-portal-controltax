@@ -1986,4 +1986,29 @@ t('comando: funcionário só no fim, unidade (dias × horas), plural e rubrica d
   assert.equal(E.comandoRubricas('Artur 2 dsr', ev, emp, rules).celulas.length === 0 || true, true);
 });
 
+t('planilha preenchida no Excel → células da grade (título igual, só o código ou sem o código)', () => {
+  const ev = ['150 - HORAS EXTRAS 50%', '200 - HORAS EXTRAS 100%', '249 - REEMBOLSO', '8792 - DIAS FALTAS', '440 - PREMIO'];
+  const emp = ['AGNALDO DO NASCIMENTO LIMA', 'ANA CAROLINA CARDOSO PACHECO', 'ARTUR MENDES DE MORAES'];
+  const abas = [{ nome: 'Como usar', linhas: [['Preencha os valores']] }, { nome: 'Rubricas', linhas: [
+    ['Funcionário', '150 - HORAS EXTRAS 50%', '249', 'Dias faltas', 'Total'],
+    ['AGNALDO DO NASCIMENTO LIMA', '10:30', '100.5', '', '9'],
+    ['Ana Carolina Cardoso Pacheco', '', '', '2', ''],
+    ['Fulano Que Nao Existe', '5', '', '', ''],
+    ['Total', '99', '', '', ''],
+    ['ARTUR MENDES DE MORAES', '', '', '3', '']] }];
+  const r = E.lerPlanilhaDaGrade(abas, ev, emp);
+  const v = (e, c) => r.celulas.find(x => x.empregado.startsWith(e) && x.evento === c)?.valor;
+  assert.equal(r.formato, 'grade'); assert.equal(r.aba, 'Rubricas');
+  assert.equal(v('AGNALDO', '150 - HORAS EXTRAS 50%'), '10:30');
+  assert.equal(v('AGNALDO', '249 - REEMBOLSO'), '100,5', 'o código sozinho acha a rubrica; 100.5 do Excel vira 100,5');
+  assert.equal(v('ANA CAROLINA', '8792 - DIAS FALTAS'), '2', 'o nome sem o código acha a rubrica');
+  assert.equal(v('ARTUR', '8792 - DIAS FALTAS'), '3');
+  assert.deepEqual(r.semEmpregado, ['Fulano Que Nao Existe']);
+  assert.deepEqual(r.semEvento, ['Total'], 'coluna com valor que não é rubrica da grade é avisada');
+  // nomes que só diferem por uma letra: o nome igual ganha do parecido
+  const gem = E.lerPlanilhaDaGrade([{ nome: 'x', linhas: [['Nome', '249'], ['JOSE B SILVA', '7']] }], ev, ['JOSE A SILVA', 'JOSE B SILVA']);
+  assert.equal(gem.celulas[0].empregado, 'JOSE B SILVA');
+  assert.equal(E.lerPlanilhaDaGrade([{ nome: 'x', linhas: [['Empregado', 'Rubrica', 'Valor'], ['A', 'B', '1']] }], ev, emp), null, 'sem rubricas da grade nos títulos: não é este formato');
+});
+
 console.log(`\n${n} testes ok`);

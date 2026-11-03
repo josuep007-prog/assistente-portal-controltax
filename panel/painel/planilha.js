@@ -3,6 +3,7 @@
  * com o nome e os títulos fixos: o cliente digita aqui e eu lanço célula a célula na grade do portal (por baixo, como no
  * formulário próprio). Nada é enviado: o envio é só pelo botão do portal, depois do resumo. Os valores ficam só na memória. */
 import * as E from '../engine.js';
+import { criarXlsx, readFile } from '../extract.js';
 import { $, S, esc, icon, request } from './base.js';
 import { tipoDef, w } from './modo.js';
 import { enviarPendenteAgora, fillPortal, valorPlat } from './formulario.js';
@@ -10,7 +11,7 @@ import { salvarRascunho, salvarRascunhoAgora } from './facilidades.js';
 
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 const chave = (i, j) => `${i}|${j}`;
-const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false, falhas: new Set(), ultimo: null });
+const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false, falhas: new Set(), ultimo: null, arqMsg: '', arqBusy: false });
 
 /** Só na plataforma (no painel encaixado o portal é a própria planilha) e só no Lançamento de Rubricas. */
 const ativa = (tipo) => tipo === 'rubricas' && S.modo === 'plataforma' && tipoDef(tipo)?.grade?.ativo !== false;
@@ -30,6 +31,99 @@ function blocoComando(P, noForm) {
       <button type="button" class="btn btn-primary" id="plan-cmd-go"${P.cmdBusy || !noForm ? ' disabled' : ''}>${P.cmdBusy ? 'Preenchendo…' : 'Preencher a planilha'}</button></div>
     <div class="plan-cmd-res" id="plan-cmd-res" role="status">${P.cmdMsg || (noForm ? '<span class="muted">Se a planilha do portal ainda não estiver aberta, eu abro e carrego sozinha. Nada é enviado: o envio é pelo botão do portal, depois do resumo.</span>' : '<span class="muted">Abra o Lançamento de Rubricas para usar o comando.</span>')}</div></div>`;
 }
+/** Excel: exportar a planilha que a extensão lê e fixar (importar) uma já preenchida; a extensão abre a grade do portal e lança sozinha. */
+function blocoArquivo(P, noForm) {
+  const des = P.arqBusy || P.cmdBusy || !noForm ? ' disabled' : '';
+  return `<div class="plan-arq">
+    <div class="plan-arq-linha">
+      <button type="button" class="btn btn-sm" id="plan-exportar"${des} title="Gera um arquivo do Excel com os funcionários e as rubricas desta empresa">${icon('download', 'ic-sm')} Exportar para Excel</button>
+      <button type="button" class="btn btn-sm" id="plan-importar"${des} title="Escolha a planilha já preenchida: eu abro a grade do portal e lanço os valores">${icon('upload', 'ic-sm')} Importar planilha preenchida</button>
+      <input type="file" id="plan-arquivo" accept=".xlsx,.xls,.ods,.csv" hidden>
+      <span class="muted">Prefere preencher no Excel? Exporte, preencha e fixe aqui (ou arraste o arquivo para este cartão).</span></div>
+    <div class="plan-cmd-res" id="plan-arq-res" role="status">${P.arqMsg || ''}</div></div>`;
+}
+const baixarArquivo = (bytes, nome, tipoMime) => {
+  const url = URL.createObjectURL(new Blob([bytes], { type: tipoMime }));
+  const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+};
+/** Garante a planilha do portal carregada (pede a competência quando falta); devolve false com a mensagem já no cartão. */
+async function garantirCarregada(tipo, mensagem) {
+  const P = estado(tipo);
+  if (P.carregada) return true;
+  if (!String(valorPlat(tipo, 'competencia') || '').trim()) { P[mensagem] = `<div class="note warn">${icon('alert')}<div>Falta a competência. Preencha a Competência no formulário (ou escreva no comando, por exemplo «mês passado») e tente de novo.</div></div>`; return false; }
+  P[mensagem] = '<span class="muted">Abrindo a planilha do portal e lendo os funcionários…</span>'; renderPlanilhaRubricas(tipo);
+  await carregar(tipo);
+  if (!P.carregada) { P[mensagem] = `<div class="note warn">${icon('alert')}<div>${esc(P.erro || 'Não consegui abrir a planilha do portal.')}</div></div>`; return false; }
+  return true;
+}
+
+export async function exportarExcel(tipo) {
+  const P = estado(tipo);
+  if (P.arqBusy || !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) return;
+  P.arqBusy = true; P.arqMsg = ''; renderPlanilhaRubricas(tipo);
+  try {
+    if (!(await garantirCarregada(tipo, 'arqMsg'))) return;
+    const num = (v) => (/^\d+([.,]\d+)?$/.test(String(v).trim()) ? Number(String(v).replace(',', '.')) : String(v));   // número no Excel quando é número (10:30 continua texto)
+    const linhas = [['Funcionário', ...P.eventos], ...P.empregados.map((e, i) => [e, ...P.eventos.map((_, j) => { const v = P.valores[chave(i, j)]; return v ? num(v) : ''; })])];
+    const como = [['Como usar esta planilha'], [''], ['1. Preencha os valores na aba «Rubricas»: uma linha por funcionário, uma coluna por rubrica.'], ['2. Não mude os nomes dos funcionários nem os títulos das colunas.'], ['3. Use o mesmo formato que você usaria no portal (ex.: horas 10:30, valores 350,00).'], ['4. No Assistente, em Lançamento de Rubricas, clique em «Importar planilha preenchida» e escolha este arquivo.'], ['5. O envio continua sendo feito pelo botão do portal, depois do resumo.']];
+    const comp = String(valorPlat(tipo, 'competencia') || '').match(/(\d{2})\/(\d{4})/);
+    const nome = `lancamento-de-rubricas${comp ? `-${comp[2]}-${comp[1]}` : ''}.xlsx`;
+    const bytes = await criarXlsx([{ nome: 'Rubricas', linhas, larguras: [38, ...P.eventos.map(() => 20)] }, { nome: 'Como usar', linhas: como, larguras: [100] }]);
+    baixarArquivo(bytes, nome, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    P.arqMsg = `<span class="ok-txt">${icon('check', 'ic-sm')} Arquivo <b>${esc(nome)}</b> gerado com ${P.empregados.length} funcionário(s) e ${P.eventos.length} rubrica(s)${contarValores(P) ? `, já com os ${contarValores(P)} valor(es) da planilha` : ''}.</span>`;
+  } catch (e) {
+    P.arqMsg = `<div class="note warn">${icon('alert')}<div>Não consegui gerar o arquivo: ${esc(String(e?.message || e).slice(0, 140))}</div></div>`;
+  } finally { P.arqBusy = false; renderPlanilhaRubricas(tipo); }
+}
+
+/** "Fixar" uma planilha preenchida: lê o arquivo, abre a grade do portal se preciso e lança os valores (nada é enviado). */
+export async function importarExcel(tipo, arquivo) {
+  const P = estado(tipo);
+  if (!arquivo || P.arqBusy || !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) return;
+  P.arqBusy = true; P.arqMsg = '<span class="muted">Lendo a planilha…</span>'; renderPlanilhaRubricas(tipo);
+  try {
+    const r = await readFile(arquivo, null, { ocr: false });
+    if (!r?.abas?.length) { P.arqMsg = `<div class="note warn">${icon('alert')}<div>Não consegui ler «${esc(arquivo.name)}». Use um arquivo do Excel (.xlsx, .xls), do LibreOffice (.ods) ou .csv.</div></div>`; return; }
+    if (!(await garantirCarregada(tipo, 'arqMsg'))) return;
+    let l = E.lerPlanilhaDaGrade(r.abas, P.eventos, P.empregados), origem = 'planilha da grade';
+    if (!l) {   // outro formato: Funcionário / Rubrica / Valor (ou uma coluna por rubrica pelo dicionário das regras)
+      const linhas = E.linhasDaPlanilha(r.tabela || r.abas[0].linhas, S.rules);
+      const g = E.montarGrade(linhas, P.eventos, P.empregados, S.rules);
+      l = { celulas: g.celulas, semEmpregado: g.semEmpregado, semEvento: g.semEvento }; origem = 'Empregado/Rubrica/Valor';
+    }
+    let n = 0;
+    for (const c of l.celulas) {
+      const i = P.empregados.indexOf(c.empregado), j = P.eventos.indexOf(c.evento); if (i < 0 || j < 0) continue;
+      const k = chave(i, j); if ((P.valores[k] || '') === String(c.valor)) continue;
+      P.valores[k] = String(c.valor); P.pend.add(k); n++;
+    }
+    const li = [];
+    li.push(n ? `<li><b>Fixei a planilha «${esc(arquivo.name)}»: ${n} valor(es) lançados</b> para ${new Set(l.celulas.map(c => c.empregado)).size} funcionário(s). Confira e ajuste na planilha se precisar.</li>` : `<li>Li «${esc(arquivo.name)}», mas não achei valores novos para lançar (${origem}).</li>`);
+    if (l.semEmpregado?.length) li.push(`<li>Não achei na grade do portal: ${l.semEmpregado.slice(0, 8).map(esc).join(', ')}${l.semEmpregado.length > 8 ? ` e mais ${l.semEmpregado.length - 8}` : ''}. Confira o nome do funcionário.</li>`);
+    if (l.semEvento?.length) li.push(`<li>Estas colunas não são rubricas da grade desta empresa e ficaram de fora: ${l.semEvento.slice(0, 8).map(x => esc(String(x))).join(', ')}.</li>`);
+    P.arqMsg = `<ul class="tips">${li.join('')}</ul>`;
+    if (n) { agendar(tipo); salvarRascunho(tipo, S.ctx.empresa); }
+  } catch (e) {
+    P.arqMsg = `<div class="note warn">${icon('alert')}<div>Não consegui ler a planilha: ${esc(String(e?.message || e).slice(0, 140))}</div></div>`;
+  } finally { P.arqBusy = false; renderPlanilhaRubricas(tipo); }
+}
+function ligarArquivo(tipo, el) {
+  $('#plan-exportar')?.addEventListener('click', () => exportarExcel(tipo));
+  const inp = $('#plan-arquivo');
+  $('#plan-importar')?.addEventListener('click', () => inp?.click());
+  inp?.addEventListener('change', () => { const f = inp.files?.[0]; inp.value = ''; if (f) importarExcel(tipo, f); });
+  const card = el.querySelector('.plan-rub'); if (!card || card.dataset.arrasto) return; card.dataset.arrasto = '1';
+  // arrastar a planilha para este cartão: vale para ele (a área de soltar geral da plataforma não a trata como documento)
+  card.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); card.classList.add('plan-solta'); } });
+  card.addEventListener('dragleave', () => card.classList.remove('plan-solta'));
+  card.addEventListener('drop', (e) => {
+    card.classList.remove('plan-solta');
+    const f = [...(e.dataTransfer?.files || [])][0]; if (!f) return;
+    e.preventDefault(); e.stopPropagation(); importarExcel(tipo, f);
+  });
+}
+
 function ligarComando(tipo) {
   $('#plan-cmd-go')?.addEventListener('click', () => executarComando(tipo));
   $('#plan-cmd-txt')?.addEventListener('input', (e) => { estado(tipo).comando = e.target.value; });
@@ -89,16 +183,18 @@ export function renderPlanilhaRubricas(tipo) {
   if (!P.carregada) {
     el.innerHTML = `<section class="pn-card plan-rub">${cab}<div class="pn-card-body">
       ${blocoComando(P, noForm)}
+      ${blocoArquivo(P, noForm)}
       <p class="muted" style="margin:0 0 8px">${P.erro ? esc(P.erro) : noForm ? 'Preencha a competência acima e carregue os funcionários e as rubricas da empresa.' : 'Abra o Lançamento de Rubricas para carregar a planilha.'}</p>
       <button type="button" class="btn btn-primary" id="plan-carregar"${P.lendo || !noForm ? ' disabled' : ''}>${P.lendo ? 'Abrindo a planilha do portal e lendo…' : 'Carregar funcionários e rubricas'}</button></div></section>`;
     $('#plan-carregar')?.addEventListener('click', () => carregar(tipo));
-    ligarComando(tipo);
+    ligarComando(tipo); ligarArquivo(tipo, el);
     return;
   }
   const f = E.norm(P.filtro);
   const linhas = P.empregados.map((emp, i) => `<tr data-i="${i}"${f && !E.norm(emp).includes(f) ? ' hidden' : ''}><th scope="row" class="plan-nome" title="${esc(emp)}">${esc(emp)}</th>${P.eventos.map((ev, j) => `<td${P.falhas.has(chave(i, j)) ? ' class="plan-falhou" title="O portal não aceitou este valor"' : ''}><input type="text" inputmode="decimal" autocomplete="off" data-i="${i}" data-j="${j}" value="${esc(P.valores[chave(i, j)] || '')}" aria-label="${esc(ev)} — ${esc(emp)}"></td>`).join('')}</tr>`).join('');
   el.innerHTML = `<section class="pn-card plan-rub">${cab}<div class="pn-card-body">
     ${blocoComando(P, noForm)}
+    ${blocoArquivo(P, noForm)}
     <div class="plan-barra"><input type="search" id="plan-q" placeholder="Buscar funcionário…" value="${esc(P.filtro)}" autocomplete="off">
       <span class="muted" id="plan-n">${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)</span><span class="spacer"></span>
       <span class="muted" id="plan-status" role="status">${statusHtml(P)}</span>
@@ -106,7 +202,7 @@ export function renderPlanilhaRubricas(tipo) {
       <button type="button" class="btn btn-sm btn-ghost" id="plan-recarregar"${P.lendo || !noForm ? ' disabled' : ''}>${icon('refresh', 'ic-sm')} Recarregar do portal</button></div>
     <div class="plan-rolagem"><table class="plan-tabela"><thead><tr><th class="plan-nome">Funcionário</th>${P.eventos.map(ev => `<th title="${esc(ev)}">${esc(ev)}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>
     <p class="muted" style="margin:8px 0 0">Enter e as setas descem e sobem na coluna; você pode colar um bloco copiado do Excel. Os nomes e as rubricas são os do portal.</p></div></section>`;
-  ligarComando(tipo);
+  ligarComando(tipo); ligarArquivo(tipo, el);
   ligar(tipo, el);
 }
 

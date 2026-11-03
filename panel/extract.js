@@ -213,6 +213,18 @@ async function readDoc(file) {
   return { texto: xmlParaTexto(xml, docx ? 'docx' : 'odt'), metodo: 'texto', paginas: 1 };
 }
 
+/** Monta um arquivo .xlsx (SheetJS de lib/, tudo neste computador): abas = [{ nome, linhas: [[...]], larguras?: [n, ...] }] → bytes. */
+export async function criarXlsx(abas) {
+  await loadScript(chrome.runtime.getURL('lib/xlsx/xlsx.full.min.js'));
+  const XLSX = self.XLSX, wb = XLSX.utils.book_new();
+  for (const a of abas) {
+    const ws = XLSX.utils.aoa_to_sheet(a.linhas);
+    if (a.larguras) ws['!cols'] = a.larguras.map(wch => ({ wch }));
+    XLSX.utils.book_append_sheet(wb, ws, String(a.nome).slice(0, 31));
+  }
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+}
+
 /* ---------- Planilhas ---------- */
 async function readSheet(file) {
   await loadScript(chrome.runtime.getURL('lib/xlsx/xlsx.full.min.js'));
