@@ -2024,6 +2024,11 @@ t('comando: "comissoes do mes anterior" vai para a rubrica do mês anterior; dú
   assert.deepEqual(um('reembolso de R$ 1.250,50 para caio'), ['CAIO|249 - REEMBOLSO|1250,50']);
   assert.deepEqual(um('reembolso de 100,50 para caio'), ['CAIO|249 - REEMBOLSO|100,50'], 'vírgula decimal continua');
   assert.deepEqual(um('reembolso 10.5 para caio'), ['CAIO|249 - REEMBOLSO|10,5'], 'ponto decimal vira vírgula (o portal é em português)');
+  // "mês anterior" que é parte do nome da rubrica não é a competência; "mês passado:" no começo continua sendo
+  const hoje = new Date(2026, 10, 3);
+  assert.equal(E.comandoRubricas('coloque 1500 de comissao do mes anterior para artur mendes', ev, emp, rules, { hoje }).competencia, null);
+  assert.equal(E.comandoRubricas('premio mes anterior 80 pro caio', ev, emp, rules, { hoje }).competencia, null);
+  assert.equal(E.comandoRubricas('Mês passado: caio 3 faltas', ev, emp, rules, { hoje }).competencia, '10/2026');
   // rubricas parecidas sem nada que desempate: pergunta qual
   const ev2 = ['10 - AJUDA DE CUSTO', '20 - AJUDA DE ALIMENTACAO'];
   const d = E.comandoRubricas('caio 30 de ajuda', ev2, emp, rules);

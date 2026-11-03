@@ -276,7 +276,7 @@ export function comandoRubricas(texto, eventos, empregados, rules, { hoje = toda
   let ultEmp = null;
   const quemDe = achados.map(e => { if (e) ultEmp = e; return e || ultEmp || primeiro; });
   const duvidas = [];
-  partes.forEach((p, idx) => {
+  const trata = (p, idx) => {
     const t = limpa(p), emp = achados[idx], quem = quemDe[idx];
     const dinheiro = (txt) => txt.match(/r\$\s*([\d.]+(?:,\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s*reais/i);
     const semMilhar = (v) => (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(v) ? v.replace(/\./g, '') : /^\d+\.\d{1,2}$/.test(v) ? v.replace('.', ',') : v);   // 1.500 = 1500 e 1.500,50 = 1500,50 (ponto de milhar)
@@ -314,8 +314,12 @@ export function comandoRubricas(texto, eventos, empregados, rules, { hoje = toda
     // 4) em dúvida entre rubricas parecidas: pergunta qual (com o funcionário e o valor já entendidos) em vez de chutar ou desistir
     if (valor && quem && pontos.length) { duvidas.push({ frase: p, empregado: quem, valor, opcoes: pontos.slice(0, 4).map(x => x.ev) }); return; }
     if (valor || ev) naoEntendidas.push(p);
-  });
-  return { celulas, semEvento, semEmpregado, naoEntendidas, duvidas, competencia: competenciaDoTexto(texto, hoje, rules) };
+  };
+  // "do mês anterior" que faz parte do nome da rubrica (COMISSOES (MES ANTERIOR)) não é a competência do lançamento
+  const consumiu = new Set();
+  partes.forEach((p, idx) => { const n0 = celulas.length; trata(p, idx); if (celulas.slice(n0).some(c => /anterior|passado/.test(limpa(c.evento)))) consumiu.add(idx); });
+  const textoComp = partes.map((p, i) => (consumiu.has(i) ? p.replace(/m[eê]s\s+(anterior|passado)|[uú]ltimo\s+m[eê]s/gi, ' ') : p)).join('; ');
+  return { celulas, semEvento, semEmpregado, naoEntendidas, duvidas, competencia: competenciaDoTexto(textoComp, hoje, rules) };
 }
 /** Linhas de um lançamento já feito (detalhe do portal, {apiDetalhe}/{id}?expand=all) para "Usar o lançamento do mês passado".
  *  O formato real não foi visto (empresa de teste sem eventos): procura listas de funcionários com listas de eventos e valores. A calibrar. */
