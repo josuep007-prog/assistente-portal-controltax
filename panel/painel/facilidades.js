@@ -31,8 +31,32 @@ export const chaveRascunho = (tipo) => `${S.ctx.empresa}|${tipo}`;
 /** O que vale guardar de um formulário (sem CID e sem os textos gerados). */
 export function rascunhoDe(W) {
   const valores = Object.fromEntries(Object.entries(W.valores).filter(([k, v]) => v?.valor && v.fonte !== 'gerado' && !v.calculado && k !== 'cid').map(([k, v]) => [k, { valor: v.valor, conf: v.conf, fonte: v.fonte }]));
-  if (!Object.keys(valores).length) return null;
-  return { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome) };
+  const celulas = celulasDaPlanilhaDe(W);
+  if (!Object.keys(valores).length && !celulas.length) return null;
+  return { quando: Date.now(), valores, editados: [...W.editados], anexos: W.arquivos.filter(a => !a.removido).map(a => a.nome), ...(celulas.length ? { planilha: { celulas } } : {}) };
+}
+
+/** Os valores da planilha de rubricas pelo NOME do funcionário e da rubrica (os índices mudam de uma abertura para outra): { e, r, v }. */
+export function celulasDaPlanilhaDe(W) {
+  const P = W?.planilha; if (!P) return [];
+  const porNome = P.carregada ? Object.entries(P.valores).filter(([, v]) => String(v).trim()).map(([k, v]) => { const [i, j] = k.split('|').map(Number); return { e: P.empregados[i], r: P.eventos[j], v: String(v) }; }).filter(c => c.e && c.r) : [];
+  const falta = (P.rascunho || []).filter(c => !porNome.some(x => x.e === c.e && x.r === c.r));   // ainda não aplicados à grade (a planilha está abrindo)
+  return [...porNome, ...falta];
+}
+
+/** Guarda agora (sem esperar o debounce) e devolve a hora em que ficou guardado, ou null se não havia nada. */
+export async function salvarRascunhoAgora(tipo, empresa = S.ctx.empresa) {
+  const W = S.work[tipo]; if (!W || !empresa) return null;
+  const dados = rascunhoDe(W); if (!dados) return null;
+  await gravarRascunhos([{ tipo, empresa, dados }]);
+  return dados.quando;
+}
+
+/** "Continuar" um rascunho com planilha: com o formulário aberto, preenche o portal e refaz a planilha (abre a grade e lança os valores). */
+export async function retomarPlanilha(tipo, celulas) {
+  if (!celulas?.length || !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) return;
+  await fillPortal(tipo, { silencioso: true });
+  (await import('./planilha.js')).restaurarPlanilha(tipo, celulas);
 }
 
 /** Grava já (sem esperar o debounce), numa só leitura e escrita — usado ao trocar de empresa. */
@@ -80,25 +104,27 @@ export async function ofertaRascunho(tipo) {
     const quem = W.valores.empregado?.valor || W.valores.nome?.valor || '';
     el.innerHTML = `<div class="note">${icon('info')}<div><b>Você já tinha começado esta solicitação${quem ? ` (${esc(nomeCurto(quem))})` : ''}.</b> Quer continuar de onde parou?
       <div class="actions" style="margin-top:6px"><button class="btn btn-primary btn-sm" id="rasc-sim">Continuar</button><button class="btn btn-ghost btn-sm" id="rasc-nao">Começar do zero</button></div></div></div>`;
-    $('#rasc-sim').addEventListener('click', () => { W.rascunhoVisto = true; W.entrouComDados = false; W.abandonado = false; W.arquivos.forEach(a => { a.anexado = false; }); el.innerHTML = ''; fillPortal(tipo); });
+    $('#rasc-sim').addEventListener('click', () => { W.rascunhoVisto = true; W.entrouComDados = false; W.abandonado = false; W.arquivos.forEach(a => { a.anexado = false; }); el.innerHTML = ''; const cel = celulasDaPlanilhaDe(W); if (cel.length) retomarPlanilha(tipo, cel); else fillPortal(tipo); });
     $('#rasc-nao').addEventListener('click', () => { S.work[tipo] = null; w(tipo).rascunhoVisto = true; apagarRascunho(tipo); render(); });
     return;
   }
   if (temAlgo) { el.innerHTML = ''; return; }
   const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
+  if (!el.isConnected) return;   // a tela foi redesenhada enquanto lia o armazenamento: o aviso é refeito no próximo desenho
   const r = rascunhos[chaveRascunho(tipo)];
   if (!r || Date.now() - r.quando > RASCUNHO_DIAS * 864e5) { el.innerHTML = ''; return; }
   const quem = r.valores.empregado?.valor || r.valores.nome?.valor || '';
   el.innerHTML = `<div class="note">${icon('info')}<div><b>Você começou esta solicitação ${new Date(r.quando).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}${quem ? ` (${esc(nomeCurto(quem))})` : ''}.</b> Quer continuar de onde parou?${r.anexos?.length ? ` <small class="muted">Os anexos (${esc(r.anexos.join(', '))}) precisam ser arrastados de novo.</small>` : ''}
     <div class="actions" style="margin-top:6px"><button class="btn btn-primary btn-sm" id="rasc-sim">Continuar</button><button class="btn btn-ghost btn-sm" id="rasc-nao">Começar do zero</button></div></div></div>`;
-  $('#rasc-sim').addEventListener('click', () => {
+  el.querySelector('#rasc-sim').addEventListener('click', () => {
     W.rascunhoVisto = true;
     for (const [k, v] of Object.entries(r.valores)) W.valores[k] = v;
     (r.editados || []).forEach(k => W.editados.add(k));
     gerarTextos(tipo); render();
+    if (r.planilha?.celulas?.length) { retomarPlanilha(tipo, r.planilha.celulas); return; }
     if (S.prefs.preencherAoLer && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { silencioso: true });
   });
-  $('#rasc-nao').addEventListener('click', () => { W.rascunhoVisto = true; apagarRascunho(tipo); el.innerHTML = ''; });
+  el.querySelector('#rasc-nao').addEventListener('click', () => { W.rascunhoVisto = true; apagarRascunho(tipo); el.innerHTML = ''; });
 }
 
 /* ---------- Avisos do escritório (regras.avisosEscritorio) ---------- */

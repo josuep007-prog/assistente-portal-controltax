@@ -6,6 +6,7 @@ import * as E from '../engine.js';
 import { $, S, esc, icon, request } from './base.js';
 import { tipoDef, w } from './modo.js';
 import { enviarPendenteAgora, fillPortal, valorPlat } from './formulario.js';
+import { salvarRascunho, salvarRascunhoAgora } from './facilidades.js';
 
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 const chave = (i, j) => `${i}|${j}`;
@@ -73,7 +74,7 @@ export async function executarComando(tipo) {
       P.valores[k] = c.valor; P.pend.add(k); n++;
     }
     P.cmdMsg = resumoComando(r, n);
-    if (n) agendar(tipo);
+    if (n) { agendar(tipo); salvarRascunho(tipo, S.ctx.empresa); }
   } catch (e) {
     P.cmdMsg = `<div class="note warn">${icon('alert')}<div>Não consegui preencher agora: ${esc(String(e?.message || e).slice(0, 160))}</div></div>`;
   } finally { P.cmdBusy = false; renderPlanilhaRubricas(tipo); }
@@ -101,6 +102,7 @@ export function renderPlanilhaRubricas(tipo) {
     <div class="plan-barra"><input type="search" id="plan-q" placeholder="Buscar funcionário…" value="${esc(P.filtro)}" autocomplete="off">
       <span class="muted" id="plan-n">${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)</span><span class="spacer"></span>
       <span class="muted" id="plan-status" role="status">${statusHtml(P)}</span>
+      <button type="button" class="btn btn-sm btn-ghost" id="plan-rascunho" title="Guarda a planilha neste computador por 7 dias">${icon('file', 'ic-sm')} Salvar rascunho</button>
       <button type="button" class="btn btn-sm btn-ghost" id="plan-recarregar"${P.lendo || !noForm ? ' disabled' : ''}>${icon('refresh', 'ic-sm')} Recarregar do portal</button></div>
     <div class="plan-rolagem"><table class="plan-tabela"><thead><tr><th class="plan-nome">Funcionário</th>${P.eventos.map(ev => `<th title="${esc(ev)}">${esc(ev)}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>
     <p class="muted" style="margin:8px 0 0">Enter e as setas descem e sobem na coluna; você pode colar um bloco copiado do Excel. Os nomes e as rubricas são os do portal.</p></div></section>`;
@@ -111,6 +113,11 @@ export function renderPlanilhaRubricas(tipo) {
 function ligar(tipo, el) {
   const P = estado(tipo);
   $('#plan-recarregar')?.addEventListener('click', () => carregar(tipo));
+  $('#plan-rascunho')?.addEventListener('click', async () => {
+    const q = await salvarRascunhoAgora(tipo);
+    P.status = q ? `Rascunho salvo às ${new Date(q).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Se sair daqui, é só voltar ao Lançamento de Rubricas e clicar em Continuar (vale por 7 dias).` : 'Ainda não há nada para guardar.';
+    marcar(tipo);
+  });
   $('#plan-q')?.addEventListener('input', (e) => {
     P.filtro = e.target.value; const f = E.norm(P.filtro);
     el.querySelectorAll('tbody tr').forEach(tr => { tr.hidden = !!f && !E.norm(P.empregados[+tr.dataset.i]).includes(f); });
@@ -123,6 +130,7 @@ function ligar(tipo, el) {
     if (novo === antes) return;
     if (novo) P.valores[k] = novo; else delete P.valores[k];
     P.pend.add(k);
+    salvarRascunho(tipo, S.ctx.empresa);   // rascunho automático: se sair das rubricas, a planilha continua guardada (7 dias)
   };
   tabela.addEventListener('input', (e) => {
     const inp = e.target.closest('input[data-i]'); if (!inp) return;
@@ -210,5 +218,22 @@ export async function carregar(tipo) {
     }
     if (P.pend.size) agendar(tipo);
   }
+  if (P.rascunho?.length) {   // rascunho: os valores guardados voltam pelo nome do funcionário e da rubrica
+    let n = 0, fora = 0;
+    for (const c of P.rascunho) {
+      const i = P.empregados.findIndex(e => E.norm(e) === E.norm(c.e)), j = P.eventos.findIndex(e => E.norm(e) === E.norm(c.r));
+      if (i >= 0 && j >= 0) { P.valores[chave(i, j)] = String(c.v); P.pend.add(chave(i, j)); n++; } else fora++;
+    }
+    P.rascunho = null;
+    P.status = `Rascunho retomado: ${n} valor(es) voltaram à planilha${fora ? `; ${fora} não existem mais na grade (funcionário ou rubrica mudou)` : ''}.`;
+    if (P.pend.size) agendar(tipo);
+  }
   renderPlanilhaRubricas(tipo);
+}
+
+/** "Continuar" de um rascunho: abre a grade do portal e devolve os valores guardados à planilha e à grade. */
+export async function restaurarPlanilha(tipo, celulas) {
+  const P = estado(tipo);
+  P.rascunho = celulas; P.carregada = false; P.erro = '';
+  await carregar(tipo);
 }

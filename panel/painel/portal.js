@@ -2,7 +2,7 @@
 import * as E from '../engine.js';
 import { $, P, S, debounce, esc, icon, request, send, toast } from './base.js';
 import { anexosAtuais, gerarTextos, portalValores, valoresAssistente, valoresParaChecar } from './valores.js';
-import { apagarRascunho } from './facilidades.js';
+import { apagarRascunho, salvarRascunhoAgora } from './facilidades.js';
 import { avisosExtras, botaoModelo, camposAusentes, fillPortal, gerarPeloModelo, renderFillResult, updateChecks } from './formulario.js';
 import { empresaDoPedido, openTipo } from './inicio.js';
 import { loteAoFecharFormulario, renderLote } from './lote.js';
@@ -90,7 +90,36 @@ export function aoDesfazer(m) {
   if (S.view === 'preencher') render();
 }
 
-export function onSubmitAttempt(m) {
+/** Valores iguais? "350" e "350,00" são o mesmo número; "10:30" compara como texto. */
+const mesmoValor = (a, b) => {
+  const n = (x) => parseFloat(String(x).replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(n(a)) && Number.isFinite(n(b)) && !/:/.test(String(a) + String(b)) ? n(a) === n(b) : E.norm(a) === E.norm(b);
+};
+/** Lançamento de Rubricas: o que a planilha lançou, conferido com o que a grade do portal tem agora (quando dá para ler). */
+function tabelaDeValores(plan, doPortal) {
+  const linhas = Object.entries(plan.valores).filter(([, v]) => String(v).trim()).map(([k, v]) => { const [i, j] = k.split('|').map(Number); return { i, j, e: plan.empregados[i], r: plan.eventos[j], v: String(v) }; }).filter(x => x.e && x.r).sort((a, b) => a.i - b.i || a.j - b.j);
+  const noPortal = (e, r) => (doPortal || []).find(c => E.norm(c.empregado) === E.norm(e) && E.norm(c.evento) === E.norm(r));
+  let conferidos = 0;
+  const trs = linhas.map(l => {
+    const p = doPortal ? noPortal(l.e, l.r) : null;
+    const ok = !!p && mesmoValor(p.valor, l.v);
+    if (ok) conferidos++;
+    const estado = !doPortal ? '' : ok ? `<span class="ok-txt">${icon('check', 'ic-sm')} na grade</span>` : p ? `<span class="warn-txt">grade tem ${esc(p.valor)}</span>` : '<span class="warn-txt">não está na grade</span>';
+    return `<tr><td>${esc(l.e)}</td><td>${esc(l.r)}</td><td class="mono">${esc(l.v)}</td>${doPortal ? `<td>${estado}</td>` : ''}</tr>`;
+  });
+  // o que está só na grade do portal (digitado direto lá): aparece também, para não haver surpresa
+  const soNoPortal = (doPortal || []).filter(c => !linhas.some(l => E.norm(l.e) === E.norm(c.empregado) && E.norm(l.r) === E.norm(c.evento)));
+  const trs2 = soNoPortal.map(c => `<tr><td>${esc(c.empregado)}</td><td>${esc(c.evento)}</td><td class="mono">${esc(c.valor)}</td><td><span class="muted">só na grade do portal</span></td></tr>`);
+  const total = linhas.length + soNoPortal.length;
+  if (!total) return { html: '', problemas: 0, conferidos: 0, total: 0 };
+  const problemas = doPortal ? linhas.length - conferidos : 0;
+  const nota = !doPortal ? '<p class="muted" style="margin:6px 0 0;font-size:12px">Conferido só na planilha: não consegui ler a grade do portal. Olhe a grade do portal antes de enviar.</p>'
+    : problemas ? `<p class="warn-txt" style="margin:6px 0 0;font-size:12px">${problemas} valor(es) da planilha não estão como deveriam na grade do portal. Confira antes de enviar.</p>`
+    : `<p class="ok-txt" style="margin:6px 0 0;font-size:12px">${icon('check', 'ic-sm')} Os ${conferidos} valor(es) da planilha estão na grade do portal.</p>`;
+  return { html: `<div class="resumo-valores"><b>Valores lançados</b><div class="rv-rolagem"><table class="tbl-linhas"><thead><tr><th>Funcionário</th><th>Rubrica</th><th>Valor</th>${doPortal ? '<th>Na grade do portal</th>' : ''}</tr></thead><tbody>${trs.join('')}${trs2.join('')}</tbody></table></div>${nota}</div>`, problemas, conferidos, total };
+}
+
+export async function onSubmitAttempt(m) {
   S.ctx.form = m.form; S.ctx.tipo = m.tipo;
   const tipo = m.tipo;
   const pediu = S.pedirResumo; S.pedirResumo = false;
@@ -108,6 +137,9 @@ export function onSubmitAttempt(m) {
   if (!list.length && !pediu && !auto) { S.ultimoEnvio = { tipo, quando: Date.now(), valores: vals }; send({ type: 'confirmSubmit' }); return; }
   const bloqueia = S.rules.config?.bloquearEnvioComPendencias && list.some(i => i.nivel === 'erro');
   const t = tipoDef(tipo);
+  const valoresPortal = plan && planValores.length ? ((await request({ type: 'gradeValores' }, 4000))?.celulas || null) : null;   // o que a grade do portal tem agora
+  const tabela = plan ? tabelaDeValores(plan, valoresPortal) : { html: '', problemas: 0 };
+  if (tabela.problemas) list.push({ nivel: 'atencao', grupo: 'Planilha', mensagem: `${tabela.problemas} valor(es) da planilha não estão como deveriam na grade do portal (veja a tabela acima).` });
   const principais = Object.entries(t.campos).filter(([k, c]) => vals[k] && !['assunto', 'descricao', 'observacoes'].includes(k) && !c.sensivel).slice(0, 8);
   const anexos = anexosAtuais(tipo);
   const modal = $('#modal');
@@ -118,14 +150,20 @@ export function onSubmitAttempt(m) {
     <div class="resumo card pad"><b>${esc(vals.assunto || t.nome)}</b>
       <dl class="kv" style="margin-top:6px">${(P?.empresasDoLogin?.().length || 0) > 1 ? `<dt>Empresa</dt><dd>${esc(S.ctx.empresa)}</dd>` : ''}${principais.map(([k, c]) => `<dt>${esc(c.rotulo)}</dt><dd>${esc(vals[k])}</dd>`).join('')}
       ${planValores.length ? `<dt>Lançamentos na planilha</dt><dd>${planValores.length} valor(es) para ${planFuncionarios} funcionário(s)</dd>` : ''}
-      <dt>Anexos</dt><dd>${anexos.length ? esc(anexos.map(a => a.nome).join(', ')) : 'nenhum'}</dd></dl></div>
+      <dt>Anexos</dt><dd>${anexos.length ? esc(anexos.map(a => a.nome).join(', ')) : 'nenhum'}</dd></dl>${tabela.html}</div>
     ${list.length ? `<div class="checks" style="margin-top:10px">${list.map(i => `<div class="chk ${i.nivel}"><span class="st">${icon(i.nivel === 'erro' ? 'x' : 'alert', 'ic-sm')}</span><span>${esc(i.mensagem)}</span></div>${i.modelo ? botaoModelo(i.modelo) : ''}`).join('')}</div>` : ''}
     <div class="actions" style="margin-top:14px">
       ${list.length ? '<button class="btn btn-primary" id="m-fix">Corrigir agora</button>' : '<button class="btn btn-primary" id="m-send">Enviar ao escritório</button><button class="btn" id="m-fix">Voltar</button>'}
       ${list.length && !bloqueia ? '<button class="btn" id="m-send">Enviar assim mesmo</button>' : ''}
+      <button class="btn btn-ghost" id="m-rasc" title="Guarda o que você preencheu neste computador por 7 dias, para continuar depois">${icon('file', 'ic-sm')} Salvar rascunho</button>
     </div></div>`;
   const close = () => { modal.hidden = true; modal.innerHTML = ''; };
   $('#m-fix').addEventListener('click', () => { close(); setView('preencher'); });
+  $('#m-rasc')?.addEventListener('click', async () => {
+    const q = await salvarRascunhoAgora(tipo);
+    close();
+    toast(q ? 'Rascunho salvo. Você pode continuar depois: é só voltar a esta solicitação e clicar em Continuar (vale por 7 dias).' : 'Ainda não há nada para guardar.');
+  });
   $('#m-send')?.addEventListener('click', () => { close(); S.ultimoEnvio = { tipo, quando: Date.now(), valores: vals }; send({ type: 'confirmSubmit' }); });
   modal.querySelectorAll('[data-modelo]').forEach(b => b.addEventListener('click', () => { close(); gerarPeloModelo(b.dataset.modelo, tipo); }));
   ($('#m-send') && !list.length ? $('#m-send') : $('#m-fix')).focus();

@@ -285,3 +285,6 @@ async function pedirGrade(op, dados = {}, ms = 5000) {
   }
   return pedirUma(op, dados, ms);
 }
+
+/** Os valores que a grade do portal tem agora (pela planilha do portal); null se não dá para ler por ela. */
+async function gradeValoresDoPortal() { const r = await pedirGrade('valores'); return r?.ok ? r.celulas : null; }
