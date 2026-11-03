@@ -35,6 +35,7 @@ async function onPanelMessage(m) {
       }
       case 'undo': { const r = await desfazer(); post({ type: 'undoResult', id: m.id, ...r }); break; }
       // grade do Lançamento de Rubricas (lote 6; a grade real não foi mapeada — a calibrar). Nunca envia.
+      case 'gradeValores': post({ type: 'gradeValores', id: m.id, celulas: await gradeValoresDoPortal() }); break;
       case 'lerGrade': post({ type: 'grade', id: m.id, ...(await comboLock(() => lerGrade(!!m.adicionar))) }); break;
       case 'preencherGrade': {
         preenchendoAgora = true;

@@ -121,7 +121,7 @@ export function montarEntrada(C) {
     A.gerarTextos(tipo, true);
     await A.openTipo(tipo, { manter: true });
     for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
-    if (S.ctx.tipo === tipo) A.fillPortal(tipo, { silencioso: true });
+    if (S.ctx.tipo === tipo) { if (r.planilha?.celulas?.length) A.retomarPlanilha?.(tipo, r.planilha.celulas); else A.fillPortal(tipo, { silencioso: true }); }
   }
 
   P.render = (v) => {

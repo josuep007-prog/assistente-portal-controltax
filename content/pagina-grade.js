@@ -43,6 +43,16 @@
     return { ok: ni >= 0 && titulos.length > 0, titulos, empregados, colunas: h.length, linhas: g.rows.length, colunaDoNome: ni };
   }
 
+  /** Os valores que a grade tem agora (só as células preenchidas): para o resumo antes de enviar. */
+  function valores(g) {
+    const h = cabecalhos(g), nomes = nomesDasLinhas(g, colunaNome(h)), celulas = [];
+    h.forEach((tit, c) => {
+      if (!rotEvento.test(tit)) return;
+      for (let r = 0; r < g.rows.length; r++) { const v = String(g.getCellData(r, c, true) ?? '').trim(); if (v && nomes[r]) celulas.push({ empregado: nomes[r], evento: tit.trim(), valor: v }); }
+    });
+    return { ok: true, celulas };
+  }
+
   /** Lança cada valor como o portal faz: seleciona a célula, abre o editor, digita e confirma (o portal recalcula e valida). valor '' limpa a célula. */
   function escrever(g, celulas) {
     const h = cabecalhos(g), ni = colunaNome(h), nomes = nomesDasLinhas(g, ni).map(norm);
@@ -80,7 +90,7 @@
     let r;
     try {
       const g = acharGrade();
-      r = !g ? { ok: false, semGrade: true, chaves: chavesVistas } : p.op === 'escrever' ? escrever(g, p.celulas || []) : { ...ler(g), achou: true };
+      r = !g ? { ok: false, semGrade: true, chaves: chavesVistas } : p.op === 'escrever' ? escrever(g, p.celulas || []) : p.op === 'valores' ? valores(g) : { ...ler(g), achou: true };
     } catch (err) { r = { ok: false, erro: String(err?.message || err).slice(0, 80) }; }
     document.dispatchEvent(new CustomEvent('ct-grade-resposta', { detail: JSON.stringify({ id: p.id, ...r }) }));
   });
