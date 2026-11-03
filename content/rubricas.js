@@ -202,7 +202,7 @@ async function gradeLerTudo() {
   gradeApiInfo = api ? { achou: !!api.achou, semGrade: !!api.semGrade, colunas: api.colunas, linhas: api.linhas, colunaDoNome: api.colunaDoNome, chaves: api.chaves, erro: api.erro } : { ajudante: false };
   if (api?.ok && api.empregados.length) {
     gradeMapa = { empregados: [...api.empregados], eventos: [...api.titulos] };
-    return { titulos: api.titulos, empregados: api.empregados, fonte: 'planilha do portal' };
+    return { titulos: api.titulos, empregados: api.empregados, fonte: 'planilha do portal', bloqueadas: api.bloqueadas || [], meta: api.meta || [] };
   }
   // 2) pela tela, rolando
   atualizarGrade();

@@ -11,7 +11,7 @@ import { salvarRascunho, salvarRascunhoAgora } from './facilidades.js';
 
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
 const chave = (i, j) => `${i}|${j}`;
-const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false, falhas: new Set(), ultimo: null, arqMsg: '', arqBusy: false });
+const estado = (tipo) => (w(tipo).planilha ||= { carregada: false, lendo: false, erro: '', eventos: [], empregados: [], valores: {}, pend: new Set(), filtro: '', status: '', timer: null, comando: '', cmdMsg: '', cmdBusy: false, falhas: new Set(), ultimo: null, arqMsg: '', arqBusy: false, bloqueadas: new Set(), meta: [] });
 
 /** Só na plataforma (no painel encaixado o portal é a própria planilha) e só no Lançamento de Rubricas. */
 const ativa = (tipo) => tipo === 'rubricas' && S.modo === 'plataforma' && tipoDef(tipo)?.grade?.ativo !== false;
@@ -66,7 +66,7 @@ export async function exportarExcel(tipo) {
     if (!(await garantirCarregada(tipo, 'arqMsg'))) return;
     const num = (v) => (/^\d+([.,]\d+)?$/.test(String(v).trim()) ? Number(String(v).replace(',', '.')) : String(v));   // número no Excel quando é número (10:30 continua texto)
     const linhas = [['Funcionário', ...P.eventos], ...P.empregados.map((e, i) => [e, ...P.eventos.map((_, j) => { const v = P.valores[chave(i, j)]; return v ? num(v) : ''; })])];
-    const como = [['Como usar esta planilha'], [''], ['1. Preencha os valores na aba «Rubricas»: uma linha por funcionário, uma coluna por rubrica.'], ['2. Não mude os nomes dos funcionários nem os títulos das colunas.'], ['3. Use o mesmo formato que você usaria no portal (ex.: horas 10:30, valores 350,00).'], ['4. No Assistente, em Lançamento de Rubricas, clique em «Importar planilha preenchida» e escolha este arquivo.'], ['5. O envio continua sendo feito pelo botão do portal, depois do resumo.']];
+    const como = [['Como usar esta planilha'], [''], ['1. Preencha os valores na aba «Rubricas»: uma linha por funcionário, uma coluna por rubrica.'], ['2. Não mude os nomes dos funcionários nem os títulos das colunas.'], ['3. Use o mesmo formato que você usaria no portal (ex.: horas 10:30, valores 350,00).'], ['4. No Assistente, em Lançamento de Rubricas, clique em «Importar planilha preenchida» e escolha este arquivo.'], ['5. O envio continua sendo feito pelo botão do portal, depois do resumo.'], ...(P.bloqueadas.size ? [[''], ['Rubricas que o portal NÃO deixa lançar (não preencha; se preencher, ficam de fora):'], ...[...P.bloqueadas].map(x => [x])] : [])];
     const comp = String(valorPlat(tipo, 'competencia') || '').match(/(\d{2})\/(\d{4})/);
     const nome = `lancamento-de-rubricas${comp ? `-${comp[2]}-${comp[1]}` : ''}.xlsx`;
     const bytes = await criarXlsx([{ nome: 'Rubricas', linhas, larguras: [38, ...P.eventos.map(() => 20)] }, { nome: 'Como usar', linhas: como, larguras: [100] }]);
@@ -93,6 +93,8 @@ export async function importarExcel(tipo, arquivo) {
       l = { celulas: g.celulas, semEmpregado: g.semEmpregado, semEvento: g.semEvento }; origem = 'Empregado/Rubrica/Valor';
     }
     let n = 0;
+    const bloqueadas = [...new Set(l.celulas.filter(c => P.bloqueadas.has(c.evento)).map(c => c.evento))];
+    l.celulas = l.celulas.filter(c => !P.bloqueadas.has(c.evento));
     for (const c of l.celulas) {
       const i = P.empregados.indexOf(c.empregado), j = P.eventos.indexOf(c.evento); if (i < 0 || j < 0) continue;
       const k = chave(i, j); if ((P.valores[k] || '') === String(c.valor)) continue;
@@ -101,6 +103,7 @@ export async function importarExcel(tipo, arquivo) {
     const li = [];
     li.push(n ? `<li><b>Fixei a planilha «${esc(arquivo.name)}»: ${n} valor(es) lançados</b> para ${new Set(l.celulas.map(c => c.empregado)).size} funcionário(s). Confira e ajuste na planilha se precisar.</li>` : `<li>Li «${esc(arquivo.name)}», mas não achei valores novos para lançar (${origem}).</li>`);
     if (l.semEmpregado?.length) li.push(`<li>Não achei na grade do portal: ${l.semEmpregado.slice(0, 8).map(esc).join(', ')}${l.semEmpregado.length > 8 ? ` e mais ${l.semEmpregado.length - 8}` : ''}. Confira o nome do funcionário.</li>`);
+    if (bloqueadas.length) li.push(`<li>O portal não deixa lançar nestas rubricas (bloqueadas na grade): ${bloqueadas.map(esc).join(', ')}. Elas ficaram de fora.</li>`);
     if (l.semEvento?.length) li.push(`<li>Estas colunas não são rubricas da grade desta empresa e ficaram de fora: ${l.semEvento.slice(0, 8).map(x => esc(String(x))).join(', ')}.</li>`);
     P.arqMsg = `<ul class="tips">${li.join('')}</ul>`;
     if (n) { agendar(tipo); salvarRascunho(tipo, S.ctx.empresa); }
@@ -134,8 +137,9 @@ const resumoComando = (r, nCelulas) => {
   if (nCelulas) li.push(`<li><b>Preenchi ${nCelulas} valor(es)</b> na planilha${r.celulas.length > nCelulas ? '' : ''}: ${r.celulas.slice(0, 8).map(c => `${esc(c.empregado)} — ${esc(c.rubrica || c.evento)}: ${esc(c.valor)}`).join('; ')}${r.celulas.length > 8 ? ` e mais ${r.celulas.length - 8}` : ''}. Confira e ajuste na planilha se precisar.</li>`);
   if (r.naoEntendidas.length) li.push(`<li>Não entendi: ${r.naoEntendidas.map(x => `«${esc(x)}»`).join(', ')}. Escreva com o nome do funcionário, a rubrica e o valor.</li>`);
   if (r.semEvento.length) li.push(`<li>Esta rubrica não existe na grade desta empresa: ${r.semEvento.map(esc).join(', ')}. Lance direto no portal, se for o caso.</li>`);
+  if (r.bloqueadas?.length) li.push(`<li>O portal não deixa lançar nestas rubricas (bloqueadas na grade): ${r.bloqueadas.map(esc).join(', ')}. Elas ficaram de fora.</li>`);
   if (r.semEmpregado.length) li.push(`<li>Não achei o funcionário em: ${r.semEmpregado.map(x => x === '?' ? 'uma frase sem nome' : esc(x)).join(', ')}. Escreva o nome como aparece na planilha.</li>`);
-  if (!li.length) li.push('<li>Não entendi nenhum lançamento. Escreva, por exemplo: «Agnaldo 10 horas extras, Artur 2 faltas».</li>');
+  if (!li.length && !r.bloqueadas?.length) li.push('<li>Não entendi nenhum lançamento. Escreva, por exemplo: «Agnaldo 10 horas extras, Artur 2 faltas».</li>');
   return `<ul class="tips">${li.join('')}</ul>`;
 };
 
@@ -161,6 +165,8 @@ export async function executarComando(tipo) {
       if (!P.carregada) { P.cmdMsg = `<div class="note warn">${icon('alert')}<div>${esc(P.erro || 'Não consegui abrir a planilha do portal.')}</div></div>`; return; }
     }
     const r = E.comandoRubricas(texto, P.eventos, P.empregados, S.rules);
+    r.bloqueadas = [...new Set(r.celulas.filter(c => P.bloqueadas.has(c.evento)).map(c => c.evento))];
+    r.celulas = r.celulas.filter(c => !P.bloqueadas.has(c.evento));   // o portal não deixa lançar nessas rubricas
     let n = 0;
     for (const c of r.celulas) {
       const i = P.empregados.indexOf(c.empregado), j = P.eventos.indexOf(c.evento); if (i < 0 || j < 0) continue;
@@ -191,16 +197,16 @@ export function renderPlanilhaRubricas(tipo) {
     return;
   }
   const f = E.norm(P.filtro);
-  const linhas = P.empregados.map((emp, i) => `<tr data-i="${i}"${f && !E.norm(emp).includes(f) ? ' hidden' : ''}><th scope="row" class="plan-nome" title="${esc(emp)}">${esc(emp)}</th>${P.eventos.map((ev, j) => `<td${P.falhas.has(chave(i, j)) ? ' class="plan-falhou" title="O portal não aceitou este valor"' : ''}><input type="text" inputmode="decimal" autocomplete="off" data-i="${i}" data-j="${j}" value="${esc(P.valores[chave(i, j)] || '')}" aria-label="${esc(ev)} — ${esc(emp)}"></td>`).join('')}</tr>`).join('');
+  const linhas = P.empregados.map((emp, i) => `<tr data-i="${i}"${f && !E.norm(emp).includes(f) ? ' hidden' : ''}><th scope="row" class="plan-nome" title="${esc(emp)}">${esc(emp)}</th>${P.eventos.map((ev, j) => `<td${P.bloqueadas.has(ev) ? ' class="plan-bloq" title="O portal não deixa lançar nesta rubrica"' : P.falhas.has(chave(i, j)) ? ' class="plan-falhou" title="O portal não aceitou este valor"' : ''}><input type="text" inputmode="decimal" autocomplete="off" data-i="${i}" data-j="${j}" value="${esc(P.valores[chave(i, j)] || '')}" aria-label="${esc(ev)} — ${esc(emp)}"${P.bloqueadas.has(ev) ? ' disabled' : ''}></td>`).join('')}</tr>`).join('');
   el.innerHTML = `<section class="pn-card plan-rub">${cab}<div class="pn-card-body">
     ${blocoComando(P, noForm)}
     ${blocoArquivo(P, noForm)}
     <div class="plan-barra"><input type="search" id="plan-q" placeholder="Buscar funcionário…" value="${esc(P.filtro)}" autocomplete="off">
-      <span class="muted" id="plan-n">${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)</span><span class="spacer"></span>
+      <span class="muted" id="plan-n">${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)${P.bloqueadas.size ? ` · ${P.bloqueadas.size} bloqueada(s) pelo portal` : ''}</span><span class="spacer"></span>
       <span class="muted" id="plan-status" role="status">${statusHtml(P)}</span>
       <button type="button" class="btn btn-sm btn-ghost" id="plan-rascunho" title="Guarda a planilha neste computador por 7 dias">${icon('file', 'ic-sm')} Salvar rascunho</button>
       <button type="button" class="btn btn-sm btn-ghost" id="plan-recarregar"${P.lendo || !noForm ? ' disabled' : ''}>${icon('refresh', 'ic-sm')} Recarregar do portal</button></div>
-    <div class="plan-rolagem"><table class="plan-tabela"><thead><tr><th class="plan-nome">Funcionário</th>${P.eventos.map(ev => `<th title="${esc(ev)}">${esc(ev)}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>
+    <div class="plan-rolagem"><table class="plan-tabela"><thead><tr><th class="plan-nome">Funcionário</th>${P.eventos.map(ev => `<th title="${esc(ev)}${P.bloqueadas.has(ev) ? ' — o portal não deixa lançar nesta rubrica' : ''}"${P.bloqueadas.has(ev) ? ' class="plan-bloq-th"' : ''}>${P.bloqueadas.has(ev) ? icon('lock', 'ic-sm') + ' ' : ''}${esc(ev)}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>
     <p class="muted" style="margin:8px 0 0">Enter e as setas descem e sobem na coluna; você pode colar um bloco copiado do Excel. Os nomes e as rubricas são os do portal.</p></div></section>`;
   ligarComando(tipo); ligarArquivo(tipo, el);
   ligar(tipo, el);
@@ -253,7 +259,7 @@ function ligar(tipo, el) {
     for (const cols of linhas) {
       while (i0 < P.empregados.length && celula(i0, j0)?.closest('tr').hidden) i0++;   // pula quem o filtro esconde
       if (i0 >= P.empregados.length) break;
-      cols.forEach((v, d) => { const c = celula(i0, j0 + d); if (c) { c.value = v.trim(); gravar(i0, j0 + d, v); } });
+      cols.forEach((v, d) => { const c = celula(i0, j0 + d); if (c && !c.disabled) { c.value = v.trim(); gravar(i0, j0 + d, v); } });
       i0++;
     }
     const n = $('#plan-n'); if (n) n.textContent = `${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)`;
@@ -275,14 +281,19 @@ async function enviarCelulas(tipo) {
   try { r = await request({ type: 'preencherGrade', celulas, silencioso: true }, 120000); } finally { S.preenchendo = false; }
   const falhas = r?.faltaram?.length || 0;
   const motivos = {};
+  for (const k of chaves) P.falhas.delete(k);   // o que foi reenviado vale de novo: a marca vermelha antiga sai e só volta se o portal recusar outra vez
   for (const f of r?.faltaram || []) {
     motivos[f.motivo || 'motivo não informado'] = (motivos[f.motivo || 'motivo não informado'] || 0) + 1;
     const i = P.empregados.indexOf(f.empregado), j = P.eventos.indexOf(f.evento); if (i >= 0 && j >= 0) P.falhas.add(chave(i, j));
   }
-  P.ultimo = r ? { total: celulas.length, falhas, motivos } : { total: celulas.length, falhas: celulas.length, motivos: { 'o portal não respondeu': celulas.length } };
+  P.ultimo = r ? { total: celulas.length, falhas, motivos, formas: r.formas || {}, recusas: r.recusas || [] } : { total: celulas.length, falhas: celulas.length, motivos: { 'o portal não respondeu': celulas.length } };
   P.status = !r ? 'O portal não respondeu. Tente de novo.' : falhas ? `${falhas} célula(s) não aceitaram o valor no portal (marcadas em vermelho): ${Object.entries(motivos).map(([m, n]) => `${m}${n > 1 ? ' ×' + n : ''}`).join('; ')}.` : `Lançado na grade do portal às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`;
   if (!r) chaves.forEach(k => P.pend.add(k));
-  document.querySelectorAll('.plan-tabela td').forEach(td => { const i = td.querySelector('input')?.dataset; if (i && P.falhas.has(chave(+i.i, +i.j))) { td.classList.add('plan-falhou'); td.title = 'O portal não aceitou este valor'; } });
+  document.querySelectorAll('.plan-tabela td:not(.plan-bloq)').forEach(td => {
+    const i = td.querySelector('input')?.dataset; if (!i) return;
+    const falhou = P.falhas.has(chave(+i.i, +i.j));
+    td.classList.toggle('plan-falhou', falhou); td.title = falhou ? 'O portal não aceitou este valor' : '';
+  });
   marcar(tipo);
 }
 
@@ -297,7 +308,7 @@ export async function carregar(tipo) {
   try { g = await request({ type: 'lerGrade', adicionar: true }, 60000); } finally { S.preenchendo = false; }
   P.lendo = false;
   if (!g?.ok) { P.erro = `Não consegui ler a grade do portal: ${g?.motivo || 'o portal não respondeu'}.`; renderPlanilhaRubricas(tipo); return; }
-  P.fonte = g.fonte || ''; P.api = g.api || null;
+  P.fonte = g.fonte || ''; P.api = g.api || null; P.bloqueadas = new Set(g.bloqueadas || []); P.meta = g.meta || [];
   const antes = { ...P.valores }, empAntes = P.empregados, evAntes = P.eventos;
   P.eventos = g.eventos || []; P.empregados = g.empregados || []; P.carregada = true; P.valores = {};
   // o que já estava digitado continua (pelo nome do funcionário e da rubrica); depois, o que veio de planilha, texto ou mês passado
@@ -310,7 +321,7 @@ export async function carregar(tipo) {
     const plano = E.montarGrade(W.linhasRubricas, P.eventos, P.empregados, S.rules);
     for (const c of plano.celulas) {
       const i = P.empregados.findIndex(e => E.norm(e) === E.norm(c.empregado)), j = P.eventos.findIndex(e => E.norm(e) === E.norm(c.evento));
-      if (i >= 0 && j >= 0) { P.valores[chave(i, j)] = String(c.valor); P.pend.add(chave(i, j)); }
+      if (i >= 0 && j >= 0 && !P.bloqueadas.has(P.eventos[j])) { P.valores[chave(i, j)] = String(c.valor); P.pend.add(chave(i, j)); }
     }
     if (P.pend.size) agendar(tipo);
   }
@@ -318,7 +329,7 @@ export async function carregar(tipo) {
     let n = 0, fora = 0;
     for (const c of P.rascunho) {
       const i = P.empregados.findIndex(e => E.norm(e) === E.norm(c.e)), j = P.eventos.findIndex(e => E.norm(e) === E.norm(c.r));
-      if (i >= 0 && j >= 0) { P.valores[chave(i, j)] = String(c.v); P.pend.add(chave(i, j)); n++; } else fora++;
+      if (i >= 0 && j >= 0 && !P.bloqueadas.has(P.eventos[j])) { P.valores[chave(i, j)] = String(c.v); P.pend.add(chave(i, j)); n++; } else fora++;
     }
     P.rascunho = null;
     P.status = `Rascunho retomado: ${n} valor(es) voltaram à planilha${fora ? `; ${fora} não existem mais na grade (funcionário ou rubrica mudou)` : ''}.`;

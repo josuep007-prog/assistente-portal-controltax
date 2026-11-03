@@ -1027,3 +1027,8 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .plan-arq-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .plan-arq-linha .muted { font-size: 12px; }
 .plan-rub.plan-solta { outline: 2px dashed var(--blue-deep); outline-offset: -4px; }
+
+/* Rubricas que o portal não deixa lançar (somente leitura na grade): travadas na planilha (2.25.1) */
+.plan-tabela td.plan-bloq { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--ink-3) 14%, transparent) 6px 7px); }
+.plan-tabela td.plan-bloq input { cursor: not-allowed; opacity: .5; }
+.plan-tabela th.plan-bloq-th { color: var(--ink-3); }
