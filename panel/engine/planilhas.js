@@ -197,7 +197,7 @@ export function montarGrade(linhas, eventos, empregados, rules) {
   for (const l of linhas || []) {
     if (!String(l.valor ?? '').trim()) continue;
     const ev = eventoDaRubrica(l.rubrica, eventos, rules);
-    const emp = bestMatch(l.empregado, empregados, 0.85)?.option || null;
+    const emp = (empregados || []).find(e => norm(e) === norm(l.empregado)) || bestMatch(l.empregado, empregados, 0.85)?.option || null;   // o nome igual vale antes do parecido
     if (!ev) { if (!semEvento.includes(l.rubrica)) semEvento.push(l.rubrica); continue; }
     if (!emp) { if (!semEmpregado.includes(l.empregado || '?')) semEmpregado.push(l.empregado || '?'); continue; }
     // só o número: "R$ 350,00" → 350,00; "10 horas" → 10 (a coluna já diz se é hora, dia ou valor)
@@ -205,6 +205,52 @@ export function montarGrade(linhas, eventos, empregados, rules) {
   }
   return { celulas, semEvento, semEmpregado };
 }
+/** Planilha preenchida no Excel (o que "Exportar para Excel" gera: Funcionário + uma coluna por rubrica da grade) → células da grade.
+ *  `abas` = [{ nome, linhas }] como lidas por panel/extract.js. A linha de títulos é achada nas 10 primeiras de cada aba: cada título que for uma
+ *  rubrica da grade (nome igual, o código "150 -" igual, ou o nome sem o código igual) vira uma coluna; a coluna do funcionário é a que se chama
+ *  Nome/Empregado/Funcionário (senão a primeira que não é rubrica). Funcionário pelo nome da grade (igual ou quase); o que não casar volta em
+ *  semEmpregado/semEvento, para o cliente lançar. Sem nenhuma rubrica da grade nos títulos → null (aí vale o formato Empregado/Rubrica/Valor). */
+export function lerPlanilhaDaGrade(abas, eventos, empregados) {
+  const limpa = (x) => plain(x).replace(/[^a-z0-9]+/g, ' ').trim();
+  const codigo = (t) => (String(t).match(/^\s*(\d{1,6})\s*(?:-|$)/) || [])[1] || '';
+  const evs = (eventos || []).map(e => ({ e, cheio: limpa(e), sem: limpa(semCodigo(e)), cod: codigo(e) }));
+  const achaEvento = (t) => {
+    const c = limpa(t); if (!c) return null;
+    const cod = codigo(t), sem = limpa(semCodigo(t));
+    return evs.find(x => x.cheio === c) || (cod && evs.find(x => x.cod === cod)) || (sem && evs.find(x => x.sem === sem)) || null;
+  };
+  const ehNome = (c) => /^(nome|empregad|funcionari)/.test(limpa(c)) && limpa(c).length < 25;
+  let melhor = null;
+  for (const aba of abas || []) {
+    const linhas = aba.linhas || [];
+    for (let h = 0; h < Math.min(10, linhas.length); h++) {
+      const cols = {};   // índice da coluna → rubrica da grade
+      (linhas[h] || []).forEach((c, k) => { const ev = achaEvento(c); if (ev && !Object.values(cols).includes(ev.e)) cols[k] = ev.e; });
+      const n = Object.keys(cols).length;
+      if (n && (!melhor || n > melhor.n)) melhor = { aba, h, cols, n };
+    }
+  }
+  if (!melhor) return null;
+  const { aba, h, cols } = melhor, linhas = aba.linhas, titulo = linhas[h] || [];
+  let ni = titulo.findIndex(ehNome);
+  if (ni < 0) ni = titulo.findIndex((c, k) => !(k in cols) && String(c).trim());
+  if (ni < 0) ni = 0;
+  const celulas = [], semEmpregado = [], colunasComValor = new Set();
+  const valorDe = (v) => { let x = String(v ?? '').trim().replace(/^R\$\s*/i, ''); if (/^\d+\.\d{1,2}$/.test(x)) x = x.replace('.', ','); return x; };   // o Excel entrega 350.5; o portal quer 350,5
+  for (const linha of linhas.slice(h + 1)) {
+    const nome = String(linha[ni] ?? '').trim();
+    if (!nome || /^total/i.test(limpa(nome))) continue;
+    const valores = Object.entries(cols).map(([k, ev]) => [ev, valorDe(linha[k])]).filter(([, v]) => v !== '');
+    Object.keys(linha).forEach(k => { if (!(k in cols) && +k !== ni && String(linha[k] ?? '').trim() !== '' && String(titulo[k] ?? '').trim()) colunasComValor.add(String(titulo[k]).trim()); });
+    if (!valores.length) continue;
+    const emp = (empregados || []).find(e => norm(e) === norm(nome)) || bestMatch(nome, empregados || [], 0.85)?.option || null;   // o nome igual vale antes do parecido
+    if (!emp) { if (!semEmpregado.includes(nome)) semEmpregado.push(nome); continue; }
+    for (const [ev, v] of valores) celulas.push({ empregado: emp, evento: ev, valor: v });
+  }
+  const semEvento = [...colunasComValor].filter(t => !achaEvento(t) && !ehNome(t));
+  return { formato: 'grade', aba: aba.nome || '', celulas, semEmpregado, semEvento };
+}
+
 /** Comando escrito pelo cliente ("Ronaldo 10 horas extras, Carla 2 faltas e prêmio 200 para o Artur") → células da grade do portal.
  *  Primeiro o dicionário das regras (horas extras, faltas…); depois o nome das rubricas da própria grade ("440 - PREMIO", "37 - COMISSOES"),
  *  que cobre os eventos de cada empresa. O funcionário é o da grade (nome inteiro ou só o primeiro, se for único); sem funcionário na frase vale o

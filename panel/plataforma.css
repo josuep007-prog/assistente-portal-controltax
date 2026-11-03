@@ -1021,3 +1021,9 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .ph-portal:hover { border-color: var(--blue-deep); background: color-mix(in srgb, var(--blue-deep) 10%, var(--surface-2)); }
 .ph-portal:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
 .ph-portal .ic { flex: none; }
+
+/* Planilha de rubricas — Excel: exportar e fixar uma planilha preenchida (2.25.0) */
+.plan-arq { margin: 0 0 12px; }
+.plan-arq-linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.plan-arq-linha .muted { font-size: 12px; }
+.plan-rub.plan-solta { outline: 2px dashed var(--blue-deep); outline-offset: -4px; }
