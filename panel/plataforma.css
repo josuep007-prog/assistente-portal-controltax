@@ -1015,3 +1015,9 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .resumo-valores .tbl-linhas { margin: 0; }
 .resumo-valores .tbl-linhas th { position: sticky; top: 0; background: var(--surface); }
 .ok-txt { color: var(--ok, #1f7a4d); } .warn-txt { color: var(--warn, #b45309); }
+
+/* "Ver Onvio" no canto superior direito, ao lado da busca (2.23.1) */
+.ph-portal { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface-2); color: var(--ink); cursor: pointer; font: 600 13px var(--f-body, inherit); white-space: nowrap; }
+.ph-portal:hover { border-color: var(--blue-deep); background: color-mix(in srgb, var(--blue-deep) 10%, var(--surface-2)); }
+.ph-portal:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.ph-portal .ic { flex: none; }

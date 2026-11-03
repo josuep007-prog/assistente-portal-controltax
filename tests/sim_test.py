@@ -937,7 +937,7 @@ async def teste_comando_rubricas(b):
     g = await pn.evaluate("(() => { const s = document.querySelector('#modal .sheet'); if (!s) return null; const r = s.getBoundingClientRect(), rail = document.querySelector('#rail').getBoundingClientRect(), topo = document.elementFromPoint(r.left + 8, r.top + 40); return { cls: s.className, ww: getComputedStyle(s).width, pos: getComputedStyle(document.querySelector('#modal')).position, z: getComputedStyle(document.querySelector('#modal')).zIndex, quem: topo && (topo.id || topo.className), l: r.left, t: r.top, r: r.right, b: r.bottom, rail: rail.right, w: innerWidth, h: innerHeight, topo: !!topo && s.contains(topo) }; })()")
     check(bool(g) and g['l'] >= g['rail'] and g['r'] <= g['w'] and g['t'] >= 0 and g['b'] <= g['h'] and g['topo'], f"resumo antes de enviar: a janela fica inteira na tela, centralizada e por cima da barra lateral ({g})")
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
-    tarefa_emp.cancel()
+    tarefa_emp.cancel(); await asyncio.gather(tarefa_emp, return_exceptions=True)
     await ctx.close()
 
 async def teste_rascunho_rubricas(b):
@@ -986,7 +986,7 @@ async def teste_rascunho_rubricas(b):
     check(await pn.locator('#m-rasc').count() == 1, 'resumo: tem o botão "Salvar rascunho"')
     await pn.click('#m-rasc'); await pg.wait_for_timeout(600)
     check(await pn.locator('#modal .sheet').count() == 0, 'resumo: "Salvar rascunho" guarda e fecha a janela')
-    tarefa.cancel()
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     # sair e voltar: a página é recarregada (tudo da memória some); o rascunho continua guardado
     await pg.reload(); await pg.wait_for_timeout(3500)
     await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
@@ -1004,7 +1004,7 @@ async def teste_rascunho_rubricas(b):
             if vv.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '4' and vv.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7': ok = True; break
             await pg.wait_for_timeout(300)
         check(ok, f'rascunho: "Continuar" abre a planilha do portal e devolve os valores guardados ({vv})')
-    tarefa.cancel()
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
@@ -1015,6 +1015,13 @@ async def teste_tela_muda(b):
     pg = await ctx.new_page()
     await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
     pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    # 2.23.1: "Ver Onvio" no canto do cabeçalho, ao lado da busca (saiu da barra lateral)
+    b2 = await pn.evaluate("(() => { const a = document.querySelector('#plat-ver-portal'), s = document.querySelector('#plat-busca'); if (!a || !s) return null; const ra = a.getBoundingClientRect(), rs = s.getBoundingClientRect(); return { txt: a.innerText.trim(), esq: ra.left >= rs.right - 1, mesmaLinha: Math.abs((ra.top + ra.bottom) / 2 - (rs.top + rs.bottom) / 2) < 6, direita: innerWidth - ra.right < 40, olho: !!a.querySelector('use[href=\"#i-eye\"]'), naBarra: !!document.querySelector('#rail [data-acao=\"portal\"]') }; })()")
+    check(bool(b2) and b2['txt'] == 'Ver Onvio' and b2['esq'] and b2['mesmaLinha'] and b2['direita'] and b2['olho'] and not b2['naBarra'], f'"Ver Onvio": botão com olho no canto superior direito, ao lado da busca, e fora da barra lateral ({b2})')
+    await pn.click('#plat-ver-portal'); await pg.wait_for_timeout(800)
+    check(await pg.evaluate("window.__ctSim.hooks().modoAtual()") == 'fechado', '"Ver Onvio" recolhe a extensão e mostra o portal')
+    await pg.evaluate("window.__ctSim.hooks().modo('plataforma')")
+    await pg.wait_for_timeout(300)
     await pn.evaluate("chrome.runtime.sendMessage = (m) => (m && (m.type === 'getSettings' || m.type === 'getRules')) ? new Promise(() => {}) : Promise.resolve({})")
     await pn.click('#rail [data-acao="config"]')
     ok = False

@@ -13,7 +13,7 @@ export function montarCasca(C) {
   function montarCasca() {
     if (montada) return; montada = true;
     $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>`).join('');
-    $('#rail-bottom').innerHTML = [['portal', 'Ver no portal', 'external'], ['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
+    $('#rail-bottom').innerHTML = [['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
       .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b></span></button>`).join('');
     document.querySelectorAll('#rail [data-mod]').forEach(b => b.addEventListener('click', () => {
       // "Novo pedido" de novo, com o formulário na tela: volta para a escolha do tipo (o pedido aberto pode ser retomado)
@@ -22,12 +22,12 @@ export function montarCasca(C) {
     }));
     document.querySelectorAll('#rail [data-acao]').forEach(b => b.addEventListener('click', () => {
       const a = b.dataset.acao;
-      if (a === 'portal') send({ type: 'verPortal' });
-      else if (a === 'minimizar') send({ type: 'modo', modo: 'fechado' });
+      if (a === 'minimizar') send({ type: 'modo', modo: 'fechado' });
       else if (a === 'tema') A.alternarTema();
       else if (a === 'config') A.setView('config');
     }));
     $('#plat-busca').addEventListener('click', abrirBusca);
+    $('#plat-ver-portal').addEventListener('click', () => send({ type: 'verPortal' }));   // antes um ícone na barra lateral; agora "Ver Onvio" no canto do cabeçalho
     document.addEventListener('keydown', (e) => {
       if (!document.body.classList.contains('plat')) return;
       if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !editavel(e.target))) { e.preventDefault(); abrirBusca(); }
