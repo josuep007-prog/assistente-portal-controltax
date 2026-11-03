@@ -858,7 +858,10 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 
 /* telas baixas (1366×650, 1280×720…): destaque do Hoje compacto, para a 1ª seção abaixo ficar à vista */
 @media (max-height: 759px) {
-  .hj-saud { display: none; }
+  /* a saudação some, mas o aviso do próximo prazo (Agenda) continua à vista */
+  .hj-saud-t { display: none; }
+  .hj-saud:not(:has(.hj-prazo)) { display: none; }
+  .hj-saud .hj-prazo { margin-left: 0; }
   .hj-hero-g { gap: 16px; padding: 12px 18px; }
   .hj-hero .an-svg { width: 96px; height: 96px; }
   .hj-hero .an-svg .an-total { font-size: 42px; }
@@ -998,3 +1001,4 @@ body.plat .dock .more-menu .menu { z-index: 6; }
 .ag-grid > * { min-width: 0; }
 .ag-side, .ag-side > * { min-width: 0; max-width: 100%; }
 .ag-side .pn-li { min-width: 0; }
+@media (max-height: 759px) { .hj-sep { display: none; } }

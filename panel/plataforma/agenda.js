@@ -228,7 +228,7 @@ export function montarAgenda(C) {
       const p = E.proximoPrazo(eventosEntre(hoje, E.addDays(hoje, 60), { completo: true }), hoje);
       if (!p) return '';
       const q = E.quandoTexto(p.falta, msg), dd = p.falta > 1 ? ` (${E.fmtDate(p.d).slice(0, 5)})` : '';
-      return ` · <button type="button" class="hj-prazo" data-ag-prox="${E.iso(p.d)}" title="${esc(msg.verAgenda)}">${esc(E.textoAgenda(msg.proximoPrazo, { titulo: p.titulo }))} <span>${esc(q + dd)}</span> ›</button>`;
+      return `<span class="hj-sep"> · </span><button type="button" class="hj-prazo" data-ag-prox="${E.iso(p.d)}" title="${esc(msg.verAgenda)}">${esc(E.textoAgenda(msg.proximoPrazo, { titulo: p.titulo }))} <span>${esc(q + dd)}</span> ›</button>`;
     } catch { return ''; }
   }
   viewEl.addEventListener('click', (ev) => { const b = ev.target.closest?.('[data-ag-prox]'); if (b) abrirDia(b.dataset.agProx); });

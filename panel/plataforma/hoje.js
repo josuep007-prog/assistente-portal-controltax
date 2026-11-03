@@ -267,7 +267,7 @@ export function montarHoje(C) {
       <div id="avisos-esc"></div>
       <div id="lote"></div>
       ${enviado}${aviso}<div id="proximo"></div>
-      <p class="hj-saud"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}${C.proximoPrazoHtml?.() || ''}</p>
+      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}</p>
       <div class="dp-toolbar hj-barra">
         ${seletorEmpresa()}
         <span class="dp-count">${lido ? plural(base.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length, 'em aberto', 'em aberto') : ''}</span>

@@ -1638,7 +1638,7 @@ async def teste_detalhe(b):
     check(ok and await pn.locator('#rail [data-mod="pendencias"].on').count() == 1, 'Ver na lista: vai para Solicitações e a solicitação pisca')
     txt = await pn.locator('#sol-grupos .foco-pisca').inner_text() if ok else ''
     check(num.replace('nº ', '') in txt, f'… e é a mesma solicitação ({num})')
-    check(await pn.locator('.tipo-c.fam-todos.on').count() == 1, 'o filtro que a escondia foi tirado')
+    check(await pn.locator('.tipo-c.fam-todos.on, .tipo-f.fam-todos.on').count() == 1, 'o filtro que a escondia foi tirado')   # cartão ou faixa de tipos (2.23)
     vis = await pn.evaluate("(() => { const r = document.querySelector('#sol-grupos .foco-pisca')?.getBoundingClientRect(); return !!r && r.top >= 0 && r.bottom <= innerHeight; })()")
     check(vis, 'o cartão que pisca está à vista (rolou até ele)')
     ok = await espera(lambda: pn.evaluate("document.querySelectorAll('.foco-pisca').length === 0"), 6)
