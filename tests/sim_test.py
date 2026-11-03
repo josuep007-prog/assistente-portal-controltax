@@ -933,7 +933,7 @@ async def teste_comando_rubricas(b):
     g = await pn.evaluate("(() => { const s = document.querySelector('#modal .sheet'); if (!s) return null; const r = s.getBoundingClientRect(), rail = document.querySelector('#rail').getBoundingClientRect(), topo = document.elementFromPoint(r.left + 8, r.top + 40); return { l: r.left, t: r.top, r: r.right, b: r.bottom, rail: rail.right, w: innerWidth, h: innerHeight, topo: !!topo && s.contains(topo) }; })()")
     check(bool(g) and g['l'] >= g['rail'] and g['r'] <= g['w'] and g['t'] >= 0 and g['b'] <= g['h'] and g['topo'], f"resumo antes de enviar: a janela fica inteira na tela, centralizada e por cima da barra lateral ({g})")
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
-    tarefa_emp.cancel()
+    tarefa_emp.cancel(); await asyncio.gather(tarefa_emp, return_exceptions=True)
     await ctx.close()
 
 async def teste_rascunho_rubricas(b):
@@ -982,7 +982,7 @@ async def teste_rascunho_rubricas(b):
     check(await pn.locator('#m-rasc').count() == 1, 'resumo: tem o botão "Salvar rascunho"')
     await pn.click('#m-rasc'); await pg.wait_for_timeout(600)
     check(await pn.locator('#modal .sheet').count() == 0, 'resumo: "Salvar rascunho" guarda e fecha a janela')
-    tarefa.cancel()
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     # sair e voltar: a página é recarregada (tudo da memória some); o rascunho continua guardado
     await pg.reload(); await pg.wait_for_timeout(3500)
     await pg.evaluate("localStorage.setItem('ct-sim-grade', 'wijmo-api')")
@@ -1000,7 +1000,7 @@ async def teste_rascunho_rubricas(b):
             if vv.get('FUNCIONARIO B TESTE|110 - RUBRICA B') == '4' and vv.get('FUNCIONARIO M TESTE|190 - RUBRICA J') == '7': ok = True; break
             await pg.wait_for_timeout(300)
         check(ok, f'rascunho: "Continuar" abre a planilha do portal e devolve os valores guardados ({vv})')
-    tarefa.cancel()
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
