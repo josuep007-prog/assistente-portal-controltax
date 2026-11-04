@@ -226,10 +226,12 @@ async def teste_plataforma(b):
     ok = await espera(portal_com(selectedEmployee='VANESSA PRADO'), 20)
     check(ok, 'atalho "Pedir": abre o afastamento no portal com a funcionária escolhida')
     check(await pn.locator('#f-empregado').input_value() == 'VANESSA PRADO', 'formulário próprio mostra a funcionária')
-    await pn.click('#pd-voltar'); await pg.wait_for_timeout(400)
+    await pn.click('#pd-voltar')
+    await espera(lambda: pn.evaluate("!!document.querySelector('#pd-continuar')"), 10)
     check(await pn.locator('#pd-continuar').count() == 1 and await pn.locator('.pd-escolha .intent').count() >= 5, 'botão "Outro tipo" dentro do pedido volta para a escolha do tipo')
-    await pn.click('#pd-continuar'); await pg.wait_for_timeout(400)
-    check(await pn.locator('#f-empregado').count() == 1, '"Continuar o pedido" volta ao formulário aberto')
+    await pn.click('#pd-continuar')
+    ok = await espera(lambda: pn.evaluate("document.querySelector('#f-empregado')?.value === 'VANESSA PRADO'"), 25)
+    check(ok, '"Continuar o pedido" reabre o formulário (no portal também) com o que estava preenchido')
     await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave')"); await pg.wait_for_timeout(1500)
     # Calcular (2.3): simulação de rescisão e de férias, e o pedido do cálculo já com as datas
     print('[2.3] calcular: simulações')
@@ -441,9 +443,11 @@ async def teste_mecanica(b):
             await pg.wait_for_timeout(250)
         return False
     async def abrir(slug):
+        await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(3500)   # sai do pedido anterior pela extensão (o portal sai junto, o que leva um instante) antes de abrir o próximo
         await pg.evaluate(f"window.__ctSim.go('{SR}{slug}')"); await pg.wait_for_timeout(600)
         await pg.evaluate(f"window.__ctSim.go('{SR}{slug}/add')"); await pg.wait_for_timeout(1500)
-        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+        if 'v-preencher' not in await pn.evaluate("document.querySelector('#view').className"):   # o painel já vai sozinho para o pedido quando o formulário abre; clicar de novo em "Novo pedido" é pedir outro tipo
+            await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
         if await pn.locator('#pd-continuar').count(): await pn.click('#pd-continuar'); await pg.wait_for_timeout(500)
         await pg.mouse.move(1200, 600)
     def tem(**kv):
@@ -1251,6 +1255,77 @@ async def teste_troca_empresa_dom(b):
     det = (r or {}).get('detalhe') or ''
     check(r and r.get('ok') is False and 'não apareceu na lista' in (r.get('motivo') or '') and 'tentei' in det and 'item(ns) de lista' in det and 'NAOEXISTE' not in det, f'empresa: sem a empresa na lista, o motivo e a estrutura do que abriu voltam sem nomes ({det[:140]!r})')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
+async def teste_sair_do_pedido(b):
+    """2.27.0: sair do pedido pela extensão (outro tipo, outra aba) leva o portal de volta à lista do tipo; "Continuar o pedido" reabre e preenche de novo."""
+    print('\n[sair] o portal sai do formulário junto com a extensão')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    caminho = lambda: pg.evaluate("window.__ctPlatform.path()")
+    async def espera_cam(pred, n=60):
+        for _ in range(n):
+            if pred(await caminho()): return True
+            await pg.wait_for_timeout(300)
+        return False
+    async def abrir_afastamento():
+        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(600)
+        await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click()
+        await espera_cam(lambda c: c.endswith('/employee-leave/add'))
+        for _ in range(40):
+            if await pn.locator('#f-dataAfastamento').count(): break
+            await pg.wait_for_timeout(300)
+    await abrir_afastamento()
+    await pn.fill('#f-dataAfastamento', '09/10/2026'); await pn.dispatch_event('#f-dataAfastamento', 'input'); await pn.dispatch_event('#f-dataAfastamento', 'change'); await pg.wait_for_timeout(1500)
+    # "Ver Onvio" só mostra o portal: ele continua no formulário
+    await pn.click('#plat-ver-portal'); await pg.wait_for_timeout(800)
+    check((await caminho()).endswith('/employee-leave/add'), '"Ver Onvio" não tira o portal do formulário')
+    await pg.evaluate("window.__ctSim.hooks().modo('plataforma')"); await pg.wait_for_timeout(500)
+    # Configurações não tira o portal do formulário (o diagnóstico copiado de lá descreve o formulário aberto)
+    await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(1200)
+    check((await caminho()).endswith('/employee-leave/add'), 'Configurações não tira o portal do formulário (o diagnóstico precisa dele)')
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(1000)
+    # 1) "Novo pedido" de novo (escolher outro tipo): o portal sai do formulário
+    await pn.click('#rail [data-mod="preencher"]')
+    ok = await espera_cam(lambda c: not c.endswith('/add'))
+    check(ok, f'escolher outro tipo pela extensão: o portal sai do formulário de afastamento ({await caminho()})')
+    for _ in range(40):
+        if await pn.locator('#pd-continuar[data-retomar="afastamento"]').count(): break
+        await pg.wait_for_timeout(300)
+    check(await pn.locator('#pd-continuar[data-retomar="afastamento"]').count() == 1, 'a faixa "Você deixou o pedido… Continuar o pedido" aparece')
+    # continuar: reabre no portal e preenche de novo
+    await pn.click('#pd-continuar')
+    ok = await espera_cam(lambda c: c.endswith('/employee-leave/add'))
+    for _ in range(60):
+        v = await pg.evaluate("document.querySelector('main [formcontrolname=leaveDate]')?.value")
+        if v == '09/10/2026': break
+        await pg.wait_for_timeout(300)
+    check(ok and v == '09/10/2026', f'"Continuar o pedido": o portal reabre o formulário com o que foi preenchido ({v!r})')
+    # 2) outra aba da extensão (Hoje): o portal também sai
+    for _ in range(40):
+        if await pn.locator('#f-dataAfastamento').count(): break
+        await pg.wait_for_timeout(300)
+    await pg.wait_for_timeout(800)
+    await pn.click('#rail [data-mod="inicio"]')
+    ok = await espera_cam(lambda c: not c.endswith('/add'))
+    check(ok, f'ir para outra aba da extensão: o portal também sai do formulário ({await caminho()})')
+    # 3) o que não tem pedido aberto não navega o portal à toa
+    antes = await caminho()
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(1200)
+    check(await caminho() == antes, 'sem formulário aberto, trocar de aba não mexe no portal')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
 async def teste_tela_muda(b):
@@ -2221,7 +2296,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2615,7 +2690,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)

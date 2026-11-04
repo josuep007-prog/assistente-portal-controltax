@@ -124,6 +124,27 @@ export function montarEntrada(C) {
     if (S.ctx.tipo === tipo) { if (r.planilha?.celulas?.length) A.retomarPlanilha?.(tipo, r.planilha.celulas); else A.fillPortal(tipo, { silencioso: true }); }
   }
 
+  /** O cliente saiu do pedido pela extensão (outro tipo, outra aba): guarda o que ele preencheu e leva o portal de volta à lista do tipo, para a tela do
+   *  portal não ficar parada num formulário que a extensão já deixou. Nada é cancelado nem enviado no portal; "Continuar o pedido" reabre e preenche de novo. */
+  P.sairDoFormulario = async () => {
+    const tipo = S.ctx.tipo;
+    if (!(S.ctx.route?.mode === 'form' && tipo) || (S.lote && !S.lote.concluido) || S.preenchendo) return false;
+    const def = A.tipoDef(tipo); if (!def?.slug) return false;
+    const guardou = await A.salvarRascunhoAgora?.(tipo);
+    S.plat.pedidoDeixado = guardou ? { tipo, empresa: S.ctx.empresa } : null;
+    await request({ type: 'navigate', slug: def.slug, add: false }, 15000);
+    for (let k = 0; k < 20 && S.ctx.route?.mode === 'form'; k++) await esperar(150);   // o portal avisa quando o formulário fecha
+    return true;
+  };
+  /** "Continuar o pedido" depois de sair: reabre o formulário no portal e devolve o que foi preenchido. */
+  P.retomarPedido = async (tipo) => {
+    let r = null;
+    try { r = ((await chrome.storage.local.get('rascunhos')).rascunhos || {})[`${S.ctx.empresa}|${tipo}`] || null; } catch { /* sem armazenamento */ }
+    const W = A.w(tipo); W.abandonado = false; W.entrouComDados = false;
+    S.plat.pedidoDeixado = null;
+    await continuarRascunho(tipo, r || { valores: {}, editados: [] });
+  };
+
   P.render = (v) => {
     montarCasca(); marcarModulo(v);
     S.plat.desenhada = assinatura(S.plat.sol);

@@ -8,6 +8,7 @@ export function montarNovopedido(C) {
   function renderPedido() {
     const aberto = S.ctx.route?.mode === 'form' && S.ctx.tipo;
     if (aberto && !S.plat.escolher) { A.renderPreencher(); return; }
+    const deixado = !aberto && S.plat.pedidoDeixado && S.plat.pedidoDeixado.empresa === S.ctx.empresa ? S.plat.pedidoDeixado : null;
     const R = S.rules;
     const grupos = new Map();
     for (const it of R.intencoes || []) { const setor = R.tipos[it.tipo]?.setor || 'Outros'; if (!grupos.has(setor)) grupos.set(setor, []); grupos.get(setor).push(it); }
@@ -15,6 +16,7 @@ export function montarNovopedido(C) {
       <div id="lote"></div>
       ${S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3 ? `<div class="note ok">${icon('check')}<div><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada.</b> ${passosAbertos().length ? 'Veja o próximo passo:' : 'Quer fazer outra?'}</div></div>` : ''}
       <div id="proximo"></div>
+      ${deixado ? `<div class="aviso-linha">${icon('fill')}<span>Você deixou o pedido de <b>${esc(nomeTipo(deixado.tipo))}</b> em andamento: guardei o que você preencheu e o portal saiu do formulário. Escolha outro abaixo ou volte a ele.</span><button type="button" class="btn btn-sm btn-primary" id="pd-continuar" data-retomar="${esc(deixado.tipo)}">Continuar o pedido ${icon('arrow', 'ic-sm')}</button></div>` : ''}
       ${aberto ? `<div class="aviso-linha">${icon('fill')}<span>O pedido de <b>${esc(nomeTipo(S.ctx.tipo))}</b> continua aberto no portal. Escolha outro abaixo ou volte a ele.</span><button type="button" class="btn btn-sm btn-primary" id="pd-continuar">Continuar o pedido ${icon('arrow', 'ic-sm')}</button></div>` : ''}
       <div id="sugestao"></div>
       <div class="pd-escolha">
@@ -33,7 +35,9 @@ export function montarNovopedido(C) {
       <div id="faq"></div>`;
     // qualquer escolha daqui (tipo, texto, documento) volta a mostrar o formulário quando ele abrir
     const mostrarForm = () => { S.plat.escolher = false; };
-    $('#pd-continuar')?.addEventListener('click', () => { mostrarForm(); P.render('preencher'); });
+    // escolher outro tipo, texto ou documento: o pedido deixado fica guardado (Hoje > Para terminar), mas a faixa sai
+    viewEl.querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => { S.plat.pedidoDeixado = null; }, true));
+    $('#pd-continuar')?.addEventListener('click', () => { const t = $('#pd-continuar').dataset.retomar; mostrarForm(); if (t) P.retomarPedido(t); else P.render('preencher'); });
     viewEl.querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => { mostrarForm(); A.openTipo(b.dataset.tipo); }));
     $('#drop-main').addEventListener('drop', mostrarForm, true); $('#drop-main').addEventListener('click', mostrarForm, true);
     $('#q').addEventListener('input', (e) => A.renderFaq(e.target.value));
@@ -45,7 +49,7 @@ export function montarNovopedido(C) {
     P.renderProximo($('#proximo'));
   }
   /** Botão "Outro tipo" dentro do pedido: volta para a escolha do tipo (o pedido aberto pode ser retomado). */
-  P.voltarEscolha = () => { S.plat.escolher = true; P.render('preencher'); };
+  P.voltarEscolha = async () => { await P.sairDoFormulario(); S.plat.escolher = true; P.render('preencher'); };
   /** Abre um pedido já com o funcionário escolhido (atalhos do Hoje, Funcionários, Calcular, Agenda e da busca).
    *  valores: o que o cliente escolheu na outra tela (vale como digitado por ele); sugeridos: dados do aviso, 1ª data que vale…
    *  entram para conferir ("do aviso nº X"), e um documento arrastado depois ainda pode corrigi-los; observacoes: vão para a
