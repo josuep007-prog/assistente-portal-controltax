@@ -25,6 +25,16 @@ async function esperarEmpresa(cand, ms) {
 }
 const visivelEl = (e) => { const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; const cs = getComputedStyle(e); return cs.visibility !== 'hidden' && cs.display !== 'none'; };
 const descreveEl = (e) => `${e.tagName.toLowerCase()}${typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : ''}${e.getAttribute?.('role') ? `[role=${e.getAttribute('role')}]` : ''}`;
+/** A linha da lista que contém este texto: sobe enquanto o pai ainda é só a linha (texto curto) e para antes da janela (dialog/modal), que também tem
+ *  tabindex e engoliria o clique. */
+const linhaDaOpcao = (e) => {
+  const janela = (x) => x.matches?.('[role=dialog],[role=alertdialog],bento-modal,ngb-modal-window,.modal,.cdk-overlay-pane,.modal-body,.modal-content');
+  const base = e.closest('button,a,li,[role=option],[role=menuitem],[role=button],bento-list-row,.bento-list-row');
+  if (base && !janela(base)) return base;
+  let x = e;
+  while (x.parentElement && !janela(x.parentElement) && x.parentElement !== document.body && x.parentElement.getBoundingClientRect().height <= 80 && (x.parentElement.innerText || '').trim().length <= 160) x = x.parentElement;   // uma linha tem uns 45 px; a lista inteira, não
+  return x;
+};
 const clicavel = (e) => e.closest('button,a,li,[role=option],[role=menuitem],[role=button],[role=combobox],bento-combobox,bento-list-row,.bento-list-row,[tabindex]') || e;
 /** Os lugares onde o seletor de empresas pode estar, do mais provável ao menos: o bloco do rótulo "EMPRESA", o nome da empresa aberta, elementos
  *  com "empresa"/"company" no nome. O seletor do Onvio real não foi mapeado; cada um é tentado e o que abrir (ou não) vai para o diagnóstico. */
@@ -51,7 +61,7 @@ async function abrirListaDeEmpresas(g, cand, diag) {
       // o mais fundo (o menor) é o texto da opção; o igual ao nome ganha do que só o contém
       achados.sort((a, b) => (a.getBoundingClientRect().width * a.getBoundingClientRect().height) - (b.getBoundingClientRect().width * b.getBoundingClientRect().height));
       const exato = achados.find(e => cand.exatos.some(x => norm(e.innerText) === norm(x)));
-      return clicavel(exato || achados[0]);
+      return linhaDaOpcao(exato || achados[0]);
     }
     busca = novos.find(e => e.matches?.('input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file])') && !e.disabled);
     if (busca && !digitou) { digitou = true; await digitar(busca, cand.apelidoNome || String(cand.exatos[0] || '').split(/\s+/)[0]); }
@@ -78,10 +88,12 @@ async function trocarEmpresa(nome, apelido = '') {
     const o = await abrirListaDeEmpresas(g, cand, diag);
     if (!o) { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(300); continue; }
     cliqueCompleto(o);
-    // a lista pode pedir um botão de confirmação (Selecionar, Confirmar…) depois de marcar a empresa
-    for (let t = 0; t < 2500 && !empresaAberta(cand); t += 250) {
-      await sleep(250);
-      if (t === 1000) { const c = [...document.querySelectorAll('[role=dialog] button,.modal button,bento-modal button')].find(x => visivelEl(x) && !x.disabled && /^(selecionar|confirmar|trocar|continuar|ok|entrar)$/i.test(norm(x.innerText))); if (c) cliqueCompleto(c); }
+    // a janela "Selecione uma empresa" só marca a linha: o botão SELECIONAR EMPRESA (ligado depois da marca) é que troca
+    const botaoConfirmar = () => [...document.querySelectorAll('[role=dialog] button,.modal button,bento-modal button,.cdk-overlay-pane button')].find(x => visivelEl(x) && !x.disabled && /^(selecionar( a)?( empresa)?|confirmar|trocar|continuar|ok|entrar)$/i.test(norm(x.innerText)));
+    let confirmou = false;
+    for (let t = 0; t < 4000 && !empresaAberta(cand); t += 150) {
+      await sleep(150);
+      if (!confirmou) { const c = botaoConfirmar(); if (c) { confirmou = true; cliqueCompleto(c); } }
     }
     return (await esperarEmpresa(cand, 12000)) ? { ok: true, empresa: companyName() } : { ok: false, motivo: 'o portal não confirmou a troca de empresa', detalhe: `cliquei na opção (${descreveEl(o)}), mas a empresa aberta não mudou` };
   }
