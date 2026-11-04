@@ -743,5 +743,26 @@
         ov.querySelectorAll('li').forEach(function (li) { li.addEventListener('click', function () { var n = li.getAttribute('data-n'); ov.remove(); trocaInterna(n); }); });
       });
     }
+  /* 2.28.2 — com muitas empresas o Onvio abre uma JANELA "Selecione uma empresa" (busca, linhas com nome e "APELIDO | CÓDIGO", clicar só marca a linha,
+     o botão SELECIONAR EMPRESA troca). Ligado com localStorage ct-sim-troca-modal=1. */
+  try {
+    if (localStorage.getItem('ct-sim-troca-modal') === '1' && window.__ctPlatform.trocarEmpresa) {
+      var trocaInterna2 = window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.trocarEmpresa;
+      var bloco2 = document.querySelector('.p-company');
+      var apelidos = {}; apelidos[EMPRESA_BASE] = 'BASE | 0001-91'; apelidos[OUTRA] = 'MODELO | 0002-37'; apelidos[TERCEIRA] = 'TERCEIRA | 0003-55';
+      if (bloco2) bloco2.addEventListener('click', function () {
+        if (document.getElementById('p-troca-modal')) return;
+        var ov = document.createElement('div'); ov.id = 'p-troca-modal'; ov.setAttribute('role', 'dialog'); ov.setAttribute('tabindex', '-1');
+        ov.style.cssText = 'position:fixed;left:30%;top:10%;width:560px;background:#fff;border:1px solid #888;z-index:9999;padding:16px;color:#111';
+        var lista = [EMPRESA_BASE, OUTRA, TERCEIRA], escolhida = '';
+        ov.innerHTML = '<h2>Selecione uma empresa</h2><input type="text" placeholder="Pesquisar" style="width:100%;margin:6px 0"><div class="lista">' + lista.map(function (n) { return '<div class="linha" data-n="' + n + '" style="padding:6px;border-bottom:1px solid #ddd;cursor:pointer"><div>' + n + '</div><small>' + apelidos[n] + '</small></div>'; }).join('') + '</div><button class="sel" disabled>SELECIONAR EMPRESA</button> <button class="can">CANCELAR</button>';
+        document.body.appendChild(ov);
+        ov.querySelector('input').addEventListener('input', function (e) { var q = e.target.value.toLowerCase(); ov.querySelectorAll('.linha').forEach(function (li) { li.hidden = !!q && li.textContent.toLowerCase().indexOf(q) < 0; }); });
+        ov.querySelectorAll('.linha').forEach(function (li) { li.addEventListener('click', function () { escolhida = li.getAttribute('data-n'); ov.querySelectorAll('.linha').forEach(function (x) { x.style.background = x === li ? '#e4eef5' : ''; }); ov.querySelector('.sel').disabled = false; }); });
+        ov.querySelector('.can').addEventListener('click', function () { ov.remove(); });
+        ov.querySelector('.sel').addEventListener('click', function () { var n = escolhida; ov.remove(); if (n) trocaInterna2(n); });
+      });
+    }
+  } catch (e) { /* sem armazenamento */ }
   } catch (e) { /* sem armazenamento */ }
 })();

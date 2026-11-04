@@ -1257,6 +1257,22 @@ async def teste_troca_empresa_dom(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
+async def teste_troca_empresa_modal(b):
+    """2.28.2: com muitas empresas o Onvio abre a janela "Selecione uma empresa" (clicar marca a linha; SELECIONAR EMPRESA troca)."""
+    print('\n[empresa] trocar de empresa pela janela "Selecione uma empresa"')
+    OUTRA = 'COMERCIO MODELO DE ALIMENTOS LTDA'
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.evaluate("localStorage.setItem('ct-sim-troca-modal', '1')"); await pg.reload(); await pg.wait_for_timeout(3500)
+    r = await pg.evaluate("window.__ctSim.hooks().trocar('COMERCIO MODELO DE ALIMENTOS LTDA', 'MODELO | 0002-37')")
+    emp = await pg.evaluate("document.querySelector('#p-empresa')?.textContent || ''")
+    check(r and r.get('ok') and emp == OUTRA, f'empresa: a janela "Selecione uma empresa" é aberta, a linha marcada e o botão SELECIONAR EMPRESA clicado ({emp!r}, {r})')
+    check(await pg.locator('#p-troca-modal').count() == 0, 'empresa: a janela fecha depois da troca')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_sair_do_pedido(b):
     """2.27.0: sair do pedido pela extensão (outro tipo, outra aba) leva o portal de volta à lista do tipo; "Continuar o pedido" reabre e preenche de novo."""
     print('\n[sair] o portal sai do formulário junto com a extensão')
@@ -2296,7 +2312,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2690,7 +2706,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
