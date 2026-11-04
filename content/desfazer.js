@@ -20,6 +20,7 @@ function lerTabelaGrade(tab) {
 /** A grade em blocos (div), quando o portal não usa <table>: a achada por rubricas.js, lida pela posição das colunas e linhas. */
 const lerGradeDiv = () => { atualizarGrade(); const g = gradeDivLer(gradeAmpla.scroller); return g && g.linhas.length ? g : null; };
 let gradeAddInfo = '';
+let gradeFases = [];   // quanto durou cada etapa da última leitura (só tempos), para o diagnóstico
 /** Clique como o de uma pessoa (o portal pode ouvir o mouse, não só o "click"). */
 function cliqueCompleto(el) {
   const o = { bubbles: true, cancelable: true, view: window };
@@ -43,7 +44,7 @@ async function garantirCamposDaGrade(forcar) {
   } catch { /* sem os campos: o clique em adicionar mostra o que falta */ }
 }
 /** A grade em blocos lida por inteiro (rola a grade para juntar todas as linhas e colunas). */
-async function resultadoGradeDiv() { const t = await gradeLerTudo(); return { ok: true, eventos: t.titulos, empregados: t.empregados, fonte: t.fonte, api: gradeApiInfo, bloqueadas: t.bloqueadas || [], meta: t.meta || [] }; }
+async function resultadoGradeDiv() { const t0 = Date.now(); const t = await gradeLerTudo(); gradeFases.push(`leitura ${((Date.now() - t0) / 1000).toFixed(1)}s`); return { ok: true, eventos: t.titulos, empregados: t.empregados, fonte: t.fonte, api: gradeApiInfo, bloqueadas: t.bloqueadas || [], meta: t.meta || [] }; }
 /** O que aparece na tela depois de clicar em "Adicionar todos os funcionários": janelas abertas e rótulos de botões (só os nomes dos botões, nenhum dado). */
 function gradeAposAdicionar() {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -57,18 +58,18 @@ function gradeAposAdicionar() {
 /** Lê a grade; com `adicionar`, repete sozinha até 3 vezes (o portal às vezes ainda não está pronto na primeira: botão desligado, grade lenta)
  *  e guarda o motivo de cada tentativa (só texto de estado) para o diagnóstico. */
 async function lerGrade(adicionar) {
-  const motivos = []; let ult = null; const t0 = Date.now();
+  const motivos = []; let ult = null; const t0 = Date.now(); gradeFases = [];
   const maximo = adicionar ? 3 : 1;
   for (let t = 1; t <= maximo; t++) {
     ult = await lerGradeUma(adicionar);
-    if (ult.ok || ult.fatal) return { ...ult, tentativas: t, motivos, ms: Date.now() - t0 };
+    if (ult.ok || ult.fatal) return { ...ult, tentativas: t, motivos, ms: Date.now() - t0, fases: gradeFases.join(' · ') };
     motivos.push(String(ult.motivo || '').slice(0, 140));
     if (t < maximo) await sleep(600);
   }
   return { ...ult, tentativas: motivos.length, motivos };
 }
 async function lerGradeUma(adicionar) {
-  const r = routeInfo();
+  const r = routeInfo(); const tf = Date.now(); const fase = (n) => { gradeFases.push(`${n} ${((Date.now() - tf) / 1000).toFixed(1)}s`); };
   if (r.mode !== 'form' || tipoBySlug(r.slug) !== 'rubricas') return { ok: false, fatal: true, motivo: 'abra o Lançamento de Rubricas' };
   let tab = acharGrade();
   if (!tab && lerGradeDiv()) return resultadoGradeDiv();
@@ -85,15 +86,15 @@ async function lerGradeUma(adicionar) {
     }
     if (!b) return { ok: false, motivo: 'não achei o botão para adicionar os funcionários na grade' };
     if (b.disabled) return { ok: false, motivo: 'o botão "Adicionar todos os funcionários" continua desligado no portal (falta algum campo, como a Competência)' };
-    await reveal(b); cliqueCompleto(b);
+    fase('botão pronto'); await reveal(b); cliqueCompleto(b);
     gradeAddInfo = '';
     let segunda = false;
-    for (let i = 0; i < 260 && !(tab = acharGrade()) && !lerGradeDiv(); i++) {   // até ~16 s: o portal busca os funcionários antes de mostrar a grade
-      await sleep(i < 20 ? 40 : 60);
-      if (!segunda && i === 42 && /obrigat/i.test(gradeAposAdicionar())) { segunda = true; await garantirCamposDaGrade(true); cliqueCompleto(b); }   // o portal pediu um campo: refaz e tenta de novo, uma vez
+    for (let i = 0; i < 160 && !(tab = acharGrade()) && !lerGradeDiv(); i++) {   // até ~16 s: o portal busca os funcionários antes de mostrar a grade
+      await sleep(100);
+      if (!segunda && i === 26 && /obrigat/i.test(gradeAposAdicionar())) { segunda = true; await garantirCamposDaGrade(true); cliqueCompleto(b); }   // o portal pediu um campo: refaz e tenta de novo, uma vez
     }
   }
-  if (!tab && lerGradeDiv()) return resultadoGradeDiv();
+  if (!tab && lerGradeDiv()) { fase('grade apareceu'); return resultadoGradeDiv(); }
   if (!tab) {
     atualizarGrade();
     const sc = gradeAmpla.scroller;

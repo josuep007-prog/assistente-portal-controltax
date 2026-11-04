@@ -345,7 +345,7 @@ export async function carregar(tipo) {
   P.lendo = false;
   if (g) P.tentativas = { n: g.tentativas || 1, motivos: g.motivos || [] };
   if (!g?.ok) { P.erro = `Não consegui ler a grade do portal: ${g?.motivo || 'o portal não respondeu'}.`; renderPlanilhaRubricas(tipo); return; }
-  P.tentativas = { n: g.tentativas || 1, motivos: g.motivos || [], ms: g.ms || 0 };
+  P.tentativas = { n: g.tentativas || 1, motivos: g.motivos || [], ms: g.ms || 0, fases: g.fases || '' };
   P.fonte = g.fonte || ''; P.api = g.api || null; P.bloqueadas = new Set(g.bloqueadas || []); P.meta = g.meta || [];
   const antes = { ...P.valores }, empAntes = P.empregados, evAntes = P.eventos;
   P.eventos = g.eventos || []; P.empregados = g.empregados || []; P.carregada = true; P.valores = {};

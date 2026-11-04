@@ -34,10 +34,13 @@ function acharPlanilha() {
 }
 
 /** Chamada a cada mudança da tela (final.js): acha a grade quando ela aparece. Só guarda a referência (não mexe na página). */
+let gradeBuscaT = 0;
 function atualizarGrade() {
   if (!gradeEhRubricas()) { if (gradeAmpla.scroller) Object.assign(gradeAmpla, { card: null, scroller: null, achada: '' }); return; }
   if (gradeAmpla.scroller && !gradeAmpla.scroller.isConnected) Object.assign(gradeAmpla, { card: null, scroller: null, achada: '' });   // o portal redesenhou a grade
   if (gradeAmpla.scroller) return;
+  // varrer a tela inteira atrás da grade é pesado (todos os elementos): no máximo duas vezes por segundo, para não atrasar o próprio portal
+  if (Date.now() - gradeBuscaT < 500) return; gradeBuscaT = Date.now();
   const a = acharPlanilha(); if (!a) return;
   Object.assign(gradeAmpla, a, { achada: `${gradeNome(a.scroller)} em ${gradeNome(a.card)}` });
 }
