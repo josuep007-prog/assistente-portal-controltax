@@ -53,7 +53,7 @@ export function montarEmpresa(C) {
       titulo: 'Não consegui trocar de empresa',
       corpo: `<p>Não consegui trocar para <b>${esc(apelidoDe(alvo))}</b> no portal${motivo ? ` (${esc(motivo)})` : ''}. Por segurança, não abri nenhum pedido: ele iria para a empresa errada.</p>
         <p class="muted">Troque a empresa pelo seletor do próprio portal (o botão “Ver no portal” mostra a tela original) e peça de novo.</p>`,
-      acoes: [{ rotulo: `${icon('external', 'ic-sm')} Ver no portal`, fn: () => send({ type: 'verPortal' }) }, '|', { rotulo: 'Fechar', cls: 'btn-primary' }]
+      acoes: [{ rotulo: `${icon('external', 'ic-sm')} Ver no portal`, fn: () => send({ type: 'verPortal' }) }, { rotulo: `${icon('copy', 'ic-sm')} Copiar diagnóstico`, fn: () => A.copiarDiagnostico?.() }, '|', { rotulo: 'Fechar', cls: 'btn-primary' }]
     });
   }
   /** Troca a empresa no portal e confirma vendo o nome novo. `manter` = o pedido (tipo) cujos dados seguem com o cliente. */
@@ -61,7 +61,9 @@ export function montarEmpresa(C) {
     if (E.mesmaEmpresaNome(alvo, S.ctx.empresa)) return true;
     S.trocaPedida = { de: S.ctx.empresa, para: alvo, manter, conservarEmpregado };
     toast(`Trocando para ${apelidoDe(alvo)} no portal…`);
-    const r = await request({ type: 'trocarEmpresa', nome: alvo }, 30000);
+    const ap = apelidoDe(alvo);
+    const r = await request({ type: 'trocarEmpresa', nome: alvo, apelido: ap && ap !== alvo ? ap : '' }, 70000);   // o portal lista a empresa pelo nome ou pelo apelido
+    S.plat.trocaDiag = r && !r.ok ? { motivo: r.motivo || '', detalhe: r.detalhe || '' } : null;
     // o contexto novo chega pelo canal; se o portal já disse que não trocou, não há o que esperar
     if (r?.ok) for (let k = 0; k < 40 && !E.mesmaEmpresaNome(S.ctx.empresa, alvo); k++) await esperar(250);
     const ok = !!r?.ok && E.mesmaEmpresaNome(S.ctx.empresa, alvo);

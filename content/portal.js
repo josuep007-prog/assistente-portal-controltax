@@ -3,41 +3,90 @@
  * com os outros arquivos de content/ (a ordem de carga está no manifest e no simulador). */
 /* ============ Trocar de empresa ============ */
 const mesmoNome = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.includes(y) || y.includes(x)); };
-async function esperarEmpresa(nome, ms) {
-  for (let t = 0; t < ms; t += 250) { if (mesmoNome(companyName(), nome)) return true; await sleep(250); }
-  return mesmoNome(companyName(), nome);
+/** Os nomes pelos quais uma empresa aparece no portal: o nome por extenso, o apelido ("ATACAPET | 0001-91") e as partes do apelido (nome curto e código). */
+function nomesDaEmpresa(nome, apelido) {
+  const partes = String(apelido || '').split('|').map(x => x.trim()).filter(Boolean);
+  return { exatos: [nome, apelido].filter(x => norm(x)), apelidoNome: partes[0] || '', codigo: partes.find(x => /\d/.test(x)) || '' };
 }
-/** Troca a empresa pelo seletor do próprio portal e só diz "ok" depois de ver o nome novo na tela. Se a troca não
- *  puder ser confirmada, o painel não preenche nada (para não montar o pedido na empresa errada).
- *  O seletor do Onvio real ainda não foi mapeado: a busca abaixo é um palpite — **a calibrar no Chrome do Josué**. */
-async function trocarEmpresa(nome) {
+/** Este texto da tela é a empresa? Nome ou apelido iguais ou contidos, ou o nome curto do apelido junto do código. */
+function eEmpresa(texto, cand) {
+  const t = norm(texto); if (!t) return false;
+  for (const x of cand.exatos) { const n = norm(x); if (n && (t === n || t.includes(n) || (t.length >= 8 && n.includes(t)))) return true; }
+  if (cand.apelidoNome && cand.codigo && t.includes(norm(cand.apelidoNome)) && t.includes(norm(cand.codigo))) return true;
+  return false;
+}
+/** O bloco "EMPRESA" do portal (rótulo, nome e apelido da empresa aberta). */
+const rotuloEmpresa = () => [...document.querySelectorAll('body *')].find(e => !e.children.length && /^empresa$/i.test((e.textContent || '').trim()));
+const blocoDaEmpresa = () => { const r = rotuloEmpresa(); return r?.parentElement?.parentElement?.innerText || r?.parentElement?.innerText || ''; };
+const empresaAberta = (cand) => eEmpresa(companyName(), cand) || eEmpresa(blocoDaEmpresa(), cand);
+async function esperarEmpresa(cand, ms) {
+  for (let t = 0; t < ms; t += 250) { if (empresaAberta(cand)) return true; await sleep(250); }
+  return empresaAberta(cand);
+}
+const visivelEl = (e) => { const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; const cs = getComputedStyle(e); return cs.visibility !== 'hidden' && cs.display !== 'none'; };
+const descreveEl = (e) => `${e.tagName.toLowerCase()}${typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : ''}${e.getAttribute?.('role') ? `[role=${e.getAttribute('role')}]` : ''}`;
+const clicavel = (e) => e.closest('button,a,li,[role=option],[role=menuitem],[role=button],[role=combobox],bento-combobox,bento-list-row,.bento-list-row,[tabindex]') || e;
+/** Os lugares onde o seletor de empresas pode estar, do mais provável ao menos: o bloco do rótulo "EMPRESA", o nome da empresa aberta, elementos
+ *  com "empresa"/"company" no nome. O seletor do Onvio real não foi mapeado; cada um é tentado e o que abrir (ou não) vai para o diagnóstico. */
+function gatilhosDeEmpresa() {
+  const out = [], poe = (e) => { if (e && e !== document.body && !out.includes(e) && visivelEl(e)) out.push(e); };
+  const rot = rotuloEmpresa();
+  if (rot) { poe(clicavel(rot)); poe(rot.parentElement); poe(rot.parentElement?.parentElement); }
+  const nomeAberto = norm(companyName());
+  if (nomeAberto) for (const e of document.querySelectorAll('body *')) if (!e.children.length && norm(e.textContent) === nomeAberto && visivelEl(e)) { poe(clicavel(e)); poe(e.parentElement); break; }
+  for (const e of document.querySelectorAll('[class*=company i],[class*=empresa i],[class*=client-select i],[aria-label*=empresa i],[aria-label*=company i],[title*=empresa i]')) if (e.getBoundingClientRect().top < 400) poe(clicavel(e));
+  return out.slice(0, 5);
+}
+/** Clica no gatilho e procura, só no que apareceu depois do clique, a opção da empresa; digita na busca se houver. Devolve o elemento a clicar ou null. */
+async function abrirListaDeEmpresas(g, cand, diag) {
+  const antes = new Set([...document.querySelectorAll('body *')].filter(visivelEl));
+  await reveal(g).catch?.(() => {}); cliqueCompleto(g);
+  const novosVisiveis = () => [...document.querySelectorAll('body *')].filter(e => visivelEl(e) && !antes.has(e));
+  let digitou = false, busca = null, novos = [];
+  for (let t = 0; t < 3500; t += 250) {
+    await sleep(250);
+    novos = novosVisiveis();
+    const achados = novos.filter(e => !e.children.length || e.children.length < 4).filter(e => { const x = (e.innerText || e.textContent || '').trim(); return x && x.length <= 160 && eEmpresa(x, cand); });
+    if (achados.length) {
+      // o mais fundo (o menor) é o texto da opção; o igual ao nome ganha do que só o contém
+      achados.sort((a, b) => (a.getBoundingClientRect().width * a.getBoundingClientRect().height) - (b.getBoundingClientRect().width * b.getBoundingClientRect().height));
+      const exato = achados.find(e => cand.exatos.some(x => norm(e.innerText) === norm(x)));
+      return clicavel(exato || achados[0]);
+    }
+    busca = novos.find(e => e.matches?.('input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file])') && !e.disabled);
+    if (busca && !digitou) { digitou = true; await digitar(busca, cand.apelidoNome || String(cand.exatos[0] || '').split(/\s+/)[0]); }
+  }
+  diag.gatilhos.push({ gatilho: descreveEl(g), novos: novos.length, itens: novos.filter(e => e.matches?.('[role=option],[role=menuitem],li,bento-list-row,.bento-list-row')).length, busca: !!busca, formas: [...new Set(novos.slice(0, 40).map(descreveEl))].slice(0, 6) });
+  return null;
+}
+/** Troca a empresa pelo seletor do próprio portal e só diz "ok" depois de ver a empresa nova na tela. Se a troca não puder ser confirmada, o painel
+ *  não preenche nada (para não montar o pedido na empresa errada). O seletor do Onvio real ainda não foi mapeado: o que a busca não achar vai
+ *  para o diagnóstico (`detalhe`, só estrutura). */
+async function trocarEmpresa(nome, apelido = '') {
   if (!norm(nome)) return { ok: false, motivo: 'sem nome de empresa' };
-  if (mesmoNome(companyName(), nome)) return { ok: true, empresa: companyName() };
+  const cand = nomesDaEmpresa(nome, apelido);
+  if (empresaAberta(cand)) return { ok: true, empresa: companyName() };
   if (plat.trocarEmpresa) {   // simulador
     const r = await plat.trocarEmpresa(nome);
     if (!r?.ok) return { ok: false, motivo: 'esta empresa não está neste acesso' };
-    return (await esperarEmpresa(nome, 4000)) ? { ok: true, empresa: companyName() } : { ok: false, motivo: 'o portal não mostrou a empresa nova' };
+    return (await esperarEmpresa(cand, 4000)) ? { ok: true, empresa: companyName() } : { ok: false, motivo: 'o portal não mostrou a empresa nova' };
   }
-  // 1) o gatilho: o bloco do cabeçalho com o rótulo "EMPRESA" e o nome da empresa aberta
-  const rotulo = [...document.querySelectorAll('body *')].find(e => !e.children.length && /^empresa$/i.test((e.textContent || '').trim()));
-  const gatilho = rotulo?.closest('button,[role=button],[role=combobox],a,bento-combobox,[tabindex]') || rotulo?.parentElement;
-  if (!gatilho) return { ok: false, motivo: 'não achei o seletor de empresas do portal' };
-  gatilho.click();
-  // 2) a lista (pode ter busca): escolhe a opção cujo texto é o da empresa
-  const opcao = async () => {
-    for (let t = 0; t < 3000; t += 250) {
-      const o = [...document.querySelectorAll('[role=option],[role=menuitem],[role=listbox] li,bento-list-row,.bento-list-row')].find(e => mesmoNome(e.innerText, nome));
-      if (o) return o;
-      const busca = [...document.querySelectorAll('[role=dialog] input,[role=listbox] input,bento-combobox input,input[type=search]')].find(i => i.offsetParent && i.type !== 'file' && !i.disabled);
-      if (busca && t === 500) setNative(busca, nome);
+  const diag = { gatilhos: [], semGatilho: false };
+  const gatilhos = gatilhosDeEmpresa();
+  if (!gatilhos.length) { diag.semGatilho = true; return { ok: false, motivo: 'não achei o seletor de empresas do portal', detalhe: 'nenhum elemento com o rótulo EMPRESA, o nome da empresa aberta ou "empresa/company" no nome' }; }
+  for (const g of gatilhos) {
+    const o = await abrirListaDeEmpresas(g, cand, diag);
+    if (!o) { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(300); continue; }
+    cliqueCompleto(o);
+    // a lista pode pedir um botão de confirmação (Selecionar, Confirmar…) depois de marcar a empresa
+    for (let t = 0; t < 2500 && !empresaAberta(cand); t += 250) {
       await sleep(250);
+      if (t === 1000) { const c = [...document.querySelectorAll('[role=dialog] button,.modal button,bento-modal button')].find(x => visivelEl(x) && !x.disabled && /^(selecionar|confirmar|trocar|continuar|ok|entrar)$/i.test(norm(x.innerText))); if (c) cliqueCompleto(c); }
     }
-    return null;
-  };
-  const o = await opcao();
-  if (!o) { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return { ok: false, motivo: 'a empresa não apareceu na lista do portal' }; }
-  o.click();
-  return (await esperarEmpresa(nome, 12000)) ? { ok: true, empresa: companyName() } : { ok: false, motivo: 'o portal não confirmou a troca de empresa' };
+    return (await esperarEmpresa(cand, 12000)) ? { ok: true, empresa: companyName() } : { ok: false, motivo: 'o portal não confirmou a troca de empresa', detalhe: `cliquei na opção (${descreveEl(o)}), mas a empresa aberta não mudou` };
+  }
+  const resumo = diag.gatilhos.map(x => `${x.gatilho} → ${x.novos} elemento(s) novo(s), ${x.itens} item(ns) de lista, busca ${x.busca ? 'sim' : 'não'} [${x.formas.join(', ')}]`).join(' || ');
+  return { ok: false, motivo: 'a empresa não apareceu na lista do portal', detalhe: `tentei ${diag.gatilhos.length} lugar(es): ${resumo}` };
 }
 
 /* ============ Pendências (lê as listas com a sessão do próprio usuário) ============ */
