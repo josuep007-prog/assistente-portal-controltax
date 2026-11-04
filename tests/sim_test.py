@@ -1293,14 +1293,16 @@ async def teste_cancelar_rubricas(b):
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
     await pn.click('.pd-escolha .intent[data-tipo="rubricas"]')
     for _ in range(40):
-        if await pn.locator('#plan-cancelar').count(): break
+        if await pn.locator('#pd-cancelar').count(): break
         await pg.wait_for_timeout(300)
-    check(await pn.locator('#plan-cancelar').count() == 1, 'cancelar: o botão "Cancelar lançamento" aparece na planilha de rubricas')
-    await pn.click('#plan-cancelar'); await pg.wait_for_timeout(500)
+    lado = await pn.evaluate("(() => { const a = document.querySelector('#ver-portal'), b = document.querySelector('#pd-cancelar'); if (!a || !b) return false; const x = a.getBoundingClientRect(), y = b.getBoundingClientRect(); return Math.abs(x.top - y.top) < 6 && Math.abs(x.height - y.height) < 2 && y.left > x.left && y.width < 260; })()")
+    check(lado, 'cancelar: os dois botões ficam lado a lado, do mesmo tamanho')
+    check(await pn.locator('#pd-cancelar').count() == 1, 'cancelar: o botão "Cancelar lançamento" aparece no cabeçalho do pedido, ao lado de "Ver no portal"')
+    await pn.click('#pd-cancelar'); await pg.wait_for_timeout(500)
     check(await pn.locator('.dlg').count() == 1, 'cancelar: pergunta antes de descartar')
     await pn.click('.dlg [data-acao="1"]'); await pg.wait_for_timeout(500)   # "Continuar lançando"
     check(await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"), 'cancelar: "Continuar lançando" não sai do formulário do portal')
-    await pn.click('#plan-cancelar'); await pg.wait_for_timeout(300)
+    await pn.click('#pd-cancelar'); await pg.wait_for_timeout(300)
     await pn.click('.dlg [data-acao="2"]')
     fora = False
     for _ in range(40):

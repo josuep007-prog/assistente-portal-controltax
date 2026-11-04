@@ -232,10 +232,8 @@ export function renderPlanilhaRubricas(tipo) {
       ${blocoComando(P, noForm)}
       ${blocoArquivo(P, noForm)}
       <p class="muted" style="margin:0 0 8px">${P.erro ? esc(P.erro) : noForm ? 'Preencha a competência acima e carregue os funcionários e as rubricas da empresa.' : 'Abra o Lançamento de Rubricas para carregar a planilha.'}</p>
-      <button type="button" class="btn btn-primary" id="plan-carregar"${P.lendo || !noForm ? ' disabled' : ''}>${P.lendo ? 'Abrindo a planilha do portal e lendo…' : 'Carregar funcionários e rubricas'}</button>
-      ${noForm ? `<button type="button" class="btn btn-ghost" id="plan-cancelar" title="Cancela o lançamento no portal (botão CANCELAR) e descarta o que foi digitado">${icon('x', 'ic-sm')} Cancelar lançamento</button>` : ''}</div></section>`;
+      <button type="button" class="btn btn-primary" id="plan-carregar"${P.lendo || !noForm ? ' disabled' : ''}>${P.lendo ? 'Abrindo a planilha do portal e lendo…' : 'Carregar funcionários e rubricas'}</button></div></section>`;
     $('#plan-carregar')?.addEventListener('click', () => carregar(tipo));
-    $('#plan-cancelar')?.addEventListener('click', () => cancelarLancamento(tipo));
     ligarComando(tipo); ligarArquivo(tipo, el);
     return;
   }
@@ -248,8 +246,7 @@ export function renderPlanilhaRubricas(tipo) {
       <span class="muted" id="plan-n">${contarValores(P)} valor(es) · ${P.empregados.length} funcionário(s) · ${P.eventos.length} rubrica(s)${P.bloqueadas.size ? ` · ${P.bloqueadas.size} bloqueada(s) pelo portal` : ''}</span><span class="spacer"></span>
       <span class="muted" id="plan-status" role="status">${statusHtml(P)}</span>
       <button type="button" class="btn btn-sm btn-ghost" id="plan-rascunho" title="Guarda a planilha neste computador por 7 dias">${icon('file', 'ic-sm')} Salvar rascunho</button>
-      <button type="button" class="btn btn-sm btn-ghost" id="plan-recarregar"${P.lendo || !noForm ? ' disabled' : ''}>${icon('refresh', 'ic-sm')} Recarregar do portal</button>
-      ${noForm ? `<button type="button" class="btn btn-sm btn-ghost" id="plan-cancelar" title="Cancela o lançamento no portal (botão CANCELAR) e descarta o que foi digitado">${icon('x', 'ic-sm')} Cancelar lançamento</button>` : ''}</div>
+      <button type="button" class="btn btn-sm btn-ghost" id="plan-recarregar"${P.lendo || !noForm ? ' disabled' : ''}>${icon('refresh', 'ic-sm')} Recarregar do portal</button></div>
     <div class="plan-rolagem"><table class="plan-tabela"><thead><tr><th class="plan-nome">Funcionário</th>${P.eventos.map(ev => `<th title="${esc(ev)}${P.bloqueadas.has(ev) ? ' — o portal não deixa lançar nesta rubrica' : ''}"${P.bloqueadas.has(ev) ? ' class="plan-bloq-th"' : ''}>${P.bloqueadas.has(ev) ? icon('lock', 'ic-sm') + ' ' : ''}${esc(ev)}</th>`).join('')}</tr></thead><tbody>${linhas}</tbody></table></div>
     <p class="muted" style="margin:8px 0 0">Enter e as setas descem e sobem na coluna; você pode colar um bloco copiado do Excel. Os nomes e as rubricas são os do portal.</p></div></section>`;
   ligarComando(tipo); ligarArquivo(tipo, el);
@@ -259,7 +256,6 @@ export function renderPlanilhaRubricas(tipo) {
 function ligar(tipo, el) {
   const P = estado(tipo);
   $('#plan-recarregar')?.addEventListener('click', () => carregar(tipo));
-  $('#plan-cancelar')?.addEventListener('click', () => cancelarLancamento(tipo));
   $('#plan-rascunho')?.addEventListener('click', async () => {
     const q = await salvarRascunhoAgora(tipo);
     P.status = q ? `Rascunho salvo às ${new Date(q).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Se sair daqui, é só voltar ao Lançamento de Rubricas e clicar em Continuar (vale por 7 dias).` : 'Ainda não há nada para guardar.';
