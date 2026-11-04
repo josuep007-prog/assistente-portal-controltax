@@ -158,6 +158,13 @@ button.dp-row:focus-visible { outline: 2px solid var(--blue-deep); outline-offse
 .pd-head .pd-t { flex: 1; min-width: 200px; }
 .pd-head .stepper { flex: 1.4; min-width: 300px; }
 .pd-head .progress { flex-basis: 100%; }
+/* "Ver no portal" e "Cancelar lançamento": dois botões do mesmo tamanho, lado a lado, no cabeçalho do pedido */
+.pd-acoes { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pd-acoes .btn { height: 32px; padding: 0 12px; border-radius: 999px; gap: 6px; font-weight: 600; font-size: 12.5px; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
+.btn-portal { background: transparent; color: var(--blue-deep, #3C659B); border: 1px solid currentColor; }
+.btn-portal:hover { background: color-mix(in srgb, var(--blue-deep, #3C659B) 12%, transparent); }
+.btn-cancelar { background: transparent; color: var(--brand-red, #C2000C); border: 1px solid currentColor; }
+.btn-cancelar:hover { background: color-mix(in srgb, var(--brand-red, #C2000C) 12%, transparent); }
 .pf-grupo { margin: 4px 0 0; }
 .pf-grupo > summary { cursor: pointer; font: 600 12px var(--f-head); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 8px 0; list-style: none; display: flex; align-items: center; gap: 8px; }
 .pf-grupo > summary::-webkit-details-marker { display: none; }

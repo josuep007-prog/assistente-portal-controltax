@@ -9,7 +9,7 @@ import { atualizarEstadosPlat, botaoModelo, calcBox, chaveCampos, enviarPendente
 import { bindDrop, entenderTexto, openTipo } from './inicio.js';
 import { loadEmpregados, msgAproximada, render, rotuloDe, setView, tipoDef, w } from './modo.js';
 import { savePrefs } from './conexao.js';
-import { renderPlanilhaRubricas } from './planilha.js';
+import { cancelarLancamento, renderPlanilhaRubricas } from './planilha.js';
 
 export function renderPreencher() {
   const { route, tipo } = S.ctx;
@@ -30,7 +30,7 @@ export function renderPreencher() {
     : `<small class="muted">${esc(S.ctx.empresa)}</small>`;
   const cab = `<div class="card${plat ? ' pd-head' : ''}">
       ${plat ? `<button type="button" class="btn btn-sm pd-voltar" id="pd-voltar" title="Voltar para a escolha do tipo de solicitação (o pedido aberto continua no portal)">${icon('left', 'ic-sm')} Outro tipo</button><div class="pd-t"><h3>${esc(t.nome)}</h3>${empresaCab} <span class="chip sector">${esc(t.setor)}</span></div><ol class="stepper" id="stepper" aria-label="Etapas do pedido"></ol>
-        <button type="button" class="btn btn-ghost btn-sm" id="ver-portal" title="Mostra o formulário original do portal">${icon('external', 'ic-sm')} Ver no portal</button>
+        <div class="pd-acoes"><button type="button" class="btn btn-sm btn-portal" id="ver-portal" title="Mostra o formulário original do portal">${icon('external', 'ic-sm')} Ver no portal</button>${tipo === 'rubricas' ? `<button type="button" class="btn btn-sm btn-cancelar" id="pd-cancelar" title="Cancela o lançamento no portal (botão CANCELAR) e descarta o que foi digitado">${icon('x', 'ic-sm')} Cancelar lançamento</button>` : ''}</div>
         <div class="progress"><div class="bar" id="bar"><i style="width:0"></i></div><small class="mono" id="bar-txt"></small></div>` : `
       <div class="card-h">
         <div style="flex:1;min-width:0"><h3>${esc(t.nome)}</h3><small class="muted">${esc(S.ctx.empresa)}</small></div>
@@ -94,6 +94,7 @@ export function renderPreencher() {
     ${dock}
   `;
   $('#ver-portal')?.addEventListener('click', () => send({ type: 'verPortal' }));
+  $('#pd-cancelar')?.addEventListener('click', () => cancelarLancamento(tipo));
   $('#pd-voltar')?.addEventListener('click', () => P.voltarEscolha());
   $('#pd-emp')?.addEventListener('click', () => P.trocarEmpresaDoPedido());
   bindDrop($('#drop-form'));
