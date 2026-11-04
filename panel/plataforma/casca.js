@@ -15,16 +15,18 @@ export function montarCasca(C) {
     $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>`).join('');
     $('#rail-bottom').innerHTML = [['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
       .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b></span></button>`).join('');
-    document.querySelectorAll('#rail [data-mod]').forEach(b => b.addEventListener('click', () => {
-      // "Novo pedido" de novo, com o formulário na tela: volta para a escolha do tipo (o pedido aberto pode ser retomado)
-      if (b.dataset.mod === 'preencher' && S.view === 'preencher' && S.ctx.route?.mode === 'form' && !S.plat.escolher) { S.plat.escolher = true; P.render('preencher'); return; }
+    document.querySelectorAll('#rail [data-mod]').forEach(b => b.addEventListener('click', async () => {
+      const noPedido = S.view === 'preencher' && S.ctx.route?.mode === 'form' && !S.plat.escolher;
+      // "Novo pedido" de novo, com o formulário na tela: volta para a escolha do tipo; o portal sai do formulário junto e o pedido pode ser retomado
+      if (b.dataset.mod === 'preencher' && noPedido) { await P.sairDoFormulario(); S.plat.escolher = true; P.render('preencher'); return; }
+      if (b.dataset.mod !== 'preencher' && noPedido) await P.sairDoFormulario();   // outra aba da extensão: o portal também sai do formulário
       A.setView(b.dataset.mod);
     }));
     document.querySelectorAll('#rail [data-acao]').forEach(b => b.addEventListener('click', () => {
       const a = b.dataset.acao;
       if (a === 'minimizar') send({ type: 'modo', modo: 'fechado' });
       else if (a === 'tema') A.alternarTema();
-      else if (a === 'config') A.setView('config');
+      else if (a === 'config') { (async () => { if (S.view === 'preencher' && S.ctx.route?.mode === 'form' && !S.plat.escolher) await P.sairDoFormulario(); A.setView('config'); })(); }
     }));
     $('#plat-busca').addEventListener('click', abrirBusca);
     $('#plat-ver-portal').addEventListener('click', () => send({ type: 'verPortal' }));   // antes um ícone na barra lateral; agora "Ver Onvio" no canto do cabeçalho
