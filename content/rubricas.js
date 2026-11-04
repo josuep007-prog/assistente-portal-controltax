@@ -198,7 +198,8 @@ const gradeUnir = (lista, novos) => { const vistos = new Set(lista.map(x => norm
 
 async function gradeLerTudo() {
   // 1) pela própria planilha do portal (todas as linhas e colunas, sem rolar)
-  const api = await pedirGrade('ler');
+  let api = await pedirGrade('ler');
+  for (let i = 0; i < 6 && api && !api.semGrade && !(api.ok && api.empregados?.length); i++) { await sleep(120); api = await pedirGrade('ler'); }   // a planilha existe mas os dados ainda chegam: espera pouco em vez de rolar a tela
   gradeApiInfo = api ? { achou: !!api.achou, semGrade: !!api.semGrade, colunas: api.colunas, linhas: api.linhas, colunaDoNome: api.colunaDoNome, chaves: api.chaves, erro: api.erro } : { ajudante: false };
   if (api?.ok && api.empregados.length) {
     gradeMapa = { empregados: [...api.empregados], eventos: [...api.titulos] };
@@ -215,20 +216,20 @@ async function gradeLerTudo() {
     const ant = { x: rol.scrollLeft, y: rol.scrollTop };
     const passo = (tam) => Math.max(40, Math.floor(tam * 0.6));
     // funcionários: de cima para baixo, na borda esquerda (a coluna do nome fica fixa)
-    rol.scrollTo(0, 0); await sleep(150);
+    rol.scrollTo(0, 0); await sleep(60);
     for (let y = 0, n = 0; n < 200; n++) {
       const g = gradeDivLer(sc); if (g) gradeUnir(empregados, g.empregados);
       const max = rol.scrollHeight - rol.clientHeight; if (y >= max - 1) break;
-      y = Math.min(max, y + passo(rol.clientHeight)); rol.scrollTo(rol.scrollLeft, y); await sleep(130);
+      y = Math.min(max, y + passo(rol.clientHeight)); rol.scrollTo(rol.scrollLeft, y); await sleep(60);
     }
     // rubricas: da esquerda para a direita, no alto (o cabeçalho fica fixo)
-    rol.scrollTo(0, 0); await sleep(150);
+    rol.scrollTo(0, 0); await sleep(60);
     for (let x = 0, n = 0; n < 200; n++) {
       const g = gradeDivLer(sc); if (g) gradeUnir(titulos, g.titulos);
       const max = rol.scrollWidth - rol.clientWidth; if (x >= max - 1) break;
-      x = Math.min(max, x + passo(rol.clientWidth)); rol.scrollTo(x, 0); await sleep(130);
+      x = Math.min(max, x + passo(rol.clientWidth)); rol.scrollTo(x, 0); await sleep(60);
     }
-    rol.scrollTo(ant.x, ant.y); await sleep(100);
+    rol.scrollTo(ant.x, ant.y);
   }
   gradeMapa = { empregados: [...empregados], eventos: [...titulos] };
   return { titulos, empregados, fonte: 'tela (rolando)' };
