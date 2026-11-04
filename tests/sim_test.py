@@ -1223,6 +1223,36 @@ async def teste_resumo_conferencia(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def teste_troca_empresa_dom(b):
+    """2.26.0: a troca de empresa acha o seletor do portal e a opção pelo apelido ("MODELO | 0002-37"), sem o atalho do simulador."""
+    print('\n[empresa] trocar de empresa pelo seletor do portal (lista com busca que mostra só apelido e código)')
+    OUTRA = 'COMERCIO MODELO DE ALIMENTOS LTDA'
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.evaluate("localStorage.setItem('ct-sim-troca-dom', '1')"); await pg.reload(); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    check(await pg.evaluate("typeof window.__ctPlatform.trocarEmpresa") == 'undefined', 'empresa: sem o atalho do simulador, a troca depende do seletor da tela')
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click()
+    await pn.locator('.ee-lista').wait_for(timeout=8000)
+    await pn.click(f'.ee-li[data-nome="{OUTRA}"]'); await pn.click('.dlg [data-acao="2"]')
+    ok = False
+    for _ in range(120):
+        if await pg.evaluate("window.__ctPlatform.path().endsWith('/employee-leave/add')"): ok = True; break
+        await pg.wait_for_timeout(300)
+    emp = await pg.evaluate("document.querySelector('#p-empresa')?.textContent || ''")
+    check(ok and emp == OUTRA, f'empresa: o seletor do portal é aberto, a opção é achada pelo apelido e o pedido abre na empresa escolhida ({emp!r})')
+    # a empresa não está na lista do portal: o motivo e a estrutura do que abriu (sem nomes) voltam para o diagnóstico
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
+    r = await pg.evaluate("window.__ctSim.hooks().trocar('EMPRESA QUE NAO EXISTE LTDA', 'NAOEXISTE | 9999-00')")
+    det = (r or {}).get('detalhe') or ''
+    check(r and r.get('ok') is False and 'não apareceu na lista' in (r.get('motivo') or '') and 'tentei' in det and 'item(ns) de lista' in det and 'NAOEXISTE' not in det, f'empresa: sem a empresa na lista, o motivo e a estrutura do que abriu voltam sem nomes ({det[:140]!r})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_tela_muda(b):
     """2.20.8: se o serviço de fundo da extensão não responde, Configurações não fica muda: avisa e deixa tentar de novo."""
     print('\n[telas] Configurações com o serviço de fundo parado')
@@ -2191,7 +2221,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2585,7 +2615,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)

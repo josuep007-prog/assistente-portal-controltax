@@ -11,6 +11,7 @@
   // as outras empresas do mesmo login (inventadas), cada uma com os seus funcionários
   var OUTRA = 'COMERCIO MODELO DE ALIMENTOS LTDA', TERCEIRA = 'OFICINA FICTICIA DE SERVICOS ME';
   var FUNC_EMPRESA = {}, BASE_FUNC = null;
+  var APELIDO_COD = {}; APELIDO_COD[EMPRESA_BASE] = 'EXEMPLO | 0001-19'; APELIDO_COD[OUTRA] = 'MODELO | 0002-37'; APELIDO_COD[TERCEIRA] = 'OFICINA | 0003-55';
   FUNC_EMPRESA[OUTRA] = ['CARLOS EDUARDO PAIVA', 'DEBORA SANTANA', 'ELISA MARTINS', 'FERNANDO GOUVEIA', 'GISELE TAVARES'];
   FUNC_EMPRESA[TERCEIRA] = ['HUGO BARRETO', 'IRENE COUTINHO', 'JULIO CESAR NETO'];
   // lista longa (como numa empresa real): o portal só desenha ~13 nomes por vez (lista virtualizada)
@@ -164,9 +165,11 @@
       EMP3.splice.apply(EMP3, [0, EMP3.length].concat(e3));
       EMPRESA = nome;
       document.getElementById('p-empresa').textContent = EMPRESA;
+      var apel = document.querySelector('.p-company small:last-child'); if (apel) apel.textContent = APELIDO_COD[nome] || '';
       go(BASE);
       return Promise.resolve({ ok: true, empresa: nome });
     },
+    // (o seletor de empresas pelo DOM — flag ct-sim-troca-dom — é montado depois que __ctPlatform existe, no fim deste arquivo)
     // mesmo formato da API real (mapa do Onvio de 15/10/2026): genericStatus numérico por família, identifier,
     // id GUID, funcionário e responsável em *Expanded; pageIndex começa em 1
     fetchList: function (api, opts) {
@@ -722,4 +725,23 @@
   document.getElementById('p-empresa').textContent = EMPRESA;
   document.querySelectorAll('[data-top]').forEach(function (b) { b.addEventListener('click', function () { if (b.dataset.top === 'portal') go(BASE); else if (b.dataset.top === 'docs') go('/clientcenter/pt/documents'); else toast('Esta área não faz parte da simulação.'); }); });
   render();
+
+  /* 2.26.0 — seletor de empresas pelo DOM, como o portal real: clicar no bloco EMPRESA abre uma lista com busca; cada item mostra só "APELIDO | CÓDIGO".
+     Ligado com localStorage ct-sim-troca-dom=1 (sem a troca direta de __ctPlatform, o conteúdo tem de achar e clicar na opção). */
+  try {
+    if (localStorage.getItem('ct-sim-troca-dom') === '1' && window.__ctPlatform.trocarEmpresa) {
+      var trocaInterna = window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.trocarEmpresa;
+      var blocoEmp = document.querySelector('.p-company');
+      if (blocoEmp) blocoEmp.addEventListener('click', function () {
+        if (document.getElementById('p-troca')) return;
+        var ov = document.createElement('div'); ov.id = 'p-troca'; ov.setAttribute('role', 'dialog');
+        ov.style.cssText = 'position:fixed;left:70px;top:60px;width:320px;background:#fff;border:1px solid #888;z-index:9999;padding:8px;color:#111';
+        var lista = [EMPRESA_BASE, OUTRA, TERCEIRA];
+        ov.innerHTML = '<input type="search" placeholder="Buscar empresa" style="width:100%;margin-bottom:6px"><ul role="listbox" style="list-style:none;margin:0;padding:0">' + lista.map(function (n) { return '<li role="option" data-n="' + n + '" style="padding:6px;cursor:pointer">' + APELIDO_COD[n] + '</li>'; }).join('') + '</ul>';
+        document.body.appendChild(ov);
+        ov.querySelector('input').addEventListener('input', function (e) { var q = e.target.value.toLowerCase(); ov.querySelectorAll('li').forEach(function (li) { li.hidden = !!q && li.textContent.toLowerCase().indexOf(q) < 0; }); });
+        ov.querySelectorAll('li').forEach(function (li) { li.addEventListener('click', function () { var n = li.getAttribute('data-n'); ov.remove(); trocaInterna(n); }); });
+      });
+    }
+  } catch (e) { /* sem armazenamento */ }
 })();
