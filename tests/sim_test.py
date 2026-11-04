@@ -443,6 +443,7 @@ async def teste_mecanica(b):
             await pg.wait_for_timeout(250)
         return False
     async def abrir(slug):
+        await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(1200)   # sai do pedido anterior pela extensão (o portal sai junto) antes de abrir o próximo
         await pg.evaluate(f"window.__ctSim.go('{SR}{slug}')"); await pg.wait_for_timeout(600)
         await pg.evaluate(f"window.__ctSim.go('{SR}{slug}/add')"); await pg.wait_for_timeout(1500)
         await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
@@ -1290,6 +1291,10 @@ async def teste_sair_do_pedido(b):
     await pn.click('#plat-ver-portal'); await pg.wait_for_timeout(800)
     check((await caminho()).endswith('/employee-leave/add'), '"Ver Onvio" não tira o portal do formulário')
     await pg.evaluate("window.__ctSim.hooks().modo('plataforma')"); await pg.wait_for_timeout(500)
+    # Configurações não tira o portal do formulário (o diagnóstico copiado de lá descreve o formulário aberto)
+    await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(1200)
+    check((await caminho()).endswith('/employee-leave/add'), 'Configurações não tira o portal do formulário (o diagnóstico precisa dele)')
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(1000)
     # 1) "Novo pedido" de novo (escolher outro tipo): o portal sai do formulário
     await pn.click('#rail [data-mod="preencher"]')
     ok = await espera_cam(lambda c: not c.endswith('/add'))

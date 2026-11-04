@@ -26,7 +26,7 @@ export function montarCasca(C) {
       const a = b.dataset.acao;
       if (a === 'minimizar') send({ type: 'modo', modo: 'fechado' });
       else if (a === 'tema') A.alternarTema();
-      else if (a === 'config') { (async () => { if (S.view === 'preencher' && S.ctx.route?.mode === 'form' && !S.plat.escolher) await P.sairDoFormulario(); A.setView('config'); })(); }
+      else if (a === 'config') A.setView('config');   // Configurações não tira o portal do formulário: o diagnóstico copiado de lá descreve o formulário aberto
     }));
     $('#plat-busca').addEventListener('click', abrirBusca);
     $('#plat-ver-portal').addEventListener('click', () => send({ type: 'verPortal' }));   // antes um ícone na barra lateral; agora "Ver Onvio" no canto do cabeçalho

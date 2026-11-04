@@ -179,6 +179,8 @@ async def cenario_plataforma(p):
     await pn.click('#eq-docs .dn-li'); await page.wait_for_timeout(600)
     check(await pn.locator('[data-pub-nl="1"][aria-pressed="true"]').count() == 1, 'Hoje: clicar no cartão abre Documentos já em Não lidos')
     await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(500)
+    # sair do pedido pela extensão leva o portal junto (2.27.0): o formulário do afastamento é reaberto antes de ler o atestado
+    await page.evaluate("() => { history.pushState({}, '', '/clientcenter/pt/actions/service-request/employee-leave/add'); window.dispatchEvent(new PopStateEvent('popstate', { state: {} })); }"); await page.wait_for_timeout(2500)
     await pn.set_input_files('#file-input', os.path.join(FIX, 'atestado.pdf'))
     for _ in range(60):
         await page.wait_for_timeout(1000)
