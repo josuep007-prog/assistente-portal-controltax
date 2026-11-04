@@ -101,6 +101,29 @@ async function trocarEmpresa(nome, apelido = '') {
   return { ok: false, motivo: 'a empresa não apareceu na lista do portal', detalhe: `tentei ${diag.gatilhos.length} lugar(es): ${resumo}` };
 }
 
+/** CANCELAR do formulário do portal (o mesmo botão que a pessoa clicaria), para sair do Lançamento de Rubricas sem sair da extensão. Nunca clica em
+ *  ADICIONAR/enviar: só em CANCELAR e, se o portal perguntar se quer sair/descartar, no botão que confirma a saída. Sem o botão, volta à lista do tipo. */
+async function cancelarFormulario() {
+  const r0 = routeInfo(); if (r0.mode !== 'form') return { ok: true, ja: true };
+  const emJanela = (x) => !!x.closest('[role=dialog],[role=alertdialog],bento-modal,ngb-modal-window,.modal,.cdk-overlay-pane');
+  const botao = () => [...mainEl().querySelectorAll('button,a')].find(x => visivelEl(x) && !x.disabled && norm(x.innerText) === 'CANCELAR' && !emJanela(x));
+  const b = botao();
+  if (b) { await reveal(b); cliqueCompleto(b); } else if (r0.slug) await navigate(r0.slug, false);
+  let confirmou = false;
+  for (let t = 0; t < 5000; t += 150) {
+    if (routeInfo().mode !== 'form') return { ok: true, via: b ? 'botão CANCELAR do portal' : 'voltar à lista' };
+    await sleep(150);
+    if (!confirmou) {   // "sair sem salvar?": só botões de sair/descartar, e só numa janela que não fala em enviar
+      const j = [...document.querySelectorAll('[role=dialog],[role=alertdialog],bento-modal,ngb-modal-window,.modal')].find(visivelEl);
+      if (j && !/enviar|adicionar/i.test(norm(j.innerText).replace(/\s+/g, ' ').toLowerCase())) {
+        const c = [...j.querySelectorAll('button')].find(x => visivelEl(x) && !x.disabled && /^(SIM|SAIR|SAIR SEM SALVAR|DESCARTAR|DESCARTAR ALTERACOES|CONFIRMAR|OK)$/.test(norm(x.innerText)));
+        if (c) { confirmou = true; cliqueCompleto(c); }
+      }
+    }
+  }
+  return routeInfo().mode !== 'form' ? { ok: true } : { ok: false, motivo: 'o portal não saiu do formulário' };
+}
+
 /* ============ Pendências (lê as listas com a sessão do próprio usuário) ============ */
 async function fetchPendencias(tipos) {
   const out = [];

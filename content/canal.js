@@ -23,6 +23,7 @@ async function onPanelMessage(m) {
       case 'verPortal': setModo('fechado'); break;   // todo "Ver no portal" do painel: só a bolinha fica no canto
       case 'getContext': sendContext(); break;
       case 'navigate': while (navInterna) await sleep(150); await navigate(m.slug, m.add !== false); post({ type: 'navigated', id: m.id }); sendContext(); break;
+      case 'cancelarFormulario': { const r = await comboLock(() => cancelarFormulario()); post({ type: 'cancelado', id: m.id, ...r }); sendContext(); break; }
       case 'trocarEmpresa': { const r = await trocarEmpresa(m.nome, m.apelido); post({ type: 'empresaTrocada', id: m.id, ...r }); sendContext(); break; }
       case 'fill': {
         preenchendoAgora = true;
