@@ -443,10 +443,11 @@ async def teste_mecanica(b):
             await pg.wait_for_timeout(250)
         return False
     async def abrir(slug):
-        await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(1200)   # sai do pedido anterior pela extensão (o portal sai junto) antes de abrir o próximo
+        await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(3500)   # sai do pedido anterior pela extensão (o portal sai junto, o que leva um instante) antes de abrir o próximo
         await pg.evaluate(f"window.__ctSim.go('{SR}{slug}')"); await pg.wait_for_timeout(600)
         await pg.evaluate(f"window.__ctSim.go('{SR}{slug}/add')"); await pg.wait_for_timeout(1500)
-        await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+        if 'v-preencher' not in await pn.evaluate("document.querySelector('#view').className"):   # o painel já vai sozinho para o pedido quando o formulário abre; clicar de novo em "Novo pedido" é pedir outro tipo
+            await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
         if await pn.locator('#pd-continuar').count(): await pn.click('#pd-continuar'); await pg.wait_for_timeout(500)
         await pg.mouse.move(1200, 600)
     def tem(**kv):
