@@ -71,7 +71,23 @@ export function atualizarEstadosPlat(tipo) {
 
 export const chaveCampos = (tipo) => { const W = w(tipo); return JSON.stringify([S.ctx.form?.campos, S.ctx.form?.extras, S.ctx.form?.erros, Object.entries(W.valores).map(([a, b]) => [a, b?.valor]), W.ultimoPreenchido, W.aproximadas, W.sugestoes, W.pausarAuto]); };
 
+/** O foco do formulário se perde quando a extensão mexe no portal por baixo (abre a lista de um campo, grava um valor). Ao terminar, devolve o foco
+ *  ao ÚLTIMO campo em que a pessoa clicou — não ao que estava ativo quando a operação começou (antes, clicar em outro campo durante a busca das opções
+ *  de uma lista fazia o foco voltar à lista anterior). */
+function devolverFoco(padrao) {
+  const a = document.activeElement;
+  if (a && a !== document.body) return false;          // já está em algum campo: respeita
+  const alvo = S.pv.ultimoFoco?.isConnected ? S.pv.ultimoFoco : padrao;
+  if (!alvo?.focus) return false;
+  alvo.focus(); S.pv.focoDevolvido = (S.pv.focoDevolvido || 0) + 1; return true;
+}
+function lembrarUltimoFoco() {
+  if (S.pv.ouvindoFoco) return; S.pv.ouvindoFoco = true;
+  document.addEventListener('focusin', (e) => { if (e.target?.closest?.('#fields')) S.pv.ultimoFoco = e.target; });
+}
+
 export function renderFormularioProprio(el, tipo) {
+  lembrarUltimoFoco();
   S.pv.redesenhos = (S.pv.redesenhos || 0) + 1;   // só um contador (sem dados), para o diagnóstico
   const t = tipoDef(tipo); const W = w(tipo);
   S.pv.lastFieldsKey = chaveCampos(tipo);
@@ -151,7 +167,7 @@ export function renderFormularioProprio(el, tipo) {
       inp.dataset.buscando = '1';
       let r; try { r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000); } finally { delete inp.dataset.buscando; }
       if (r?.options?.length) { W.opcoes[k] = r.options; const dl = document.getElementById(`dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
-      if (!document.activeElement || document.activeElement === document.body) inp.focus();
+      devolverFoco(inp);
     });
   });
   el.querySelectorAll('.seg [data-k]').forEach(b => b.addEventListener('click', () => {
@@ -520,14 +536,8 @@ export async function fillPortal(tipo, { silencioso = false, daPlataforma = fals
   const opts = { naoSobrescrever: false, avisoDesfazer: !daPlataforma, semDesfazer: daPlataforma, voltarInicio: !parcial, unicaOpcao: parcial ? [] : camposUnicaOpcao(tipo) };
   try { r = await requestFill({ type: 'fill', tipo, values, files: packed, opts }, packed.map(p => p.buf), aoAvancar); }
   finally { S.preenchendo = false; }
-  // devolve o foco só se ele se perdeu (foi para o portal) — se a pessoa já clicou em outro campo durante o preenchimento, esse é o que vale
-  // (antes o foco voltava sozinho ao campo anterior: "clico em outro bloco e volto para o que eu estava")
-  if (S.modo === 'plataforma' && foco) {
-    const agora = document.activeElement, perdeu = !agora || agora === document.body;
-    if (perdeu) { document.getElementById(foco)?.focus(); S.pv.focoDevolvido = (S.pv.focoDevolvido || 0) + 1; }
-    else if (agora.id === foco && !document.hasFocus()) { agora.focus(); S.pv.focoDevolvido = (S.pv.focoDevolvido || 0) + 1; }
-    else if (agora.id !== foco) S.pv.focoMantido = (S.pv.focoMantido || 0) + 1;   // a pessoa já estava em outro campo: o foco dela não foi mexido
-  }
+  // devolve o foco só se ele se perdeu (foi para o portal), e ao último campo em que a pessoa clicou
+  if (S.modo === 'plataforma' && foco) devolverFoco(document.getElementById(foco));
   const btn2 = $('#btn-fill'); if (btn2 && !parcial) { btn2.disabled = false; btn2.innerHTML = `${icon('fill', 'ic-sm')} Preencher no portal`; }
   if (r?.depois) W.ultimoPreenchido = { ...(W.ultimoPreenchido || {}), ...Object.fromEntries(Object.entries(r.depois).filter(([, v]) => v)) };
   W.portalVisto = { ...portalValores(tipo), ...(r?.depois || {}) };
