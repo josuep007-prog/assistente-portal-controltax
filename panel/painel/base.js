@@ -86,3 +86,6 @@ export const send = (msg, transfer) => { if (AGIR_NO_PORTAL.has(msg?.type)) S.an
 export const packFiles = async (files) => Promise.all(files.map(async f => ({ name: f.name, type: f.type, lastModified: f.lastModified, buf: await f.arrayBuffer() })));
 
 export const toast = (text) => send({ type: 'toast', text });
+
+/** Tipos (cadastros) em que nada vai ao portal enquanto a pessoa digita: tudo vai de uma vez pelo botão "Enviar tudo para o Onvio" (regras: escritaAoVivo.semAoVivo). */
+export const semAoVivo = (tipo) => (S.rules?.config?.escritaAoVivo?.semAoVivo || []).includes(tipo);

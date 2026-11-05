@@ -1,6 +1,6 @@
 /* Painel — Portal ↔ Assistente, antes de enviar e modelos. (parte de panel/panel.js, dividido na 2.16.4; mapa em docs/arquitetura.md). */
 import * as E from '../engine.js';
-import { $, P, S, debounce, esc, icon, request, send, toast } from './base.js';
+import { $, P, S, debounce, esc, icon, request, send, toast, semAoVivo } from './base.js';
 import { anexosAtuais, gerarTextos, portalValores, valoresAssistente, valoresParaChecar } from './valores.js';
 import { apagarRascunho, salvarRascunhoAgora } from './facilidades.js';
 import { avisosExtras, botaoModelo, camposAusentes, fillPortal, gerarPeloModelo, renderFillResult, updateChecks } from './formulario.js';
@@ -40,7 +40,7 @@ export function sincronizarDoPortal(tipo) {
 }
 
 export const atualizarTextoNoPortal = debounce(async (tipo) => {
-  if (S.ctx.tipo !== tipo || S.preenchendo) return;
+  if (S.ctx.tipo !== tipo || S.preenchendo || semAoVivo(tipo)) return;   // cadastros: o texto vai junto no "Enviar tudo para o Onvio"
   const W = w(tipo); gerarTextos(tipo);
   const pv = portalValores(tipo); const values = {};
   for (const k of TEXTOS) {

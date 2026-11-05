@@ -490,8 +490,14 @@ async def teste_mecanica(b):
     check(ok, 'campos do portal fora das regras aparecem em "Outros campos do portal"')
     await pn.evaluate("document.querySelectorAll('.pf-grupo').forEach(d => d.open = true)")
     await pn.fill('#f-extra\\:eSocialRegistration', 'ABC-77'); await pn.dispatch_event('#f-extra\\:eSocialRegistration', 'change')
+    # 2.30.0: no cadastro nada vai ao Onvio ao digitar; o que está pendente vai ao "Conferir e enviar" (só o campo pendente) ou ao "Enviar tudo"
+    await pg.wait_for_timeout(1500)
+    check(not await tem(eSocialRegistration='ABC-77')(), 'cadastro: o campo fora das regras ainda NÃO foi ao Onvio antes do envio')
+    await pn.click('#btn-send')
     ok = await espera(tem(eSocialRegistration='ABC-77'), 10)
     check(ok, 'campo fora das regras preenchido no portal pela plataforma')
+    try: await pn.click('#m-fix', timeout=3000)   # fecha o resumo antes do envio (nada é enviado)
+    except Exception: pass
     await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(500)
     await pn.click('#diag'); await pg.wait_for_timeout(800)
     diag = await pg.evaluate("navigator.clipboard.readText()")
@@ -505,11 +511,14 @@ async def teste_mecanica(b):
     await pn.evaluate("document.querySelectorAll('.pf-grupo').forEach(d => d.open = true)")
     t0 = time.time()
     await pn.fill('#f-numero', '2024'); await pn.dispatch_event('#f-numero', 'change')
+    await pn.click('#btn-send')   # 2.30.0: o campo pendente vai ao Onvio no "Conferir e enviar" (só ele, sem reabrir listas)
     ok = await espera(tem(addressNumber='2024'), 10)
     dt = time.time() - t0
     await pg.wait_for_timeout(800)
     ab = await pg.evaluate("window.__aberturas")
     check(ok and dt < 2.5 and ab == 0, f'mudar um campo do cadastro manda só ele: nenhuma lista reaberta ({ab}) e rápido ({dt:.1f} s)')
+    try: await pn.click('#m-fix', timeout=3000)   # fecha o resumo antes do envio (nada é enviado)
+    except Exception: pass
 
     # 7: o portal recusa o envio (cadastro incompleto) → a plataforma mostra o que ele acusou
     await abrir('employee-registration')
@@ -1417,6 +1426,47 @@ async def teste_foco_lista_vazia(b):
     ativo = await pn.evaluate("document.activeElement && (document.activeElement.id || document.activeElement.tagName)")
     check(focos <= 3, f'foco: a lista sem opções não fica pegando o foco de novo e de novo ({focos} vezes em 9 s)')
     check(ativo == 'f-cargo', f'foco: no fim o campo continua com o foco ({ativo})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
+async def teste_sem_ao_vivo(b):
+    """2.30.0: no cadastro de funcionário nada vai ao Onvio enquanto a pessoa digita; o botão "Enviar tudo para o Onvio" manda de uma vez."""
+    print('\n[ao vivo] cadastro: nada vai ao Onvio até o botão Enviar tudo')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="cadastroEmpregado"]')
+    await pn.locator('#f-nome').wait_for(state='attached', timeout=20000); await pg.wait_for_timeout(1500)
+    portal = lambda fc: pg.evaluate("(fc) => { const e = document.querySelector('[formcontrolname=\"' + fc + '\"]'); return e ? (e.tagName === 'BENTO-COMBOBOX' ? e.querySelector('input').value : e.value) : null; }", fc)
+    check('Enviar tudo para o Onvio' in (await pn.locator('#btn-fill').inner_text()), 'ao vivo: o botão do rodapé se chama "Enviar tudo para o Onvio"')
+    await pn.locator('#f-nome').click(); await pg.keyboard.type('MARIA TESTE')
+    await pg.wait_for_timeout(2500)
+    check((await portal('name')) in ('', None), f'ao vivo: o que foi digitado NÃO foi para o Onvio sozinho (portal: {await portal("name")!r})')
+    pend = await pn.locator('#av-pend').inner_text()
+    check('1 campo' in pend, f'ao vivo: a tela mostra quantos campos ainda não foram ({pend!r})')
+    await pn.locator('#f-cargo').click(); await pg.wait_for_timeout(2500)
+    ativo = await pn.evaluate("document.activeElement && document.activeElement.id")
+    check(ativo == 'f-cargo', f'ao vivo: clicar numa lista não busca opções nem tira o foco ({ativo})')
+    await pn.click('#btn-fill'); await pg.wait_for_timeout(4000)
+    check((await portal('name')) == 'MARIA TESTE', f'ao vivo: "Enviar tudo" manda o que foi digitado para o Onvio (portal: {await portal("name")!r})')
+    pend2 = ''
+    for _ in range(10):
+        pend2 = await pn.locator('#av-pend').inner_text()
+        if 'Nada pendente' in pend2: break
+        await pg.wait_for_timeout(500)
+    check('Nada pendente' in pend2, f'ao vivo: depois de enviar não sobra nada pendente ({pend2!r})')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
@@ -2460,7 +2510,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2490,7 +2540,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'foco':
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_foco_listas(b); await teste_foco_lista_vazia(b); await b.close()
+            await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
@@ -2860,7 +2910,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)

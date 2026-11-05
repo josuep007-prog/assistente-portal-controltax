@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.01-1",
+  "versao": "2026.11.05-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -56,7 +56,9 @@
       "_comentario": "Plataforma em tela cheia: o que o cliente digita nos campos de texto vai para o portal enquanto ele escreve (esperaMs depois da última tecla), não só ao sair do campo. Só os tipos de campo listados; listas, datas e números continuam indo ao escolher/sair do campo. ativo: false volta ao comportamento antigo.",
       "ativo": true,
       "esperaMs": 600,
-      "tipos": ["texto", "textarea"]
+      "tipos": ["texto", "textarea"],
+      "semAoVivo": ["cadastroEmpregado", "cadastroEstagiario", "cadastroContribuinte"],
+      "_semAoVivo": "Cadastros (muitos campos e listas): nada vai ao portal enquanto o cliente digita ou escolhe. Os dados ficam na plataforma e vão ao Onvio de uma vez, pelo botão 'Enviar tudo para o Onvio' (ou ao 'Conferir e enviar'). Evita a extensão mexer no Onvio e no foco a cada campo."
     },
     "incluirCidNaDescricao": false,
     "ocrAutomatico": true,
