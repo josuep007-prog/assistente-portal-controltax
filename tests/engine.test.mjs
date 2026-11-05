@@ -2070,4 +2070,9 @@ t('cargo novo: as linhas automáticas entram, trocam e saem sem apagar o que a p
   assert.equal(E.juntarPedidosNovos('Texto', [l1], [l1]), 'Texto\n' + l1, 'linha que sumiu da observação é escrita de novo');
 });
 
+t('botão Cancelar: só as rubricas e os cadastros têm (regras.json)', () => {
+  const com = Object.entries(rules.tipos).filter(([, d]) => d.botaoCancelar).map(([k, d]) => `${k}:${d.botaoCancelar}`).sort();
+  assert.deepEqual(com, ['cadastroContribuinte:Cancelar cadastro', 'cadastroEmpregado:Cancelar cadastro', 'cadastroEstagiario:Cancelar cadastro', 'rubricas:Cancelar lançamento']);
+});
+
 console.log(`\n${n} testes ok`);

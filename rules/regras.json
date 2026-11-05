@@ -2089,7 +2089,6 @@
   "tipos": {
     "geral": {
       "nome": "Solicitação Geral",
-      "botaoCancelar": "Cancelar lançamento",
       "slug": "general-requests",
       "exemploTexto": "preciso da segunda via da guia do FGTS até sexta",
       "api": null,
@@ -3197,6 +3196,7 @@
     },
     "rubricas": {
       "nome": "Lançamento de Rubricas",
+      "botaoCancelar": "Cancelar lançamento",
       "slug": "payroll-entries",
       "exemploTexto": "Ronaldo 10 horas extras, Carla 2 faltas, mês passado",
       "dicionarioRubricas": {
