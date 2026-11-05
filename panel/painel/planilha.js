@@ -4,9 +4,9 @@
  * formulário próprio). Nada é enviado: o envio é só pelo botão do portal, depois do resumo. Os valores ficam só na memória. */
 import * as E from '../engine.js';
 import { criarXlsx, readFile } from '../extract.js';
-import { $, P as Pl, S, esc, icon, request } from './base.js';
+import { $, P as Pl, S, esc, icon, request, toast } from './base.js';
 import { render, tipoDef, w } from './modo.js';
-import { enviarPendenteAgora, fillPortal, valorPlat } from './formulario.js';
+import { enviarPendenteAgora, fillPortal, limparPendentes, valorPlat } from './formulario.js';
 import { apagarRascunho, salvarRascunho, salvarRascunhoAgora } from './facilidades.js';
 
 const esperar = (ms) => new Promise(r => setTimeout(r, ms));
@@ -208,12 +208,18 @@ export async function executarComando(tipo) {
 
 /** "Cancelar lançamento": pergunta, clica no CANCELAR do próprio portal por baixo (nunca em enviar) e limpa a planilha e o rascunho deste pedido. */
 export function cancelarLancamento(tipo) {
+  const rotulo = tipoDef(tipo)?.botaoCancelar || 'Cancelar lançamento';
   Pl.dialogo({
-    titulo: 'Cancelar o lançamento de rubricas?',
-    corpo: '<p style="margin:0">Os valores digitados aqui e o rascunho deste lançamento serão descartados e o portal volta para a lista. <strong>Nada é enviado.</strong></p>',
-    acoes: ['|', { rotulo: 'Continuar lançando' }, { rotulo: 'Cancelar lançamento', cls: 'btn-primary', fn: async () => {
+    titulo: `${esc(rotulo)}?`,
+    corpo: '<p style="margin:0">Os dados digitados aqui e o rascunho serão descartados e o portal volta para a lista. <strong>Nada é enviado.</strong></p>',
+    acoes: ['|', { rotulo: 'Continuar preenchendo' }, { rotulo, cls: 'btn-primary', fn: async () => {
       let r = null; try { r = await request({ type: 'cancelarFormulario' }, 20000); } catch { /* sem resposta */ }
-      if (r && r.ok === false) { const P = estado(tipo); P.erro = `Não consegui cancelar pelo portal: ${r.motivo || 'sem resposta'}. Use o botão CANCELAR do próprio portal (“Ver Onvio”).`; renderPlanilhaRubricas(tipo); return; }
+      if (r && r.ok === false) {
+        const msg = `Não consegui cancelar pelo portal: ${r.motivo || 'sem resposta'}. Use o botão CANCELAR do próprio portal (“Ver Onvio”).`;
+        if (tipo === 'rubricas') { estado(tipo).erro = msg; renderPlanilhaRubricas(tipo); } else toast(msg);
+        return;
+      }
+      limparPendentes(tipo);
       S.work[tipo] = null; S.ultimoEnvio = null;
       await apagarRascunho(tipo);
       render();

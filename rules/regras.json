@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.05-2",
+  "versao": "2026.11.05-3",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -2089,6 +2089,7 @@
   "tipos": {
     "geral": {
       "nome": "Solicitação Geral",
+      "botaoCancelar": "Cancelar lançamento",
       "slug": "general-requests",
       "exemploTexto": "preciso da segunda via da guia do FGTS até sexta",
       "api": null,
@@ -3426,6 +3427,7 @@
     "cadastroEmpregado": {
       "nome": "Cadastro de Empregado",
       "itensNovos": [{ "campo": "cargo", "rotulo": "cargo", "mensagem": "Solicito o cadastro do cargo \"{valor}\" no Onvio, pois ele ainda não existe na lista de cargos. Depois de cadastrado, favor vincular ao funcionário {nome}." }],
+      "botaoCancelar": "Cancelar cadastro",
       "slug": "employee-registration",
       "api": "employees-registrations",
       "setor": "Pessoal",
@@ -4236,6 +4238,7 @@
     },
     "cadastroEstagiario": {
       "nome": "Cadastro de Estagiário",
+      "botaoCancelar": "Cancelar cadastro",
       "slug": "intern-registration",
       "api": "interns-registrations",
       "setor": "Pessoal",
@@ -4401,6 +4404,7 @@
     },
     "cadastroContribuinte": {
       "nome": "Cadastro de Contribuinte",
+      "botaoCancelar": "Cancelar cadastro",
       "slug": "partner-registration",
       "api": "taxpayers-registrations",
       "setor": "Pessoal",
