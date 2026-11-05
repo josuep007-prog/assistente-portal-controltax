@@ -72,6 +72,7 @@ export function atualizarEstadosPlat(tipo) {
 export const chaveCampos = (tipo) => { const W = w(tipo); return JSON.stringify([S.ctx.form?.campos, S.ctx.form?.extras, S.ctx.form?.erros, Object.entries(W.valores).map(([a, b]) => [a, b?.valor]), W.ultimoPreenchido, W.aproximadas, W.sugestoes, W.pausarAuto]); };
 
 export function renderFormularioProprio(el, tipo) {
+  S.pv.redesenhos = (S.pv.redesenhos || 0) + 1;   // só um contador (sem dados), para o diagnóstico
   const t = tipoDef(tipo); const W = w(tipo);
   S.pv.lastFieldsKey = chaveCampos(tipo);
   const pf = S.ctx.form?.campos || {};
@@ -519,7 +520,14 @@ export async function fillPortal(tipo, { silencioso = false, daPlataforma = fals
   const opts = { naoSobrescrever: false, avisoDesfazer: !daPlataforma, semDesfazer: daPlataforma, voltarInicio: !parcial, unicaOpcao: parcial ? [] : camposUnicaOpcao(tipo) };
   try { r = await requestFill({ type: 'fill', tipo, values, files: packed, opts }, packed.map(p => p.buf), aoAvancar); }
   finally { S.preenchendo = false; }
-  if (S.modo === 'plataforma' && foco && document.activeElement?.id !== foco) document.getElementById(foco)?.focus();
+  // devolve o foco só se ele se perdeu (foi para o portal) — se a pessoa já clicou em outro campo durante o preenchimento, esse é o que vale
+  // (antes o foco voltava sozinho ao campo anterior: "clico em outro bloco e volto para o que eu estava")
+  if (S.modo === 'plataforma' && foco) {
+    const agora = document.activeElement, perdeu = !agora || agora === document.body;
+    if (perdeu) { document.getElementById(foco)?.focus(); S.pv.focoDevolvido = (S.pv.focoDevolvido || 0) + 1; }
+    else if (agora.id === foco && !document.hasFocus()) { agora.focus(); S.pv.focoDevolvido = (S.pv.focoDevolvido || 0) + 1; }
+    else if (agora.id !== foco) S.pv.focoMantido = (S.pv.focoMantido || 0) + 1;   // a pessoa já estava em outro campo: o foco dela não foi mexido
+  }
   const btn2 = $('#btn-fill'); if (btn2 && !parcial) { btn2.disabled = false; btn2.innerHTML = `${icon('fill', 'ic-sm')} Preencher no portal`; }
   if (r?.depois) W.ultimoPreenchido = { ...(W.ultimoPreenchido || {}), ...Object.fromEntries(Object.entries(r.depois).filter(([, v]) => v)) };
   W.portalVisto = { ...portalValores(tipo), ...(r?.depois || {}) };
