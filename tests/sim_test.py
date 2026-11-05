@@ -1357,6 +1357,60 @@ async def teste_blocos_cadastro(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="cadastroEmpregado"]')
+    await pn.locator('#f-nome').wait_for(state='attached', timeout=20000)
+    await pn.evaluate("[...document.querySelectorAll('details.pf-grupo')].forEach(d => { d.open = true; })"); await pg.wait_for_timeout(500)
+    falhou = 0
+    for r in range(4):
+        await pn.locator('#f-nome').click(); await pg.keyboard.press('Control+A'); await pg.keyboard.type(f'MARIA TESTE {r}')
+        # a gravação no portal começa depois de uma pausa na digitação; clica em outro campo logo que o portal recebe o texto (gravação em andamento)
+        for _ in range(60):
+            if await pg.evaluate("[...document.querySelectorAll('input[formcontrolname]')].some(i => (i.value || '').startsWith('MARIA TESTE'))"): break
+            await pg.wait_for_timeout(30)
+        await pn.locator('#f-cpf').click()
+        await pg.wait_for_timeout(1800)
+        ativo = await pn.evaluate("document.activeElement && document.activeElement.id")
+        if ativo != 'f-cpf': falhou += 1; print('   foco foi para', ativo)
+    check(falhou == 0, f'foco: depois de clicar em outro campo durante a gravação, o foco fica nele (em {4 - falhou} de 4 tentativas)')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
+async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="cadastroEmpregado"]')
+    await pn.locator('#f-nome').wait_for(state='attached', timeout=20000); await pg.wait_for_timeout(1500)
+    amostra = """() => { const f = document.getElementById('fields'); let sp = f; while (sp && !(sp.scrollHeight > sp.clientHeight + 2 && /(auto|scroll)/.test(getComputedStyle(sp).overflowY))) sp = sp.parentElement;
+      return [[...document.querySelectorAll('details.pf-grupo')].map(d => d.open ? 1 : 0).join(''), sp ? Math.round(sp.scrollTop) : -1, (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) || '', document.hasFocus() ? 'F' : 'x']; }"""
+    seq = []
+    seq.append(await pn.evaluate(amostra))
+    for alvo in (1, 2, 3):
+        await pn.locator('details.pf-grupo').nth(alvo).locator('summary').click()
+        for _ in range(6):
+            await pg.wait_for_timeout(250); seq.append(await pn.evaluate(amostra))
+    for campo in ('#f-cargo', '#f-sindicato', '#f-nome', '#f-cpf'):
+        if await pn.locator(campo).count():
+            await pn.locator(campo).click()
+            for _ in range(6):
+                await pg.wait_for_timeout(250); seq.append([campo] + await pn.evaluate(amostra))
+    for x in seq: print('  ', x)
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
 async def teste_sair_do_pedido(b):
     """2.27.0: sair do pedido pela extensão (outro tipo, outra aba) leva o portal de volta à lista do tipo; "Continuar o pedido" reabre e preenche de novo."""
     print('\n[sair] o portal sai do formulário junto com a extensão')
