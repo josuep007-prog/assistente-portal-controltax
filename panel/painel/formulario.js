@@ -25,6 +25,9 @@ export function agendarEnvioPortal(tipo, k) {
   envioPendente.set(tipo, p);
 }
 
+/** Descarta o que estava esperando para ir ao Onvio (ao cancelar o pedido). */
+export function limparPendentes(tipo) { const p = envioPendente.get(tipo); if (p) clearTimeout(p.t); envioPendente.delete(tipo); }
+
 /** Texto do botão que grava tudo no portal. */
 export const rotuloPreencher = (tipo) => (semAoVivo(tipo) ? 'Enviar tudo para o Onvio' : 'Preencher no portal');
 
@@ -114,7 +117,7 @@ export function sincronizarPedidosNovos(tipo) {
     let nota = campoEl.querySelector('.nn');
     if (W.itensNovos[r.campo]) {
       if (!nota) { nota = document.createElement('small'); nota.className = 'hint nn'; campoEl.appendChild(nota); }
-      nota.textContent = `Este ${r.rotulo || r.campo} ainda não existe no Onvio: escrevi um pedido de cadastro nas Observações. O valor não será enviado ao campo.`;
+      nota.textContent = `Este ${r.rotulo || r.campo} ainda não existe no Onvio. Escrevi o pedido de cadastro nas Observações, aqui e no Onvio: “${linhas.find(l => l.includes(W.itensNovos[r.campo])) || ''}” O valor não será enviado ao campo.`;
     } else nota?.remove();
   }
   if (JSON.stringify(linhas) === JSON.stringify(antes)) return;
@@ -123,7 +126,9 @@ export function sincronizarPedidosNovos(tipo) {
   W.obsAuto = linhas;
   W.valores.observacoes = { valor: nova, conf: 1, fonte: 'você' }; W.editados.add('observacoes'); (W.fonteVerdade || (W.fonteVerdade = {})).observacoes = 'plataforma';
   const ta = document.getElementById('f-observacoes'); if (ta && ta.value !== nova) ta.value = nova;
-  agendarEnvioPortal(tipo, 'observacoes'); atualizarEstadosPlat(tipo);
+  atualizarEstadosPlat(tipo);
+  // o pedido vai ao Onvio na hora (só as Observações), não espera o "Enviar tudo": a pessoa vê o texto nos dois lugares
+  if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: ['observacoes'] });
 }
 
 /** Texto de andamento da leitura das listas do Onvio (dentro do aviso do cadastro). */
