@@ -79,7 +79,9 @@ function devolverFoco(padrao) {
   if (a && a !== document.body) return false;          // já está em algum campo: respeita
   const alvo = S.pv.ultimoFoco?.isConnected ? S.pv.ultimoFoco : padrao;
   if (!alvo?.focus) return false;
-  alvo.focus(); S.pv.focoDevolvido = (S.pv.focoDevolvido || 0) + 1; return true;
+  S.pv.devolvendoFoco = true;   // o foco devolvido por nós não pode disparar de novo a busca das opções da lista (ciclo de seleciona/desseleciona)
+  try { alvo.focus(); } finally { S.pv.devolvendoFoco = false; }
+  S.pv.focoDevolvido = (S.pv.focoDevolvido || 0) + 1; return true;
 }
 function lembrarUltimoFoco() {
   if (S.pv.ouvindoFoco) return; S.pv.ouvindoFoco = true;
@@ -163,7 +165,11 @@ export function renderFormularioProprio(el, tipo) {
     inp.addEventListener('change', () => { if (c?.somenteAssistente) atualizarTextoNoPortal(tipo); else agendarEnvioPortal(tipo, k); });
     // listas do portal (motivos, cargos…): busca as opções quando o campo ganha o foco; se a busca falhou, tenta de novo na próxima vez
     if (c?.tipo === 'combo' && c.fc) inp.addEventListener('focus', async () => {
-      if (W.opcoes[k]?.length || inp.dataset.buscando) return;
+      if (W.opcoes[k]?.length || inp.dataset.buscando || S.pv.devolvendoFoco) return;
+      // lista que voltou sem opções: não busca de novo a cada foco (cada busca abre a lista do portal por baixo e tira o foco daqui)
+      const tentativas = W.opcoesTentadas || (W.opcoesTentadas = {});
+      if (Date.now() - (tentativas[k] || 0) < 30000) return;
+      tentativas[k] = Date.now();
       inp.dataset.buscando = '1';
       let r; try { r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000); } finally { delete inp.dataset.buscando; }
       if (r?.options?.length) { W.opcoes[k] = r.options; const dl = document.getElementById(`dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }

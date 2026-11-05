@@ -343,6 +343,7 @@
     wrap.appendChild(labelEl(f, inp.id)); wrap.appendChild(cb);
     if (f.info) wrap.appendChild(h('small', { class: 'p-help' }, 'Somente empregados ativos na competência são listados.'));
     var options = function () {
+      try { if (localStorage.getItem('ct-sim-listas-vazias') === '1' && f.fc !== 'selectedEmployee') return []; } catch (e) { /* sem armazenamento */ }   // 2.29.5: lista que volta sem opções (como várias do Onvio real)
       if (typeof f.opts === 'string' && f.opts.indexOf('cidade:') === 0) { var ufFc = f.opts.slice(7), uf = ctx.value(ufFc); if (Date.now() - (ctx.mudouEm[ufFc] || 0) < CARGA_MUNICIPIOS_MS) return null; return CIDADES[uf] || (uf ? [uf === 'Distrito Federal' ? 'Brasília' : 'Capital de ' + uf] : []); }
       return f.opts || [];
     };
