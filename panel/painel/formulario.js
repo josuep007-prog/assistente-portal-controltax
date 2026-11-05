@@ -113,8 +113,12 @@ export function renderFormularioProprio(el, tipo) {
   const extras = Object.entries(t.campos).filter(([, c]) => c.somenteAssistente);
   const textos = TEXTOS.filter(k => t.campos[k] && pf[k]?.existe !== false);
   const OUTROS = 'Outros campos do portal';
+  // blocos (grupos) abertos/fechados: a escolha de quem está preenchendo vale mais que a regra automática, e o que já abriu não fecha sozinho
+  // (antes, a cada redesenho o bloco que a pessoa abriu fechava e outro abria, porque a regra olha os campos ainda vazios)
+  const abertos = W.gruposAbertos || (W.gruposAbertos = {});
+  const abreGrupo = (g, i, lista) => g in abertos ? abertos[g] : (i === 0 || lista.some(([k, c]) => (obrig(k, c) && !(campoPortal(k).valor || W.valores[k]?.valor)) || erroDoPortal(k)));
   el.innerHTML = `
-    ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" ${i === 0 || lista.some(([k, c]) => (obrig(k, c) && !(campoPortal(k).valor || W.valores[k]?.valor)) || erroDoPortal(k)) ? 'open' : ''}><summary>${esc(g)}</summary>${g === OUTROS ? '<small class="hint" style="margin:0 0 8px">Campos do portal que o escritório ainda não incluiu nas regras do Assistente. O que você preencher aqui também vai para o portal.</small>' : ''}<div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
+    ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" data-g="${esc(g)}" ${abreGrupo(g, i, lista) ? 'open' : ''}><summary>${esc(g)}</summary>${g === OUTROS ? '<small class="hint" style="margin:0 0 8px">Campos do portal que o escritório ainda não incluiu nas regras do Assistente. O que você preencher aqui também vai para o portal.</small>' : ''}<div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
       || '<p class="muted">Abrindo o formulário no portal…</p>'}
     ${extras.length || t.descricao?.length ? `<div class="pf-sec">Só para a descrição</div><div class="pf-grid">${extras.map(([k, c]) => {
       const cur0 = W.valores[k]; const sg = ehSugestao(cur0); const cur = sg ? undefined : cur0;
@@ -125,6 +129,7 @@ export function renderFormularioProprio(el, tipo) {
     ${textos.length ? `<div class="pf-sec">Assunto e descrição ${textos.some(k => W.editados.has(k)) ? '<small class="chip info">editados por você</small>' : '<small class="chip ok">gerados</small>'}</div>
       <div class="pf-grid">${textos.map(k => campo([k, t.campos[k]])).join('')}</div>` : ''}
     ${calcBox(tipo)}`;
+  el.querySelectorAll('details.pf-grupo[data-g]').forEach(d => d.addEventListener('toggle', () => { abertos[d.dataset.g] = d.open; }));
   // campos bloqueados pelo portal
   for (const [k] of [...doPortal, ...foraDasRegras]) if (campoPortal(k).disabled) el.querySelectorAll(`[data-k="${CSS.escape(k)}"]`).forEach(i => { i.disabled = true; });
   const aoDigitar = debounce(() => { gerarTextos(tipo); syncGenerated(); updateChecks(); refreshCalc(); }, 400);
