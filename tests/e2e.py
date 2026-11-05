@@ -6,6 +6,7 @@ Requisitos (uma vez):  pip install -r tests/requirements.txt  &&  python -m play
 Rodar:                 python tests/e2e.py
 No Linux sem tela:     xvfb-run -a python tests/e2e.py
 """
+import datetime
 import asyncio, json, os, re, sys, tempfile, shutil, zipfile
 os.environ.setdefault('PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS', '1')  # para interceptar o que o service worker baixa
 from playwright.async_api import async_playwright
@@ -23,6 +24,9 @@ def check(cond, msg):
 async def abrir(p, tmp, plataforma=False, url=URL):
     ctx = await p.chromium.launch_persistent_context(tmp, headless=True, channel='chromium', viewport={'width': 1400, 'height': 900},
         args=[f'--disable-extensions-except={ROOT}', f'--load-extension={ROOT}', '--disable-dev-shm-usage', '--no-sandbox', '--window-size=1400,900'])
+    # o atestado de teste tem data fixa (05/10/2026) e a regra "afastamento há mais de 30 dias" mudaria o resultado com o passar dos dias:
+    # o relógio da página fica em 20/10/2026 (o tempo continua correndo) para o teste dar o mesmo resultado em qualquer dia
+    await ctx.clock.install(time=datetime.datetime(2026, 10, 20, 12, 0, 0))
     async def route(r):
         u = r.request.url
         if u.startswith('https://raw.githubusercontent.com/') and u.split('?')[0].endswith('/regras.json'):
