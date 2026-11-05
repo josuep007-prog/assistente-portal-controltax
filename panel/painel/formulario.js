@@ -1,6 +1,6 @@
 /* Painel — Formulário próprio da plataforma. (parte de panel/panel.js, dividido na 2.16.4; mapa em docs/arquitetura.md). */
 import * as E from '../engine.js';
-import { $, P, S, cidAtivo, debounce, esc, icon, packFiles, request, requestFill, send, toast } from './base.js';
+import { $, P, S, cidAtivo, debounce, esc, icon, packFiles, request, requestFill, send, toast, semAoVivo } from './base.js';
 import { TEXTOS, atualizarTextoNoPortal } from './portal.js';
 import { admissaoDe, anexosAtuais, gerarTextos, portalValores, valoresParaChecar } from './valores.js';
 import { ajustarDepartamento } from './inicio.js';
@@ -19,9 +19,20 @@ export const envioPendente = new Map();   // tipo → { t, campos: Set } (só os
 export function agendarEnvioPortal(tipo, k) {
   const p = envioPendente.get(tipo) || { campos: new Set() };
   clearTimeout(p.t); if (k) p.campos.add(k);
+  if (semAoVivo(tipo)) { envioPendente.set(tipo, p); atualizarPendentesAoVivo(tipo); return; }   // cadastros: só guarda; vai ao Onvio pelo botão
   const esperaMs = Math.max(150, S.rules.config?.escritaAoVivo?.esperaMs || 500);
   p.t = setTimeout(() => { envioPendente.delete(tipo); if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: [...p.campos] }); }, esperaMs);
   envioPendente.set(tipo, p);
+}
+
+/** Texto do botão que grava tudo no portal. */
+export const rotuloPreencher = (tipo) => (semAoVivo(tipo) ? 'Enviar tudo para o Onvio' : 'Preencher no portal');
+
+/** Quantos campos ainda não foram ao Onvio (só nos tipos sem escrita ao vivo). */
+export function atualizarPendentesAoVivo(tipo) {
+  const el = document.getElementById('av-pend'); if (!el) return;
+  const n = envioPendente.get(tipo)?.campos.size || 0;
+  el.textContent = n ? `${n} campo(s) ainda não foram para o Onvio` : 'Nada pendente para o Onvio';
 }
 
 export async function enviarPendenteAgora(tipo) {
@@ -136,7 +147,10 @@ export function renderFormularioProprio(el, tipo) {
   // (antes, a cada redesenho o bloco que a pessoa abriu fechava e outro abria, porque a regra olha os campos ainda vazios)
   const abertos = W.gruposAbertos || (W.gruposAbertos = {});
   const abreGrupo = (g, i, lista) => g in abertos ? abertos[g] : (i === 0 || lista.some(([k, c]) => (obrig(k, c) && !(campoPortal(k).valor || W.valores[k]?.valor)) || erroDoPortal(k)));
+  const avisoAoVivo = semAoVivo(tipo) ? `<div class="note info av-nota" style="margin:0 0 12px">${icon('info')}<div><b>Nada vai para o Onvio enquanto você preenche.</b> Preencha aqui à vontade; quando terminar, clique em <b>Enviar tudo para o Onvio</b> (no rodapé) ou em Conferir e enviar.
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted" id="av-pend" role="status"></span><button type="button" class="btn btn-sm btn-ghost" id="av-listas" title="Busca as opções das listas (cargo, sindicato…) no portal, para aparecerem aqui">${icon('refresh', 'ic-sm')} Carregar listas do portal</button></div></div></div>` : '';
   el.innerHTML = `
+    ${avisoAoVivo}
     ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" data-g="${esc(g)}" ${abreGrupo(g, i, lista) ? 'open' : ''}><summary>${esc(g)}</summary>${g === OUTROS ? '<small class="hint" style="margin:0 0 8px">Campos do portal que o escritório ainda não incluiu nas regras do Assistente. O que você preencher aqui também vai para o portal.</small>' : ''}<div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
       || '<p class="muted">Abrindo o formulário no portal…</p>'}
     ${extras.length || t.descricao?.length ? `<div class="pf-sec">Só para a descrição</div><div class="pf-grid">${extras.map(([k, c]) => {
@@ -148,6 +162,18 @@ export function renderFormularioProprio(el, tipo) {
     ${textos.length ? `<div class="pf-sec">Assunto e descrição ${textos.some(k => W.editados.has(k)) ? '<small class="chip info">editados por você</small>' : '<small class="chip ok">gerados</small>'}</div>
       <div class="pf-grid">${textos.map(k => campo([k, t.campos[k]])).join('')}</div>` : ''}
     ${calcBox(tipo)}`;
+  atualizarPendentesAoVivo(tipo);
+  $('#av-listas')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget; b.disabled = true; const antes = b.innerHTML; b.textContent = 'Carregando listas…';
+    try {
+      for (const [k, c] of Object.entries(t.campos)) {
+        if (c.tipo !== 'combo' || !c.fc || W.opcoes[k]?.length || campoPortal(k).existe === false) continue;
+        const r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000);
+        if (r?.options?.length) { W.opcoes[k] = r.options; const dl = document.getElementById(`dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
+      }
+      toast('Listas carregadas.');
+    } finally { b.disabled = false; b.innerHTML = antes; devolverFoco(null); }
+  });
   el.querySelectorAll('details.pf-grupo[data-g]').forEach(d => d.addEventListener('toggle', () => { abertos[d.dataset.g] = d.open; }));
   // campos bloqueados pelo portal
   for (const [k] of [...doPortal, ...foraDasRegras]) if (campoPortal(k).disabled) el.querySelectorAll(`[data-k="${CSS.escape(k)}"]`).forEach(i => { i.disabled = true; });
@@ -165,7 +191,7 @@ export function renderFormularioProprio(el, tipo) {
     inp.addEventListener('change', () => { if (c?.somenteAssistente) atualizarTextoNoPortal(tipo); else agendarEnvioPortal(tipo, k); });
     // listas do portal (motivos, cargos…): busca as opções quando o campo ganha o foco; se a busca falhou, tenta de novo na próxima vez
     if (c?.tipo === 'combo' && c.fc) inp.addEventListener('focus', async () => {
-      if (W.opcoes[k]?.length || inp.dataset.buscando || S.pv.devolvendoFoco) return;
+      if (W.opcoes[k]?.length || inp.dataset.buscando || S.pv.devolvendoFoco || semAoVivo(tipo)) return;   // cadastros: as listas só vêm pelo botão "Carregar listas do portal" (cada busca abre a lista do portal por baixo)
       // lista que voltou sem opções: não busca de novo a cada foco (cada busca abre a lista do portal por baixo e tira o foco daqui)
       const tentativas = W.opcoesTentadas || (W.opcoesTentadas = {});
       if (Date.now() - (tentativas[k] || 0) < 30000) return;
@@ -544,7 +570,8 @@ export async function fillPortal(tipo, { silencioso = false, daPlataforma = fals
   finally { S.preenchendo = false; }
   // devolve o foco só se ele se perdeu (foi para o portal), e ao último campo em que a pessoa clicou
   if (S.modo === 'plataforma' && foco) devolverFoco(document.getElementById(foco));
-  const btn2 = $('#btn-fill'); if (btn2 && !parcial) { btn2.disabled = false; btn2.innerHTML = `${icon('fill', 'ic-sm')} Preencher no portal`; }
+  if (!parcial) { envioPendente.delete(tipo); atualizarPendentesAoVivo(tipo); }
+  const btn2 = $('#btn-fill'); if (btn2 && !parcial) { btn2.disabled = false; btn2.innerHTML = `${icon('fill', 'ic-sm')} ${rotuloPreencher(tipo)}`; }
   if (r?.depois) W.ultimoPreenchido = { ...(W.ultimoPreenchido || {}), ...Object.fromEntries(Object.entries(r.depois).filter(([, v]) => v)) };
   W.portalVisto = { ...portalValores(tipo), ...(r?.depois || {}) };
   aplicarResultados(tipo, r, files);

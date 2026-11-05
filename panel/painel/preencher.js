@@ -5,7 +5,7 @@ import { TEXTOS, atualizarBotaoDesfazer, atualizarTextoNoPortal, copiarResumo, d
 import { analisarItem, applyAnalysis, ehSugestao, esperar, htmlSugestao, renderLote, usarDocumentoNoLugar, usarSugestao } from './lote.js';
 import { anexosAtuais, gerarTextos, portalValores, valoresParaChecar } from './valores.js';
 import { apagarRascunho, ofertaRascunho, renderModoSeguro } from './facilidades.js';
-import { atualizarEstadosPlat, botaoModelo, calcBox, chaveCampos, enviarPendenteAgora, erroDoPortal, fillPortal, ligarModelos, maskInput, refreshCalc, renderFillResult, renderFormularioProprio, updateChecks } from './formulario.js';
+import { atualizarEstadosPlat, botaoModelo, rotuloPreencher, calcBox, chaveCampos, enviarPendenteAgora, erroDoPortal, fillPortal, ligarModelos, maskInput, refreshCalc, renderFillResult, renderFormularioProprio, updateChecks } from './formulario.js';
 import { bindDrop, entenderTexto, openTipo } from './inicio.js';
 import { loadEmpregados, msgAproximada, render, rotuloDe, setView, tipoDef, w } from './modo.js';
 import { savePrefs } from './conexao.js';
@@ -52,7 +52,7 @@ export function renderPreencher() {
   const modeloPlanilha = tipo === 'rubricas' ? `<a class="btn btn-sm btn-ghost" id="baixar-modelo" href="../modelos/modelo-rubricas.csv" download="modelo-rubricas.csv">${icon('sheet', 'ic-sm')} Baixar planilha modelo</a>` : '';
   const dicas = (t.dicas || []).length ? `<h2 class="sec">Dicas</h2><ul class="tips">${t.dicas.map(d => `<li>${esc(d)}</li>`).join('')}</ul>${modeloPlanilha}` : modeloPlanilha;
   const dock = `<div class="dock" id="dock">
-      <button class="btn btn-primary" id="btn-fill">${icon('fill', 'ic-sm')} Preencher no portal</button>
+      <button class="btn btn-primary" id="btn-fill">${icon('fill', 'ic-sm')} ${rotuloPreencher(tipo)}</button>
       <button class="btn btn-undo" id="btn-undo" hidden>${icon('undo', 'ic-sm')} Desfazer o preenchimento</button>
       <button class="btn" id="btn-send" title="Mostra o resumo e envia pelo botão do portal">${icon('check', 'ic-sm')} Conferir e enviar</button>
       <details class="more-menu"><summary class="btn btn-ghost" aria-label="Mais ações">${icon('more')}</summary>
