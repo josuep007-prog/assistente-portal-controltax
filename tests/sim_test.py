@@ -1503,6 +1503,49 @@ async def teste_listas_do_onvio(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def teste_cargo_novo(b):
+    """2.31.0: cargo digitado que não existe na lista do Onvio vira pedido de cadastro nas Observações (e não é enviado ao campo)."""
+    print('\n[cargo novo] cargo que não existe vai para as Observações')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="cadastroEmpregado"]')
+    await pn.locator('#f-cargo').wait_for(state='attached', timeout=20000)
+    for _ in range(240):   # espera as listas do Onvio chegarem
+        if 'já estão aqui' in await pn.locator('#av-listas-st').inner_text(): break
+        await pg.wait_for_timeout(500)
+    existente = await pn.evaluate("document.querySelector('#dl-cargo option').value")
+    portal = lambda fc: pg.evaluate("(fc) => { const e = document.querySelector('[formcontrolname=\"' + fc + '\"]'); return e ? (e.tagName === 'BENTO-COMBOBOX' ? e.querySelector('input').value : e.value) : null; }", fc)
+    obs = lambda: pn.evaluate("document.querySelector('#f-observacoes').value")
+    await pn.fill('#f-nome', 'MARIA SOUZA'); await pn.dispatch_event('#f-nome', 'change')
+    await pn.fill('#f-observacoes', 'Admissão urgente.'); await pn.dispatch_event('#f-observacoes', 'change')
+    await pn.fill('#f-cargo', 'GERENTE INVENTADO XYZ'); await pn.dispatch_event('#f-cargo', 'change'); await pg.wait_for_timeout(800)
+    o = await obs()
+    check('GERENTE INVENTADO XYZ' in o and 'MARIA SOUZA' in o and o.startswith('Admissão urgente.'), f'cargo novo: o pedido de cadastro entra nas Observações sem apagar o que foi escrito ({o!r})')
+    check(await pn.locator('[data-campo="cargo"] .nn').count() == 1, 'cargo novo: aviso embaixo do campo Cargo')
+    await pn.click('#btn-fill'); await pg.wait_for_timeout(4500)
+    check((await portal('jobPositionExpanded')) in ('', None), f'cargo novo: o cargo que não existe NÃO foi para o campo do Onvio ({await portal("jobPositionExpanded")!r})')
+    c = await portal('comments')
+    check(c and 'GERENTE INVENTADO XYZ' in c, f'cargo novo: o pedido foi para as Observações do Onvio ({c!r})')
+    await pn.fill('#f-cargo', existente); await pn.dispatch_event('#f-cargo', 'change'); await pg.wait_for_timeout(800)
+    o2 = await obs()
+    check('GERENTE INVENTADO XYZ' not in o2 and o2 == 'Admissão urgente.', f'cargo novo: trocando por um cargo que existe, a linha sai e o texto da pessoa fica ({o2!r})')
+    check(await pn.locator('[data-campo="cargo"] .nn').count() == 0, 'cargo novo: o aviso some')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
 async def teste_sair_do_pedido(b):
     """2.27.0: sair do pedido pela extensão (outro tipo, outra aba) leva o portal de volta à lista do tipo; "Continuar o pedido" reabre e preenche de novo."""
     print('\n[sair] o portal sai do formulário junto com a extensão')
@@ -2542,7 +2585,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2572,7 +2615,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'foco':
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await b.close()
+            await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
@@ -2942,7 +2985,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
