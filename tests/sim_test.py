@@ -490,8 +490,14 @@ async def teste_mecanica(b):
     check(ok, 'campos do portal fora das regras aparecem em "Outros campos do portal"')
     await pn.evaluate("document.querySelectorAll('.pf-grupo').forEach(d => d.open = true)")
     await pn.fill('#f-extra\\:eSocialRegistration', 'ABC-77'); await pn.dispatch_event('#f-extra\\:eSocialRegistration', 'change')
+    # 2.30.0: no cadastro nada vai ao Onvio ao digitar; o que está pendente vai ao "Conferir e enviar" (só o campo pendente) ou ao "Enviar tudo"
+    await pg.wait_for_timeout(1500)
+    check(not await tem(eSocialRegistration='ABC-77')(), 'cadastro: o campo fora das regras ainda NÃO foi ao Onvio antes do envio')
+    await pn.click('#btn-send')
     ok = await espera(tem(eSocialRegistration='ABC-77'), 10)
     check(ok, 'campo fora das regras preenchido no portal pela plataforma')
+    try: await pn.click('#m-fix', timeout=3000)   # fecha o resumo antes do envio (nada é enviado)
+    except Exception: pass
     await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(500)
     await pn.click('#diag'); await pg.wait_for_timeout(800)
     diag = await pg.evaluate("navigator.clipboard.readText()")
@@ -505,6 +511,7 @@ async def teste_mecanica(b):
     await pn.evaluate("document.querySelectorAll('.pf-grupo').forEach(d => d.open = true)")
     t0 = time.time()
     await pn.fill('#f-numero', '2024'); await pn.dispatch_event('#f-numero', 'change')
+    await pn.click('#btn-send')   # 2.30.0: o campo pendente vai ao Onvio no "Conferir e enviar" (só ele, sem reabrir listas)
     ok = await espera(tem(addressNumber='2024'), 10)
     dt = time.time() - t0
     await pg.wait_for_timeout(800)
