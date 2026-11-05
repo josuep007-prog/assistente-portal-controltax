@@ -517,6 +517,8 @@ async def teste_mecanica(b):
     await pg.wait_for_timeout(800)
     ab = await pg.evaluate("window.__aberturas")
     check(ok and dt < 2.5 and ab == 0, f'mudar um campo do cadastro manda só ele: nenhuma lista reaberta ({ab}) e rápido ({dt:.1f} s)')
+    try: await pn.click('#m-fix', timeout=3000)   # fecha o resumo antes do envio (nada é enviado)
+    except Exception: pass
 
     # 7: o portal recusa o envio (cadastro incompleto) → a plataforma mostra o que ele acusou
     await abrir('employee-registration')
