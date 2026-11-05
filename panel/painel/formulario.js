@@ -96,7 +96,45 @@ function devolverFoco(padrao) {
 }
 function lembrarUltimoFoco() {
   if (S.pv.ouvindoFoco) return; S.pv.ouvindoFoco = true;
-  document.addEventListener('focusin', (e) => { if (e.target?.closest?.('#fields')) S.pv.ultimoFoco = e.target; });
+  document.addEventListener('focusin', (e) => { if (e.target?.closest?.('#fields')) { S.pv.ultimoFoco = e.target; S.pv.ultimaAcao = Date.now(); } });
+  for (const tipoEv of ['keydown', 'pointerdown']) document.addEventListener(tipoEv, (e) => { if (e.target?.closest?.('#fields')) S.pv.ultimaAcao = Date.now(); }, true);
+}
+
+/** Texto de andamento da leitura das listas do Onvio (dentro do aviso do cadastro). */
+export function atualizarStatusListas(tipo) {
+  const el = document.getElementById('av-listas-st'); const bt = document.getElementById('av-listas'); if (!el) return;
+  const t = tipoDef(tipo); const W = w(tipo);
+  const lis = Object.entries(t.campos).filter(([k, c]) => c.tipo === 'combo' && c.fc && !c.somenteAssistente);
+  const lidas = lis.filter(([k]) => W.opcoes[k]?.length).length;
+  const L = S.pv.listas;
+  el.textContent = L ? `Lendo as listas do Onvio… ${L.n} de ${L.m} (pausa enquanto você preenche)` : lidas ? `${lidas} lista(s) do Onvio já estão aqui para você escolher` : 'As listas do Onvio ainda não foram lidas';
+  if (bt) bt.disabled = !!L;
+}
+
+/** Lê do Onvio as opções das listas de escolha do formulário (cargo, sindicato, vínculo…) e traz para os campos da plataforma. Uma por vez (cada uma
+ *  abre a lista do portal por baixo); o foco volta ao último campo em que a pessoa clicou. `refazer`: tenta de novo as que ficaram sem opções. */
+export async function carregarListas(tipo, refazer = false) {
+  if (S.pv.listas) return;
+  const t = tipoDef(tipo), W = w(tipo);
+  if (!t || !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) return;
+  const tent = W.opcoesTentadas || (W.opcoesTentadas = {});
+  const alvos = Object.entries(t.campos).filter(([k, c]) => c.tipo === 'combo' && c.fc && !c.somenteAssistente && !W.opcoes[k]?.length && campoPortal(k).existe !== false && !campoPortal(k).disabled && (refazer || !tent[k]));
+  if (!alvos.length) { atualizarStatusListas(tipo); return; }
+  S.pv.listas = { n: 0, m: alvos.length }; atualizarStatusListas(tipo);
+  try {
+    for (const [k, c] of alvos) {
+      if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break;   // saiu do formulário
+      // cede a vez: só lê uma lista quando a pessoa está parada há uns segundos (cada leitura abre a lista do portal por baixo e tira o foco daqui),
+      // e não atravessa uma gravação no portal
+      const dentroDeCampo = () => !!document.activeElement?.closest?.('#fields') && document.activeElement.matches?.('input,textarea,select');
+      while (S.preenchendo || dentroDeCampo() || Date.now() - (S.pv.ultimaAcao || 0) < 2500) { if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break; await new Promise(r => setTimeout(r, 400)); }
+      if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break;
+      tent[k] = Date.now();
+      let r = null; try { r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000); } catch { /* a lista não respondeu: segue para a próxima */ }
+      if (r?.options?.length) { W.opcoes[k] = r.options; const dl = document.getElementById(`dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
+      S.pv.listas.n++; atualizarStatusListas(tipo); devolverFoco(null);
+    }
+  } finally { S.pv.listas = null; atualizarStatusListas(tipo); devolverFoco(null); }
 }
 
 export function renderFormularioProprio(el, tipo) {
@@ -148,7 +186,7 @@ export function renderFormularioProprio(el, tipo) {
   const abertos = W.gruposAbertos || (W.gruposAbertos = {});
   const abreGrupo = (g, i, lista) => g in abertos ? abertos[g] : (i === 0 || lista.some(([k, c]) => (obrig(k, c) && !(campoPortal(k).valor || W.valores[k]?.valor)) || erroDoPortal(k)));
   const avisoAoVivo = semAoVivo(tipo) ? `<div class="note info av-nota" style="margin:0 0 12px">${icon('info')}<div><b>Nada vai para o Onvio enquanto você preenche.</b> Preencha aqui à vontade; quando terminar, clique em <b>Enviar tudo para o Onvio</b> (no rodapé) ou em Conferir e enviar.
-      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted" id="av-pend" role="status"></span><button type="button" class="btn btn-sm btn-ghost" id="av-listas" title="Busca as opções das listas (cargo, sindicato…) no portal, para aparecerem aqui">${icon('refresh', 'ic-sm')} Carregar listas do portal</button></div></div></div>` : '';
+      <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted" id="av-pend" role="status"></span><span class="muted" id="av-listas-st" role="status"></span><button type="button" class="btn btn-sm btn-ghost" id="av-listas" title="Lê de novo as opções das listas (cargo, sindicato…) que estão no Onvio">${icon('refresh', 'ic-sm')} Ler listas do Onvio de novo</button></div></div></div>` : '';
   el.innerHTML = `
     ${avisoAoVivo}
     ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" data-g="${esc(g)}" ${abreGrupo(g, i, lista) ? 'open' : ''}><summary>${esc(g)}</summary>${g === OUTROS ? '<small class="hint" style="margin:0 0 8px">Campos do portal que o escritório ainda não incluiu nas regras do Assistente. O que você preencher aqui também vai para o portal.</small>' : ''}<div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
@@ -163,17 +201,10 @@ export function renderFormularioProprio(el, tipo) {
       <div class="pf-grid">${textos.map(k => campo([k, t.campos[k]])).join('')}</div>` : ''}
     ${calcBox(tipo)}`;
   atualizarPendentesAoVivo(tipo);
-  $('#av-listas')?.addEventListener('click', async (e) => {
-    const b = e.currentTarget; b.disabled = true; const antes = b.innerHTML; b.textContent = 'Carregando listas…';
-    try {
-      for (const [k, c] of Object.entries(t.campos)) {
-        if (c.tipo !== 'combo' || !c.fc || W.opcoes[k]?.length || campoPortal(k).existe === false) continue;
-        const r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000);
-        if (r?.options?.length) { W.opcoes[k] = r.options; const dl = document.getElementById(`dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
-      }
-      toast('Listas carregadas.');
-    } finally { b.disabled = false; b.innerHTML = antes; devolverFoco(null); }
-  });
+  $('#av-listas')?.addEventListener('click', () => carregarListas(tipo, true));
+  atualizarStatusListas(tipo);
+  // lê as listas do Onvio sozinho, uma vez por pedido, assim que o formulário aparece (cadastros: as opções vêm do portal, não ao clicar)
+  if (semAoVivo(tipo) && !W.listasAuto && Object.keys(pf).length) { W.listasAuto = true; setTimeout(() => carregarListas(tipo), 600); }
   el.querySelectorAll('details.pf-grupo[data-g]').forEach(d => d.addEventListener('toggle', () => { abertos[d.dataset.g] = d.open; }));
   // campos bloqueados pelo portal
   for (const [k] of [...doPortal, ...foraDasRegras]) if (campoPortal(k).disabled) el.querySelectorAll(`[data-k="${CSS.escape(k)}"]`).forEach(i => { i.disabled = true; });
