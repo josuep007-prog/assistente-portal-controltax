@@ -2045,4 +2045,29 @@ t('conferência com a grade do portal: o mesmo valor em outro formato não é er
   ok('Faltou', 'faltou');
 });
 
+t('cargo novo: o que não existe na lista do Onvio vira pedido nas Observações; item existente ou parecido não pede nada', () => {
+  const def = rules.tipos.cadastroEmpregado;
+  assert.ok(def.itensNovos?.some(r => r.campo === 'cargo'), 'a regra do cargo existe');
+  const opcoes = { cargo: ['AUXILIAR ADMINISTRATIVO', 'ANALISTA FINANCEIRO', 'VENDEDOR'] };
+  const novos = E.itensNovos(def, { cargo: 'Gerente de Projetos', nome: 'MARIA SOUZA' }, opcoes);
+  assert.equal(novos.length, 1); assert.equal(novos[0].campo, 'cargo');
+  assert.match(novos[0].mensagem, /Gerente de Projetos/); assert.match(novos[0].mensagem, /MARIA SOUZA/); assert.match(novos[0].mensagem, /cadastro do cargo/);
+  assert.equal(E.itensNovos(def, { cargo: 'vendedor' }, opcoes).length, 0, 'existe (sem diferenciar maiúsculas)');
+  assert.equal(E.itensNovos(def, { cargo: 'VENDEDORR' }, opcoes).length, 0, 'quase igual a um existente: erro de digitação, não cargo novo');
+  assert.equal(E.itensNovos(def, { cargo: 'Analista' }, opcoes).length, 1, '"Analista" é mais genérico que o existente: é um cargo diferente');
+  assert.equal(E.itensNovos(def, { cargo: 'Gerente' }, { cargo: [] }).length, 0, 'sem a lista lida não dá para decidir');
+  assert.equal(E.itensNovos(def, { cargo: '' }, opcoes).length, 0);
+  assert.match(E.itensNovos(def, { cargo: 'Gerente' }, opcoes)[0].mensagem, /o funcionário/, 'sem nome: texto neutro');
+});
+
+t('cargo novo: as linhas automáticas entram, trocam e saem sem apagar o que a pessoa escreveu', () => {
+  const l1 = 'Solicito o cadastro do cargo "A".', l2 = 'Solicito o cadastro do cargo "B".';
+  assert.equal(E.juntarPedidosNovos('', [], [l1]), l1);
+  assert.equal(E.juntarPedidosNovos('Admissão urgente.', [], [l1]), 'Admissão urgente.\n' + l1);
+  assert.equal(E.juntarPedidosNovos('Admissão urgente.\n' + l1, [l1], [l2]), 'Admissão urgente.\n' + l2);
+  assert.equal(E.juntarPedidosNovos('Admissão urgente.\n' + l2, [l2], []), 'Admissão urgente.');
+  assert.equal(E.juntarPedidosNovos(l1, [l1], []), '');
+  assert.equal(E.juntarPedidosNovos('Texto', [l1], [l1]), 'Texto\n' + l1, 'linha que sumiu da observação é escrita de novo');
+});
+
 console.log(`\n${n} testes ok`);

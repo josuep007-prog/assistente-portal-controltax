@@ -100,6 +100,32 @@ function lembrarUltimoFoco() {
   for (const tipoEv of ['keydown', 'pointerdown']) document.addEventListener(tipoEv, (e) => { if (e.target?.closest?.('#fields')) S.pv.ultimaAcao = Date.now(); }, true);
 }
 
+/** Cargo (ou outro item de lista) digitado que ainda não existe no Onvio: escreve um pedido de cadastro nas Observações (regras: `itensNovos`) e tira
+ *  o valor do envio (o portal não o aceitaria). Se a pessoa trocar por um item que existe, a linha sai sozinha; o que ela escreveu nas Observações fica. */
+export function sincronizarPedidosNovos(tipo) {
+  const t = tipoDef(tipo); if (!t?.itensNovos?.length || !t.campos.observacoes) return;
+  const W = w(tipo);
+  const novos = E.itensNovos(t, valoresParaChecar(tipo), W.opcoes);
+  const linhas = novos.map(n => n.mensagem);
+  const antes = W.obsAuto || [];
+  W.itensNovos = Object.fromEntries(novos.map(n => [n.campo, n.valor]));
+  for (const r of t.itensNovos) {   // aviso embaixo do campo
+    const campoEl = document.querySelector(`#fields .field.pf[data-campo="${CSS.escape(r.campo)}"]`); if (!campoEl) continue;
+    let nota = campoEl.querySelector('.nn');
+    if (W.itensNovos[r.campo]) {
+      if (!nota) { nota = document.createElement('small'); nota.className = 'hint nn'; campoEl.appendChild(nota); }
+      nota.textContent = `Este ${r.rotulo || r.campo} ainda não existe no Onvio: escrevi um pedido de cadastro nas Observações. O valor não será enviado ao campo.`;
+    } else nota?.remove();
+  }
+  if (JSON.stringify(linhas) === JSON.stringify(antes)) return;
+  const atual = valorPlat(tipo, 'observacoes') || '';
+  const nova = E.juntarPedidosNovos(atual, antes, linhas);
+  W.obsAuto = linhas;
+  W.valores.observacoes = { valor: nova, conf: 1, fonte: 'você' }; W.editados.add('observacoes'); (W.fonteVerdade || (W.fonteVerdade = {})).observacoes = 'plataforma';
+  const ta = document.getElementById('f-observacoes'); if (ta && ta.value !== nova) ta.value = nova;
+  agendarEnvioPortal(tipo, 'observacoes'); atualizarEstadosPlat(tipo);
+}
+
 /** Texto de andamento da leitura das listas do Onvio (dentro do aviso do cadastro). */
 export function atualizarStatusListas(tipo) {
   const el = document.getElementById('av-listas-st'); const bt = document.getElementById('av-listas'); if (!el) return;
@@ -134,7 +160,7 @@ export async function carregarListas(tipo, refazer = false) {
       if (r?.options?.length) { W.opcoes[k] = r.options; const dl = document.getElementById(`dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
       S.pv.listas.n++; atualizarStatusListas(tipo); devolverFoco(null);
     }
-  } finally { S.pv.listas = null; atualizarStatusListas(tipo); devolverFoco(null); }
+  } finally { S.pv.listas = null; atualizarStatusListas(tipo); sincronizarPedidosNovos(tipo); devolverFoco(null); }
 }
 
 export function renderFormularioProprio(el, tipo) {
@@ -202,7 +228,7 @@ export function renderFormularioProprio(el, tipo) {
     ${calcBox(tipo)}`;
   atualizarPendentesAoVivo(tipo);
   $('#av-listas')?.addEventListener('click', () => carregarListas(tipo, true));
-  atualizarStatusListas(tipo);
+  atualizarStatusListas(tipo); sincronizarPedidosNovos(tipo);
   // lê as listas do Onvio sozinho, uma vez por pedido, assim que o formulário aparece (cadastros: as opções vêm do portal, não ao clicar)
   if (semAoVivo(tipo) && !W.listasAuto && Object.keys(pf).length) { W.listasAuto = true; setTimeout(() => carregarListas(tipo), 600); }
   el.querySelectorAll('details.pf-grupo[data-g]').forEach(d => d.addEventListener('toggle', () => { abertos[d.dataset.g] = d.open; }));
@@ -219,7 +245,7 @@ export function renderFormularioProprio(el, tipo) {
     const vivo = S.rules.config?.escritaAoVivo || {};
     const aoVivo = vivo.ativo !== false && !c?.somenteAssistente && (vivo.tipos || ['texto', 'textarea']).includes(c?.tipo);   // vai ao portal enquanto escreve
     inp.addEventListener('input', () => { maskInput(inp); marcar(k, inp.value); inp.classList.remove('found', 'low'); aoDigitar(); if (aoVivo) agendarEnvioPortal(tipo, k); });
-    inp.addEventListener('change', () => { if (c?.somenteAssistente) atualizarTextoNoPortal(tipo); else agendarEnvioPortal(tipo, k); });
+    inp.addEventListener('change', () => { if (c?.somenteAssistente) atualizarTextoNoPortal(tipo); else agendarEnvioPortal(tipo, k); if (tipoDef(tipo).itensNovos?.some(r => r.campo === k)) sincronizarPedidosNovos(tipo); });
     // listas do portal (motivos, cargos…): busca as opções quando o campo ganha o foco; se a busca falhou, tenta de novo na próxima vez
     if (c?.tipo === 'combo' && c.fc) inp.addEventListener('focus', async () => {
       if (W.opcoes[k]?.length || inp.dataset.buscando || S.pv.devolvendoFoco || semAoVivo(tipo)) return;   // cadastros: as listas só vêm pelo botão "Carregar listas do portal" (cada busca abre a lista do portal por baixo)
@@ -571,6 +597,7 @@ export async function fillPortal(tipo, { silencioso = false, daPlataforma = fals
     const def = campoDef(tipo, k);
     if (!def || def.somenteAssistente || !v?.valor) continue;
     if (ehSugestao(v)) continue;          // P1: lido com dúvida só vai quando o cliente toca em "Usar"
+    if (W.itensNovos?.[k]) continue;      // item que ainda não existe na lista do Onvio (ex.: cargo novo): vai como pedido nas Observações
     if (parcial && !so.includes(k) && !TEXTOS.includes(k) && !(v.calculado && noPortal(k) !== v.valor)) continue;
     // o que o cliente escreveu direto no portal fica como está
     if (noPortal(k) && noPortal(k) !== (W.ultimoPreenchido?.[k] ?? null) && noPortal(k) !== v.valor && W.fonteVerdade?.[k] !== 'plataforma') continue;

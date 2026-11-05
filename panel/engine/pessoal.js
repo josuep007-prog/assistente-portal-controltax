@@ -3,7 +3,7 @@
 import { CONECTORES, empregadoPorNome, nomeDepois } from './atestado.js';
 import { dataValida, fmtCPF, fmtDate, norm, onlyDigits, parseDate, validCPF } from './base.js';
 import { runPatterns } from './leitor.js';
-import { similarity } from './nomes.js';
+import { lev, similarity } from './nomes.js';
 import { escR, findDates, plain } from './textolivre.js';
 
 /* ---------- Endereço, UF junto do valor, sim/não e experiência ---------- */
@@ -398,4 +398,31 @@ export function summarizeDocument(analise, text) {
   if (id === 'comprovanteEndereco') { const a = extractAddress(text); return [a.endereco && `${a.endereco}, ${a.numero || ''}`, a.cep].filter(Boolean).join(' · '); }
   if (id === 'fichaAdmissao') return [v('nome'), v('cpf')].filter(Boolean).join(' · ');
   return '';
+}
+
+/* ---------- Itens digitados que ainda não existem numa lista do Onvio (ex.: um cargo novo) ---------- */
+/** Itens que a pessoa digitou numa lista do Onvio (regras: `tipos.X.itensNovos`) e que ainda não existem nela. Só decide com a lista já lida; um nome quase
+ *  igual a um item existente (erro de digitação) NÃO conta — aí vale o "Você quis dizer". Devolve [{ campo, valor, mensagem }] com a mensagem do escritório. */
+export function itensNovos(def, valores, opcoes) {
+  const out = [];
+  for (const r of def?.itensNovos || []) {
+    const valor = String(valores?.[r.campo] ?? '').trim();
+    const lista = opcoes?.[r.campo];
+    if (!valor || !lista?.length) continue;
+    const n = norm(valor);
+    if (lista.some(o => norm(o) === n)) continue;
+    // erro de digitação de um item que existe (poucas letras de diferença): não é item novo, vale o "Você quis dizer"
+    if (lista.some(o => { const m = norm(o); return Math.abs(m.length - n.length) <= 2 && lev(n, m) <= Math.max(1, Math.floor(Math.max(n.length, m.length) * (r.erroDigitacao ?? 0.1))); })) continue;
+    const mensagem = String(r.mensagem || '').replaceAll('{valor}', valor).replaceAll('{rotulo}', r.rotulo || r.campo).replaceAll('{nome}', String(valores?.nome ?? '').trim() || 'o funcionário');
+    out.push({ campo: r.campo, valor, mensagem });
+  }
+  return out;
+}
+/** Observações com as linhas automáticas de antes trocadas pelas de agora; o que a pessoa escreveu fica como está. */
+export function juntarPedidosNovos(obs, antes, agora) {
+  const linhas = String(obs ?? '').split('\n');
+  for (const a of antes || []) { const i = linhas.indexOf(a); if (i >= 0) linhas.splice(i, 1); }
+  let base = linhas.join('\n').replace(/\s+$/, '');
+  for (const m of agora || []) base += (base ? '\n' : '') + m;
+  return base;
 }
