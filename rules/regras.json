@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.06-3",
+  "versao": "2026.11.06-4",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -5614,6 +5614,7 @@
     "envioNaoConcluido": "O portal ainda não aceitou o envio: confira os avisos em vermelho na página e tente de novo.",
     "envioRecusadoPortal": "O portal não aceitou: {erros}. Corrija esses campos e envie de novo.",
     "portalAcusa": "O portal acusa: {mensagem}",
+    "portalPede": "O portal pede: {mensagem}",
     "listaCarregando": "O portal ainda está carregando a lista deste campo — tentei de novo",
     "anexoRecusado": "O portal não aceitou este arquivo (formato ou tamanho?)",
     "opcaoAproximada": "Escolhi a mais parecida: {escolhida} (no documento: {pedido}) — confira",

@@ -3,7 +3,7 @@ import * as E from '../engine.js';
 import { $, P, S, debounce, esc, icon, request, send, toast, semAoVivo } from './base.js';
 import { anexosAtuais, gerarTextos, portalValores, valoresAssistente, valoresParaChecar } from './valores.js';
 import { apagarRascunho, salvarRascunhoAgora } from './facilidades.js';
-import { avisosExtras, botaoModelo, camposAusentes, fillPortal, gerarPeloModelo, renderFillResult, updateChecks } from './formulario.js';
+import { MSG_GENERICA_PORTAL, avisosExtras, botaoModelo, camposAusentes, erroEhCampoVazio, fillPortal, gerarPeloModelo, renderFillResult, updateChecks } from './formulario.js';
 import { empresaDoPedido, openTipo } from './inicio.js';
 import { loteAoFecharFormulario, renderLote } from './lote.js';
 import { msgAproximada, render, rotuloDe, setView, tipoDef, w } from './modo.js';
@@ -178,7 +178,10 @@ export function naoAceitosPeloPortal(tipo, form) {
   const out = Object.entries(W.fonteVerdade || {}).filter(([k, o]) => o === 'plataforma' && f[k]?.existe && !f[k].disabled && W.valores[k]?.valor && E.norm(f[k].valor) !== E.norm(W.valores[k].valor))
     .map(([k]) => ({ nivel: 'atencao', grupo: 'Portal', campo: k, mensagem: `${rotuloDe(tipo, k)}: o portal está com “${f[k].valor || 'vazio'}”, e não com “${W.valores[k].valor}”. Confira esse campo.` }));
   // erros de validação que o próprio portal mostra (só rótulo e mensagem)
-  for (const e of form?.erros || []) out.push({ nivel: 'erro', grupo: 'Portal', campo: e.k || null, mensagem: `${e.rotulo}: ${(S.rules.mensagens?.portalAcusa || 'O portal acusa: {mensagem}').replace('{mensagem}', e.mensagem)}` });
+  for (const e of form?.erros || []) {
+    if (erroEhCampoVazio(tipo, e)) { if (e.mensagem !== MSG_GENERICA_PORTAL) out.push({ nivel: 'erro', grupo: 'Portal', campo: e.k || null, mensagem: `${e.rotulo}: ${(S.rules.mensagens?.portalPede || 'O portal pede: {mensagem}').replace('{mensagem}', e.mensagem)}` }); continue; }   // vazio e sem mensagem: já aparece em "Falta preencher"
+    out.push({ nivel: 'erro', grupo: 'Portal', campo: e.k || null, mensagem: `${e.rotulo}: ${(S.rules.mensagens?.portalAcusa || 'O portal acusa: {mensagem}').replace('{mensagem}', e.mensagem)}` });
+  }
   // opção parecida escolhida na lista: o cliente confere
   for (const [k, a] of Object.entries(W.aproximadas || {})) if (f[k]?.valor && E.norm(f[k].valor) === E.norm(a.escolhida)) out.push({ nivel: 'atencao', grupo: 'Portal', campo: k, mensagem: `${rotuloDe(tipo, k)}: ${msgAproximada(a)}` });
   return out;
