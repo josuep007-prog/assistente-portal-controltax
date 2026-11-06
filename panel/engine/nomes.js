@@ -29,6 +29,8 @@ export function bestMatch(value, options, min = 0.72) {
   for (const o of options || []) { const s = similarity(value, o); if (s > score) { score = s; best = o; } }
   return score >= min ? { option: best, score } : null;
 }
+const PARTICULAS = new Set(['DOS', 'DAS', 'DEL', 'VAN', 'VON', 'DER', 'DEN']);
+
 /** Procura no texto qual funcionário da lista aparece (nome completo ou quase). */
 export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = {}) {
   const T = ' ' + norm(text) + ' ';
@@ -36,10 +38,11 @@ export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = 
   for (const e of employees || []) {
     const E = norm(e); if (!E) continue;
     if (T.includes(' ' + E + ' ')) return { option: e, score: 1 };
-    const toks = E.split(' ').filter(t => t.length > 2);
+    const toks = E.split(' ').filter(t => t.length > 2 && !PARTICULAS.has(t));   // "dos", "das"… não identificam ninguém
     const hit = toks.filter(t => T.includes(' ' + t + ' ')).length;
     const s = toks.length ? hit / toks.length : 0;
-    if (toks.length >= 2 && s >= 0.66) {
+    // sem o primeiro nome, só vale com dois nomes em comum (dependente: "RIOS DUARTE"); um sobrenome só ("Arthur dos Santos" × "Jaqueline dos Santos") não é a mesma pessoa
+    if (toks.length >= 2 && s >= 0.66 && (hit >= 2 || T.includes(' ' + toks[0] + ' '))) {
       if (!best || s > best.bruto) { best = { option: e, score: Math.min(0.8, s * 0.95), bruto: s }; empates.clear(); }   // nome incompleto: até 0,8
       else if (s === best.bruto && best.option !== e) empates.add(e);
     }

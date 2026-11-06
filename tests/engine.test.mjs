@@ -296,6 +296,12 @@ t('opcaoMarcada entende (X), [x], ☒ e a marca depois da opção', () => {
   assert.equal(E.opcaoMarcada('(X) Típico (X) Trajeto', ['Típico', 'Trajeto']), null, 'duas marcadas: não escolhe');
 });
 
+t('mesmo sobrenome com primeiro nome diferente não é a mesma pessoa', () => {
+  const txt = 'Atesto que ARTHUR DOS SANTOS esteve em consulta.';
+  assert.equal(E.findEmployeeInText(txt, ['JAQUELINE DOS SANTOS', 'ANA RITA']), null, 'só "dos Santos" em comum não serve');
+  assert.equal(E.findEmployeeInText(txt, ['JAQUELINE DOS SANTOS', 'ARTHUR DOS SANTOS SILVA']).option, 'ARTHUR DOS SANTOS SILVA');
+});
+
 t('empate de nome: pergunta em vez de decidir pela ordem da lista', () => {
   const txt = 'Eu, JOSE CARLOS, venho pedir demissão.';
   const lista = ['JOSE CARLOS DA SILVA', 'JOSE CARLOS DA COSTA'];
