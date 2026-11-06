@@ -491,7 +491,10 @@ export function analisarItem(item, tipo, empregados = []) {
   if (cfgNome.ativo !== false && alvo && item.nome && a.campos) {
     const def = tipoDef(alvo)?.campos || {};
     const dicas = E.dicasDoNomeDoArquivo(item.nome, empregados, E.today());
-    const poe = (k, valor) => { if (valor != null && def[k] && !a.campos[k]?.valor) a.campos[k] = { valor: String(valor), conf: cfgNome.confianca ?? 0.5, fonte: 'nome do arquivo (confira)' }; };
+    const poe = (k, valor) => { const atual = a.campos[k];
+      // o arquivo completa o que a leitura não achou e também troca uma leitura em dúvida (abaixo do limiar do portal) que discorda dele
+      const duvida = atual?.valor && (atual.conf ?? 1) < E.limiarPortal(S.rules) && String(atual.valor) !== String(valor);
+      if (valor != null && def[k] && (!atual?.valor || duvida)) a.campos[k] = { valor: String(valor), conf: cfgNome.confianca ?? 0.5, fonte: 'nome do arquivo (confira)' }; };
     poe('empregado', dicas.empregado); poe('dataAfastamento', dicas.data); poe('dias', dicas.dias);
   }
   return a;
