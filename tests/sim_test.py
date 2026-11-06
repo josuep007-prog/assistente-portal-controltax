@@ -1598,13 +1598,15 @@ async def teste_cancelar_cadastro(b):
     await ctx.close()
 
 async def teste_ocr_tempo(b):
-    """Medição (e guarda) da leitura de foto de atestado: foto grande de celular, torta e com sombra (fictícia, feita aqui a partir do exemplo)."""
-    print('\n[ocr] tempo de leitura de fotos de atestado')
-    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    """2.32.0: foto grande de celular é reduzida antes do OCR, lê em poucas tentativas e o diagnóstico traz tamanho, tentativas e tempo (sem conteúdo)."""
+    print('\n[ocr] foto grande de atestado: reduzida, poucas tentativas, tempo no diagnóstico')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900}, permissions=['clipboard-read', 'clipboard-write'])
     pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
     await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
     pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
-    JS = """async ([nome, larg, alt, graus, sombra, lado]) => {
+    JS = """async ([nome, larg, alt, graus, sombra]) => {
       const m = await import('./extract.js');
       const base = await (await fetch('../exemplos/' + nome)).blob();
       const bmp = await createImageBitmap(base);
@@ -1616,19 +1618,42 @@ async def teste_ocr_tempo(b):
       if (sombra) { const g = c.createLinearGradient(0, 0, larg, 0); g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(0.6, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, larg, alt); }
       const blob = await cv.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
       const file = new File([blob], 'foto.jpg', { type: 'image/jpeg' });
-      self.__ctOcrLog = [];
       const t0 = performance.now();
       let r, erro = '';
-      try { r = await m.readFile(file, () => {}, { ocr: true, ocrLadoMax: lado }); } catch (e) { erro = String(e?.motivo || e?.message || e); }
-      const ms = Math.round(performance.now() - t0);
-      const palavras = r ? (r.texto.match(/atest|paciente|dias|cid|afast/gi) || []).length : 0;
-      return { ms, erro, palavras, conf: r?.confianca, rot: r?.rotacao, tentativas: self.__ctOcrLog.length, diag: r?.diag || null, tam: file.size };
+      try { r = await m.readFile(file, () => {}, { ocr: true }); } catch (e) { erro = String(e?.motivo || e?.message || e); }
+      return { ms: Math.round(performance.now() - t0), erro, palavras: r ? (r.texto.match(/atest|paciente|dias|cid|afast/gi) || []).length : 0, diag: r?.diag || null };
     }"""
-    for lado in (6000, 3000, 2400, 2000):
-        print('   --- lado máximo', lado)
-        for args in (['atestado-foto.png', 4032, 3024, 0, False], ['atestado-foto.png', 4032, 3024, 4, True], ['atestado-girado.jpg', 4032, 3024, 2, True], ['atestado-foto.png', 1600, 1200, 0, False]):
-            r = await pn.evaluate(JS, args + [lado])
-            print('  ', args[:3], args[3:5], '->', {k: r[k] for k in ('ms', 'palavras', 'conf', 'rot', 'tentativas', 'erro')}, r['diag'] and (r['diag'].get('reduzida'), r['diag'].get('lado')))
+    for args, rotulo in ((['atestado-foto.png', 4032, 3024, 0, False], 'foto reta 4032×3024'), (['atestado-foto.png', 4032, 3024, 4, True], 'foto torta e com sombra'), (['atestado-girado.jpg', 4032, 3024, 2, True], 'foto girada')):
+        r = await pn.evaluate(JS, args)
+        d = r['diag'] or {}
+        print(f'   {rotulo}: {r["ms"]} ms, {d.get("tentativas")} tentativa(s), lado {d.get("lado")}')
+        check(not r['erro'] and r['palavras'] >= 3, f'ocr: {rotulo} é lida (palavras de documento: {r["palavras"]}, erro: {r["erro"] or "-"})')
+        check(d.get('reduzida') is True and d.get('lado', 9999) <= 2400, f'ocr: {rotulo} é reduzida antes do OCR (lado {d.get("lado")})')
+        check((d.get('tentativas') or 9) <= 2, f'ocr: {rotulo} lê em até 2 tentativas ({d.get("tentativas")})')
+    # o diagnóstico traz o tamanho, as tentativas e o tempo do arquivo lido pela tela (nada do conteúdo)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="afastamento"]'); await pg.wait_for_timeout(2500)
+    await pg.evaluate("""async () => { const r = await fetch('exemplos/atestado-foto.png'); window.__ctSim.hooks().sendFiles([new File([await r.blob()], 'atestado-foto.png', { type: 'image/png' })]); }""")
+    diag = ''
+    for _ in range(40):
+        await pg.wait_for_timeout(1500)
+        await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(600)
+        await pn.click('#diag'); await pg.wait_for_timeout(500)
+        diag = await pg.evaluate("navigator.clipboard.readText()")
+        if 'tentativa(s)' in diag: break
+        await pn.click('#rail [data-mod="preencher"]')
+    linha = next((l for l in diag.splitlines() if l.startswith('Arquivos:')), '')
+    check('tentativa(s)' in linha and 'nota ' in linha, f'ocr: o diagnóstico traz tentativas e tempo do arquivo lido ({linha[:140]!r})')
+    check('atestado-foto' not in linha, 'ocr: o diagnóstico não traz o nome do arquivo')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
 async def teste_sair_do_pedido(b):
@@ -2670,7 +2695,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2707,6 +2732,7 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_ocr_tempo(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
         async with async_playwright() as p:
@@ -3075,7 +3101,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
