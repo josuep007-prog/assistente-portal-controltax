@@ -1,6 +1,7 @@
 // Motor de regras — Plataforma: solicitações, equipe, conversa, atenção, prazos legais e observações.
 // Puro (sem DOM). Veja panel/engine.js (reexporta tudo) e docs/arquitetura.md.
 import { addDays, diffDays, fmtDate, iso, makeCalendar, norm, onlyDigits, parseDate, today, weekday } from './base.js';
+import { empregadoPorNome } from './atestado.js';
 import { renderTemplate } from './modelos.js';
 import { mesAno } from './planilhas.js';
 import { diaUtilAntes, pagamentoFerias, pagamentoRescisao } from './prazos.js';
@@ -60,7 +61,7 @@ export function normalizarSolicitacao(it, tipo, regras, hoje = today()) {
     aguardando: estado === 'aguardando',
     empregado: texto1(it?.clientEmployeeExpanded?.name, it?.employee?.name, it?.employeeName, it?.selectedEmployee?.name, it?.payrollEntryClientEmployeeExpanded?.name, typeof it?.employee === 'string' ? it.employee : null, it?.name),
     responsavel: texto1(it?.staffResponsibleExpanded?.name),
-    empresa: texto1(it?.clientExpanded?.name), empresaApelido: texto1(it?.clientExpanded?.nickname),
+    empresa: texto1(it?.clientExpanded?.name), empresaApelido: texto1(it?.clientExpanded?.nickname), empresaId: texto1(it?.companyId, it?.clientExpanded?.id),
     assunto: texto1(it?.subject, it?.title, typeof it?.description === 'string' && it.description.length < 140 ? it.description : null),
     atualizado, parado,
     criado: parseDate(texto1(it?.created, it?.createdAt)),
@@ -99,7 +100,9 @@ export function empresasParaEscolha(itens, empresaAtual, conhecidas = [], apelid
     if (!norm(nome)) return null;
     const ap = norm(apelido);
     let e = ap ? lista.find(x => norm(x.apelido) === ap) : null;
-    if (!e) e = lista.find(x => norm(x.nome) === norm(nome) && (!ap || !x.apelido));   // mesmo nome ainda sem apelido (ou o mesmo): junta
+    const semCodigo = (a) => !/\d{4}-\d{2}/.test(a || '');
+    if (!e) e = lista.find(x => norm(x.nome) === norm(nome) && (!ap || !x.apelido || semCodigo(x.apelido) || semCodigo(apelido)));   // mesmo nome ainda sem apelido (ou com apelido sem código): junta
+    if (e && apelido && semCodigo(e.apelido) && !semCodigo(apelido)) e.apelido = apelido;   // o apelido com código é o completo
     if (!e) { e = { nome, apelido: '', abertas: 0, esperam: 0 }; lista.push(e); }
     if (apelido && !e.apelido) e.apelido = apelido;
     return e;
@@ -708,4 +711,23 @@ export function movimentoSemanal(itens, hoje = today(), regras = null) {
   const resposta = { n: todos.length, mediana: mediana(todos), media: todos.length ? todos.reduce((a, b) => a + b, 0) / todos.length : null, ok: todos.length >= minResp };
   return { ok: total >= minimo, minimo, total, semanas, resposta,
     abertas: semanas.reduce((a, s) => a + s.abertas, 0), concluidas: semanas.reduce((a, s) => a + s.concluidas, 0) };
+}
+
+/* ---------------- De qual empresa é o funcionário ---------------- */
+/** Procura um nome (do atestado, da ficha ou do nome do arquivo) entre os funcionários de TODAS as empresas do acesso.
+ *  indice: [{ empresa: { nome, apelido }, nomes: [...] }]. Usa o mesmo comparador tolerante do paciente do atestado.
+ *  Devolve { tipo: 'unica' | 'varias' | 'nenhuma', hits: [{ empresa, funcionario, score }] }:
+ *   - unica: uma empresa com o nome igual ou só com os dois primeiros nomes (score ≥ min, 0,7), ou uma bem à frente das outras;
+ *   - varias: o mesmo nome em mais de uma empresa (quem decide é a pessoa);
+ *   - nenhuma: ninguém com esse nome (ou só parecido demais). */
+export function empresaDoFuncionario(nome, indice, min = 0.7) {
+  const hits = [];
+  for (const e of indice || []) {
+    const r = empregadoPorNome(nome, e.nomes || []);
+    if (r?.option && !r.candidatos && (r.score ?? 0) >= min && !r.contradiz) hits.push({ empresa: e.empresa, funcionario: r.option, score: r.score });
+  }
+  hits.sort((a, b) => b.score - a.score);
+  if (!hits.length) return { tipo: 'nenhuma', hits: [] };
+  if (hits.length === 1 || hits[0].score - hits[1].score >= 0.1) return { tipo: 'unica', hits: [hits[0]] };
+  return { tipo: 'varias', hits };
 }

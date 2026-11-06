@@ -11,6 +11,7 @@
   // as outras empresas do mesmo login (inventadas), cada uma com os seus funcionários
   var OUTRA = 'COMERCIO MODELO DE ALIMENTOS LTDA', TERCEIRA = 'OFICINA FICTICIA DE SERVICOS ME';
   var FUNC_EMPRESA = {}, BASE_FUNC = null;
+  var CID = {}; CID[EMPRESA_BASE] = 'sim-0001'; CID[OUTRA] = 'sim-0002'; CID[TERCEIRA] = 'sim-0003';   // id de cada empresa (o que o portal usa em /clients/<id>)
   var APELIDO_COD = {}; APELIDO_COD[EMPRESA_BASE] = 'EXEMPLO | 0001-19'; APELIDO_COD[OUTRA] = 'MODELO | 0002-37'; APELIDO_COD[TERCEIRA] = 'OFICINA | 0003-55';
   FUNC_EMPRESA[OUTRA] = ['CARLOS EDUARDO PAIVA', 'DEBORA SANTANA', 'ELISA MARTINS', 'FERNANDO GOUVEIA', 'GISELE TAVARES'];
   FUNC_EMPRESA[TERCEIRA] = ['HUGO BARRETO', 'IRENE COUTINHO', 'JULIO CESAR NETO'];
@@ -185,7 +186,17 @@
       return Promise.resolve(EMP5.map(function (n) { return { name: n, status: 'Ativo', hireDate: admissao(n), cpf: cpfFicticio(n) }; })
         .concat(DESLIGADOS.map(function (n) { return { name: n, status: 'Demitido', hireDate: '2021-03-01', cpf: cpfFicticio(n) }; })));
     },
-    clientId: function () { return 'sim-0001'; },
+    clientId: function () { return CID[EMPRESA] || 'sim-0001'; },
+    // funcionários de outras empresas do acesso (a chamada /clients/<id>/employees de cada uma): só nomes
+    empregadosDeEmpresas: function (pedidos) {
+      var por = {};
+      pedidos.forEach(function (p) {
+        var nome = Object.keys(CID).filter(function (n) { return CID[n] === p.id; })[0];
+        var lista = nome === EMPRESA_BASE ? (BASE_FUNC ? BASE_FUNC.e5 : EMP5) : FUNC_EMPRESA[nome];
+        por[p.chave] = lista ? { ok: true, nomes: lista.slice() } : { ok: false, status: 404 };
+      });
+      return Promise.resolve({ ok: true, porEmpresa: por });
+    },
     // trâmites: {base}/{id}/topics (o id é o GUID do item)
     // (texto longo inventado, para testar o "Ver mais" da conversa)
     tramites: function (base, guid) {
@@ -267,7 +278,7 @@
   function isoDe(br, menosDias) { var m = String(br || '').match(/(\d{2})\/(\d{2})\/(\d{4})/); var d = m ? new Date(+m[3], +m[2] - 1, +m[1], 10, 0) : new Date(); d.setDate(d.getDate() - (menosDias || 0)); return d.toISOString().slice(0, 19); }
   function itemApi(slug, r) {
     var cod = codigoDe(slug, r.status), quando = isoDe(r.data, 0);
-    var it = { id: guidDe(r.id), identifier: r.id, genericStatus: cod, created: isoDe(r.data, 2), subject: r.assunto, clientExpanded: r.empresa ? { code: r.empresa.length, name: r.empresa, nickname: r.apelido || '' } : { code: 1, name: EMPRESA_BASE, nickname: 'EXEMPLO' } };
+    var it = { id: guidDe(r.id), companyId: CID[r.empresa || EMPRESA_BASE] || 'sim-0001', identifier: r.id, genericStatus: cod, created: isoDe(r.data, 2), subject: r.assunto, clientExpanded: r.empresa ? { code: r.empresa.length, name: r.empresa, nickname: r.apelido || '' } : { code: 1, name: EMPRESA_BASE, nickname: 'EXEMPLO' } };
     if (FAMILIA[slug] === 'rubricas') it.genericLastUpdated = quando; else it.lastUpdated = quando;
     if (r.competencia) { var cm = String(r.competencia).match(/(\d{2})\/(\d{4})/); if (cm) it.effectiveDate = cm[2] + '-' + cm[1] + '-01T00:00:00'; }   // competência (Rubricas)
     if (FAMILIA[slug] === 'cadastro') { it.name = r.empregado; it.clientStatus = cod; }

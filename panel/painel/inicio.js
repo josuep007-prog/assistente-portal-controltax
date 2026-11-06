@@ -5,6 +5,7 @@ import { FAMILIAS, analisarItem, applyAnalysis, esperar, handleVarios, processIt
 import { PAR_AVISO, fillPortal } from './formulario.js';
 import { comecarDoZeroSeAbandonado, renderAvisosInicio, renderExperiencia, renderFaq, renderRepetir } from './facilidades.js';
 import { empregadosDaEmpresa, empregadosPara, loadEmpregados, render, setView, tipoDef, w } from './modo.js';
+import { empresaDosDocumentos } from './empresaFunc.js';
 import { gerarTextos } from './valores.js';
 import { renderFilesOnly } from './preencher.js';
 import { renderModelosInicio } from './portal.js';
@@ -216,6 +217,22 @@ export function renderContextBanner() {
 
 /** Pergunta para qual empresa é o pedido (se o acesso tem mais de uma) e troca no portal. Quem prepara dados antes de
  *  abrir o formulário chama isto primeiro: se o cliente desistir, nada fica preparado. false = desistiu ou a troca falhou. */
+/** Empresa do pedido a partir dos documentos: se o funcionário é de uma empresa só (entre todas as do acesso), troca para ela e avisa; se é de mais de uma ou
+ *  não se sabe, pergunta como antes (com a mais provável marcada). Devolve false se a pessoa desistiu ou a troca não foi confirmada. */
+export async function empresaDoPedidoPeloDocumento(tipo, itens) {
+  if (standalone || !P?.escolherEmpresa || (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) return empresaDoPedido(tipo);
+  let achou = null;
+  try { achou = await empresaDosDocumentos(itens); } catch { /* sem o índice: pergunta como antes */ }
+  if (achou?.tipo === 'unica') {
+    const { empresa, funcionario } = achou.hits[0];
+    const ok = await P.escolherEmpresa({ tipo, empresa: empresa.nome, apelido: empresa.apelido });
+    if (ok) toast(`${funcionario.split(' ').slice(0, 2).join(' ')} é da empresa ${empresa.apelido || empresa.nome}: troquei para ela.`);
+    return ok;
+  }
+  if (achou?.tipo === 'atual') return empresaDoPedido(tipo);
+  return empresaDoPedido(tipo, { sugerida: achou?.hits?.[0]?.empresa?.nome || '' });
+}
+
 export async function empresaDoPedido(tipo, { sugerida = '' } = {}) {
   if (standalone || (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) || !P?.escolherEmpresa) return true;
   return !!(await P.escolherEmpresa({ tipo, sugerida }));
@@ -241,9 +258,10 @@ export async function openTipo(tipo, { manter = false, semEmpresa = false, suger
  *  funcionários desta solicitação. Vale para "Abrir … e preencher" e para o tipo que o cliente escolheu quando o
  *  documento não foi reconhecido — o arquivo não se perde. */
 export async function abrirComArquivos(tipo, s) {
-  if (!(await empresaDoPedido(tipo))) return false;      // desistiu da empresa: o cartão continua na tela
   const todos = [s.item, ...(s.extras || [])].filter(Boolean);
   for (let k = 0; k < 300 && todos.some(x => x.status === 'lendo'); k++) await esperar(200);   // ainda lendo: espera terminar
+  // de qual empresa é o funcionário do documento? Achou uma só: troca para ela; senão pergunta (já com a provável marcada)
+  if (!(await empresaDoPedidoPeloDocumento(tipo, todos))) return false;      // desistiu da empresa: o cartão continua na tela
   comecarDoZeroSeAbandonado(tipo);
   juntarArquivos(w(tipo), todos);
   if (S.sugestao === s) S.sugestao = null;
