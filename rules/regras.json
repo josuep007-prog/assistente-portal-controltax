@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.05-3",
+  "versao": "2026.11.06-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -1632,6 +1632,8 @@
       "comparecimento"
     ],
     "ocrMaxPaginas": 8,
+    "ocrLadoMax": 2400,
+    "ocrTempoMaxSeg": 45,
     "regra60dias": {
       "_comentario": "Decreto 3.048/99, art. 75: atestados do mesmo funcionário em que um começa até janelaDias depois do retorno do anterior se somam (mesma doença); passando de limiteDias, pergunta \"É a mesma doença?\" e, se sim, sugere tipoSugerido e põe a conta na descrição. Vale no lote e no histórico enviado deste computador. Decisão do escritório: a regra, o tipo e se a pergunta aparece (perguntar: false desliga).",
       "revisarComEscritorio": true,
@@ -5645,6 +5647,7 @@
     "leituraTiff": "Imagem TIFF eu não consigo ler. Abra o arquivo, tire um print da tela e cole aqui com Ctrl+V — ou salve como JPG ou PDF.",
     "leituraPdfSenha": "Este PDF tem senha e eu não consigo abrir. Abra o PDF (com a senha) e use Imprimir → Salvar como PDF: o arquivo novo fica sem senha.",
     "leituraImagem": "Não consegui abrir esta imagem. Abra o arquivo, tire um print da tela e cole aqui com Ctrl+V.",
+    "leituraTempo": "A leitura de “{arquivo}” demorou mais que o limite. Tire outra foto com mais luz e de frente (ou envie o PDF), ou escolha o pedido e eu anexo o arquivo assim mesmo.",
     "leituraFalhou": "Não consegui ler “{arquivo}”. Escolha o pedido e eu anexo o arquivo assim mesmo.",
     "leituraPaginas": "Li {lidas} de {total} páginas de “{arquivo}” (o limite é {limite}). Se o que importa está depois, mande essas páginas num arquivo separado.",
     "certidaoDependente": "Certidão de nascimento de {nome}{data}: se for filho(a) do funcionário, marque “Possui dependentes” — o escritório cadastra o dependente.",

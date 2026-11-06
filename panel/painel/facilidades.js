@@ -77,6 +77,14 @@ export const salvarRascunho = debounce(async (tipo, empresa) => {
   await gravarRascunhos([{ tipo, empresa, dados: rascunhoDe(W) }]);
 }, 900);
 
+/** Tamanhos, tentativas e tempo da leitura de um arquivo (nada do conteúdo): para o "Copiar diagnóstico". */
+export function textoDiagLeitura(d) {
+  if (!d) return '';
+  const seg = (ms) => `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+  if (d.paginasOcr) return `${d.paginasOcr} página(s) por OCR, ${d.tentativas} tentativa(s), ${seg(d.ms)}${d.tempoEsgotado ? ', parou no limite de tempo' : ''}`;
+  return `${d.larg}×${d.alt}${d.reduzida ? ' → ' + d.lado + ' px' : ''}, ${d.tentativas} tentativa(s), ${seg(d.ms)}, nota ${d.nota}${d.tempoEsgotado ? ', parou no limite de tempo' : ''}`;
+}
+
 export async function apagarRascunho(tipo, empresa = S.ctx.empresa) {
   const { rascunhos = {} } = await chrome.storage.local.get('rascunhos');
   if (rascunhos[`${empresa}|${tipo}`]) { delete rascunhos[`${empresa}|${tipo}`]; await chrome.storage.local.set({ rascunhos }); }
@@ -262,7 +270,7 @@ export async function textoDiagnostico() {
     tipo && S.ctx.form?.erros?.length ? `Recusados pelo portal: ${S.ctx.form.erros.map(e => e.fc || e.k || '?').join(', ')}` : '',
     tipo ? `Listas carregadas: ${Object.entries(W.opcoes).map(([k, o]) => `${k}=${o.length}`).join(' ') || 'nenhuma'} · empregados=${W.empregados.length} · tela diferente: ${telaDiferente(tipo) ? 'sim' : 'não'}` : '',
     tipo && W.resultados?.resultados ? `Último preenchimento: ${W.resultados.resultados.filter(x => x.ok).length} ok; falhas: ${W.resultados.resultados.filter(x => !x.ok).map(x => `${x.campo} (${semValores(x.motivo)})`).join('; ') || 'nenhuma'}` : '',
-    tipo ? `Arquivos: ${W.arquivos.map((a, i) => `#${i + 1} ${a.metodo || '?'}${a.confianca != null ? ' conf ' + a.confianca : ''}${a.rotacao ? ' girado ' + a.rotacao + '°' : ''} → ${a.documento || 'não reconhecido'}`).join(' · ') || 'nenhum'}` : '',
+    tipo ? `Arquivos: ${W.arquivos.map((a, i) => `#${i + 1} ${a.metodo || '?'}${a.confianca != null ? ' conf ' + a.confianca : ''}${a.rotacao ? ' girado ' + a.rotacao + '°' : ''}${a.diagLeitura ? ' [' + textoDiagLeitura(a.diagLeitura) + ']' : ''}${a.falhou ? ' FALHOU' : ''} → ${a.documento || 'não reconhecido'}`).join(' · ') || 'nenhum'}` : '',
     tipo ? `Verificações: ${S.pv.lastChecks.filter(i => i.nivel === 'erro' || i.nivel === 'atencao').map(i => `${i.nivel}:${i.campo || i.grupo}`).join(' ') || 'nenhuma pendência'}` : ''
   ].filter(Boolean).join('\n');
 }

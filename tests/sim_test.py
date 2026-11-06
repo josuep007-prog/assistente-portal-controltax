@@ -1597,6 +1597,40 @@ async def teste_cancelar_cadastro(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def teste_ocr_tempo(b):
+    """Medição (e guarda) da leitura de foto de atestado: foto grande de celular, torta e com sombra (fictícia, feita aqui a partir do exemplo)."""
+    print('\n[ocr] tempo de leitura de fotos de atestado')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    JS = """async ([nome, larg, alt, graus, sombra, lado]) => {
+      const m = await import('./extract.js');
+      const base = await (await fetch('../exemplos/' + nome)).blob();
+      const bmp = await createImageBitmap(base);
+      const cv = new OffscreenCanvas(larg, alt); const c = cv.getContext('2d');
+      c.fillStyle = '#6b5a45'; c.fillRect(0, 0, larg, alt);
+      c.translate(larg / 2, alt / 2); c.rotate(graus * Math.PI / 180);
+      const k = Math.min(larg * 0.9 / bmp.width, alt * 0.9 / bmp.height);
+      c.drawImage(bmp, -bmp.width * k / 2, -bmp.height * k / 2, bmp.width * k, bmp.height * k); c.setTransform(1, 0, 0, 1, 0, 0);
+      if (sombra) { const g = c.createLinearGradient(0, 0, larg, 0); g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(0.6, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, larg, alt); }
+      const blob = await cv.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+      const file = new File([blob], 'foto.jpg', { type: 'image/jpeg' });
+      self.__ctOcrLog = [];
+      const t0 = performance.now();
+      let r, erro = '';
+      try { r = await m.readFile(file, () => {}, { ocr: true, ocrLadoMax: lado }); } catch (e) { erro = String(e?.motivo || e?.message || e); }
+      const ms = Math.round(performance.now() - t0);
+      const palavras = r ? (r.texto.match(/atest|paciente|dias|cid|afast/gi) || []).length : 0;
+      return { ms, erro, palavras, conf: r?.confianca, rot: r?.rotacao, tentativas: self.__ctOcrLog.length, diag: r?.diag || null, tam: file.size };
+    }"""
+    for lado in (6000, 3000, 2400, 2000):
+        print('   --- lado máximo', lado)
+        for args in (['atestado-foto.png', 4032, 3024, 0, False], ['atestado-foto.png', 4032, 3024, 4, True], ['atestado-girado.jpg', 4032, 3024, 2, True], ['atestado-foto.png', 1600, 1200, 0, False]):
+            r = await pn.evaluate(JS, args + [lado])
+            print('  ', args[:3], args[3:5], '->', {k: r[k] for k in ('ms', 'palavras', 'conf', 'rot', 'tentativas', 'erro')}, r['diag'] and (r['diag'].get('reduzida'), r['diag'].get('lado')))
+    await ctx.close()
+
 async def teste_sair_do_pedido(b):
     """2.27.0: sair do pedido pela extensão (outro tipo, outra aba) leva o portal de volta à lista do tipo; "Continuar o pedido" reabre e preenche de novo."""
     print('\n[sair] o portal sai do formulário junto com a extensão')
@@ -2668,6 +2702,11 @@ async def main():
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'ocr':
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_ocr_tempo(b); await b.close()
         return
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
         async with async_playwright() as p:
