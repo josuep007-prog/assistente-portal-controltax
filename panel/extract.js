@@ -38,15 +38,18 @@ let ocrProgress = () => {};
 async function getOcr() {
   if (ocrWorker) return ocrWorker;
   await loadScript(chrome.runtime.getURL('lib/tesseract/tesseract.min.js'));
-  ocrWorker = await self.Tesseract.createWorker('por', 1, {
+  let eu = null;
+  const w = await self.Tesseract.createWorker('por', 1, {
     workerPath: chrome.runtime.getURL('lib/tesseract/worker.min.js'),
     corePath: chrome.runtime.getURL('lib/tesseract/core'),
     langPath: chrome.runtime.getURL('lib/tesseract/lang'),
     workerBlobURL: false,
     gzip: true,
     cacheMethod: 'none',
-    logger: (m) => { if (m.status === 'recognizing text') ocrProgress(m.progress); }
+    // só o motor atual reporta andamento: um motor abandonado (leitura pulada ou que passou do tempo) ainda termina o que fazia e não pode mexer na leitura nova
+    logger: (m) => { if (m.status === 'recognizing text' && eu && eu === ocrWorker) ocrProgress(m.progress); }
   });
+  eu = w; ocrWorker = w;
   return ocrWorker;
 }
 /** Fotos de celular: gira (0/90/180/270), aumenta se for pequena, passa para tons de cinza e estica o contraste.

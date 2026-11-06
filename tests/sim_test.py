@@ -1699,7 +1699,6 @@ async def teste_pular_leitura(b):
     pg = await ctx.new_page()
     erros = []
     pg.on('pageerror', lambda e: erros.append(str(e)))
-    pg.on('console', lambda m: print('   [console]', m.text[:160]) if m.type == 'error' else None)
     await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
     pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
     async def _auto():
@@ -1740,47 +1739,9 @@ async def teste_pular_leitura(b):
     for _ in range(60):
         if 'lido por OCR' in await pn.locator('#files').inner_text(): ok = True; break
         await pg.wait_for_timeout(500)
-    if not ok:
-        print('   [debug] cartões:', (await pn.locator('#files').inner_text()).replace(chr(10), ' | ')[:300])
-        for i in range(24):
-            await pg.wait_for_timeout(5000)
-            t = (await pn.locator('#files').inner_text()).replace(chr(10), ' | ')
-            if 'lido por OCR' in t: print('   [debug] terminou só depois de', 30 + 5 * (i + 1), 's'); break
-        else: print('   [debug] nunca terminou (150 s a mais)')
-    check(ok, 'pular: depois de pular, o arquivo seguinte é lido normalmente')
+    check(ok, 'pular: depois de pular, o arquivo seguinte é lido normalmente (e o cartão não volta a "Reconhecendo" por evento do motor abandonado)')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
-    await ctx.close()
-
-async def teste_sonda(b):
-    print('\n[sonda]')
-    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
-    pg = await ctx.new_page()
-    pg.on('console', lambda m: print('   [console]', m.type, m.text[:200]) if m.type in ('error', 'warning') else None)
-    pg.on('pageerror', lambda e: print('   [pageerror]', str(e)[:200]))
-    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
-    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
-    JS = """async (espera) => {
-      const m = await import('./extract.js');
-      const base = await (await fetch('../exemplos/atestado-girado.jpg')).blob(); const bmp = await createImageBitmap(base);
-      const cv = new OffscreenCanvas(6000, 4500); const c = cv.getContext('2d'); c.fillStyle = '#6b5a45'; c.fillRect(0, 0, 6000, 4500);
-      c.translate(3000, 2250); c.rotate(2 * Math.PI / 180); const k = Math.min(6000 * 0.9 / bmp.width, 4500 * 0.9 / bmp.height);
-      c.drawImage(bmp, -bmp.width * k / 2, -bmp.height * k / 2, bmp.width * k, bmp.height * k);
-      const grande = new File([await cv.convertToBlob({ type: 'image/jpeg', quality: 0.9 })], 'g.jpg', { type: 'image/jpeg' });
-      const pequena = new File([await (await fetch('../exemplos/atestado-foto.png')).blob()], 'p.png', { type: 'image/png' });
-      const log = [];
-      const t0 = performance.now(); const t = () => Math.round(performance.now() - t0);
-      const p1 = m.readFile(grande, () => {}, { ocr: true }).then(() => log.push(['grande terminou', t()]), (e) => log.push(['grande falhou', e?.motivo || String(e), t()]));
-      await new Promise(r => setTimeout(r, espera));
-      log.push(['cancelou', m.cancelarLeituraAtual(), t()]);
-      await p1;
-      const t1 = t();
-      const r = await Promise.race([m.readFile(pequena, () => {}, { ocr: true }).then(x => 'ok ' + (x.diag?.ms)), new Promise(res => setTimeout(() => res('TRAVOU'), 40000))]);
-      log.push(['pequena', r, t() - t1]);
-      return log;
-    }"""
-    for espera in (300, 700, 1500, 2500):
-        print('  espera', espera, '->', await pn.evaluate(JS, espera))
     await ctx.close()
 
 async def teste_sair_do_pedido(b):
@@ -2866,11 +2827,6 @@ async def main():
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_dicas_arquivo(b); await teste_pular_leitura(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
-        return
-    if os.environ.get('SIM_SO') == 'sonda':
-        async with async_playwright() as p:
-            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_sonda(b); await b.close()
         return
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
         async with async_playwright() as p:
