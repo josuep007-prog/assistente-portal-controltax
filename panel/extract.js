@@ -95,15 +95,21 @@ async function prepImage(source, { rot = 0, binarizar = false, ladoMax = 2400 } 
   } catch { return source; }
 }
 
+let ocrRejeitar = null;   // interrompe a leitura em andamento (botão "Pular leitura")
+/** Interrompe o OCR que está rodando agora (o motor é reiniciado na próxima leitura). Devolve se havia algo rodando. */
+export function cancelarLeituraAtual() { if (!ocrRejeitar) return false; ocrRejeitar('cancelado'); return true; }
+
 async function ocrImage(source, onProgress, { tempoMs = 90000 } = {}) {
   ocrProgress = onProgress || (() => {});
   const w = await getOcr();
-  // uma leitura que trava não pode prender tudo: passou do tempo, o motor é reiniciado e o arquivo falha com o motivo "tempo" (mensagem educativa)
-  let temporizador;
-  const limite = new Promise((_, rej) => { temporizador = setTimeout(() => { try { ocrWorker?.terminate?.(); } catch { /* já encerrado */ } ocrWorker = null; const e = new Error('tempo'); e.motivo = 'tempo'; rej(e); }, tempoMs); });
+  // uma leitura que trava não pode prender tudo: passou do tempo (ou a pessoa pulou), o motor é reiniciado e o arquivo falha com o motivo "tempo"/"cancelado"
+  let temporizador, rejeitar;
+  const limite = new Promise((_, rej) => { rejeitar = rej; temporizador = setTimeout(() => ocrRejeitar?.('tempo'), tempoMs); });
+  ocrRejeitar = (motivo) => { try { ocrWorker?.terminate?.(); } catch { /* já encerrado */ } ocrWorker = null; const e = new Error(motivo); e.motivo = motivo; rejeitar(e); };
   let data;
-  try { ({ data } = await Promise.race([w.recognize(source, { rotateAuto: true }), limite])); }
-  finally { clearTimeout(temporizador); }
+  const lendo = w.recognize(source, { rotateAuto: true }); lendo.catch(() => {});   // se o motor for encerrado no meio, a promessa dele não deve virar erro solto
+  try { ({ data } = await Promise.race([lendo, limite])); }
+  finally { clearTimeout(temporizador); ocrRejeitar = null; }
   // palavras com a posição e a confiança de cada uma: só na memória (recorte da foto nos campos com dúvida)
   // com a imagem girada pelo próprio OCR (rotateAuto) as coordenadas são de outra imagem: sem posição, sem recorte
   const palavras = Math.abs(data.rotateRadians || 0) > 0.02 ? [] : (data.words || []).filter(x => x?.text && x.bbox).map(x => ({ t: x.text, conf: Math.round(x.confidence || 0), bbox: { x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1 } }));

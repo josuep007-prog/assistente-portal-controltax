@@ -2,7 +2,7 @@
 // Puro (sem DOM). Veja panel/engine.js (reexporta tudo) e docs/arquitetura.md.
 import { addDays, dataValida, diffDays, fmtDate, norm, parseDate, today } from './base.js';
 import { mesmaPessoa } from './leitor.js';
-import { findEmployeeInText } from './nomes.js';
+import { empregadoPorNome } from './atestado.js';
 import { renderTemplate } from './modelos.js';
 import { CADASTROS } from './textolivre.js';
 
@@ -149,8 +149,9 @@ export function dicasDoNomeDoArquivo(nome, employees = [], hoje = today()) {
   }
   const semNumeros = norm(base.replace(/\d+[.\-\/]?\d*/g, ' ').replace(/\b(atestado|dias?|dia|cid|medico|medica|foto|img|imagem|whatsapp)\b/ig, ' '));
   if (semNumeros && employees.length) {
-    const r = findEmployeeInText(semNumeros, employees);
-    if (r?.option && !r.candidatos) out.empregado = r.option;
+    // o mesmo comparador do paciente do atestado: tolera nome do meio e sobrenome faltando ("Ana Julia" → "ANA JULIA DE OLIVEIRA SANTOS"); empate entre duas pessoas não escolhe
+    const r = empregadoPorNome(semNumeros, employees);
+    if (r?.option && !r.candidatos && !r.contradiz) out.empregado = r.option;
   }
   return out;
 }
