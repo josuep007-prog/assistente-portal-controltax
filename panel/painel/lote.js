@@ -1,7 +1,8 @@
 /* Painel — Vários arquivos: uma solicitação por documento. (parte de panel/panel.js, dividido na 2.16.4; mapa em docs/arquitetura.md). */
 import * as E from '../engine.js';
 import { readFile, aiExtract, aiAvailable } from '../extract.js';
-import { $, S, esc, icon, request, send, toast } from './base.js';
+import { $, P, S, esc, icon, request, send, toast } from './base.js';
+import { empresaDosDocumentos } from './empresaFunc.js';
 import { PAR_AVISO, aplicarSugestoes, camposAusentes, fillPortal, updateChecks } from './formulario.js';
 import { abrirComArquivos, ajustarDepartamento, anotarCandidatos, aplicarCampos, camposComAjustes, empresaDoPedido, entenderTexto, juntarArquivos, juntarCampos, mostrarSugestao, novoItem, openTipo } from './inicio.js';
 import { anexosAtuais, gerarTextos, portalValores, valoresAssistente, valoresParaChecar } from './valores.js';
@@ -51,8 +52,13 @@ export async function handleVarios(files, origem) {
 export const montarPedidos = (itens) => E.montarPedidosLote(itens, S.rules);
 
 export async function iniciarLote(pedidos, fora, pessoas = []) {
-  // pergunta a empresa uma vez só: todas as solicitações do lote vão para ela
-  if (!(await empresaDoPedido(null))) return;
+  // de qual empresa é cada pessoa do lote? Se todas foram achadas, cada pedido abre na empresa dela (sem perguntar); se alguma não, pergunta a empresa uma vez
+  // só e as sem empresa achada vão para ela
+  for (const p of pedidos) {
+    try { const r = await empresaDosDocumentos(p.itens || []); p.empresaAlvo = r?.tipo === 'unica' ? { ...r.hits[0].empresa, funcionario: r.hits[0].funcionario } : (r?.tipo === 'atual' ? 'atual' : null); }
+    catch { p.empresaAlvo = null; }
+  }
+  if (!pedidos.every(p => p.empresaAlvo) && !(await empresaDoPedido(null))) return;
   S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pessoas, pausado: false, concluido: false };
   S.sugestao = null;
   toast(pessoas.length >= 2 ? (S.rules.mensagens?.lotePessoas || 'Há documentos de {n} pessoas: abri um pedido para cada uma, para não misturar os dados.').replace('{n}', pessoas.length) : `${pedidos.length} solicitações para abrir, uma de cada vez.`);
@@ -70,6 +76,12 @@ export async function abrirPedido(i) {
   // começa sempre de um formulário limpo
   if (S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo && (i > 0 || Object.keys(portalValores(p.tipo)).length)) {
     await request({ type: 'navigate', slug: t.slug, add: false }, 8000);
+  }
+  // a pessoa deste pedido é de outra empresa: troca para ela (sem pausar o lote) antes de abrir o formulário
+  if (p.empresaAlvo && p.empresaAlvo !== 'atual' && P?.escolherEmpresa && !P.ehEmpresaAtual?.(p.empresaAlvo.nome, p.empresaAlvo.apelido)) {
+    const ok = await P.escolherEmpresa({ tipo: null, empresa: p.empresaAlvo.nome, apelido: p.empresaAlvo.apelido, doLote: true });
+    if (!ok) { L.pausado = true; L.navegando = false; renderLote(); return; }   // não confirmou a troca: nada é aberto na empresa errada
+    toast(`${String(p.empresaAlvo.funcionario || '').split(' ').slice(0, 2).join(' ')} é da empresa ${p.empresaAlvo.apelido || p.empresaAlvo.nome}: troquei para ela.`);
   }
   S.work[p.tipo] = null;
   const W = w(p.tipo);

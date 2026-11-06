@@ -188,6 +188,28 @@ async function lerEmpresasDoPortal() {
   return { ok: true, empresas };
 }
 
+/** Nomes dos funcionários de OUTRAS empresas do acesso, pela mesma chamada que o portal faz (/clients/<id>/employees), só para descobrir de qual empresa é uma
+ *  pessoa. Só roda se o id que as solicitações trazem para a empresa ABERTA for o mesmo que o portal usa nela (`atual.id` = clientId()): senão esses ids não servem
+ *  e nada é consultado. Devolve só nomes, que o painel guarda na memória (nada é gravado). */
+async function empregadosDeEmpresas(pedidos, atual) {
+  if (plat.empregadosDeEmpresas) return plat.empregadosDeEmpresas(pedidos);   // simulador
+  const cid = clientId();
+  if (!cid) return { ok: false, motivo: 'ainda não vi o id da empresa aberta no portal' };
+  if (!atual?.id || String(atual.id) !== String(cid)) return { ok: false, motivo: 'o id das solicitações não é o que o portal usa para as empresas' };
+  const porEmpresa = {};
+  for (const p of pedidos || []) {
+    if (!p?.id || String(p.id) === String(cid)) continue;
+    try {
+      const r = await apiGet(`/api/br-payroll-sr/v1/clients/${encodeURIComponent(p.id)}/employees?expand=clientEmployeeRelationshipExpanded`);
+      if (!r.ok) { porEmpresa[p.chave] = { ok: false, status: r.status }; continue; }
+      const j = await r.json(); const arr = Array.isArray(j) ? j : (j.items || j.data || []);
+      porEmpresa[p.chave] = { ok: true, nomes: [...new Set(arr.map(e => String(e?.name || '').trim()).filter(Boolean))] };
+    } catch { porEmpresa[p.chave] = { ok: false, status: 0 }; }
+    await sleep(60);
+  }
+  return { ok: true, porEmpresa };
+}
+
 /* ============ Pendências (lê as listas com a sessão do próprio usuário) ============ */
 async function fetchPendencias(tipos) {
   const out = [];

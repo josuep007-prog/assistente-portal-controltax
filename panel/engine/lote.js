@@ -147,11 +147,17 @@ export function dicasDoNomeDoArquivo(nome, employees = [], hoje = today()) {
     if (d && !dm[3] && d > addDays(hoje, 30)) d = dataValida(ano - 1, mes, dia);   // sem ano e bem à frente de hoje: é do ano passado
     if (d) out.data = fmtDate(d);
   }
-  const semNumeros = norm(base.replace(/\d+[.\-\/]?\d*/g, ' ').replace(/\b(atestado|dias?|dia|cid|medico|medica|foto|img|imagem|whatsapp)\b/ig, ' '));
+  const semNumeros = nomeDoArquivoLimpo(nome);
   if (semNumeros && employees.length) {
     // o mesmo comparador do paciente do atestado: tolera nome do meio e sobrenome faltando ("Ana Julia" → "ANA JULIA DE OLIVEIRA SANTOS"); empate entre duas pessoas não escolhe
     const r = empregadoPorNome(semNumeros, employees);
     if (r?.option && !r.candidatos && !r.contradiz) out.empregado = r.option;
   }
   return out;
+}
+
+/** O nome do arquivo sem extensão, números e palavras de ruído ("Atestado Ana Julia 01 dia 29.09.jpg" → "ANA JULIA"): o que sobra é o nome da pessoa. */
+export function nomeDoArquivoLimpo(nome) {
+  const base = String(nome ?? '').replace(/\.[A-Za-z0-9]{2,4}$/, '');
+  return norm(base.replace(/\d+[.\-\/]?\d*/g, ' ').replace(/\b(atestado|dias?|dia|cid|medico|medica|foto|img|imagem|whatsapp)\b/ig, ' '));
 }

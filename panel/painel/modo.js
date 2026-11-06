@@ -35,7 +35,7 @@ export function trocouDeEmpresa(empresaAntes) {
   const levado = manter ? S.work[manter] : null;
   S.work = {}; cargasEmpregados.clear(); S.sugestao = null; S.ultimoEnvio = null;
   if (levado) { S.work[manter] = levado; semDadosDaEmpresa(levado, troca); }
-  if (S.lote && !S.lote.concluido) { S.lote.pausado = true; renderLote(); }
+  if (S.lote && !S.lote.concluido && !troca?.doLote) { S.lote.pausado = true; renderLote(); }   // troca feita pelo próprio lote (empresa de cada pessoa) não pausa
   S.pv.lastKey = '';
 }
 

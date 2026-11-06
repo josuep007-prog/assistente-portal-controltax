@@ -24,6 +24,7 @@ export function montarEmpresa(C) {
     if (ca && cb) return ca === cb;                      // os dois lados têm o código da filial: é ele que decide
     return E.mesmaEmpresaNome(nome, S.ctx.empresa);      // sem código (empresa única ou apelido sem número): vale o nome
   };
+  P.ehEmpresaAtual = ehAtual;
   P.empresasDoLogin = () => {
     // as da janela "Selecione uma empresa" do portal (todas as do acesso) + as já vistas + as das solicitações (que trazem quantas esperam e estão em aberto)
     const lista = E.empresasParaEscolha(S.plat.sol?.itens || [], S.ctx.empresa, [...(S.plat.empresasPortal || []), ...(S.plat.empresasConhecidas || [])], S.ctx.empresaApelido || '');
@@ -84,9 +85,9 @@ export function montarEmpresa(C) {
     });
   }
   /** Troca a empresa no portal e confirma vendo o nome novo. `manter` = o pedido (tipo) cujos dados seguem com o cliente. */
-  P.irParaEmpresa = async (alvo, { manter = null, conservarEmpregado = false } = {}) => {
+  P.irParaEmpresa = async (alvo, { manter = null, conservarEmpregado = false, doLote = false } = {}) => {
     if (ehAtual(alvo, S.plat.apelidoEscolhido && E.mesmaEmpresaNome(S.plat.apelidoEscolhido.nome, alvo) ? S.plat.apelidoEscolhido.apelido : '')) return true;
-    S.trocaPedida = { de: S.ctx.empresa, para: alvo, manter, conservarEmpregado };
+    S.trocaPedida = { de: S.ctx.empresa, para: alvo, manter, conservarEmpregado, doLote };
     toast(`Trocando para ${apelidoDe(alvo)} no portal…`);
     const ap = apelidoDe(alvo);
     const r = await request({ type: 'trocarEmpresa', nome: alvo, apelido: ap && ap !== alvo ? ap : '' }, 70000);   // o portal lista a empresa pelo nome ou pelo apelido
@@ -100,14 +101,15 @@ export function montarEmpresa(C) {
   };
   /** Chamada antes de abrir um formulário novo: pergunta a empresa (se houver mais de uma) e troca no portal.
    *  Devolve false se o cliente desistiu ou se a troca não foi confirmada. */
-  P.escolherEmpresa = async ({ tipo, empresa, sugerida, conservarEmpregado = false } = {}) => {
-    if (empresa && E.mesmaEmpresaNome(empresa, S.ctx.empresa)) return true;   // já está nela
+  P.escolherEmpresa = async ({ tipo, empresa, apelido = '', sugerida, conservarEmpregado = false, doLote = false } = {}) => {
+    if (empresa && ehAtual(empresa, apelido)) return true;   // já está nela
+    if (empresa) S.plat.apelidoEscolhido = { nome: empresa, apelido };   // empresa já decidida (ex.: a do funcionário do atestado): não pergunta
     if (S.modo === 'plataforma') await Promise.all([esperarSolicitacoes(), P.carregarEmpresasDoPortal()]);
     const emps = P.empresasDoLogin();
     if (emps.length <= 1) return true;
     const alvo = empresa || await caixaEmpresa({ tipo, emps, sugerida });
     if (!alvo) return false;
-    return P.irParaEmpresa(alvo, { manter: tipo || null, conservarEmpregado });
+    return P.irParaEmpresa(alvo, { manter: tipo || null, conservarEmpregado, doLote });
   };
   /** Botão da empresa dentro do pedido: troca a empresa e leva o pedido junto. O funcionário e as listas são da empresa
    *  antiga (saem); o resto do que o cliente preencheu fica. */

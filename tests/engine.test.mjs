@@ -2129,4 +2129,23 @@ t('empresas do acesso: filiais de mesmo nome ficam separadas pelo apelido; a abe
   assert.equal(E.empresasParaEscolha([{ empresa: 'RB PRESTACAO DE SERVICOS LTDA' }], 'RB PRESTACAO DE SERVICOS LTDA', doPortal).filter(e => /RB PREST/.test(e.nome)).length, 1);
 });
 
+t('de qual empresa é o funcionário: acha a empresa certa, não escolhe quando há dúvida', () => {
+  const indice = [
+    { empresa: { nome: 'ATACAPET PRODUCTS COMERCIAL LTDA', apelido: 'ATACAPET | 0001-91' }, nomes: ['ANA RITA LIMA', 'DENISE DE ASSIS', 'JOAO DA SILVA'] },
+    { empresa: { nome: 'MERCOCAMP COMERCIO INTERNACIONAL S/A', apelido: 'MERCOCAMP | 0001-33' }, nomes: ['ARTHUR DOS SANTOS', 'ANA JULIA DE OLIVEIRA SANTOS', 'MARIA SOUZA'] },
+    { empresa: { nome: 'MERCOCAMP COMERCIO INTERNACIONAL S/A', apelido: 'MERCOCAMP | 0005-67' }, nomes: ['BRUNO ALVES', 'MARIA SOUZA'] },
+    { empresa: { nome: 'RB PRESTACAO DE SERVICOS LTDA', apelido: 'RB PREST | 0001-32' }, nomes: [] } ];
+  const a = E.empresaDoFuncionario('Arthur dos Santos', indice);
+  assert.equal(a.tipo, 'unica'); assert.equal(a.hits[0].empresa.apelido, 'MERCOCAMP | 0001-33'); assert.equal(a.hits[0].funcionario, 'ARTHUR DOS SANTOS');
+  const b = E.empresaDoFuncionario('Ana Julia', indice);   // só os dois primeiros nomes
+  assert.equal(b.tipo, 'unica'); assert.equal(b.hits[0].funcionario, 'ANA JULIA DE OLIVEIRA SANTOS');
+  assert.equal(E.empresaDoFuncionario('Denise de Assis', indice).hits[0].empresa.apelido, 'ATACAPET | 0001-91');
+  assert.equal(E.empresaDoFuncionario('Maria Souza', indice).tipo, 'varias', 'a mesma pessoa em duas filiais: quem decide é o cliente');
+  assert.equal(E.empresaDoFuncionario('Ata SME', indice).tipo, 'nenhuma', 'nome que não é de ninguém não é inventado');
+  assert.equal(E.empresaDoFuncionario('', indice).tipo, 'nenhuma');
+  assert.equal(E.empresaDoFuncionario('Arthur', indice).tipo, 'nenhuma', 'só o primeiro nome é pouco para trocar de empresa');
+  assert.equal(E.nomeDoArquivoLimpo('Atestado Ana Julia 01 dia 29.09.jpg'), 'ANA JULIA');
+  assert.equal(E.normalizarSolicitacao({ id: 'x', companyId: 'c-9', clientExpanded: { name: 'A', nickname: 'A | 0001-11' } }, 'afastamento', {}).empresaId, 'c-9');
+});
+
 console.log(`\n${n} testes ok`);

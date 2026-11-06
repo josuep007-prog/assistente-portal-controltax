@@ -1779,6 +1779,53 @@ async def teste_todas_as_empresas(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
+async def teste_empresa_do_funcionario(b):
+    import datetime
+    """2.36.0: o atestado de um funcionário de OUTRA empresa troca a empresa sozinho (sem perguntar), e cada pessoa de um lote abre na empresa dela."""
+    print('\n[funcionário → empresa] a empresa do funcionário é descoberta e a troca é feita')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(4000)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    BASE, OUTRA, TERCEIRA = 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', 'COMERCIO MODELO DE ALIMENTOS LTDA', 'OFICINA FICTICIA DE SERVICOS ME'
+    dia = (datetime.date.today() - datetime.timedelta(days=3)).strftime('%d/%m/%Y')
+    def texto(nome, dias): return f'ATESTADO MÉDICO\nAtesto que {nome} foi atendido em consulta e deverá permanecer afastado de suas atividades por {dias} dias.\nData: {dia}\nDra. Fictícia de Teste\nCRM-ES 1234'
+    emp = lambda: pg.evaluate("document.querySelector('#p-empresa')?.textContent || ''")
+    sel = lambda: pg.evaluate("(() => { const e = document.querySelector('[formcontrolname=selectedEmployee]'); return e ? (e.querySelector('input') || e).value : ''; })()")
+    check(await emp() == BASE, f'empresa: o teste começa na empresa base ({await emp()!r})')
+    # 1) um atestado de funcionário da OUTRA empresa, sem formulário aberto
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pg.evaluate("(t) => { window.__ctSim.hooks().sendFiles([new File([t], 'Atestado Carlos Eduardo Paiva.txt', { type: 'text/plain' })]); }", texto('CARLOS EDUARDO PAIVA', 2))
+    await pg.wait_for_timeout(2000)
+    if await pn.locator('#sug-go').count(): await pn.click('#sug-go')
+    ok = False
+    for _ in range(120):
+        if await emp() == OUTRA and await pg.evaluate("window.__ctPlatform.path().endsWith('/add')") and await sel() == 'CARLOS EDUARDO PAIVA': ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, f'empresa: o atestado de CARLOS (da empresa MODELO) abriu o pedido já nela, com ele escolhido ({await emp()!r}, {await sel()!r})')
+    check(await pn.locator('.ee-lista').count() == 0, 'empresa: não perguntou a empresa (achou uma só)')
+    # volta ao início e solta atestados de duas pessoas de empresas diferentes (lote)
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    if await pn.locator('#pd-voltar').count(): await pn.click('#pd-voltar')
+    await pg.evaluate("(ts) => { window.__ctSim.hooks().sendFiles(ts.map((t, i) => new File([t], 'atestado' + i + '.txt', { type: 'text/plain' }))); }", [texto('HUGO BARRETO', 1), texto('JOAO DA SILVA', 2)])
+    ok = False
+    for _ in range(160):
+        if await emp() == TERCEIRA and await sel() == 'HUGO BARRETO': ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, f'lote: o 1º pedido (HUGO) abriu na empresa dele, OFICINA ({await emp()!r}, {await sel()!r})')
+    check(await pn.locator('.ee-lista').count() == 0, 'lote: não perguntou a empresa (achou a de cada pessoa)')
+    if await pn.locator('#lote-pular').count(): await pn.click('#lote-pular')
+    ok = False
+    for _ in range(160):
+        if await emp() == BASE and await sel() == 'JOAO DA SILVA': ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, f'lote: o 2º pedido (JOAO) voltou para a empresa dele, a base ({await emp()!r}, {await sel()!r})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_sair_do_pedido(b):
     """2.27.0: sair do pedido pela extensão (outro tipo, outra aba) leva o portal de volta à lista do tipo; "Continuar o pedido" reabre e preenche de novo."""
     print('\n[sair] o portal sai do formulário junto com a extensão')
@@ -2818,7 +2865,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2866,7 +2913,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'emp':
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_todas_as_empresas(b); await teste_troca_empresa_modal(b); await teste_troca_empresa_dom(b); await b.close()
+            await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_troca_empresa_modal(b); await teste_troca_empresa_dom(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
@@ -3236,7 +3283,7 @@ async def main():
         await teste_cadastro(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
