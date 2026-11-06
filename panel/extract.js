@@ -96,18 +96,29 @@ async function prepImage(source, { rot = 0, binarizar = false, ladoMax = 2400 } 
 }
 
 let ocrRejeitar = null;   // interrompe a leitura em andamento (botão "Pular leitura")
-/** Interrompe o OCR que está rodando agora (o motor é reiniciado na próxima leitura). Devolve se havia algo rodando. */
-export function cancelarLeituraAtual() { if (!ocrRejeitar) return false; ocrRejeitar('cancelado'); return true; }
+let leituraEmCurso = false, leituraCancelada = false;
+/** Interrompe a leitura do arquivo que está sendo lido agora: se o OCR está rodando, ele é encerrado na hora (o motor reinicia na próxima leitura); se está
+ *  no pré-tratamento da imagem entre duas tentativas, o pedido fica guardado e vale na próxima etapa. Devolve se havia leitura em curso. */
+export function cancelarLeituraAtual() { if (!leituraEmCurso) return false; leituraCancelada = true; ocrRejeitar?.('cancelado'); return true; }
+const checarCancelado = () => { if (leituraCancelada) { const e = new Error('cancelado'); e.motivo = 'cancelado'; throw e; } };
 
 async function ocrImage(source, onProgress, { tempoMs = 90000 } = {}) {
+  checarCancelado();
   ocrProgress = onProgress || (() => {});
   const w = await getOcr();
   // uma leitura que trava não pode prender tudo: passou do tempo (ou a pessoa pulou), o motor é reiniciado e o arquivo falha com o motivo "tempo"/"cancelado"
-  let temporizador, rejeitar;
+  let temporizador, rejeitar, lendo;
   const limite = new Promise((_, rej) => { rejeitar = rej; temporizador = setTimeout(() => ocrRejeitar?.('tempo'), tempoMs); });
-  ocrRejeitar = (motivo) => { try { ocrWorker?.terminate?.(); } catch { /* já encerrado */ } ocrWorker = null; const e = new Error(motivo); e.motivo = motivo; rejeitar(e); };
+  ocrRejeitar = (motivo) => {
+    // o motor é ABANDONADO (a próxima leitura cria outro) e só encerrado quando a leitura dele termina, ou depois de 8 s: encerrar no meio faz a biblioteca
+    // ainda mandar mensagem a um motor que já não existe (erro solto na página)
+    const velho = w; if (ocrWorker === velho) ocrWorker = null;
+    const encerrar = () => { try { velho?.terminate?.(); } catch { /* já encerrado */ } };
+    lendo?.then(encerrar, encerrar); setTimeout(encerrar, 8000);
+    const e = new Error(motivo); e.motivo = motivo; rejeitar(e);
+  };
   let data;
-  const lendo = w.recognize(source, { rotateAuto: true }); lendo.catch(() => {});   // se o motor for encerrado no meio, a promessa dele não deve virar erro solto
+  lendo = w.recognize(source, { rotateAuto: true }); lendo.catch(() => {});
   try { ({ data } = await Promise.race([lendo, limite])); }
   finally { clearTimeout(temporizador); ocrRejeitar = null; }
   // palavras com a posição e a confiança de cada uma: só na memória (recorte da foto nos campos com dúvida)
@@ -138,7 +149,9 @@ async function ocrMelhor(source, onProgress, faixa = [0, 1], { ladoMax = 2400, t
     if (i > 0 && (performance.now() - t0) / 1000 > tempoMaxSeg) { tempoEsgotado = true; break; }
     const t = tentativas[i];
     const etapa = i === 0 ? 'Reconhecendo texto (OCR)' : t.rot ? 'Tentando a imagem em outra posição' : 'Tentando melhorar a imagem';
+    checarCancelado();
     const prep = await prepImage(bmp, { ...t, ladoMax });
+    checarCancelado();
     const r = await ocrImage(prep, (p) => onProgress?.(a + (b - a) * Math.min(0.95, (i + p) / Math.min(n, i + 2)), etapa), { tempoMs: Math.max(20000, tempoMaxSeg * 2000) });
     feitas++;
     r.rot = t.rot; r.binarizar = !!t.binarizar; r.nota = notaLeitura(r); r.imagem = prep;   // a imagem em que as palavras foram achadas (coordenadas do recorte)
@@ -265,6 +278,11 @@ async function readSheet(file) {
 }
 
 export async function readFile(file, onProgress, opts = {}) {
+  leituraEmCurso = true; leituraCancelada = false;
+  try { return await lerArquivo(file, onProgress, opts); }
+  finally { leituraEmCurso = false; leituraCancelada = false; }
+}
+async function lerArquivo(file, onProgress, opts = {}) {
   if (isPdf(file)) return readPdf(file, onProgress, opts);
   if (isHeic(file)) return { texto: '', metodo: 'nao-suportado', motivo: 'heic', paginas: 0 };
   if (isTiff(file)) return { texto: '', metodo: 'nao-suportado', motivo: 'tiff', paginas: 0 };
