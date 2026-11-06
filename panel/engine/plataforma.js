@@ -92,12 +92,16 @@ export function filtrarPorEmpresa(itens, filtro, empresaAtual) {
 /** Empresas que o login enxerga, para a caixa "Para qual empresa?" ao abrir um pedido: as das solicitações lidas,
  *  as já vistas antes (a lista é relida quando a empresa muda) e a que está aberta no portal. Cada uma traz quantas
  *  solicitações tem em aberto e quantas esperam o cliente. A aberta no portal vem primeiro. */
-export function empresasParaEscolha(itens, empresaAtual, conhecidas = []) {
-  const m = new Map();
+export function empresasParaEscolha(itens, empresaAtual, conhecidas = [], apelidoAtual = '') {
+  const lista = [];
+  // filiais têm o MESMO nome e só o apelido ("MERCOCAMP | 0001-33") as distingue: com apelido, cada apelido é uma empresa; sem apelido, vale o nome
   const poe = (nome, apelido = '') => {
-    const k = norm(nome); if (!k) return null;
-    if (!m.has(k)) m.set(k, { nome, apelido: '', abertas: 0, esperam: 0 });
-    const e = m.get(k); if (apelido && !e.apelido) e.apelido = apelido;
+    if (!norm(nome)) return null;
+    const ap = norm(apelido);
+    let e = ap ? lista.find(x => norm(x.apelido) === ap) : null;
+    if (!e) e = lista.find(x => norm(x.nome) === norm(nome) && (!ap || !x.apelido));   // mesmo nome ainda sem apelido (ou o mesmo): junta
+    if (!e) { e = { nome, apelido: '', abertas: 0, esperam: 0 }; lista.push(e); }
+    if (apelido && !e.apelido) e.apelido = apelido;
     return e;
   };
   for (const c of conhecidas || []) poe(c.nome, c.apelido);
@@ -106,11 +110,11 @@ export function empresasParaEscolha(itens, empresaAtual, conhecidas = []) {
     if (['aguardando', 'andamento'].includes(i.estado)) e.abertas++;
     if (i.aguardando) e.esperam++;
   }
-  // a do portal: se for a mesma de uma já listada (nome um pouco diferente no cabeçalho), não duplica
-  const atual = [...m.values()].find(e => mesmaEmpresa(e.nome, empresaAtual));
-  if (!atual && norm(empresaAtual)) poe(empresaAtual);
-  const lista = [...m.values()].map(e => ({ ...e, atual: mesmaEmpresa(e.nome, empresaAtual) }));
-  return lista.sort((a, b) => (b.atual - a.atual) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  // a do portal: pelo apelido, quando se sabe; senão pelo nome (se mais de uma filial tem o mesmo nome e não há apelido, nenhuma é marcada)
+  let atual = apelidoAtual ? lista.find(e => norm(e.apelido) === norm(apelidoAtual)) : null;
+  if (!atual) { const iguais = lista.filter(e => mesmaEmpresa(e.nome, empresaAtual)); atual = iguais.length === 1 ? iguais[0] : null; if (!atual && !iguais.length && norm(empresaAtual)) atual = poe(empresaAtual, apelidoAtual); }
+  const out = lista.map(e => ({ ...e, atual: e === atual }));
+  return out.sort((a, b) => (b.atual - a.atual) || a.nome.localeCompare(b.nome, 'pt-BR') || a.apelido.localeCompare(b.apelido, 'pt-BR'));
 }
 export const mesmaEmpresaNome = (a, b) => mesmaEmpresa(a, b);
 /** Nomes das empresas que o filtro mostra (para marcar as caixas do seletor). */

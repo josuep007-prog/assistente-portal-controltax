@@ -156,6 +156,8 @@
     path: function () { return path; },
     navigate: function (p) { go(p); },
     // trocar de empresa como o portal: o cabeçalho muda, os funcionários são os da empresa nova e a tela volta ao início
+    // a janela "Selecione uma empresa" só existe nas variantes ct-sim-troca-dom / ct-sim-troca-modal (nelas este gancho é removido e o conteúdo lê a janela de verdade)
+    empresasDoPortal: function () { return Promise.resolve({ ok: false, motivo: 'o simulador não tem a janela de empresas' }); },
     trocarEmpresa: function (nome) {
       var base = [EMPRESA_BASE, OUTRA, TERCEIRA];
       if (base.indexOf(nome) < 0) return Promise.resolve({ ok: false });
@@ -731,7 +733,7 @@
      Ligado com localStorage ct-sim-troca-dom=1 (sem a troca direta de __ctPlatform, o conteúdo tem de achar e clicar na opção). */
   try {
     if (localStorage.getItem('ct-sim-troca-dom') === '1' && window.__ctPlatform.trocarEmpresa) {
-      var trocaInterna = window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.trocarEmpresa;
+      var trocaInterna = window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.empresasDoPortal;
       var blocoEmp = document.querySelector('.p-company');
       if (blocoEmp) blocoEmp.addEventListener('click', function () {
         if (document.getElementById('p-troca')) return;
@@ -740,6 +742,7 @@
         var lista = [EMPRESA_BASE, OUTRA, TERCEIRA];
         ov.innerHTML = '<input type="search" placeholder="Buscar empresa" style="width:100%;margin-bottom:6px"><ul role="listbox" style="list-style:none;margin:0;padding:0">' + lista.map(function (n) { return '<li role="option" data-n="' + n + '" style="padding:6px;cursor:pointer">' + APELIDO_COD[n] + '</li>'; }).join('') + '</ul>';
         document.body.appendChild(ov);
+        document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { ov.remove(); document.removeEventListener('keydown', esc); } });
         ov.querySelector('input').addEventListener('input', function (e) { var q = e.target.value.toLowerCase(); ov.querySelectorAll('li').forEach(function (li) { li.hidden = !!q && li.textContent.toLowerCase().indexOf(q) < 0; }); });
         ov.querySelectorAll('li').forEach(function (li) { li.addEventListener('click', function () { var n = li.getAttribute('data-n'); ov.remove(); trocaInterna(n); }); });
       });
@@ -748,20 +751,21 @@
      o botão SELECIONAR EMPRESA troca). Ligado com localStorage ct-sim-troca-modal=1. */
   try {
     if (localStorage.getItem('ct-sim-troca-modal') === '1' && window.__ctPlatform.trocarEmpresa) {
-      var trocaInterna2 = window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.trocarEmpresa;
+      var trocaInterna2 = window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.trocarEmpresa; delete window.__ctPlatform.empresasDoPortal;
       var bloco2 = document.querySelector('.p-company');
-      var apelidos = {}; apelidos[EMPRESA_BASE] = 'BASE | 0001-91'; apelidos[OUTRA] = 'MODELO | 0002-37'; apelidos[TERCEIRA] = 'TERCEIRA | 0003-55';
+      var apelidos = {}; apelidos[EMPRESA_BASE] = 'EXEMPLO | 0001-19'; apelidos[OUTRA] = 'MODELO | 0002-37'; apelidos[TERCEIRA] = 'OFICINA | 0003-55';
+      var FILIAL = 'FILIAL SEM SOLICITACAO LTDA';   // 2 filiais de mesmo nome, sem solicitações: só aparecem se a extensão ler a janela
       if (bloco2) bloco2.addEventListener('click', function () {
         if (document.getElementById('p-troca-modal')) return;
         var ov = document.createElement('div'); ov.id = 'p-troca-modal'; ov.setAttribute('role', 'dialog'); ov.setAttribute('tabindex', '-1');
         ov.style.cssText = 'position:fixed;left:30%;top:10%;width:560px;background:#fff;border:1px solid #888;z-index:9999;padding:16px;color:#111';
-        var lista = [EMPRESA_BASE, OUTRA, TERCEIRA], escolhida = '';
-        ov.innerHTML = '<h2>Selecione uma empresa</h2><input type="text" placeholder="Pesquisar" style="width:100%;margin:6px 0"><div class="lista">' + lista.map(function (n) { return '<div class="linha" data-n="' + n + '" style="padding:6px;border-bottom:1px solid #ddd;cursor:pointer"><div>' + n + '</div><small>' + apelidos[n] + '</small></div>'; }).join('') + '</div><button class="sel" disabled>SELECIONAR EMPRESA</button> <button class="can">CANCELAR</button>';
+        var lista = [EMPRESA_BASE, OUTRA, TERCEIRA, FILIAL + '|0002-14', FILIAL + '|0003-03'], escolhida = '', escolhidaAp = '';
+        ov.innerHTML = '<h2>Selecione uma empresa</h2><input type="text" placeholder="Pesquisar" style="width:100%;margin:6px 0"><div class="lista">' + lista.map(function (n) { return '<div class="linha" data-n="' + n.split('|')[0] + '" data-ap="' + (apelidos[n] || ('FILIAL | ' + n.split('|')[1])) + '" style="padding:6px;border-bottom:1px solid #ddd;cursor:pointer"><div>' + n.split('|')[0] + '</div><small>' + (apelidos[n] || ('FILIAL | ' + n.split('|')[1])) + '</small></div>'; }).join('') + '</div><button class="sel" disabled>SELECIONAR EMPRESA</button> <button class="can">CANCELAR</button>';
         document.body.appendChild(ov);
         ov.querySelector('input').addEventListener('input', function (e) { var q = e.target.value.toLowerCase(); ov.querySelectorAll('.linha').forEach(function (li) { li.hidden = !!q && li.textContent.toLowerCase().indexOf(q) < 0; }); });
-        ov.querySelectorAll('.linha').forEach(function (li) { li.addEventListener('click', function () { escolhida = li.getAttribute('data-n'); ov.querySelectorAll('.linha').forEach(function (x) { x.style.background = x === li ? '#e4eef5' : ''; }); ov.querySelector('.sel').disabled = false; }); });
+        ov.querySelectorAll('.linha').forEach(function (li) { li.addEventListener('click', function () { escolhida = li.getAttribute('data-n'); escolhidaAp = li.getAttribute('data-ap'); ov.querySelectorAll('.linha').forEach(function (x) { x.style.background = x === li ? '#e4eef5' : ''; }); ov.querySelector('.sel').disabled = false; }); });
         ov.querySelector('.can').addEventListener('click', function () { ov.remove(); });
-        ov.querySelector('.sel').addEventListener('click', function () { var n = escolhida; ov.remove(); if (n) trocaInterna2(n); });
+        ov.querySelector('.sel').addEventListener('click', function () { var n = escolhida; window.__ctSimLinha = escolhidaAp; ov.remove(); if (n) trocaInterna2(n); });
       });
     }
   } catch (e) { /* sem armazenamento */ }

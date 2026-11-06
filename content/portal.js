@@ -16,9 +16,23 @@ function eEmpresa(texto, cand) {
   return false;
 }
 /** O bloco "EMPRESA" do portal (rótulo, nome e apelido da empresa aberta). */
-const rotuloEmpresa = () => [...document.querySelectorAll('body *')].find(e => !e.children.length && /^empresa$/i.test((e.textContent || '').trim()));
+let rotuloEmpresaEl = null;   // o rótulo é achado varrendo a página (caro): guarda o elemento e só procura de novo se ele sumiu
+const rotuloEmpresa = () => {
+  if (rotuloEmpresaEl?.isConnected && /^empresa$/i.test((rotuloEmpresaEl.textContent || '').trim())) return rotuloEmpresaEl;
+  rotuloEmpresaEl = [...document.querySelectorAll('body *')].find(e => !e.children.length && /^empresa$/i.test((e.textContent || '').trim())) || null;
+  return rotuloEmpresaEl;
+};
 const blocoDaEmpresa = () => { const r = rotuloEmpresa(); return r?.parentElement?.parentElement?.innerText || r?.parentElement?.innerText || ''; };
-const empresaAberta = (cand) => eEmpresa(companyName(), cand) || eEmpresa(blocoDaEmpresa(), cand);
+const empresaAberta = (cand) => {
+  // filiais têm o mesmo nome e só o código ("0001-33") as distingue: com o código do apelido, vale o bloco que mostra o apelido
+  if (cand.codigo) return norm(blocoDaEmpresa()).includes(norm(cand.codigo)) && (eEmpresa(companyName(), cand) || eEmpresa(blocoDaEmpresa(), cand));
+  return eEmpresa(companyName(), cand) || eEmpresa(blocoDaEmpresa(), cand);
+};
+/** O apelido da empresa aberta ("MERCOCAMP | 0001-33"), lido do bloco EMPRESA do cabeçalho (sempre o atual: a troca entre filiais de mesmo nome só muda esse texto). */
+function apelidoDaEmpresa() {
+  const m = blocoDaEmpresa().match(/[^\n|]{2,40}\|\s*\d{4}-\d{2}/);
+  return m ? m[0].replace(/\s+/g, ' ').trim() : '';
+}
 async function esperarEmpresa(cand, ms) {
   for (let t = 0; t < ms; t += 250) { if (empresaAberta(cand)) return true; await sleep(250); }
   return empresaAberta(cand);
@@ -60,6 +74,8 @@ async function abrirListaDeEmpresas(g, cand, diag) {
     if (achados.length) {
       // o mais fundo (o menor) é o texto da opção; o igual ao nome ganha do que só o contém
       achados.sort((a, b) => (a.getBoundingClientRect().width * a.getBoundingClientRect().height) - (b.getBoundingClientRect().width * b.getBoundingClientRect().height));
+      // várias filiais com o mesmo nome: a linha certa é a que mostra o código do apelido
+      if (cand.codigo) { const daFilial = achados.filter(e => norm(linhaDaOpcao(e).innerText).includes(norm(cand.codigo))); if (daFilial.length) return linhaDaOpcao(daFilial[0]); }
       const exato = achados.find(e => cand.exatos.some(x => norm(e.innerText) === norm(x)));
       return linhaDaOpcao(exato || achados[0]);
     }
@@ -122,6 +138,54 @@ async function cancelarFormulario() {
     }
   }
   return routeInfo().mode !== 'form' ? { ok: true } : { ok: false, motivo: 'o portal não saiu do formulário' };
+}
+
+/** As empresas do acesso, lidas da janela "Selecione uma empresa" do próprio portal (abre pelo bloco EMPRESA, lê as linhas "nome / APELIDO | 0000-00"
+ *  e fecha com CANCELAR: nada é trocado). Só nomes e apelidos. Serve para a caixa "Para qual empresa é este pedido?" mostrar TODAS, não só as que
+ *  têm solicitações. */
+async function lerEmpresasDoPortal() {
+  if (plat.empresasDoPortal) return plat.empresasDoPortal();   // simulador sem a janela
+  const JANELAS = '[role=dialog],[role=alertdialog],ngb-modal-window,bento-modal,.modal,.cdk-overlay-pane';
+  const janela = () => [...document.querySelectorAll(JANELAS)].find(visivelEl) || null;
+  const lerLinhas = (j) => {
+    const out = [];
+    for (const e of j.querySelectorAll('*')) {
+      if (e.children.length) continue;
+      const ap = (e.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!/^[^|]{2,40}\|\s*\d{4}-\d{2}$/.test(ap)) continue;
+      const linha = linhaDaOpcao(e);
+      const nome = (linha.innerText || '').split('\n').map(x => x.trim()).filter(Boolean).find(x => x !== ap);
+      if (nome && !out.some(o => norm(o.apelido) === norm(ap))) out.push({ nome, apelido: ap });
+    }
+    return out;
+  };
+  const gatilhos = gatilhosDeEmpresa();
+  if (!gatilhos.length) return { ok: false, motivo: 'não achei o seletor de empresas do portal' };
+  for (const g of gatilhos) {
+    if (janela()) break;
+    cliqueCompleto(g);
+    for (let t = 0; t < 2000 && !janela(); t += 150) await sleep(150);
+    if (janela()) break;
+  }
+  const j = janela(); if (!j) return { ok: false, motivo: 'a janela de empresas não abriu' };
+  // lê o que está à vista e, se a lista rola (virtualizada), vai rolando e juntando
+  const empresas = [];
+  const junta = () => { for (const e of lerLinhas(j)) if (!empresas.some(o => norm(o.apelido) === norm(e.apelido))) empresas.push(e); };
+  for (let t = 0, ult = -1; t < 1500; t += 150) { await sleep(150); junta(); if (empresas.length && empresas.length === ult) break; ult = empresas.length; }
+  const rol = [...j.querySelectorAll('*')].filter(e => e.scrollHeight > e.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(e).overflowY)).sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
+  if (rol) {
+    const ant = rol.scrollTop;
+    for (let y = 0, n = 0; n < 60; n++) { rol.scrollTop = y; await sleep(120); junta(); if (y >= rol.scrollHeight - rol.clientHeight) break; y += Math.max(60, rol.clientHeight - 40); }
+    rol.scrollTop = ant;
+  }
+  // fecha sem trocar nada: CANCELAR (ou o X, ou Esc)
+  const dentro = () => [...(janela() || document.createElement('div')).querySelectorAll('button')];
+  const bt = dentro().find(x => visivelEl(x) && !x.disabled && norm(x.innerText) === 'CANCELAR')
+    || dentro().find(x => visivelEl(x) && /fechar|close/i.test(`${x.getAttribute('aria-label') || ''} ${x.className}`));
+  if (bt) cliqueCompleto(bt); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  for (let t = 0; t < 2000 && janela(); t += 150) await sleep(150);
+  if (!empresas.length) return { ok: false, motivo: 'a janela abriu, mas não achei as empresas nela' };
+  return { ok: true, empresas };
 }
 
 /* ============ Pendências (lê as listas com a sessão do próprio usuário) ============ */

@@ -2106,4 +2106,27 @@ t('nome do arquivo: funcionário com nome comprido citado só pelos dois primeir
   assert.ok(!r.includes('29/09/2026') && !r.includes('OLIVEIRA'), 'o que veio do nome do arquivo não entra no resumo: ' + r);
 });
 
+t('empresas do acesso: filiais de mesmo nome ficam separadas pelo apelido; a aberta é a do apelido; empresas sem solicitação entram', () => {
+  const doPortal = [
+    { nome: 'ATACAPET PRODUCTS COMERCIAL LTDA', apelido: 'ATACAPET | 0001-91' },
+    { nome: 'MERCOCAMP COMERCIO INTERNACIONAL S/A', apelido: 'MERCOCAMP | 0001-33' },
+    { nome: 'MERCOCAMP COMERCIO INTERNACIONAL S/A', apelido: 'MERCOCAMP | 0005-67' },
+    { nome: 'MERCOCAMP COMERCIO INTERNACIONAL S/A', apelido: 'MERCOCAMP | 0004-86' },
+    { nome: 'RB PRESTACAO DE SERVICOS LTDA', apelido: 'RB PREST | 0001-32' } ];
+  const itens = [{ empresa: 'ATACAPET PRODUCTS COMERCIAL LTDA', empresaApelido: 'ATACAPET | 0001-91', estado: 'andamento', aguardando: true },
+    { empresa: 'MERCOCAMP COMERCIO INTERNACIONAL S/A', empresaApelido: 'MERCOCAMP | 0005-67', estado: 'andamento' }];
+  const l = E.empresasParaEscolha(itens, 'MERCOCAMP COMERCIO INTERNACIONAL S/A', doPortal, 'MERCOCAMP | 0004-86');
+  assert.equal(l.length, 5, 'as 5 aparecem, inclusive as sem solicitação e as 3 filiais de mesmo nome');
+  assert.equal(l.filter(e => /MERCOCAMP/.test(e.nome)).length, 3);
+  assert.deepEqual(l.filter(e => e.atual).map(e => e.apelido), ['MERCOCAMP | 0004-86'], 'a aberta é a do apelido, não todas de mesmo nome');
+  assert.equal(l[0].apelido, 'MERCOCAMP | 0004-86', 'a aberta vem primeiro');
+  assert.equal(l.find(e => e.apelido === 'ATACAPET | 0001-91').esperam, 1);
+  assert.equal(l.find(e => e.apelido === 'MERCOCAMP | 0005-67').abertas, 1, 'a solicitação conta na filial certa');
+  assert.equal(l.find(e => e.apelido === 'MERCOCAMP | 0001-33').abertas, 0);
+  // sem o apelido da aberta e com várias de mesmo nome: nenhuma é marcada (não chuta)
+  assert.equal(E.empresasParaEscolha([], 'MERCOCAMP COMERCIO INTERNACIONAL S/A', doPortal).filter(e => e.atual).length, 0);
+  // a mesma lista lida duas vezes (sem apelido nas solicitações) não duplica
+  assert.equal(E.empresasParaEscolha([{ empresa: 'RB PRESTACAO DE SERVICOS LTDA' }], 'RB PRESTACAO DE SERVICOS LTDA', doPortal).filter(e => /RB PREST/.test(e.nome)).length, 1);
+});
+
 console.log(`\n${n} testes ok`);
