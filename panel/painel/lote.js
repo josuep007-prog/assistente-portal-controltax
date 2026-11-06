@@ -181,7 +181,7 @@ export function renderLote() {
 /** Texto para o cliente quando um arquivo não pôde ser lido (regras: mensagens.leitura*): o que fazer, sem culpa. */
 export function msgLeitura(motivo, item) {
   const M = S.rules.mensagens || {};
-  const m = { heic: M.leituraHeic, tiff: M.leituraTiff, senha: M.leituraPdfSenha, imagem: M.leituraImagem, tempo: M.leituraTempo }[motivo];
+  const m = { heic: M.leituraHeic, tiff: M.leituraTiff, senha: M.leituraPdfSenha, imagem: M.leituraImagem, tempo: M.leituraTempo, cancelado: M.leituraPulada }[motivo];
   return m || (M.leituraFalhou || 'Não consegui ler “{arquivo}”. Escolha o pedido e eu anexo o arquivo assim mesmo.').replace('{arquivo}', item.nome);
 }
 
@@ -259,6 +259,11 @@ export async function processItem(item, tipoAtual) {
       : `${item.analise.documento?.nome || 'Documento'}${item.documentos?.length > 1 ? ` + ${item.documentos.length - 1} outro(s)` : ''} · ${r.metodo === 'ocr' ? (dificil ? 'leitura difícil, confira' : 'lido por OCR') : 'lido'}${item.rotacao ? ' (imagem girada)' : ''}${item.resumo ? ' · ' + item.resumo : ''}${item.avisoPaginas ? ` · li ${item.paginasLidas} de ${r.paginas} páginas` : ''}`;
     if (r.tabela && !item.rubricas && tipoAtual === 'rubricas') item.etapa = (M.planilhaSemCabecalho || 'Não achei o cabeçalho de rubricas (Empregado, Rubrica, Valor) em “{arquivo}”: ela vai só anexada.').replace('{arquivo}', item.nome);
   } catch (err) {
+    if (err?.motivo === 'cancelado') {   // a pessoa pulou a leitura: o arquivo segue só anexado, sem aviso de falha
+      item.status = 'nao-lido'; item.falhou = false; item.etapa = msgLeitura('cancelado', item) || 'Leitura pulada — o arquivo vai só anexado.';
+      item.analise = { documento: null, campos: {}, tipoSugerido: null };
+      return;
+    }
     console.error(err);
     item.status = 'erro'; item.falhou = true; item.etapa = msgLeitura(err?.motivo, item);
     item.analise = { documento: null, campos: {}, tipoSugerido: null };

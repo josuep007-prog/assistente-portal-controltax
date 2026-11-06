@@ -2092,4 +2092,18 @@ t('nome do arquivo: funcionário, dias e data viram dicas (só quando batem)', (
   assert.deepEqual(E.dicasDoNomeDoArquivo('', lista, hoje), {});
 });
 
+t('nome do arquivo: funcionário com nome comprido citado só pelos dois primeiros nomes; resumo não repete a dica', () => {
+  const lista = ['ANA JULIA DE OLIVEIRA SANTOS', 'ANA RITA LIMA', 'ARTHUR DOS SANTOS'];
+  const d = E.dicasDoNomeDoArquivo('Ana Julia 01 dia 29.09.jpg', lista, new Date(2026, 10, 6));
+  assert.equal(d.empregado, 'ANA JULIA DE OLIVEIRA SANTOS'); assert.equal(d.dias, 1); assert.equal(d.data, '29/09/2026');
+  assert.equal(E.dicasDoNomeDoArquivo('Ana 2 dias.jpg', lista, new Date(2026, 10, 6)).empregado, undefined, 'só "Ana" serve a duas pessoas: não escolhe');
+  const analise = { documento: { id: 'atestado' }, paciente: 'Ata SME', campos: {
+    dias: { valor: '7', conf: 0.9, fonte: 'documento' },
+    dataAfastamento: { valor: '29/09/2026', conf: 0.5, fonte: 'nome do arquivo (confira)' },
+    empregado: { valor: 'ANA JULIA DE OLIVEIRA SANTOS', conf: 0.5, fonte: 'nome do arquivo (confira)' } } };
+  const r = E.summarizeDocument(analise, '');
+  assert.ok(r.includes('7 dias') && r.includes('Ata SME'), 'o que o documento diz continua');
+  assert.ok(!r.includes('29/09/2026') && !r.includes('OLIVEIRA'), 'o que veio do nome do arquivo não entra no resumo: ' + r);
+});
+
 console.log(`\n${n} testes ok`);

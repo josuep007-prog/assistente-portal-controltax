@@ -390,7 +390,9 @@ export function readASO(text, docRule = null) {
 }
 /** Uma linha que resume o que foi entendido do documento (aparece embaixo do arquivo). */
 export function summarizeDocument(analise, text) {
-  const id = analise?.documento?.id; const c = analise?.campos || {}; const v = (k) => c[k]?.valor;
+  const id = analise?.documento?.id; const c = analise?.campos || {};
+  // o que veio só do nome do arquivo (dica, não leitura) não entra no resumo do que o documento diz
+  const v = (k) => (/nome do arquivo/i.test(c[k]?.fonte || '') ? undefined : c[k]?.valor);
   if (id === 'atestado') return [v('empregado') || (analise.paciente && `paciente: ${analise.paciente}`), v('dias') && `${v('dias')} ${+v('dias') === 1 ? 'dia' : 'dias'}`, v('dataAfastamento') && `a partir de ${v('dataAfastamento')}`].filter(Boolean).join(' · ');
   if (id === 'aso') { const a = readASO(text); return ['ASO', a.tipo, a.resultado, a.data].filter(Boolean).join(' · '); }
   if (id === 'cat') return ['CAT', v('numeroCat'), v('dataAfastamento') && `acidente em ${v('dataAfastamento')}`].filter(Boolean).join(' · ');

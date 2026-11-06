@@ -9,6 +9,7 @@ import { atualizarEstadosPlat, botaoModelo, rotuloPreencher, calcBox, chaveCampo
 import { bindDrop, entenderTexto, openTipo } from './inicio.js';
 import { loadEmpregados, msgAproximada, render, rotuloDe, setView, tipoDef, w } from './modo.js';
 import { savePrefs } from './conexao.js';
+import { cancelarLeituraAtual } from '../extract.js';
 import { cancelarLancamento, renderPlanilhaRubricas } from './planilha.js';
 
 export function renderPreencher() {
@@ -216,8 +217,10 @@ export function renderFilesOnly() {
       ${a.status === 'lendo' ? '<div class="spin"></div>' : icon(a.tabela ? 'sheet' : 'file')}
       <div class="nm"><div>${esc(a.nome)}</div><small title="${esc(a.etapa || '')}">${esc(a.recusado ? (S.rules.mensagens?.anexoRecusado || 'O portal não aceitou este arquivo (formato ou tamanho?)') : a.tiradoNoPortal && !a.anexado ? 'Tirado do portal — clique em “Preencher no portal” para anexar de novo' : (a.etapa || ''))}</small>${a.status === 'lendo' ? `<div class="prog"><i style="width:${Math.round(a.progresso * 100)}%"></i></div>` : ''}</div>
       ${a.status === 'ok' || a.status === 'nao-lido' ? `<span class="chip ${a.jaAnexado || a.anexado ? 'ok' : a.recusado ? 'warn' : 'info'}">${a.jaAnexado || a.anexado ? 'anexado' : 'a anexar'}</span>` : a.status === 'erro' ? '<span class="chip err">erro</span>' : ''}
+      ${a.status === 'lendo' ? `<button type="button" class="btn btn-sm btn-ghost" data-pular="${a.id}" title="Interrompe a leitura desta foto: o arquivo segue só anexado">Pular leitura</button>` : ''}
       <button class="icon-btn" data-rm="${a.id}" aria-label="Remover da lista">${icon('x', 'ic-sm')}</button>
     </div>`).join('');
+  el.querySelectorAll('[data-pular]').forEach(b => b.addEventListener('click', () => { cancelarLeituraAtual(); b.disabled = true; b.textContent = 'Pulando…'; }));
   el.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { const a = W.arquivos.find(x => x.id === b.dataset.rm); if (a) a.removido = true; renderFilesOnly(); updateChecks(); }));
   const outro = W.arquivos.find(a => a.outroTipo && !a.removido);
   const o = $('#outro-tipo');

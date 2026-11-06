@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.06-2",
+  "versao": "2026.11.06-3",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -5649,6 +5649,7 @@
     "leituraPdfSenha": "Este PDF tem senha e eu não consigo abrir. Abra o PDF (com a senha) e use Imprimir → Salvar como PDF: o arquivo novo fica sem senha.",
     "leituraImagem": "Não consegui abrir esta imagem. Abra o arquivo, tire um print da tela e cole aqui com Ctrl+V.",
     "sugestaoNomeArquivo": "Pelo nome do arquivo — confira e toque em Usar.",
+    "leituraPulada": "Leitura pulada — o arquivo vai só anexado. Escolha o pedido e preencha os dados à mão (ou tire outra foto).",
     "leituraTempo": "A leitura de “{arquivo}” demorou mais que o limite. Tire outra foto com mais luz e de frente (ou envie o PDF), ou escolha o pedido e eu anexo o arquivo assim mesmo.",
     "leituraFalhou": "Não consegui ler “{arquivo}”. Escolha o pedido e eu anexo o arquivo assim mesmo.",
     "leituraPaginas": "Li {lidas} de {total} páginas de “{arquivo}” (o limite é {limite}). Se o que importa está depois, mande essas páginas num arquivo separado.",
