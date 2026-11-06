@@ -1,7 +1,8 @@
 // Motor de regras — Lote (um pedido por tipo e por pessoa) e regra dos 60 dias.
 // Puro (sem DOM). Veja panel/engine.js (reexporta tudo) e docs/arquitetura.md.
-import { addDays, diffDays, fmtDate, norm, parseDate } from './base.js';
+import { addDays, dataValida, diffDays, fmtDate, norm, parseDate, today } from './base.js';
 import { mesmaPessoa } from './leitor.js';
+import { findEmployeeInText } from './nomes.js';
 import { renderTemplate } from './modelos.js';
 import { CADASTROS } from './textolivre.js';
 
@@ -128,4 +129,28 @@ export function somaAtestados(atual, anteriores, rules) {
 export function mesmaDoencaPeloCid(a, b) {
   const x = norm(a).replace(/\s/g, '').slice(0, 3), y = norm(b).replace(/\s/g, '').slice(0, 3);
   return x.length === 3 && y.length === 3 ? x === y : null;
+}
+
+/* ---------------- Dicas do nome do arquivo ("Ana Julia 01 dia 29.09.jpg") ---------------- */
+/** O que o nome do arquivo conta: o funcionário (se está na lista), os dias ("01 dia", "2 dias") e a data ("29.09", "06-10", "6/10/2026"; sem ano, a mais
+ *  recente que não está no futuro). Só dicas: quem usa deve tratar como sugestão (a pessoa confirma), nunca como leitura do documento. */
+export function dicasDoNomeDoArquivo(nome, employees = [], hoje = today()) {
+  const base = String(nome ?? '').replace(/\.[A-Za-z0-9]{2,4}$/, '');
+  const out = {};
+  const dias = base.match(/(?:^|[^\d])(\d{1,3})\s*dias?\b/i);
+  if (dias && +dias[1] >= 1 && +dias[1] <= 999) out.dias = +dias[1];
+  const dm = base.replace(/(\d{1,3})\s*dias?\b/ig, ' ').match(/(?:^|[^\d])(\d{1,2})\s*[.\-\/]\s*(\d{1,2})(?:\s*[.\-\/]\s*(\d{4}|\d{2}))?(?!\d)/);
+  if (dm) {
+    const dia = +dm[1], mes = +dm[2] - 1;
+    let ano = dm[3] ? (dm[3].length === 2 ? 2000 + +dm[3] : +dm[3]) : hoje.getFullYear();
+    let d = dataValida(ano, mes, dia);
+    if (d && !dm[3] && d > addDays(hoje, 30)) d = dataValida(ano - 1, mes, dia);   // sem ano e bem à frente de hoje: é do ano passado
+    if (d) out.data = fmtDate(d);
+  }
+  const semNumeros = norm(base.replace(/\d+[.\-\/]?\d*/g, ' ').replace(/\b(atestado|dias?|dia|cid|medico|medica|foto|img|imagem|whatsapp)\b/ig, ' '));
+  if (semNumeros && employees.length) {
+    const r = findEmployeeInText(semNumeros, employees);
+    if (r?.option && !r.candidatos) out.empregado = r.option;
+  }
+  return out;
 }

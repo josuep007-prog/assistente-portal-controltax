@@ -2075,4 +2075,21 @@ t('botão Cancelar: só as rubricas e os cadastros têm (regras.json)', () => {
   assert.deepEqual(com, ['cadastroContribuinte:Cancelar cadastro', 'cadastroEmpregado:Cancelar cadastro', 'cadastroEstagiario:Cancelar cadastro', 'rubricas:Cancelar lançamento']);
 });
 
+t('nome do arquivo: funcionário, dias e data viram dicas (só quando batem)', () => {
+  const lista = ['ANA JULIA DE SOUZA', 'ARTHUR DOS SANTOS', 'ANA RITA LIMA', 'DENISE DE ASSIS', 'MARIA SILVA', 'MARIA SOUZA'];
+  const hoje = new Date(2026, 10, 6);   // 06/11/2026
+  const a = E.dicasDoNomeDoArquivo('Ana Julia 01 dia 29.09.jpg', lista, hoje);
+  assert.equal(a.empregado, 'ANA JULIA DE SOUZA'); assert.equal(a.dias, 1); assert.equal(a.data, '29/09/2026');
+  const b = E.dicasDoNomeDoArquivo('Arthur dos Santos 02 dias 06.10.jpg', lista, hoje);
+  assert.equal(b.empregado, 'ARTHUR DOS SANTOS'); assert.equal(b.dias, 2); assert.equal(b.data, '06/10/2026');
+  assert.equal(E.dicasDoNomeDoArquivo('Atestado - Denise de Assis 3 dias 10-10-2026.pdf', lista, hoje).data, '10/10/2026');
+  assert.equal(E.dicasDoNomeDoArquivo('atestado 05/11/25.png', lista, hoje).data, '05/11/2025', 'ano com 2 dígitos');
+  assert.equal(E.dicasDoNomeDoArquivo('Ana Rita 20.12.jpg', lista, hoje).data, '20/12/2025', 'sem ano e à frente de hoje: ano passado');
+  assert.equal(E.dicasDoNomeDoArquivo('Ana Rita 31.02.jpg', lista, hoje).data, undefined, 'data impossível não vira dica');
+  assert.equal(E.dicasDoNomeDoArquivo('Maria 2 dias.jpg', lista, hoje).empregado, undefined, 'só o primeiro nome de duas Marias: não escolhe');
+  assert.equal(E.dicasDoNomeDoArquivo('IMG_2034.jpg', lista, hoje).empregado, undefined);
+  assert.equal(E.dicasDoNomeDoArquivo('Fulano de Tal 5 dias.jpg', lista, hoje).empregado, undefined, 'quem não está na lista não é inventado');
+  assert.deepEqual(E.dicasDoNomeDoArquivo('', lista, hoje), {});
+});
+
 console.log(`\n${n} testes ok`);

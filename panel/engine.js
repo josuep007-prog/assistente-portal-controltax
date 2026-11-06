@@ -5,7 +5,7 @@
 export { norm, onlyDigits, dataValida, parseDate, fmtDate, iso, today, addDays, diffDays, weekday, makeCalendar, validCPF, validPIS, validEmail, fmtCPF, fmtCEP } from './engine/base.js';
 export { similarity, bestMatch, findEmployeeInText, employeeCandidates } from './engine/nomes.js';
 export { classifyDocument, cfgLeitor, limiarPortal, validarValor, extractByLabels, extractGeneric, analyzeText, analisarPartes, notasDoDocumento, lerCertidao, separarDocumentos, localizarValor, aplicarLeituraDasPalavras, xmlParaTexto, cpfsDoTexto, pessoaDaAnalise, mesmaPessoa } from './engine/leitor.js';
-export { docsNeutros, docsSemPessoa, pessoaDoItem, tipoMaisFrequente, montarPedidosLote, regra60, somaAtestados, mesmaDoencaPeloCid } from './engine/lote.js';
+export { docsNeutros, docsSemPessoa, pessoaDoItem, tipoMaisFrequente, montarPedidosLote, regra60, somaAtestados, mesmaDoencaPeloCid, dicasDoNomeDoArquivo } from './engine/lote.js';
 export { resolveTipo, tipoBySlug, activeConditionals, condicaoVale, docsDoAnexo, anexoAceita, anexoCasa, verificarAso, camposDaEmpresa, valoresReaproveitaveis, valoresParaRepetir, valoresDoDetalhe, valoresParaHistorico, ajustesDaEmpresa, sugestoesCadastro } from './engine/tipos.js';
 export { fimDoAviso, inicioDoAviso, diaUtilAntes, pagamentoFerias, pagamentoRescisao, anosCompletos, temAviso, avisoPeloEmpregador, vaiAoInss, derived, sugeridos, primeiroInicioFerias } from './engine/prazos.js';
 export { renderFirst, semOpcoesDesmarcadas, inferTipoAfastamento, renderTemplate } from './engine/modelos.js';
