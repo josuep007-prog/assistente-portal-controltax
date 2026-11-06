@@ -56,8 +56,9 @@ export function valorPlat(tipo, k) {
 
 /** Mensagem genérica que a leitura devolve quando o portal marca o campo mas não diz por quê (campo obrigatório que ficou vazio). */
 export const MSG_GENERICA_PORTAL = 'não aceito pelo portal';
-/** O portal marcou o campo e ele está vazio: é só um campo obrigatório que falta, ninguém recusou valor nenhum. */
-export const erroEhCampoVazio = (tipo, e) => !!e && !valorPlat(tipo, e.k || '');
+/** O portal marcou o campo e ele está VAZIO no portal (mesmo que a plataforma tenha um valor que ainda não chegou lá): é só um campo obrigatório que falta,
+ *  ninguém recusou valor nenhum. "Recusou" é quando o portal tem um valor e o marca como inválido. */
+export const erroEhCampoVazio = (tipo, e) => !!e && !(campoPortal(e.k || '')?.valor);
 export const erroDoPortal = (k) => (S.ctx.form?.erros || []).find(e => e.k === k) || null;
 
 /** Estado de um campo do formulário próprio: o que está no portal comparado com o que o cliente escreveu aqui. */
@@ -202,7 +203,7 @@ export function renderFormularioProprio(el, tipo) {
     return `<div class="field pf${c.tipo === 'textarea' ? ' wide' : ''}${baixa ? ' low' : ''}${erro ? ' pf-err' : ''}" data-campo="${esc(k)}">
       <label for="f-${esc(k)}">${esc(c.rotulo)}${obrig(k, c) ? '<span class="req">*</span>' : ''}${estado[1] ? ` <span class="chip ${estado[0]} pf-st">${estado[1]}</span>` : ''}${fonte ? `<span class="src" title="${esc('De: ' + fonte)}">${esc(fonte)}</span>` : ''}</label>
       ${fieldInput(k, c, { ...(cur || {}), valor }, W)}
-      ${erro && (valor || erro.mensagem !== MSG_GENERICA_PORTAL) ? `<small class="portal-erro">${esc((valor ? (M.portalAcusa || 'O portal acusa: {mensagem}') : (M.portalPede || 'O portal pede: {mensagem}')).replace('{mensagem}', erro.mensagem))}</small>` : ''}
+      ${erro && (!erroEhCampoVazio(tipo, erro) || erro.mensagem !== MSG_GENERICA_PORTAL) ? `<small class="portal-erro">${esc((erroEhCampoVazio(tipo, erro) ? (M.portalPede || 'O portal pede: {mensagem}') : (M.portalAcusa || 'O portal acusa: {mensagem}')).replace('{mensagem}', erro.mensagem))}</small>` : ''}
       ${p.disabled ? '<small class="hint">O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).</small>' : ''}
       ${baixa ? '<small class="hint">Leitura com dúvida: confira.</small>' : ''}
       ${sugDoc ? htmlSugestao(k, cur) : ''}
