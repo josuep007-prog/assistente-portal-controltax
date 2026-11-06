@@ -181,7 +181,7 @@ export function renderLote() {
 /** Texto para o cliente quando um arquivo não pôde ser lido (regras: mensagens.leitura*): o que fazer, sem culpa. */
 export function msgLeitura(motivo, item) {
   const M = S.rules.mensagens || {};
-  const m = { heic: M.leituraHeic, tiff: M.leituraTiff, senha: M.leituraPdfSenha, imagem: M.leituraImagem }[motivo];
+  const m = { heic: M.leituraHeic, tiff: M.leituraTiff, senha: M.leituraPdfSenha, imagem: M.leituraImagem, tempo: M.leituraTempo }[motivo];
   return m || (M.leituraFalhou || 'Não consegui ler “{arquivo}”. Escolha o pedido e eu anexo o arquivo assim mesmo.').replace('{arquivo}', item.nome);
 }
 
@@ -217,7 +217,8 @@ export async function processItem(item, tipoAtual) {
   };
   const M = S.rules.mensagens || {};
   try {
-    const r = await readFile(item.file, onProgress, { ocr: S.prefs.ocrAutomatico, ocrMaxPaginas: S.rules.config?.ocrMaxPaginas || 8 });
+    const r = await readFile(item.file, onProgress, { ocr: S.prefs.ocrAutomatico, ocrMaxPaginas: S.rules.config?.ocrMaxPaginas || 8, ocrLadoMax: S.rules.config?.ocrLadoMax || 2400, ocrTempoMaxSeg: S.rules.config?.ocrTempoMaxSeg || 45 });
+    item.diagLeitura = r.diag || null;   // só tamanhos, tentativas e tempo (sem conteúdo)
     item.texto = r.texto; item.metodo = r.metodo; item.tabela = r.tabela; item.confianca = r.confianca ?? null; item.rotacao = r.rotacao || 0;
     // só na memória: as palavras da foto com posição e confiança, e a imagem de onde saíram (recorte dos campos com dúvida)
     item.palavras = r.palavras || null; item.imagens = r.imagens || null; item.paginasTotal = r.paginas || 1;

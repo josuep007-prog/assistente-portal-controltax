@@ -51,11 +51,13 @@ async function getOcr() {
 }
 /** Fotos de celular: gira (0/90/180/270), aumenta se for pequena, passa para tons de cinza e estica o contraste.
  *  binarizar = limiar adaptativo (ajuda em fotos com sombra e papel amarelado). */
-async function prepImage(source, { rot = 0, binarizar = false } = {}) {
+async function prepImage(source, { rot = 0, binarizar = false, ladoMax = 2400 } = {}) {
   try {
     const bmp = source instanceof ImageBitmap ? source : await createImageBitmap(source);
     const alvo = 2000;
-    const scale = Math.max(1, Math.min(3, alvo / Math.max(bmp.width, bmp.height)));
+    const lado = Math.max(bmp.width, bmp.height);
+    // pequena: aumenta (até 3×) para ~2000 px; grande (foto de celular de 12 MP): reduz para `ladoMax` — o OCR não ganha leitura com mais pixels e demora várias vezes mais
+    const scale = lado > ladoMax ? ladoMax / lado : Math.max(1, Math.min(3, alvo / lado));
     const bw = Math.round(bmp.width * scale), bh = Math.round(bmp.height * scale);
     const deitado = rot === 90 || rot === 270;
     const w = deitado ? bh : bw, h = deitado ? bw : bh;
@@ -93,10 +95,15 @@ async function prepImage(source, { rot = 0, binarizar = false } = {}) {
   } catch { return source; }
 }
 
-async function ocrImage(source, onProgress) {
+async function ocrImage(source, onProgress, { tempoMs = 90000 } = {}) {
   ocrProgress = onProgress || (() => {});
   const w = await getOcr();
-  const { data } = await w.recognize(source, { rotateAuto: true });
+  // uma leitura que trava não pode prender tudo: passou do tempo, o motor é reiniciado e o arquivo falha com o motivo "tempo" (mensagem educativa)
+  let temporizador;
+  const limite = new Promise((_, rej) => { temporizador = setTimeout(() => { try { ocrWorker?.terminate?.(); } catch { /* já encerrado */ } ocrWorker = null; const e = new Error('tempo'); e.motivo = 'tempo'; rej(e); }, tempoMs); });
+  let data;
+  try { ({ data } = await Promise.race([w.recognize(source, { rotateAuto: true }), limite])); }
+  finally { clearTimeout(temporizador); }
   // palavras com a posição e a confiança de cada uma: só na memória (recorte da foto nos campos com dúvida)
   // com a imagem girada pelo próprio OCR (rotateAuto) as coordenadas são de outra imagem: sem posição, sem recorte
   const palavras = Math.abs(data.rotateRadians || 0) > 0.02 ? [] : (data.words || []).filter(x => x?.text && x.bbox).map(x => ({ t: x.text, conf: Math.round(x.confidence || 0), bbox: { x0: x.bbox.x0, y0: x.bbox.y0, x1: x.bbox.x1, y1: x.bbox.y1 } }));
@@ -113,23 +120,30 @@ export function notaLeitura(r) {
 }
 
 /** OCR com segunda chance: se a leitura sai fraca, tenta a imagem girada e/ou com limiar adaptativo. */
-async function ocrMelhor(source, onProgress, faixa = [0, 1]) {
+async function ocrMelhor(source, onProgress, faixa = [0, 1], { ladoMax = 2400, tempoMaxSeg = 45 } = {}) {
   let bmp; try { bmp = await createImageBitmap(source); } catch { const e = new Error('imagem'); e.motivo = 'imagem'; throw e; }
   const deitada = bmp.width > bmp.height * 1.1;
   const tentativas = [{ rot: 0 }, ...(deitada ? [{ rot: 90 }, { rot: 270 }] : []), { rot: 0, binarizar: true }, ...(deitada ? [] : [{ rot: 90 }, { rot: 270 }]), { rot: 180 }];
   const [a, b] = faixa; const n = tentativas.length;
-  let melhor = null;
+  const t0 = performance.now();
+  let melhor = null, feitas = 0, tempoEsgotado = false;
   for (let i = 0; i < n; i++) {
+    // orçamento de tempo: depois da primeira leitura, não começa outra tentativa se já passou do limite (devolve a melhor até aqui)
+    if (i > 0 && (performance.now() - t0) / 1000 > tempoMaxSeg) { tempoEsgotado = true; break; }
     const t = tentativas[i];
     const etapa = i === 0 ? 'Reconhecendo texto (OCR)' : t.rot ? 'Tentando a imagem em outra posição' : 'Tentando melhorar a imagem';
-    const prep = await prepImage(bmp, t);
-    const r = await ocrImage(prep, (p) => onProgress?.(a + (b - a) * Math.min(0.95, (i + p) / Math.min(n, i + 2)), etapa));
+    const prep = await prepImage(bmp, { ...t, ladoMax });
+    const r = await ocrImage(prep, (p) => onProgress?.(a + (b - a) * Math.min(0.95, (i + p) / Math.min(n, i + 2)), etapa), { tempoMs: Math.max(20000, tempoMaxSeg * 2000) });
+    feitas++;
     r.rot = t.rot; r.binarizar = !!t.binarizar; r.nota = notaLeitura(r); r.imagem = prep;   // a imagem em que as palavras foram achadas (coordenadas do recorte)
     self.__ctOcrLog?.push({ rot: t.rot, bin: !!t.binarizar, nota: Math.round(r.nota), conf: Math.round(r.conf) });
     if (!melhor || r.nota > melhor.nota) melhor = r;
     if (melhor.nota >= 75) break;                 // leitura boa: para aqui
     if (i >= 1 && melhor.nota >= 55 && !deitada) break;
   }
+  const lado = Math.max(bmp.width, bmp.height);
+  // só tamanhos, contagens e tempo (nenhum conteúdo do documento): vai para o diagnóstico
+  melhor.diag = { larg: bmp.width, alt: bmp.height, lado: Math.min(lado, lado > ladoMax ? ladoMax : lado), reduzida: lado > ladoMax, tentativas: feitas, ms: Math.round(performance.now() - t0), nota: Math.round(melhor.nota), tempoEsgotado };
   return melhor;
 }
 
@@ -157,7 +171,7 @@ function pageTextToLines(content) {
  *  até opts.ocrMaxPaginas (regras: config.ocrMaxPaginas). Devolve também paginasTexto (para separar os documentos), paginasLidas
  *  (quantas foram lidas de verdade), ocrCortado (páginas que precisavam de OCR e ficaram de fora) e, das páginas lidas por OCR,
  *  as palavras com posição e a imagem (só na memória). A memória do PDF é liberada ao terminar. */
-async function readPdf(file, onProgress, { ocr = true, ocrMaxPaginas = 8 } = {}) {
+async function readPdf(file, onProgress, { ocr = true, ocrMaxPaginas = 8, ocrLadoMax = 2400, ocrTempoMaxSeg = 45 } = {}) {
   const data = new Uint8Array(await file.arrayBuffer());
   let pdf;
   try { pdf = await (await getPdfjs()).getDocument({ data, isEvalSupported: false }).promise; }
@@ -179,7 +193,7 @@ async function readPdf(file, onProgress, { ocr = true, ocrMaxPaginas = 8 } = {})
     const alvo = ocr ? precisa.map((p, i) => p ? i : -1).filter(i => i >= 0) : [];
     const lista = alvo.slice(0, Math.max(1, ocrMaxPaginas));
     const ocrCortado = alvo.length - lista.length;
-    let metodo = 'pdf-texto';
+    let metodo = 'pdf-texto'; const diagPdf = [];
     for (let k = 0; k < lista.length; k++) {
       const i = lista[k];
       const page = await pdf.getPage(i + 1);
@@ -187,7 +201,8 @@ async function readPdf(file, onProgress, { ocr = true, ocrMaxPaginas = 8 } = {})
       const canvas = new OffscreenCanvas(vp.width, vp.height);
       await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
       const blob = await canvas.convertToBlob({ type: 'image/png' });
-      const r = await ocrMelhor(blob, onProgress, [0.3 + (k / lista.length) * 0.7, 0.3 + ((k + 1) / lista.length) * 0.7]);
+      const r = await ocrMelhor(blob, onProgress, [0.3 + (k / lista.length) * 0.7, 0.3 + ((k + 1) / lista.length) * 0.7], { ladoMax: ocrLadoMax, tempoMaxSeg: ocrTempoMaxSeg });
+      diagPdf.push(r.diag);
       // fica com o OCR quando a página não tinha texto ou quando ele lê mais palavras de documento
       const poor = pages[i].replace(/\s+/g, '').length < 40;
       if (poor || palavrasDoc(r.texto, PALAVRAS_GERAIS) > palavrasDoc(pages[i], PALAVRAS_GERAIS)) {
@@ -197,7 +212,8 @@ async function readPdf(file, onProgress, { ocr = true, ocrMaxPaginas = 8 } = {})
       }
     }
     return { texto: ocrPages.join('\n\n'), paginasTexto: ocrPages, paginas: pdf.numPages, paginasLidas: Math.min(pdf.numPages, maxPages) - ocrCortado, ocrCortado, limitePaginas: maxPages < pdf.numPages ? maxPages : null,
-      metodo, confianca: confs.length ? Math.round(Math.min(...confs)) : 100, rotacao: metodo === 'ocr' ? rots.find(Boolean) || 0 : 0, palavras: metodo === 'ocr' ? palavras : null, imagens: metodo === 'ocr' ? imagens : null };
+      metodo, confianca: confs.length ? Math.round(Math.min(...confs)) : 100, rotacao: metodo === 'ocr' ? rots.find(Boolean) || 0 : 0, palavras: metodo === 'ocr' ? palavras : null, imagens: metodo === 'ocr' ? imagens : null,
+      diag: diagPdf.length ? { paginasOcr: diagPdf.length, tentativas: diagPdf.reduce((n, d) => n + d.tentativas, 0), ms: diagPdf.reduce((n, d) => n + d.ms, 0), tempoEsgotado: diagPdf.some(d => d.tempoEsgotado) } : null };
   } finally { try { await pdf.destroy(); } catch { /* já liberado */ } }
 }
 
@@ -249,8 +265,8 @@ export async function readFile(file, onProgress, opts = {}) {
   if (isImage(file)) {
     if (opts.ocr === false) return { texto: '', metodo: 'imagem', paginas: 1 };
     onProgress?.(0.05, 'Melhorando a imagem');
-    const r = await ocrMelhor(file, onProgress);
-    return { texto: r.texto, metodo: 'ocr', paginas: 1, confianca: Math.round(r.conf), rotacao: r.rot, palavras: (r.palavras || []).map(w => ({ ...w, pagina: 0 })), imagens: r.imagem ? { 0: r.imagem } : null };
+    const r = await ocrMelhor(file, onProgress, [0, 1], { ladoMax: opts.ocrLadoMax || 2400, tempoMaxSeg: opts.ocrTempoMaxSeg || 45 });
+    return { texto: r.texto, metodo: 'ocr', paginas: 1, confianca: Math.round(r.conf), rotacao: r.rot, palavras: (r.palavras || []).map(w => ({ ...w, pagina: 0 })), imagens: r.imagem ? { 0: r.imagem } : null, diag: r.diag };
   }
   if (isSheet(file)) return readSheet(file);
   if (isDoc(file)) return readDoc(file);
