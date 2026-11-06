@@ -469,6 +469,14 @@ export function analisarItem(item, tipo, empregados = []) {
   // foto: confiança das palavras de onde cada valor saiu (valor mal lido vira sugestão); nunca para dados de saúde
   const alvo = tipo || a.tipoSugerido;
   if (item.palavras?.length && alvo) { E.aplicarLeituraDasPalavras(a.campos, item.palavras, tipoDef(alvo), S.rules); a.pessoa = E.pessoaDaAnalise({ campos: a.campos, paciente: a.paciente }); }
+  // o nome do arquivo ("Ana Julia 01 dia 29.09.jpg") só completa o que a leitura não achou, e como SUGESTÃO (botão Usar): nunca vai ao portal sozinho
+  const cfgNome = S.rules.config?.nomeDoArquivo || {};
+  if (cfgNome.ativo !== false && alvo && item.nome && a.campos) {
+    const def = tipoDef(alvo)?.campos || {};
+    const dicas = E.dicasDoNomeDoArquivo(item.nome, empregados, E.today());
+    const poe = (k, valor) => { if (valor != null && def[k] && !a.campos[k]?.valor) a.campos[k] = { valor: String(valor), conf: cfgNome.confianca ?? 0.5, fonte: 'nome do arquivo (confira)' }; };
+    poe('empregado', dicas.empregado); poe('dataAfastamento', dicas.data); poe('dias', dicas.dias);
+  }
   return a;
 }
 
@@ -489,7 +497,8 @@ export async function usarSugestao(tipo, k) {
 export function htmlSugestao(k, v) {
   const M = S.rules.mensagens || {};
   if (v.confira === 'formato') return `<div class="sug-doc"><small>Li no documento “${esc(v.valor)}”, mas não parece válido — confira e escreva no campo.</small></div>`;
-  return `<div class="sug-doc"><small title="${esc(v.fonte || '')}">${esc(M.sugestaoLeitura || 'Li no documento, mas com dúvida — confira e toque em Usar.')} <b>${esc(v.valor)}</b></small><button type="button" class="btn btn-sm" data-usar-k="${esc(k)}">Usar</button></div>`;
+  const doNome = /nome do arquivo/i.test(v.fonte || '');
+  return `<div class="sug-doc"><small title="${esc(v.fonte || '')}">${esc(doNome ? (M.sugestaoNomeArquivo || 'Pelo nome do arquivo — confira e toque em Usar.') : (M.sugestaoLeitura || 'Li no documento, mas com dúvida — confira e toque em Usar.'))} <b>${esc(v.valor)}</b></small><button type="button" class="btn btn-sm" data-usar-k="${esc(k)}">Usar</button></div>`;
 }
 
 /* Documentos neutros (servem a vários pedidos) e famílias de pedidos compatíveis */

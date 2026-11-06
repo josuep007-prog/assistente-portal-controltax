@@ -61,7 +61,7 @@ export function estadoCampoPlat(tipo, k, obrigatorio) {
   const W = w(tipo); const p = campoPortal(k); const cur = W.valores[k];
   const valor = valorPlat(tipo, k);
   if (p.disabled) return ['muted', 'bloqueado'];
-  if (erroDoPortal(k)) return ['err', 'o portal recusou'];
+  if (erroDoPortal(k)) return valor ? ['err', 'o portal recusou'] : ['warn', 'o portal pede este campo'];   // vazio: é só o campo obrigatório que o portal marcou, nada foi recusado
   if (valor && E.norm(valor) !== E.norm(p.valor || '')) return ['warn', 'ainda não está no portal'];
   if (p.valor && W.aproximadas?.[k] && E.norm(W.aproximadas[k].escolhida) === E.norm(p.valor)) return ['warn', 'confira'];
   if (p.valor) return W.ultimoPreenchido?.[k] === p.valor && cur?.fonte && cur.fonte !== 'você' ? ['ok', 'lido pelo Assistente'] : ['info', 'no portal'];
