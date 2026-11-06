@@ -54,6 +54,10 @@ export function valorPlat(tipo, k) {
   return p.valor || cur?.valor || '';
 }
 
+/** Mensagem genérica que a leitura devolve quando o portal marca o campo mas não diz por quê (campo obrigatório que ficou vazio). */
+export const MSG_GENERICA_PORTAL = 'não aceito pelo portal';
+/** O portal marcou o campo e ele está vazio: é só um campo obrigatório que falta, ninguém recusou valor nenhum. */
+export const erroEhCampoVazio = (tipo, e) => !!e && !valorPlat(tipo, e.k || '');
 export const erroDoPortal = (k) => (S.ctx.form?.erros || []).find(e => e.k === k) || null;
 
 /** Estado de um campo do formulário próprio: o que está no portal comparado com o que o cliente escreveu aqui. */
@@ -198,7 +202,7 @@ export function renderFormularioProprio(el, tipo) {
     return `<div class="field pf${c.tipo === 'textarea' ? ' wide' : ''}${baixa ? ' low' : ''}${erro ? ' pf-err' : ''}" data-campo="${esc(k)}">
       <label for="f-${esc(k)}">${esc(c.rotulo)}${obrig(k, c) ? '<span class="req">*</span>' : ''}${estado[1] ? ` <span class="chip ${estado[0]} pf-st">${estado[1]}</span>` : ''}${fonte ? `<span class="src" title="${esc('De: ' + fonte)}">${esc(fonte)}</span>` : ''}</label>
       ${fieldInput(k, c, { ...(cur || {}), valor }, W)}
-      ${erro ? `<small class="portal-erro">${esc((M.portalAcusa || 'O portal acusa: {mensagem}').replace('{mensagem}', erro.mensagem))}</small>` : ''}
+      ${erro && (valor || erro.mensagem !== MSG_GENERICA_PORTAL) ? `<small class="portal-erro">${esc((valor ? (M.portalAcusa || 'O portal acusa: {mensagem}') : (M.portalPede || 'O portal pede: {mensagem}')).replace('{mensagem}', erro.mensagem))}</small>` : ''}
       ${p.disabled ? '<small class="hint">O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).</small>' : ''}
       ${baixa ? '<small class="hint">Leitura com dúvida: confira.</small>' : ''}
       ${sugDoc ? htmlSugestao(k, cur) : ''}
@@ -692,10 +696,16 @@ export function renderFillResult() {
   el.dataset.chave = chave;
   const M = S.rules.mensagens || {};
   const partes = [];
-  // o portal recusou o envio: o que ele acusa (só rótulo e mensagem) e o caminho para ver a página
-  if (erros.length) partes.push(`<div class="note err" style="margin-top:10px">${icon('alert')}<div><b>O portal não aceitou estes campos:</b>
-    <ul class="tips" style="margin-top:6px">${erros.map(e => `<li>${esc(e.rotulo)}: ${esc(e.mensagem)}</li>`).join('')}</ul>
-    ${S.modo === 'plataforma' ? `<button type="button" class="btn btn-sm" id="fr-ver-portal">${icon('external', 'ic-sm')} Ver no portal</button>` : ''}</div></div>`);
+  // o portal marcou campos: os que tinham valor e ele não aceitou ("recusou") e os que estão vazios (só faltam; ninguém recusou nada)
+  const comValor = erros.filter(e => !erroEhCampoVazio(tipo, e)), vazios = erros.filter(e => erroEhCampoVazio(tipo, e));
+  const verPortal = `${S.modo === 'plataforma' ? `<button type="button" class="btn btn-sm" id="fr-ver-portal">${icon('external', 'ic-sm')} Ver no portal</button>` : ''}`;
+  if (comValor.length) partes.push(`<div class="note err" style="margin-top:10px">${icon('alert')}<div><b>O portal não aceitou estes campos:</b>
+    <ul class="tips" style="margin-top:6px">${comValor.map(e => `<li>${esc(e.rotulo)}: ${esc(e.mensagem)}</li>`).join('')}</ul>
+    ${verPortal}</div></div>`);
+  if (vazios.length) partes.push(`<div class="note warn" style="margin-top:10px">${icon('info')}<div><b>O portal ainda pede estes campos:</b>
+    <ul class="tips" style="margin-top:6px">${vazios.map(e => `<li>${esc(e.rotulo)}${e.mensagem && e.mensagem !== MSG_GENERICA_PORTAL ? `: ${esc(e.mensagem)}` : ''}</li>`).join('')}</ul>
+    <small class="muted">Preencha aqui (ou toque em “Usar” nas sugestões) e eu mando ao portal.</small>
+    ${comValor.length ? '' : verPortal}</div></div>`);
   if (r?.resultados) {
     const falhas = r.resultados.filter(x => !x.ok);
     const ok = r.resultados.filter(x => x.ok).length;
