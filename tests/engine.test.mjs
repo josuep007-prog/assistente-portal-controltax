@@ -302,6 +302,15 @@ t('mesmo sobrenome com primeiro nome diferente não é a mesma pessoa', () => {
   assert.equal(E.findEmployeeInText(txt, ['JAQUELINE DOS SANTOS', 'ARTHUR DOS SANTOS SILVA']).option, 'ARTHUR DOS SANTOS SILVA');
 });
 
+t('atestado só com "Ana Julia": acha a única Ana Julia da lista', () => {
+  const lista = ['ANA JULIA GOMES FERREIRA', 'ANA RITA AUGUSTO DA SILVA', 'JULIA MENDES'];
+  const r = E.findEmployeeInText('Atesto que Ana Julia esteve em consulta.', lista);
+  assert.equal(r.option, 'ANA JULIA GOMES FERREIRA');
+  assert.ok(r.score >= 0.6);
+  assert.equal(E.findEmployeeInText('Atesto que Ana Julia esteve.', [...lista, 'ANA JULIA SOUZA']).option, null, 'duas Ana Julia: pergunta');
+  assert.equal(E.findEmployeeInText('Atesto que Ana esteve.', lista, { soPrimeiroNome: false }), null);
+});
+
 t('empate de nome: pergunta em vez de decidir pela ordem da lista', () => {
   const txt = 'Eu, JOSE CARLOS, venho pedir demissão.';
   const lista = ['JOSE CARLOS DA SILVA', 'JOSE CARLOS DA COSTA'];

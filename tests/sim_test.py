@@ -1677,7 +1677,7 @@ async def teste_dicas_arquivo(b):
     tarefa = asyncio.create_task(_auto())
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
     await pn.click('.pd-escolha .intent[data-tipo="afastamento"]'); await pg.wait_for_timeout(3000)
-    await pg.evaluate("""() => { window.__ctSim.hooks().sendFiles([new File(['Declaro que o paciente compareceu a consulta nesta data.'], 'Atestado Joao da Silva 4 dias 02.11.txt', { type: 'text/plain' })]); }""")
+    await pg.evaluate("""() => { window.__ctSim.hooks().sendFiles([new File(['Declaro que o paciente compareceu a consulta nesta data.'], 'Atestado Joao 4 dias 02.11.txt', { type: 'text/plain' })]); }""")
     ok = False
     for _ in range(40):
         if await pn.locator('[data-usar-k="empregado"]').count(): ok = True; break
@@ -1691,6 +1691,18 @@ async def teste_dicas_arquivo(b):
     await pn.click('[data-usar-k="empregado"]'); await pg.wait_for_timeout(3500)
     portal2 = await pg.evaluate("(() => { const e = document.querySelector('[formcontrolname=selectedEmployee]'); return e ? (e.querySelector('input') || e).value : null; })()")
     check(portal2 == 'JOAO DA SILVA', f'arquivo: ao tocar em Usar, o funcionário vai ao portal ({portal2!r})')
+    # 2.36.2: nome com duas palavras que bate com UM funcionário ("Joao da Silva") vale como leitura e vai ao portal, ainda marcado "confira"
+    await pn.click('#pd-voltar') if await pn.locator('#pd-voltar').count() else None
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1200)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="afastamento"]'); await pg.wait_for_timeout(3000)
+    await pg.evaluate("""() => { window.__ctSim.hooks().sendFiles([new File(['Declaro que o paciente compareceu a consulta nesta data.'], 'Atestado Joao da Silva 4 dias 02.11.txt', { type: 'text/plain' })]); }""")
+    portal3 = ''
+    for _ in range(40):
+        portal3 = await pg.evaluate("(() => { const e = document.querySelector('[formcontrolname=selectedEmployee]'); return e ? (e.querySelector('input') || e).value : ''; })()")
+        if portal3: break
+        await pg.wait_for_timeout(500)
+    check(portal3 == 'JOAO DA SILVA', f'arquivo: nome com duas palavras que bate com um só funcionário vai ao portal ({portal3!r})')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()

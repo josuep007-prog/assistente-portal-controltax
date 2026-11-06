@@ -47,9 +47,13 @@ export function findEmployeeInText(text, employees, { soPrimeiroNome = true } = 
       else if (s === best.bruto && best.option !== e) empates.add(e);
     }
   }
+  // texto só com os dois primeiros nomes ("Ana Julia"): vale se esse par, em sequência, é de UM funcionário da lista (confira)
+  const pares = (employees || []).filter(e => { const t = norm(e).split(' ').filter(x => x.length > 1 && !PARTICULAS.has(x)); return t.length >= 2 && T.includes(' ' + t[0] + ' ' + t[1] + ' '); });
+  if (pares.length > 1 && !(best && best.bruto === 1)) return { option: null, score: 0, candidatos: pares };   // dois "Ana Julia": quem decide é o cliente
   // empate (mesmo nome parcial para duas pessoas): quem decide é o cliente, não a ordem da lista
   if (best && empates.size) return { option: null, score: 0, candidatos: [best.option, ...empates] };
   if (best) return best;
+  if (pares.length === 1) return { option: pares[0], score: 0.7, soDoisNomes: true };
   if (!soPrimeiroNome) return null;
   // só o primeiro nome ("o Jorge pediu demissão"): vale se for único na lista, mas o cliente confirma (abaixo do limiar)
   const firsts = (employees || []).filter(e => { const f = norm(e).split(' ')[0]; return f.length > 2 && T.includes(' ' + f + ' '); });
