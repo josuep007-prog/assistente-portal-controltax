@@ -59,6 +59,7 @@ export async function iniciarLote(pedidos, fora, pessoas = []) {
     catch { p.empresaAlvo = null; }
   }
   // sem empresa achada para alguém: só pergunta se o cliente ainda não está num formulário (já escolheu a empresa no cabeçalho); senão fica na aberta
+  console.log('DBGL alvos', JSON.stringify(pedidos.map(p => p.empresaAlvo && (p.empresaAlvo.apelido || p.empresaAlvo))), JSON.stringify(S.plat.funcDiag || null), (S.plat.sol?.itens || []).length);
   const jaNoFormulario = S.ctx.route?.mode === 'form' && !!S.ctx.empresa;
   if (!pedidos.every(p => p.empresaAlvo) && !jaNoFormulario && !(await empresaDoPedido(null))) return;
   for (const p of pedidos) if (!p.empresaAlvo) p.empresaAlvo = 'atual';
