@@ -333,14 +333,11 @@ export async function handleFiles(files, origem) {
 /** Já dentro do formulário: o funcionário do documento não está na lista desta empresa, mas está (só) em outra do acesso →
  *  move o pedido para essa empresa, refaz a leitura com a lista dela e preenche. Nada acontece se a pessoa já foi achada aqui. */
 async function procurarEmpresaDoFuncionario(tipo, item) {
-  console.log('DBGP0', standalone, !!P?.moverPedidoParaEmpresa, tipo, S.ctx.tipo, S.ctx.route?.mode);
   if (standalone || !P?.moverPedidoParaEmpresa || tipo !== S.ctx.tipo || S.ctx.route?.mode !== 'form') return;
   const v = w(tipo).valores.empregado;
-  console.log('DBGP', JSON.stringify(v || null));
   if (v?.valor && !ehSugestao(v)) return;
   let achou = null;
   try { achou = await empresaDosDocumentos([item]); } catch { return; }
-  console.log('DBGP achou', achou?.tipo, JSON.stringify(achou?.hits?.[0]?.empresa || null));
   if (achou?.tipo !== 'unica') return;
   const { empresa, funcionario } = achou.hits[0];
   if (!(await P.moverPedidoParaEmpresa(empresa.nome, empresa.apelido))) return;
