@@ -347,8 +347,14 @@ export async function procurarEmpresaDoFuncionario(tipo, item, { perguntar = tru
     if (ok) toast(`${funcionario.split(' ').slice(0, 2).join(' ')} é da empresa ${empresa.apelido || empresa.nome}: movi o pedido para ela.`);
   } else if (perguntar && (achou?.tipo === 'nenhuma' || achou?.tipo === 'varias')) {
     // ninguém com esse nome nas empresas conhecidas (ou em várias): pergunta ao cliente, com o nome do arquivo/documento
+    // só pergunta se há mesmo um nome de pessoa (o do documento ou o do arquivo); "print colado", "image"… não são nomes
+    const doDoc = item.analise?.campos?.empregado?.valor || item.analise?.paciente || '';
+    const doArquivo = E.nomeDoArquivoLimpo(item.nome);
+    const palavras = (n) => E.norm(n).split(' ').filter(t => t.length >= 3).length;
+    // nome do documento só vale com duas palavras de verdade (o OCR de uma imagem vazia devolve "H M S"); o do arquivo, com uma de 3+ letras
+    nomeLido = palavras(doDoc) >= 2 ? doDoc : (palavras(doArquivo) >= 1 ? doArquivo : '');
+    if (!nomeLido) return false;
     item.empresaPerguntada = true;
-    nomeLido = E.nomeDoArquivoLimpo(item.nome) || item.analise?.paciente || 'o funcionário';
     const nomeBonito = nomeLido.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
     ok = await P.moverPedidoParaEmpresa('', '', { perguntar: nomeBonito });
   }

@@ -159,5 +159,5 @@ export function dicasDoNomeDoArquivo(nome, employees = [], hoje = today()) {
 /** O nome do arquivo sem extensão, números e palavras de ruído ("Atestado Ana Julia 01 dia 29.09.jpg" → "ANA JULIA"): o que sobra é o nome da pessoa. */
 export function nomeDoArquivoLimpo(nome) {
   const base = String(nome ?? '').replace(/\.[A-Za-z0-9]{2,4}$/, '');
-  return norm(base.replace(/\d+[.\-\/]?\d*/g, ' ').replace(/\b(atestado|dias?|dia|cid|medico|medica|foto|img|imagem|whatsapp)\b/ig, ' '));
+  return norm(base.replace(/\d+[.\-\/]?\d*/g, ' ').replace(/\b(atestado|dias?|dia|cid|medico|medica|foto|img|imagem|whatsapp|print|prints|colado|colada|captura|screenshot|scan|scanner|digitalizado|documento|arquivo|anexo|copia|image|page|pagina|comprovante)\b/ig, ' '));
 }
