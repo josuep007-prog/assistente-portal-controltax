@@ -1857,6 +1857,24 @@ async def teste_empresa_do_funcionario(b):
         await pg.wait_for_timeout(500)
     check(ok, f'empresa: o atestado de CARLOS (da empresa MODELO) abriu o pedido já nela, com ele escolhido ({await emp()!r}, {await sel()!r})')
     check(await pn.locator('.ee-lista').count() == 0, 'empresa: não perguntou a empresa (achou uma só)')
+    # 1b) página nova (empresa base, sem nada anterior), já dentro do formulário: o atestado de alguém de OUTRA empresa move o pedido para ela
+    await pg.reload(); await pg.wait_for_timeout(4000)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    check(await emp() == BASE, f'empresa: a página nova volta à empresa base ({await emp()!r})')
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.click('.pd-escolha .intent[data-tipo="afastamento"]')
+    for _ in range(40):
+        if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]')   # a caixa da empresa: segue com a marcada (a aberta)
+        if await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"): break
+        await pg.wait_for_timeout(500)
+    await pg.wait_for_timeout(1500)
+    check(await emp() == BASE and await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"), f'empresa: o formulário de afastamento está aberto na empresa base ({await emp()!r})')
+    await pg.evaluate("(t) => { window.__ctSim.hooks().sendFiles([new File([t], 'Atestado Carlos Eduardo Paiva 02 dias.txt', { type: 'text/plain' })]); }", texto('CARLOS EDUARDO PAIVA', 2))
+    ok = False
+    for _ in range(120):
+        if await emp() == OUTRA and await sel() == 'CARLOS EDUARDO PAIVA': ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, f'empresa: dentro do formulário, o atestado de CARLOS (da empresa MODELO) move o pedido para ela e escolhe o funcionário ({await emp()!r}, {await sel()!r})')
     # volta ao início e solta atestados de duas pessoas de empresas diferentes (lote)
     await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)

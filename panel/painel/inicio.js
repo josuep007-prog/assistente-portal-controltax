@@ -1,7 +1,7 @@
 /* Painel — Início e leitura de arquivos. (parte de panel/panel.js, dividido na 2.16.4; mapa em docs/arquitetura.md). */
 import * as E from '../engine.js';
 import { $, P, S, esc, icon, progresso, request, standalone, toast, viewEl } from './base.js';
-import { FAMILIAS, analisarItem, applyAnalysis, esperar, handleVarios, processItem, renderLote, renderSugestao, renderSugestaoTexto } from './lote.js';
+import { FAMILIAS, analisarItem, applyAnalysis, ehSugestao, esperar, handleVarios, processItem, renderLote, renderSugestao, renderSugestaoTexto } from './lote.js';
 import { PAR_AVISO, fillPortal } from './formulario.js';
 import { comecarDoZeroSeAbandonado, renderAvisosInicio, renderExperiencia, renderFaq, renderRepetir } from './facilidades.js';
 import { empregadosDaEmpresa, empregadosPara, loadEmpregados, render, setView, tipoDef, w } from './modo.js';
@@ -324,8 +324,27 @@ export async function handleFiles(files, origem) {
       if (S.view !== 'preencher') setView('preencher'); else renderFilesOnly();
       await processItem(item, S.ctx.tipo);
       applyAnalysis(S.ctx.tipo, item);
+      await procurarEmpresaDoFuncionario(S.ctx.tipo, item);
     }
   }
+}
+
+
+/** Já dentro do formulário: o funcionário do documento não está na lista desta empresa, mas está (só) em outra do acesso →
+ *  move o pedido para essa empresa, refaz a leitura com a lista dela e preenche. Nada acontece se a pessoa já foi achada aqui. */
+async function procurarEmpresaDoFuncionario(tipo, item) {
+  if (standalone || !P?.moverPedidoParaEmpresa || tipo !== S.ctx.tipo || S.ctx.route?.mode !== 'form') return;
+  const v = w(tipo).valores.empregado;
+  if (v?.valor && !ehSugestao(v)) return;
+  let achou = null;
+  try { achou = await empresaDosDocumentos([item]); } catch { return; }
+  if (achou?.tipo !== 'unica') return;
+  const { empresa, funcionario } = achou.hits[0];
+  if (!(await P.moverPedidoParaEmpresa(empresa.nome, empresa.apelido))) return;
+  toast(`${funcionario.split(' ').slice(0, 2).join(' ')} é da empresa ${empresa.apelido || empresa.nome}: movi o pedido para ela.`);
+  const W = w(tipo);
+  for (const it of W.arquivos) if (it.texto) { it.analise = analisarItem(it, tipo, W.empregados); applyAnalysis(tipo, it, { preencher: false }); }
+  if (S.prefs.preencherAoLer && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) await fillPortal(tipo, { silencioso: true });
 }
 
 /** Liga os ouvintes deste módulo (chamado uma vez por panel.js, na ordem de antes). */

@@ -111,6 +111,22 @@ export function montarEmpresa(C) {
     if (!alvo) return false;
     return P.irParaEmpresa(alvo, { manter: tipo || null, conservarEmpregado, doLote });
   };
+  /** Já no formulário: move o pedido para a empresa do funcionário do documento (sem caixa de escolha) e refaz a abertura com a lista dela. */
+  P.moverPedidoParaEmpresa = async (empresa, apelido = '') => {
+    const tipo = S.ctx.tipo; if (!tipo || S.ctx.route?.mode !== 'form' || document.body.classList.contains('trocando-empresa')) return false;
+    if (ehAtual(empresa, apelido)) return true;
+    document.body.classList.add('trocando-empresa');
+    try {
+      S.plat.apelidoEscolhido = { nome: empresa, apelido };
+      if (!(await P.irParaEmpresa(empresa, { manter: tipo }))) return false;
+      await A.openTipo(tipo, { manter: true, semEmpresa: true });
+      for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo); k++) await esperar(200);
+      if (S.ctx.tipo !== tipo) return false;
+      await A.loadEmpregados(tipo);
+      return true;
+    } finally { document.body.classList.remove('trocando-empresa'); }
+  };
+
   /** Botão da empresa dentro do pedido: troca a empresa e leva o pedido junto. O funcionário e as listas são da empresa
    *  antiga (saem); o resto do que o cliente preencheu fica. */
   P.trocarEmpresaDoPedido = async () => {
