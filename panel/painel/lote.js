@@ -496,7 +496,15 @@ export function analisarItem(item, tipo, empregados = []) {
       const duvida = atual?.valor && (atual.conf ?? 1) < E.limiarPortal(S.rules) && String(atual.valor) !== String(valor);
       if (valor != null && def[k] && (!atual?.valor || duvida)) a.campos[k] = { valor: String(valor), conf: conf ?? cfgNome.confianca ?? 0.5, fonte: 'nome do arquivo (confira)' }; };
     const nomeLongo = E.nomeDoArquivoLimpo(item.nome).split(' ').filter(t => t.length > 1).length >= 2;
-    poe('empregado', dicas.empregado, nomeLongo ? cfgNome.confiancaEmpregado : null); poe('dataAfastamento', dicas.data); poe('dias', dicas.dias);
+    poe('empregado', dicas.empregado, nomeLongo ? cfgNome.confiancaEmpregado : null);
+    // data e dias escritos no nome do arquivo (o cliente os digitou de propósito) valem como leitura, ainda marcados "confira"
+    poe('dataAfastamento', dicas.data, cfgNome.confiancaCampos); poe('dias', dicas.dias, cfgNome.confiancaCampos);
+    // o tipo do afastamento segue os dias: se a leitura do tipo é só uma dúvida (ou não veio) e o arquivo traz os dias, refaz com os dias do arquivo
+    const tipoDoc = a.campos.tipoAfastamento;
+    if (dicas.dias != null && def.tipoAfastamento && tipoDef(alvo)?.tipoAfastamentoAuto && (!tipoDoc?.valor || (tipoDoc.conf ?? 1) < E.limiarPortal(S.rules))) {
+      const ta = E.inferTipoAfastamento(item.texto || '', dicas.dias, (a.documento?.id === 'cat' ? 'cat' : 'atestado'), tipoDef(alvo).tipoAfastamentoAuto);
+      if (ta?.valor) a.campos.tipoAfastamento = { valor: ta.valor, conf: cfgNome.confiancaCampos ?? 0.7, fonte: `nome do arquivo (confira): ${ta.motivo.replace('no documento', 'no nome do arquivo')}` };
+    }
   }
   return a;
 }
