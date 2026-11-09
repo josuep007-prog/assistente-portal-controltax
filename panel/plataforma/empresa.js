@@ -112,8 +112,17 @@ export function montarEmpresa(C) {
     return P.irParaEmpresa(alvo, { manter: tipo || null, conservarEmpregado, doLote });
   };
   /** Já no formulário: move o pedido para a empresa do funcionário do documento (sem caixa de escolha) e refaz a abertura com a lista dela. */
-  P.moverPedidoParaEmpresa = async (empresa, apelido = '') => {
+  P.moverPedidoParaEmpresa = async (empresa, apelido = '', { perguntar = '' } = {}) => {
     const tipo = S.ctx.tipo; if (!tipo || S.ctx.route?.mode !== 'form' || document.body.classList.contains('trocando-empresa')) return false;
+    // empresa não descoberta: pergunta em qual está a pessoa (o cliente sabe); cancelar deixa o pedido onde está
+    if (!empresa && perguntar) {
+      if (S.modo === 'plataforma') await Promise.all([esperarSolicitacoes(), P.carregarEmpresasDoPortal()]);
+      const emps = P.empresasDoLogin(); if (emps.length <= 1) return false;
+      const alvo = await caixaEmpresa({ tipo, emps, titulo: `Em qual empresa está ${perguntar}?`, botao: 'Mover o pedido',
+        dica: `Não achei ${perguntar} na lista desta empresa nem nas outras que conheço. Escolha a empresa dela: eu movo o pedido, carrego os funcionários de lá e leio o atestado de novo.` });
+      if (!alvo || ehAtual(alvo, S.plat.apelidoEscolhido?.apelido || '')) return false;
+      empresa = alvo; apelido = S.plat.apelidoEscolhido?.apelido || '';
+    }
     if (ehAtual(empresa, apelido)) return true;
     document.body.classList.add('trocando-empresa');
     try {

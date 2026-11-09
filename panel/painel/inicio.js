@@ -332,19 +332,37 @@ export async function handleFiles(files, origem) {
 
 /** Já dentro do formulário: o funcionário do documento não está na lista desta empresa, mas está (só) em outra do acesso →
  *  move o pedido para essa empresa, refaz a leitura com a lista dela e preenche. Nada acontece se a pessoa já foi achada aqui. */
-async function procurarEmpresaDoFuncionario(tipo, item) {
-  if (standalone || !P?.moverPedidoParaEmpresa || tipo !== S.ctx.tipo || S.ctx.route?.mode !== 'form') return;
+export async function procurarEmpresaDoFuncionario(tipo, item, { perguntar = true } = {}) {
+  if (standalone || !P?.moverPedidoParaEmpresa || tipo !== S.ctx.tipo || S.ctx.route?.mode !== 'form') return false;
+  if (!tipoDef(tipo)?.campos?.empregado) return false;     // pedido sem funcionário (ex.: Solicitação Geral): nada a procurar
   const v = w(tipo).valores.empregado;
-  if (v?.valor && !ehSugestao(v)) return;
+  if (v?.valor && !ehSugestao(v)) return false;
+  if (item.empresaPerguntada) return false;      // uma vez por arquivo: não fica insistindo
   let achou = null;
-  try { achou = await empresaDosDocumentos([item]); } catch { return; }
-  if (achou?.tipo !== 'unica') return;
-  const { empresa, funcionario } = achou.hits[0];
-  if (!(await P.moverPedidoParaEmpresa(empresa.nome, empresa.apelido))) return;
-  toast(`${funcionario.split(' ').slice(0, 2).join(' ')} é da empresa ${empresa.apelido || empresa.nome}: movi o pedido para ela.`);
+  try { achou = await empresaDosDocumentos([item]); } catch { return false; }
+  let ok = false, nomeLido = '';
+  if (achou?.tipo === 'unica') {
+    const { empresa, funcionario } = achou.hits[0];
+    ok = await P.moverPedidoParaEmpresa(empresa.nome, empresa.apelido);
+    if (ok) toast(`${funcionario.split(' ').slice(0, 2).join(' ')} é da empresa ${empresa.apelido || empresa.nome}: movi o pedido para ela.`);
+  } else if (perguntar && (achou?.tipo === 'nenhuma' || achou?.tipo === 'varias')) {
+    // ninguém com esse nome nas empresas conhecidas (ou em várias): pergunta ao cliente, com o nome do arquivo/documento
+    // só pergunta se há mesmo um nome de pessoa (o do documento ou o do arquivo); "print colado", "image"… não são nomes
+    const doDoc = item.analise?.campos?.empregado?.valor || item.analise?.paciente || '';
+    const doArquivo = E.nomeDoArquivoLimpo(item.nome);
+    const palavras = (n) => E.norm(n).split(' ').filter(t => t.length >= 3).length;
+    // nome do documento só vale com duas palavras de verdade (o OCR de uma imagem vazia devolve "H M S"); o do arquivo, com uma de 3+ letras
+    nomeLido = palavras(doDoc) >= 2 ? doDoc : (palavras(doArquivo) >= 1 ? doArquivo : '');
+    if (!nomeLido) return false;
+    item.empresaPerguntada = true;
+    const nomeBonito = nomeLido.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+    ok = await P.moverPedidoParaEmpresa('', '', { perguntar: nomeBonito });
+  }
+  if (!ok) return false;
   const W = w(tipo);
   for (const it of W.arquivos) if (it.texto) { it.analise = analisarItem(it, tipo, W.empregados); applyAnalysis(tipo, it, { preencher: false }); }
   if (S.prefs.preencherAoLer && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) await fillPortal(tipo, { silencioso: true });
+  return true;
 }
 
 /** Liga os ouvintes deste módulo (chamado uma vez por panel.js, na ordem de antes). */
