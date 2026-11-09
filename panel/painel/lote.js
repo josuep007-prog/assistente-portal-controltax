@@ -7,7 +7,7 @@ import { PAR_AVISO, aplicarSugestoes, camposAusentes, fillPortal, updateChecks }
 import { abrirComArquivos, ajustarDepartamento, anotarCandidatos, aplicarCampos, camposComAjustes, empresaDoPedido, entenderTexto, juntarArquivos, juntarCampos, mostrarSugestao, novoItem, openTipo } from './inicio.js';
 import { anexosAtuais, gerarTextos, portalValores, valoresAssistente, valoresParaChecar } from './valores.js';
 import { atualizarTextoNoPortal, naoAceitosPeloPortal } from './portal.js';
-import { campoDef, campoPortal, desligadosEmpresa, empregadosDaEmpresa, loadEmpregados, render, setView, tipoDef, w } from './modo.js';
+import { campoDef, campoPortal, desligadosEmpresa, empregadosDaEmpresa, empregadosPara, loadEmpregados, render, setView, tipoDef, w } from './modo.js';
 import { comecarDoZeroSeAbandonado, nomeCurto } from './facilidades.js';
 import { renderFieldsOnly } from './preencher.js';
 
@@ -90,8 +90,10 @@ export async function abrirPedido(i) {
   await openTipo(p.tipo, { manter: true, semEmpresa: true });
   for (let k = 0; k < 40 && !(S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo); k++) await esperar(200);
   await loadEmpregados(p.tipo);
+  // a lista do formulário às vezes ainda não chegou (diagnóstico "empregados=0"): sem ela o nome do arquivo e o do documento não acham ninguém; usa a da empresa
+  const lista = W.empregados.length ? W.empregados : await empregadosPara(p.tipo);
   for (const it of p.itens) {
-    if (it.texto) it.analise = analisarItem(it, p.tipo, W.empregados);
+    if (it.texto) it.analise = analisarItem(it, p.tipo, lista);
     applyAnalysis(p.tipo, it, { preencher: false });
   }
   // pedido que veio do texto livre (vários pedidos numa frase, ou aviso e cálculo): os campos entendidos
