@@ -1876,6 +1876,15 @@ async def teste_empresa_do_funcionario(b):
         await pg.wait_for_timeout(500)
     check(ok, f'empresa: dentro do formulário, o atestado de CARLOS (da empresa MODELO) move o pedido para ela e escolhe o funcionário ({await emp()!r}, {await sel()!r})')
     # 1c) pessoa que não está em nenhuma lista: pergunta em qual empresa ela está e move o pedido para a escolhida
+    await pg.reload(); await pg.wait_for_timeout(4000)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    await pn.click('.pd-escolha .intent[data-tipo="afastamento"]')
+    for _ in range(40):
+        if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]')
+        if await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"): break
+        await pg.wait_for_timeout(500)
+    await pg.wait_for_timeout(1500)
     await pg.evaluate("(t) => { window.__ctSim.hooks().sendFiles([new File([t], 'Atestado Zelia Nunes Prado 01 dia.txt', { type: 'text/plain' })]); }", texto('ZELIA NUNES PRADO', 1))
     perguntou = False
     for _ in range(60):
