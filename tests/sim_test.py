@@ -1912,12 +1912,14 @@ async def teste_empresa_do_funcionario(b):
         await pg.wait_for_timeout(500)
     check(ok, f'lote: o 1º pedido (HUGO) abriu na empresa dele, OFICINA ({await emp()!r}, {await sel()!r})')
     check(await pn.locator('.ee-lista').count() == 0, 'lote: não perguntou a empresa (achou a de cada pessoa)')
+    await pn.evaluate("window.__escolhaVista = 0; new MutationObserver(() => { if (document.querySelector('.pd-escolha')) window.__escolhaVista++; }).observe(document.body, { childList: true, subtree: true });")
     if await pn.locator('#lote-pular').count(): await pn.click('#lote-pular')
     ok = False
     for _ in range(160):
         if await emp() == BASE and await sel() == 'JOAO DA SILVA': ok = True; break
         await pg.wait_for_timeout(500)
     check(ok, f'lote: o 2º pedido (JOAO) voltou para a empresa dele, a base ({await emp()!r}, {await sel()!r})')
+    check(await pn.evaluate('window.__escolhaVista') == 0, 'lote: ao pular para o próximo atestado a tela de escolher o tipo não aparece nem por um instante')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
