@@ -1900,6 +1900,8 @@ async def teste_empresa_do_funcionario(b):
             await pg.wait_for_timeout(500)
         check(ok, f'empresa: o pedido foi movido para a empresa escolhida ({await emp()!r})')
     # volta ao início e solta atestados de duas pessoas de empresas diferentes (lote)
+    await pg.reload(); await pg.wait_for_timeout(4000)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
     await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
     if await pn.locator('#pd-voltar').count(): await pn.click('#pd-voltar')
