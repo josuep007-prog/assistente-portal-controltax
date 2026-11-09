@@ -1864,6 +1864,7 @@ async def teste_empresa_do_funcionario(b):
     if await pn.locator('#pd-voltar').count(): await pn.click('#pd-voltar')
     await pn.click('.pd-escolha .intent[data-tipo="afastamento"]')
     for _ in range(40):
+        if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]')   # a caixa da empresa: segue com a marcada (a aberta)
         if await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"): break
         await pg.wait_for_timeout(500)
     await pg.wait_for_timeout(1500)
