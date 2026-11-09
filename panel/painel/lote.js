@@ -4,7 +4,7 @@ import { readFile, aiExtract, aiAvailable } from '../extract.js';
 import { $, P, S, esc, icon, request, send, toast } from './base.js';
 import { empresaDosDocumentos } from './empresaFunc.js';
 import { PAR_AVISO, aplicarSugestoes, camposAusentes, fillPortal, updateChecks } from './formulario.js';
-import { abrirComArquivos, ajustarDepartamento, anotarCandidatos, aplicarCampos, camposComAjustes, empresaDoPedido, entenderTexto, juntarArquivos, juntarCampos, mostrarSugestao, novoItem, openTipo } from './inicio.js';
+import { abrirComArquivos, ajustarDepartamento, anotarCandidatos, aplicarCampos, camposComAjustes, empresaDoPedido, entenderTexto, procurarEmpresaDoFuncionario, juntarArquivos, juntarCampos, mostrarSugestao, novoItem, openTipo } from './inicio.js';
 import { anexosAtuais, gerarTextos, portalValores, valoresAssistente, valoresParaChecar } from './valores.js';
 import { atualizarTextoNoPortal, naoAceitosPeloPortal } from './portal.js';
 import { campoDef, campoPortal, desligadosEmpresa, empregadosDaEmpresa, empregadosPara, loadEmpregados, render, setView, tipoDef, w } from './modo.js';
@@ -99,6 +99,8 @@ export async function abrirPedido(i) {
     if (it.texto) it.analise = analisarItem(it, p.tipo, lista);
     applyAnalysis(p.tipo, it, { preencher: false });
   }
+  // a pessoa deste pedido não está na lista desta empresa: acha a empresa dela (ou pergunta) e move o pedido
+  for (const it of p.itens) if (it.texto && S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo) { if (await procurarEmpresaDoFuncionario(p.tipo, it)) break; }
   // pedido que veio do texto livre (vários pedidos numa frase, ou aviso e cálculo): os campos entendidos
   if (p.campos) { juntarCampos(p.tipo, Object.fromEntries(Object.entries(p.campos).map(([k, c]) => [k, { ...c }])), 'sua descrição'); gerarTextos(p.tipo); }
   const v = valoresAssistente(p.tipo);

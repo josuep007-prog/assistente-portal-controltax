@@ -1875,6 +1875,21 @@ async def teste_empresa_do_funcionario(b):
         if await emp() == OUTRA and await sel() == 'CARLOS EDUARDO PAIVA': ok = True; break
         await pg.wait_for_timeout(500)
     check(ok, f'empresa: dentro do formulário, o atestado de CARLOS (da empresa MODELO) move o pedido para ela e escolhe o funcionário ({await emp()!r}, {await sel()!r})')
+    # 1c) pessoa que não está em nenhuma lista: pergunta em qual empresa ela está e move o pedido para a escolhida
+    await pg.evaluate("(t) => { window.__ctSim.hooks().sendFiles([new File([t], 'Atestado Zelia Nunes Prado 01 dia.txt', { type: 'text/plain' })]); }", texto('ZELIA NUNES PRADO', 1))
+    perguntou = False
+    for _ in range(60):
+        if await pn.locator('.ee-lista').count() and 'Em qual empresa está' in (await pn.locator('.dlg').inner_text()): perguntou = True; break
+        await pg.wait_for_timeout(500)
+    check(perguntou, 'empresa: pessoa que não está em nenhuma lista → "Em qual empresa está …?"')
+    if perguntou:
+        await pn.evaluate("[...document.querySelectorAll('.ee-li')].find(l => l.dataset.nome.includes('OFICINA')).querySelector('input').click()")
+        await pn.click('.dlg [data-acao="2"]')
+        ok = False
+        for _ in range(80):
+            if await emp() == TERCEIRA: ok = True; break
+            await pg.wait_for_timeout(500)
+        check(ok, f'empresa: o pedido foi movido para a empresa escolhida ({await emp()!r})')
     # volta ao início e solta atestados de duas pessoas de empresas diferentes (lote)
     await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
