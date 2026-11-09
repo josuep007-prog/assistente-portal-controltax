@@ -153,13 +153,13 @@ t('ficha de pronto-socorro: ignora nascimento e nome da mãe; "012 dias" do OCR 
   assert.equal(val(r, 'cid'), 'A09');
 });
 
-t('atestado de acompanhante: aviso e tipo em aberto; CID com 2 no lugar de Z', () => {
+t('atestado de acompanhante: aviso e tipo pelos dias (confira); CID com 2 no lugar de Z', () => {
   const r = A(`ATESTADO\nAtesto que PRISCILA NOVAES REIS\ninscrito no CPF Nº 123.456.789-09, necessita de 1 ( hum* ) dia(s) de afastamento do trabalho a\npartir de 22 de setembro de 2026, por estar acompanhando LUCAS NOVAES para o fim de: CONSULTA MÉDICA.\nCID : 2763\nLIGIA FICTICIA\nMédico da estratégia de saúde da família\nConselho: CRM - ES Nº 7076`);
   assert.equal(val(r, 'empregado'), 'PRISCILA NOVAES REIS');
   assert.equal(val(r, 'dias'), '1');
   assert.equal(val(r, 'dataAfastamento'), '22/09/2026');
   assert.equal(val(r, 'cid'), 'Z76.3');
-  assert.equal(val(r, 'tipoAfastamento'), undefined);
+  assert.equal(val(r, 'tipoAfastamento'), 'Doença período igual ou inferior a 15 dias');
   assert.ok(r.avisos.some(a => a.id === 'acompanhante'));
 });
 
@@ -1282,7 +1282,7 @@ t('leitor (6, 9): opções impressas desmarcadas e atestado de dependente', () =
   assert.equal(E.inferTipoAfastamento('Motivo: (X) Doença () Acidente do trabalho () Outros', 5, 'atestado', auto).valor, 'Doença período igual ou inferior a 15 dias');
   const f = L5('ATESTADO MÉDICO\nAtesto que a menor ANA TESTE SANTOS, 7 anos, necessita de 2 (dois) dias de repouso, devendo permanecer sob os cuidados de sua mãe, FERNANDA OLIVEIRA SANTOS, a partir de 15/10/2026.\nCID: J11\nDra. Pediatra Fictícia\nCRM-ES 5', 'afastamento');
   assert.equal(f.campos.empregado.valor, 'FERNANDA OLIVEIRA SANTOS');
-  assert.equal(f.campos.tipoAfastamento, undefined);
+  assert.match(f.campos.tipoAfastamento.valor, /inferior a 15/);   // 2.36.9: acompanhante/dependente também sugere o tipo pelos dias (confira)
   assert.ok(f.avisos.some(a => a.id === 'dependente'));
 });
 

@@ -45,6 +45,8 @@ export function montarEmpresa(C) {
     })();
     return lendoEmpresas;
   };
+  /** Espera as solicitações e, no máximo 1,5 s, a lista da janela do portal: a caixa da empresa abre logo com o que já se sabe (a leitura da janela segue por trás e vale na próxima vez). */
+  const esperarEmpresas = () => Promise.all([esperarSolicitacoes(), Promise.race([P.carregarEmpresasDoPortal(), esperar(1500)])]);
   const esperarSolicitacoes = async () => { if (!S.plat.sol) await Promise.race([P.carregarSolicitacoes(), esperar(8000)]).catch(() => {}); };
 
   /** A caixa: uma empresa por linha (escolha única). Devolve o nome escolhido ou null se o cliente desistiu. */
@@ -104,7 +106,7 @@ export function montarEmpresa(C) {
   P.escolherEmpresa = async ({ tipo, empresa, apelido = '', sugerida, conservarEmpregado = false, doLote = false } = {}) => {
     if (empresa && ehAtual(empresa, apelido)) return true;   // já está nela
     if (empresa) S.plat.apelidoEscolhido = { nome: empresa, apelido };   // empresa já decidida (ex.: a do funcionário do atestado): não pergunta
-    if (S.modo === 'plataforma') await Promise.all([esperarSolicitacoes(), P.carregarEmpresasDoPortal()]);
+    if (S.modo === 'plataforma') await esperarEmpresas();
     const emps = P.empresasDoLogin();
     if (emps.length <= 1) return true;
     const alvo = empresa || await caixaEmpresa({ tipo, emps, sugerida });
@@ -116,7 +118,7 @@ export function montarEmpresa(C) {
     const tipo = S.ctx.tipo; if (!tipo || S.ctx.route?.mode !== 'form' || document.body.classList.contains('trocando-empresa')) return false;
     // empresa não descoberta: pergunta em qual está a pessoa (o cliente sabe); cancelar deixa o pedido onde está
     if (!empresa && perguntar) {
-      if (S.modo === 'plataforma') await Promise.all([esperarSolicitacoes(), P.carregarEmpresasDoPortal()]);
+      if (S.modo === 'plataforma') await esperarEmpresas();
       const emps = P.empresasDoLogin(); if (emps.length <= 1) return false;
       const alvo = await caixaEmpresa({ tipo, emps, titulo: `Em qual empresa está ${perguntar}?`, botao: 'Mover o pedido',
         dica: `Não achei ${perguntar} na lista desta empresa nem nas outras que conheço. Escolha a empresa dela: eu movo o pedido, carrego os funcionários de lá e leio o atestado de novo.` });
@@ -140,7 +142,7 @@ export function montarEmpresa(C) {
    *  antiga (saem); o resto do que o cliente preencheu fica. */
   P.trocarEmpresaDoPedido = async () => {
     const tipo = S.ctx.tipo; if (!tipo || S.ctx.route?.mode !== 'form' || document.body.classList.contains('trocando-empresa')) return;
-    if (S.modo === 'plataforma') await Promise.all([esperarSolicitacoes(), P.carregarEmpresasDoPortal()]);
+    if (S.modo === 'plataforma') await esperarEmpresas();
     const emps = P.empresasDoLogin(); if (emps.length <= 1) return;
     const alvo = await caixaEmpresa({ tipo, emps, titulo: 'Trocar a empresa do pedido', botao: 'Trocar de empresa',
       dica: 'O funcionário e as listas são de cada empresa: ao trocar, você escolhe o funcionário de novo. O resto do que você preencheu fica.' });

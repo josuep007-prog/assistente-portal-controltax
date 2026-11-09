@@ -35,11 +35,11 @@ export function inferTipoAfastamento(text, dias, docId, regras) {
     const porPalavra = r.palavras?.length && r.palavras.some(w => T.includes(plain(w)));
     const porDocumento = r.documentos?.length && docId && r.documentos.includes(docId);
     if (!porPalavra && !porDocumento) continue;
-    if (r.nenhum) return null;          // caso que o escritório decide (ex.: atestado de acompanhante)
+    if (r.nenhum && !r.comoDoenca) return null;          // caso que o escritório decide (ex.: atestado de acompanhante); com comoDoenca vira sugestão pelos dias
     if (r.valor) return { valor: r.valor, motivo: porPalavra ? 'texto do documento' : 'tipo de documento' };
     if (isNaN(n)) return null;
     const lim = r.limiteDias || 15;
-    return { valor: n > lim ? r.acima15 : r.ate15, motivo: `${n} ${n === 1 ? 'dia' : 'dias'} no documento` };
+    return { valor: n > lim ? r.acima15 : r.ate15, motivo: `${n} ${n === 1 ? 'dia' : 'dias'} no documento${r.nenhum ? ' (atestado de acompanhante)' : ''}` };
   }
   return null;
 }
