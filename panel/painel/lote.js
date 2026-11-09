@@ -83,7 +83,7 @@ export async function abrirPedido(i) {
   // a pessoa deste pedido é de outra empresa: troca para ela (sem pausar o lote) antes de abrir o formulário
   if (p.empresaAlvo && p.empresaAlvo !== 'atual' && P?.escolherEmpresa && !P.ehEmpresaAtual?.(p.empresaAlvo.nome, p.empresaAlvo.apelido)) {
     const ok = await P.escolherEmpresa({ tipo: null, empresa: p.empresaAlvo.nome, apelido: p.empresaAlvo.apelido, doLote: true });
-    if (!ok) { L.pausado = true; L.navegando = false; renderLote(); return; }   // não confirmou a troca: nada é aberto na empresa errada
+    if (!ok) { L.pausado = true; L.navegando = false; render(); return; }   // não confirmou a troca: nada é aberto na empresa errada
     toast(`${String(p.empresaAlvo.funcionario || '').split(' ').slice(0, 2).join(' ')} é da empresa ${p.empresaAlvo.apelido || p.empresaAlvo.nome}: troquei para ela.`);
   }
   S.work[p.tipo] = null;
@@ -107,7 +107,7 @@ export async function abrirPedido(i) {
   p.rotulo = [v.empregado, v.dataAfastamento || v.inicioGozo || v.dataDemissao, v.dias ? `${v.dias} ${+v.dias === 1 ? 'dia' : 'dias'}` : ''].filter(Boolean).join(' · ');
   await fillPortal(p.tipo, { silencioso: true });
   L.navegando = false;
-  renderLote();
+  if (S.ctx.route?.mode !== 'form') render(); else renderLote();   // sem formulário, sai do aviso "Abrindo…"
   if (await abrirResumoSePronto(p.tipo)) { p.resumo = true; renderLote(); }
 }
 
@@ -134,7 +134,7 @@ export async function proximoPedido() {
   const L = S.lote; if (!L) return;
   const next = L.pedidos.findIndex(p => p.status === 'pendente');
   if (next < 0) {
-    L.concluido = true; renderLote();
+    L.concluido = true; L.navegando = false; if (S.ctx.route?.mode !== 'form') render(); else renderLote();
     const env = L.pedidos.filter(p => p.status === 'enviado').length;
     toast(`Lote concluído: ${env} de ${L.pedidos.length} solicitação(ões) enviada(s).`);
     return;

@@ -8,6 +8,13 @@ export function montarNovopedido(C) {
   function renderPedido() {
     const aberto = S.ctx.route?.mode === 'form' && S.ctx.tipo;
     if (aberto && !S.plat.escolher) { A.renderPreencher(); return; }
+    // lote passando de um atestado para o outro (pular, trocar de empresa, abrir o próximo): não pisca a escolha do tipo, só a faixa do lote e um aviso
+    const L = S.lote;
+    if (!aberto && L && !L.concluido && !L.pausado && L.navegando) {
+      viewEl.innerHTML = `<div id="lote"></div><div class="pn-card"><div class="pn-card-body"><p class="muted" style="margin:0">${icon('fill')} Abrindo o próximo atestado e preenchendo…</p></div></div>`;
+      A.renderLote();
+      return;
+    }
     const deixado = !aberto && S.plat.pedidoDeixado && S.plat.pedidoDeixado.empresa === S.ctx.empresa ? S.plat.pedidoDeixado : null;
     const R = S.rules;
     const grupos = new Map();
