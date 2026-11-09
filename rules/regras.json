@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.06-5",
+  "versao": "2026.11.09-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -1632,7 +1632,7 @@
       "comparecimento"
     ],
     "ocrMaxPaginas": 8,
-    "nomeDoArquivo": { "_comentario": "O nome do arquivo (ex.: 'Ana Julia 01 dia 29.09.jpg') completa o que a leitura não achou — funcionário (se está na lista), dias e data — só como sugestão com o botão Usar (confianca abaixo de leitor.confiancaMinimaPortal: não vai ao portal sozinho).", "ativo": true, "confianca": 0.5, "confiancaEmpregado": 0.7, "_comentarioEmpregado": "Nome com duas palavras ou mais no arquivo que bate com UM só funcionário da lista (ex.: 'Ana Julia' → ANA JULIA GOMES FERREIRA) vale como leitura segura o bastante para preencher (continua marcado 'nome do arquivo — confira'); nome de uma palavra só segue como sugestão." },
+    "nomeDoArquivo": { "_comentario": "O nome do arquivo (ex.: 'Ana Julia 01 dia 29.09.jpg') completa o que a leitura não achou — funcionário (se está na lista), dias e data — só como sugestão com o botão Usar (confianca abaixo de leitor.confiancaMinimaPortal: não vai ao portal sozinho).", "ativo": true, "confianca": 0.5, "confiancaEmpregado": 0.7, "confiancaCampos": 0.7, "_comentarioEmpregado": "Nome com duas palavras ou mais no arquivo que bate com UM só funcionário da lista (ex.: 'Ana Julia' → ANA JULIA GOMES FERREIRA) vale como leitura segura o bastante para preencher (continua marcado 'nome do arquivo — confira'); nome de uma palavra só segue como sugestão." },
     "ocrLadoMax": 2400,
     "ocrTempoMaxSeg": 45,
     "regra60dias": {

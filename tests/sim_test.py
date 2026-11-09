@@ -1685,7 +1685,7 @@ async def teste_dicas_arquivo(b):
     check(ok, 'arquivo: o funcionário do nome do arquivo aparece como sugestão com o botão Usar')
     txt = await pn.locator('#fields').inner_text()
     check('Pelo nome do arquivo' in txt and 'JOAO DA SILVA' in txt, 'arquivo: a sugestão diz que veio do nome do arquivo')
-    check(await pn.locator('[data-usar-k="dias"]').count() == 1 and await pn.locator('[data-usar-k="dataAfastamento"]').count() == 1, 'arquivo: dias e data também viram sugestão')
+    check(await pn.locator('[data-usar-k="dias"]').count() == 0 and await pn.locator('[data-usar-k="dataAfastamento"]').count() == 0, 'arquivo: dias e data do nome do arquivo valem como leitura (sem botão Usar)')
     portal = await pg.evaluate("(() => { const e = document.querySelector('[formcontrolname=selectedEmployee]'); return e ? (e.querySelector('input') || e).value : null; })()")
     check(portal in ('', None), f'arquivo: nada foi ao portal sozinho ({portal!r})')
     await pn.click('[data-usar-k="empregado"]'); await pg.wait_for_timeout(3500)
@@ -1703,6 +1703,9 @@ async def teste_dicas_arquivo(b):
         if portal3: break
         await pg.wait_for_timeout(500)
     check(portal3 == 'JOAO DA SILVA', f'arquivo: nome com duas palavras que bate com um só funcionário vai ao portal ({portal3!r})')
+    await pg.wait_for_timeout(3000)
+    v3 = await pg.evaluate("(() => { const g = n => { const e = document.querySelector('[formcontrolname=' + n + ']'); return e ? ((e.querySelector('input') || e).value || '') : ''; }; return { data: g('leaveDate'), tipo: g('selectedLeaveType') }; })()")
+    check(v3['data'].startswith('02/11/') and 'inferior a 15' in v3['tipo'], f'arquivo: data e tipo do afastamento (pelos 4 dias do nome) também vão ao portal ({v3!r})')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
