@@ -1837,7 +1837,6 @@ async def teste_empresa_do_funcionario(b):
     ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
     pg = await ctx.new_page()
     erros = []
-    pg.on('console', lambda m: print('CON', m.text[:400]) if 'DBGL' in m.text else None)
     pg.on('pageerror', lambda e: erros.append(str(e)))
     await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(4000)
     pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)

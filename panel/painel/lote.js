@@ -55,11 +55,10 @@ export async function iniciarLote(pedidos, fora, pessoas = []) {
   // de qual empresa é cada pessoa do lote? Se todas foram achadas, cada pedido abre na empresa dela (sem perguntar); se alguma não, pergunta a empresa uma vez
   // só e as sem empresa achada vão para ela
   for (const p of pedidos) {
-    try { const r = await empresaDosDocumentos(p.itens || []); p.empresaAlvo = r?.tipo === 'unica' ? { ...r.hits[0].empresa, funcionario: r.hits[0].funcionario } : (r?.tipo === 'atual' ? 'atual' : null); }
+    try { const r = await empresaDosDocumentos(p.itens || []); p.empresaAlvo = r?.tipo === 'unica' ? { ...r.hits[0].empresa, funcionario: r.hits[0].funcionario } : (r?.tipo === 'atual' ? { nome: S.ctx.empresa, apelido: S.ctx.empresaApelido || '', funcionario: r.hits?.[0]?.funcionario } : null); }
     catch { p.empresaAlvo = null; }
   }
   // sem empresa achada para alguém: só pergunta se o cliente ainda não está num formulário (já escolheu a empresa no cabeçalho); senão fica na aberta
-  console.log('DBGL alvos', JSON.stringify(pedidos.map(p => p.empresaAlvo && (p.empresaAlvo.apelido || p.empresaAlvo))), JSON.stringify(S.plat.funcDiag || null), (S.plat.sol?.itens || []).length);
   const jaNoFormulario = S.ctx.route?.mode === 'form' && !!S.ctx.empresa;
   if (!pedidos.every(p => p.empresaAlvo) && !jaNoFormulario && !(await empresaDoPedido(null))) return;
   for (const p of pedidos) if (!p.empresaAlvo) p.empresaAlvo = 'atual';

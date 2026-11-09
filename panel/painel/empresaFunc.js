@@ -70,6 +70,8 @@ export async function empresaDosDocumentos(itens) {
     if (r.tipo === 'nenhuma') continue;
     const h = r.hits[0];
     if (r.tipo === 'unica' && P.ehEmpresaAtual?.(h.empresa.nome, h.empresa.apelido)) return { tipo: 'atual', hits: r.hits, nomeUsado: n };
+    // o nome também está na empresa aberta (e em outras): fica nela, sem perguntar
+    if (r.tipo === 'varias' && r.hits.some(x => P.ehEmpresaAtual?.(x.empresa.nome, x.empresa.apelido))) return { tipo: 'atual', hits: r.hits, nomeUsado: n };
     return { ...r, nomeUsado: n };
   }
   return { tipo: 'nenhuma', hits: [], nomeUsado: '' };
