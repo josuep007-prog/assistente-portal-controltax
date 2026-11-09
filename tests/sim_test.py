@@ -1857,6 +1857,23 @@ async def teste_empresa_do_funcionario(b):
         await pg.wait_for_timeout(500)
     check(ok, f'empresa: o atestado de CARLOS (da empresa MODELO) abriu o pedido já nela, com ele escolhido ({await emp()!r}, {await sel()!r})')
     check(await pn.locator('.ee-lista').count() == 0, 'empresa: não perguntou a empresa (achou uma só)')
+    # 1b) já dentro do formulário (empresa base), solta o atestado de alguém de OUTRA empresa: o pedido é movido para ela
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
+    if await pn.locator('#pd-voltar').count(): await pn.click('#pd-voltar')
+    await pn.click('.pd-escolha .intent[data-tipo="afastamento"]')
+    for _ in range(40):
+        if await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"): break
+        await pg.wait_for_timeout(500)
+    await pg.wait_for_timeout(1500)
+    if await emp() != BASE:
+        print('   (formulário abriu em', await emp(), ')')
+    await pg.evaluate("(t) => { window.__ctSim.hooks().sendFiles([new File([t], 'Atestado Debora Santana 02 dias.txt', { type: 'text/plain' })]); }", texto('DEBORA SANTANA', 2))
+    ok = False
+    for _ in range(120):
+        if await emp() == OUTRA and await sel() == 'DEBORA SANTANA': ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, f'empresa: dentro do formulário, o atestado de DEBORA (da empresa MODELO) move o pedido para ela e escolhe a funcionária ({await emp()!r}, {await sel()!r})')
     # volta ao início e solta atestados de duas pessoas de empresas diferentes (lote)
     await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions')"); await pg.wait_for_timeout(1500)
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(500)
