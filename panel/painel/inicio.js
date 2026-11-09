@@ -335,9 +335,11 @@ export async function handleFiles(files, origem) {
 async function procurarEmpresaDoFuncionario(tipo, item) {
   if (standalone || !P?.moverPedidoParaEmpresa || tipo !== S.ctx.tipo || S.ctx.route?.mode !== 'form') return;
   const v = w(tipo).valores.empregado;
+  console.log('DBGP', JSON.stringify(v || null));
   if (v?.valor && !ehSugestao(v)) return;
   let achou = null;
   try { achou = await empresaDosDocumentos([item]); } catch { return; }
+  console.log('DBGP achou', achou?.tipo, JSON.stringify(achou?.hits?.[0]?.empresa || null));
   if (achou?.tipo !== 'unica') return;
   const { empresa, funcionario } = achou.hits[0];
   if (!(await P.moverPedidoParaEmpresa(empresa.nome, empresa.apelido))) return;
