@@ -58,7 +58,10 @@ export async function iniciarLote(pedidos, fora, pessoas = []) {
     try { const r = await empresaDosDocumentos(p.itens || []); p.empresaAlvo = r?.tipo === 'unica' ? { ...r.hits[0].empresa, funcionario: r.hits[0].funcionario } : (r?.tipo === 'atual' ? 'atual' : null); }
     catch { p.empresaAlvo = null; }
   }
-  if (!pedidos.every(p => p.empresaAlvo) && !(await empresaDoPedido(null))) return;
+  // sem empresa achada para alguém: só pergunta se o cliente ainda não está num formulário (já escolheu a empresa no cabeçalho); senão fica na aberta
+  const jaNoFormulario = S.ctx.route?.mode === 'form' && !!S.ctx.empresa;
+  if (!pedidos.every(p => p.empresaAlvo) && !jaNoFormulario && !(await empresaDoPedido(null))) return;
+  for (const p of pedidos) if (!p.empresaAlvo) p.empresaAlvo = 'atual';
   S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pessoas, pausado: false, concluido: false };
   S.sugestao = null;
   toast(pessoas.length >= 2 ? (S.rules.mensagens?.lotePessoas || 'Há documentos de {n} pessoas: abri um pedido para cada uma, para não misturar os dados.').replace('{n}', pessoas.length) : `${pedidos.length} solicitações para abrir, uma de cada vez.`);
@@ -496,6 +499,9 @@ export function analisarItem(item, tipo, empregados = []) {
     const poe = (k, valor, conf) => { const atual = a.campos[k];
       // o arquivo completa o que a leitura não achou e também troca uma leitura em dúvida (abaixo do limiar do portal) que discorda dele
       const duvida = atual?.valor && (atual.conf ?? 1) < E.limiarPortal(S.rules) && String(atual.valor) !== String(valor);
+      // documento e nome do arquivo dizem o mesmo (ex.: a mesma data), mas a leitura era só dúvida: duas fontes concordando valem como leitura
+      const concordam = conf != null && atual?.valor && (atual.conf ?? 1) < E.limiarPortal(S.rules) && E.norm(atual.valor) === E.norm(valor);
+      if (concordam && def[k]) { a.campos[k] = { ...atual, conf: Math.max(conf, 0.8), fonte: 'documento e nome do arquivo (confira)' }; return; }
       if (valor != null && def[k] && (!atual?.valor || duvida)) a.campos[k] = { valor: String(valor), conf: conf ?? cfgNome.confianca ?? 0.5, fonte: 'nome do arquivo (confira)' }; };
     const nomeLongo = E.nomeDoArquivoLimpo(item.nome).split(' ').filter(t => t.length > 1).length >= 2;
     poe('empregado', dicas.empregado, nomeLongo ? cfgNome.confiancaEmpregado : null);

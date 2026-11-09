@@ -1710,6 +1710,42 @@ async def teste_dicas_arquivo(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def teste_arquivo_nome_e_leitura(b):
+    """2.36.5: o arquivo "Denise de Assis 01 dia 13.10" com leitura do documento fraca (nome cortado, data igual à do arquivo): data, dias e tipo vão ao portal pelo nome do arquivo."""
+    print('\n[arquivo] leitura fraca + nome do arquivo')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="afastamento"]'); await pg.wait_for_timeout(3000)
+    txt = 'ATESTADO MÉDICO\nAtesto que DENISE DE ASS esteve em consulta e necessita de 1 (um) dia de afastamento.\nData: 13/10/2026\nDra. Fictícia de Teste\nCRM-ES 1234'
+    await pg.evaluate("(t) => { window.__ctSim.hooks().sendFiles([new File([t], 'Denise de Assis 01 dia 13.10.txt', { type: 'text/plain' })]); }", txt)
+    v = {}
+    for _ in range(40):
+        await pg.wait_for_timeout(500)
+        v = await pg.evaluate("(() => { const g = n => { const e = document.querySelector('[formcontrolname=' + n + ']'); return e ? ((e.querySelector('input') || e).value || '') : ''; }; return { data: g('leaveDate'), tipo: g('selectedLeaveType') }; })()")
+        if v['data'] and v['tipo']: break
+    check(v.get('data', '').startswith('13/10/') and 'inferior a 15' in v.get('tipo', ''), f'arquivo+leitura fraca: data e tipo foram ao portal ({v!r})')
+    # 2.36.5: já dentro do formulário de afastamento (empresa escolhida), um lote cujas pessoas não estão na lista NÃO pergunta a empresa de novo
+    await pn.evaluate("window.__eeVisto = 0; new MutationObserver(() => { if (document.querySelector('.ee-lista')) window.__eeVisto++; }).observe(document.body, { childList: true, subtree: true });")
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave/add')"); await pg.wait_for_timeout(2000)
+    await pg.evaluate("(ts) => { window.__ctSim.hooks().sendFiles(ts.map((t, i) => new File([t], ['Denise de Assis 01 dia 13.10.txt', 'Arthur dos Santos 02 dias 06.10.txt'][i], { type: 'text/plain' }))); }", [txt, txt.replace('DENISE DE ASS', 'ARTHUR DOS SANTOS').replace('13/10', '06/10')])
+    await pg.wait_for_timeout(9000)
+    check(await pn.evaluate("window.__eeVisto") == 0, 'lote dentro do formulário: não pergunta a empresa de novo')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
 async def teste_pular_leitura(b):
     """2.34.0: "Pular leitura" interrompe o OCR em andamento (o arquivo segue só anexado) e as leituras seguintes continuam funcionando."""
     print('\n[pular] botão Pular leitura')
@@ -2880,7 +2916,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -2922,7 +2958,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'arq':
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_dicas_arquivo(b); await teste_pular_leitura(b); await b.close()
+            await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'emp':
