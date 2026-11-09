@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.09-1",
+  "versao": "2026.11.09-2",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -2490,7 +2490,11 @@
             "acompanhado(a) de",
             "filho(a) de"
           ],
-          "nenhum": true
+          "nenhum": true,
+          "comoDoenca": true,
+          "_comentarioComoDoenca": "Decisão do Josué (09/11/2026): o atestado de acompanhante também sugere o tipo pelos dias (até 15 / acima de 15), marcado 'confira'. Para voltar a deixar o tipo em branco, tire comoDoenca (ou ponha false).",
+          "ate15": "Doença período igual ou inferior a 15 dias",
+          "acima15": "Doença período superior a 15 dias"
         },
         {
           "documentos": [
@@ -4573,7 +4577,7 @@
             "Z76.3"
           ],
           "nivel": "atencao",
-          "mensagem": "Atestado de acompanhante: o funcionário acompanhou outra pessoa (não é doença dele). Confirme com o escritório como lançar — deixei o tipo de afastamento para você escolher."
+          "mensagem": "Atestado de acompanhante: o funcionário acompanhou outra pessoa (não é doença dele). Confirme com o escritório como lançar — preenchi o tipo de afastamento pelos dias do atestado: confira."
         },
         {
           "id": "escola",

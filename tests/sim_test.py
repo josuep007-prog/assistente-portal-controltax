@@ -3302,12 +3302,12 @@ async def main():
             v = await leave()
             if v.get('selectedEmployee') and v.get('leaveDate'): break   # o preenchimento segue a ordem das regras: funcionário primeiro, a data depois
         check(v.get('selectedEmployee') == 'BEATRIZ CAMPOS' and v.get('leaveDate') == '06/10/2026', 'rascunho: continuar devolve os dados e preenche o portal')
-        # acompanhante: aviso e tipo em aberto
+        # acompanhante: aviso e tipo pelos dias (confira)
         await abrir_afastamento()
         await pg.click('#sim-samples > summary'); await pg.click('[data-file="exemplos/atestado-acompanhante.pdf"]')
         v = await espera_empregado('CAMILA ROCHA', 30)
         await pg.wait_for_timeout(800)
-        check(not v.get('selectedLeaveType') and v.get('leaveDate') == '07/10/2026', 'acompanhante: data lida e tipo deixado para o cliente')
+        check('inferior a 15' in (v.get('selectedLeaveType') or '') and v.get('leaveDate') == '07/10/2026', f"acompanhante: data e tipo (pelos dias) lidos ({v.get('selectedLeaveType')!r})")
         checks = await pn.locator('#checks').inner_text()
         check('acompanhante' in checks.lower(), 'acompanhante: aviso na conferência')
         # o painel não repete os campos do portal: só resume e deixa editar o que o portal não tem
