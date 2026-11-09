@@ -19,6 +19,8 @@ export async function indiceDeFuncionarios() {
     if (func) e.nomes.add(func);
     return e;
   };
+  // as solicitações são a base do índice: se ainda estão sendo lidas (página recém-aberta), espera um pouco
+  if (!S.plat?.sol && S.modo === 'plataforma') await Promise.race([P?.carregarSolicitacoes?.(), new Promise(r => setTimeout(r, 8000))]).catch(() => {});
   const itens = S.plat?.sol?.itens || [];
   for (const i of itens) if (i.empresa) poe(i.empresa, i.empresaApelido, i.empregado);
   // a empresa aberta: a lista que o portal já deu
