@@ -334,6 +334,7 @@ export async function handleFiles(files, origem) {
  *  move o pedido para essa empresa, refaz a leitura com a lista dela e preenche. Nada acontece se a pessoa já foi achada aqui. */
 export async function procurarEmpresaDoFuncionario(tipo, item, { perguntar = true } = {}) {
   if (standalone || !P?.moverPedidoParaEmpresa || tipo !== S.ctx.tipo || S.ctx.route?.mode !== 'form') return false;
+  if (!tipoDef(tipo)?.campos?.empregado) return false;     // pedido sem funcionário (ex.: Solicitação Geral): nada a procurar
   const v = w(tipo).valores.empregado;
   if (v?.valor && !ehSugestao(v)) return false;
   if (item.empresaPerguntada) return false;      // uma vez por arquivo: não fica insistindo
