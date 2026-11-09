@@ -1867,7 +1867,7 @@ async def teste_empresa_do_funcionario(b):
         if await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"): break
         await pg.wait_for_timeout(500)
     await pg.wait_for_timeout(1500)
-    check(await emp() == OUTRA, f'empresa: o formulário está aberto na empresa MODELO ({await emp()!r})')
+    check(await emp() == OUTRA and await pg.evaluate("window.__ctPlatform.path().endsWith('/add')"), f'empresa: o formulário de afastamento está aberto na empresa MODELO ({await emp()!r}, {await pg.evaluate("window.__ctPlatform.path()")!r})')
     await pg.evaluate("(t) => { window.__ctSim.hooks().sendFiles([new File([t], 'Atestado Joao da Silva 02 dias.txt', { type: 'text/plain' })]); }", texto('JOAO DA SILVA', 2))
     ok = False
     for _ in range(120):
