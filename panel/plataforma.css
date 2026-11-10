@@ -10,7 +10,7 @@
 }
 
 body.plat .app { display: none; }
-#plat { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); height: 100%; position: relative; }
+#plat { overflow: clip; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); height: 100%; position: relative; }
 
 /* ---------- Trilho lateral ---------- */
 .rail { position: absolute; z-index: 30; top: 0; bottom: 0; left: 0; width: var(--rail); overflow: visible;
@@ -46,7 +46,7 @@ body.plat .app { display: none; }
 .rail-badge { position: absolute; left: 30px; top: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--red-solid); color: var(--on-solid); font: 700 10px/18px var(--f-head); text-align: center; box-shadow: 0 0 0 2px #111A21; }
 
 /* ---------- Área principal ---------- */
-.plat-main { grid-column: 2; display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; height: 100%; }
+.plat-main { overflow: clip; grid-column: 2; display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; height: 100%; }
 .plat-head { display: flex; align-items: center; gap: 8px 16px; padding: 12px 24px 10px; background: var(--surface); border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
 .ph-t { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex: 1; }
 .ph-t h2 { margin: 0; font: 700 19px/1.2 var(--f-head); }
@@ -1042,3 +1042,14 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .plan-tabela td.plan-bloq { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--ink-3) 14%, transparent) 6px 7px); }
 .plan-tabela td.plan-bloq input { cursor: not-allowed; opacity: .5; }
 .plan-tabela th.plan-bloq-th { color: var(--ink-3); }
+
+/* Notebook / janela baixa (2.38.1): cabeçalho mais enxuto e menos espaço entre os blocos, para sobrar tela para o conteúdo */
+@media (max-height: 760px) {
+  .plat-head { padding: 6px 20px; }
+  .ph-t h2 { font-size: 17px; }
+  .plat-body > .view { padding: 10px 20px 20px; }
+  .plat-view > * + * { margin-top: 10px; }
+  .hj-sit { padding: 5px 10px 5px 9px; }
+  .hj-sits { gap: 6px; }
+  .ph-search { height: 30px; }
+}

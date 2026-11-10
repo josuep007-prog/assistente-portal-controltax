@@ -1370,6 +1370,24 @@ async def teste_cancelar_todos(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def teste_cabecalho_fixo(b):
+    """2.38.1: tela baixa (notebook) — nada rola a casca da plataforma: o cabeçalho fica sempre visível, mesmo com scrollBy/scrollIntoView."""
+    print('\n[tela] cabeçalho da plataforma não é cortado')
+    ctx = await b.new_context(viewport={'width': 1520, 'height': 620})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    for mod in ['pendencias', 'inicio', 'funcionarios']:
+        await pn.click(f'#rail [data-mod="{mod}"]'); await pg.wait_for_timeout(1200)
+        await pn.evaluate("for (const el of [document.documentElement, document.body, document.querySelector('#plat'), document.querySelector('.plat-main')]) { try { el.scrollBy(0, 300); el.scrollTop = 300; } catch (e) {} } document.querySelector('.view')?.querySelector('input, button, a')?.scrollIntoView(); window.scrollTo(0, 300);")
+        await pg.wait_for_timeout(300)
+        topo = await pn.evaluate("(() => { const h = document.querySelector('.plat-head'); const r = h ? h.getBoundingClientRect() : null; return { head: r ? Math.round(r.top) : null, rolado: [document.documentElement, document.body, document.querySelector('#plat'), document.querySelector('.plat-main')].map(e => e ? e.scrollTop : 0).reduce((a, b) => a + b, 0) }; })()")
+        check(topo['head'] == 0 and topo['rolado'] == 0, f'tela baixa ({mod}): o cabeçalho continua no topo depois de tentar rolar a casca ({topo!r})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_blocos_cadastro(b):
     """2.29.2: no formulário próprio do cadastro, o bloco que a pessoa abriu (ou fechou) não muda sozinho quando a tela é redesenhada."""
     print('\n[blocos] blocos do formulário de cadastro não mudam sozinhos')
@@ -3007,7 +3025,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3044,6 +3062,12 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_ocr_tempo(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'cab':   # SIM_SO=cab roda só o cabeçalho fixo em tela baixa
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_cabecalho_fixo(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'cnc':   # SIM_SO=cnc roda só o "Cancelar pedido" de todos os tipos
