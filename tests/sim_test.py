@@ -149,6 +149,10 @@ async def teste_plataforma(b):
     check(ok and 'Pessoal' in sug and 'Guia do FGTS' in sug, 'Novo pedido: texto livre mostra o cartão ali mesmo (Geral: departamento e assunto)')
     await pn.click('#sug-go')
     ok = await espera(portal_com(department='PESSOAL'), 25)
+    for _ in range(40):   # o assunto do catálogo entra um instante depois do departamento (a lista do portal carrega primeiro)
+        v = await portal()
+        if 'Guia do FGTS' in (v.get('subject') or ''): break
+        await pg.wait_for_timeout(500)
     v = await portal()
     check(ok and 'Guia do FGTS' in (v.get('subject') or '') and 'setembro' not in (v.get('description') or '').lower(), f"Solicitação Geral: departamento da lista do portal e assunto do catálogo ({v.get('department')!r}, {v.get('subject')!r})")
     await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/general-requests')"); await pg.wait_for_timeout(1500)
