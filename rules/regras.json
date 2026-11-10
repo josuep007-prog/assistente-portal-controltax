@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.09-2",
+  "versao": "2026.11.10-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -2092,6 +2092,7 @@
   "tipos": {
     "geral": {
       "nome": "Solicitação Geral",
+      "botaoCancelar": "Cancelar pedido",
       "slug": "general-requests",
       "exemploTexto": "preciso da segunda via da guia do FGTS até sexta",
       "api": null,
@@ -2174,6 +2175,7 @@
     },
     "afastamento": {
       "nome": "Afastamento de Empregado",
+      "botaoCancelar": "Cancelar pedido",
       "slug": "employee-leave",
       "sentidoDatas": "passado",
       "exemploTexto": "atestado de 20 dias a partir de ontem",
@@ -2530,6 +2532,7 @@
     },
     "avisoFerias": {
       "nome": "Aviso Prévio de Férias",
+      "botaoCancelar": "Cancelar pedido",
       "slug": "vacation-notice",
       "exemploTexto": "férias dia 10/11 por 30 dias",
       "api": "prior-notice-vacations",
@@ -2735,6 +2738,7 @@
     },
     "calculoFerias": {
       "nome": "Cálculo de Férias",
+      "botaoCancelar": "Cancelar pedido",
       "slug": "vacation-calculation",
       "exemploTexto": "férias a partir de 03/11, 30 dias, adiantar 13º",
       "api": "vacation-calculations",
@@ -2886,6 +2890,7 @@
     },
     "avisoRescisao": {
       "nome": "Aviso Prévio de Rescisão",
+      "botaoCancelar": "Cancelar pedido",
       "slug": "termination-notice",
       "sentidoDatas": "perto",
       "exemploTexto": "pediu demissão hoje",
@@ -3060,6 +3065,7 @@
     },
     "calculoRescisao": {
       "nome": "Cálculo de Rescisão",
+      "botaoCancelar": "Cancelar pedido",
       "slug": "termination-calculation",
       "sentidoDatas": "perto",
       "exemploTexto": "último dia 20/10, aviso indenizado",
