@@ -60,7 +60,8 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-body { background: var(--page); color: var(--ink); font: 400 13px/1.45 var(--f-body); -webkit-font-smoothing: antialiased; overflow: hidden; }
+html { overflow: clip; }
+body { background: var(--page); color: var(--ink); font: 400 13px/1.45 var(--f-body); -webkit-font-smoothing: antialiased; overflow: hidden; overflow: clip; }   /* clip: nem foco nem scrollIntoView conseguem rolar o corpo e esconder o cabeçalho */
 button, input, select, textarea { font: inherit; color: inherit; }
 ::placeholder { color: var(--ink-3); opacity: 1; }   /* o cinza padrão do navegador não passa de 4,5:1 no tema escuro */
 [hidden] { display: none !important; }

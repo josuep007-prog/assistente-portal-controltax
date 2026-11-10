@@ -12,6 +12,8 @@ export function montarCasca(C) {
   let montada = false;
   function montarCasca() {
     if (montada) return; montada = true;
+    // rede de segurança: se algo (foco, scrollIntoView, extensão do navegador) rolar a casca, volta ao topo — o cabeçalho nunca fica cortado
+    for (const el of [document.documentElement, document.body, $('#plat'), document.querySelector('.plat-main')]) el?.addEventListener('scroll', () => { if (el.scrollTop) el.scrollTop = 0; });
     $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>${['pendencias', 'ferramentas'].includes(v) ? '<div class="rail-sep rail-sep-mod" role="separator"></div>' : ''}`).join('');
     $('#rail-bottom').innerHTML = [['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
       .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b></span></button>`).join('');
