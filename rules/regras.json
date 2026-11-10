@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.10-1",
+  "versao": "2026.11.10-2",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -1875,7 +1875,7 @@
   },
   "intencoes": [
     {
-      "id": "contratar",
+      "id": "contratar", "grupo": "Admissão e cadastros",
       "titulo": "Contratar funcionário",
       "subtitulo": "Admissão CLT — cadastro completo",
       "icone": "user-plus",
@@ -1894,7 +1894,7 @@
       ]
     },
     {
-      "id": "estagiario",
+      "id": "estagiario", "grupo": "Admissão e cadastros",
       "titulo": "Contratar estagiário",
       "subtitulo": "Termo de compromisso e cadastro",
       "icone": "graduation",
@@ -1915,7 +1915,7 @@
       }
     },
     {
-      "id": "contribuinte",
+      "id": "contribuinte", "grupo": "Admissão e cadastros",
       "titulo": "Sócio ou autônomo",
       "subtitulo": "Pró-labore, RPA, contribuinte individual",
       "icone": "briefcase",
@@ -1930,7 +1930,7 @@
       ]
     },
     {
-      "id": "ferias-aviso",
+      "id": "ferias-aviso", "grupo": "Férias",
       "titulo": "Programar férias",
       "subtitulo": "Aviso de férias — 30 dias antes",
       "icone": "sun",
@@ -1943,7 +1943,7 @@
       ]
     },
     {
-      "id": "ferias-calculo",
+      "id": "ferias-calculo", "grupo": "Férias",
       "titulo": "Calcular férias",
       "subtitulo": "Recibo e pagamento das férias",
       "icone": "calc",
@@ -1955,7 +1955,7 @@
       ]
     },
     {
-      "id": "atestado",
+      "id": "atestado", "grupo": "Afastamentos e desligamento",
       "titulo": "Atestado ou afastamento",
       "subtitulo": "Doença, acidente, licenças",
       "icone": "medical",
@@ -1985,7 +1985,7 @@
       ]
     },
     {
-      "id": "desligar",
+      "id": "desligar", "grupo": "Afastamentos e desligamento",
       "titulo": "Desligar funcionário",
       "subtitulo": "Aviso prévio — demissão ou pedido",
       "icone": "door",
@@ -2013,7 +2013,7 @@
       ]
     },
     {
-      "id": "rescisao",
+      "id": "rescisao", "grupo": "Afastamentos e desligamento",
       "titulo": "Calcular rescisão",
       "subtitulo": "Verbas rescisórias e homologação",
       "icone": "calc",
@@ -2027,7 +2027,7 @@
       ]
     },
     {
-      "id": "rubricas",
+      "id": "rubricas", "grupo": "Folha de pagamento",
       "titulo": "Variáveis da folha",
       "subtitulo": "Horas extras, faltas, comissões, bônus",
       "icone": "list",
@@ -2071,7 +2071,7 @@
       ]
     },
     {
-      "id": "geral",
+      "id": "geral", "grupo": "Qualquer setor",
       "titulo": "Outro assunto",
       "subtitulo": "Dúvida, documento ou pedido a qualquer setor",
       "icone": "chat",
@@ -2211,6 +2211,7 @@
           ]
         },
         "dataCat": {
+          "grupo": "CAT — só para acidente de trabalho",
           "fc": "catDate",
           "tipo": "data",
           "rotulo": "Data da CAT",
@@ -2220,6 +2221,7 @@
           ]
         },
         "tipoCat": {
+          "grupo": "CAT — só para acidente de trabalho",
           "tipo": "radio",
           "rotulo": "Tipo da CAT",
           "seletores": {
@@ -2229,6 +2231,7 @@
           }
         },
         "numeroCat": {
+          "grupo": "CAT — só para acidente de trabalho",
           "fc": "catNumber",
           "tipo": "texto",
           "rotulo": "Número da CAT",

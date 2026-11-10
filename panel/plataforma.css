@@ -29,6 +29,7 @@ body.plat .app { display: none; }
 .rail-i:hover .rail-t, .rail-i:focus-visible .rail-t { opacity: 1; transform: translate(0, -50%); }
 .rail-list { display: grid; gap: 3px; }
 .rail-bottom { margin-top: auto; }
+.rail-sep-mod { margin: 6px 10px; }
 .rail-sep { height: 1px; margin: 10px 6px; background: linear-gradient(90deg, rgba(255,255,255,.12), transparent); }
 .rail-i { position: relative; display: flex; align-items: center; justify-content: center; gap: 11px; width: 48px; padding: 5px 6px; border: 0; border-radius: 4px; background: none; color: #B9C5CF; cursor: pointer; text-align: left; white-space: nowrap; transition: background .15s; }
 .rail-i::before { content: ""; position: absolute; left: -8px; top: 18%; bottom: 18%; width: 3px; border-radius: 0 2px 2px 0; background: var(--brand-red); box-shadow: 0 0 12px rgba(194,0,12,.8); opacity: 0; }
@@ -168,6 +169,8 @@ button.dp-row:focus-visible { outline: 2px solid var(--blue-deep); outline-offse
 .pf-grupo { margin: 4px 0 0; }
 .pf-grupo > summary { cursor: pointer; font: 600 12px var(--f-head); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 8px 0; list-style: none; display: flex; align-items: center; gap: 8px; }
 .pf-grupo > summary::-webkit-details-marker { display: none; }
+.pf-grupo > summary::before { content: "▸"; font-size: 11px; transition: transform .15s; }
+.pf-grupo[open] > summary::before { transform: rotate(90deg); }
 .pf-grupo > summary::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
 .pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px 14px; }
 .pf-grid .field.wide { grid-column: 1 / -1; }
