@@ -2085,9 +2085,10 @@ t('cargo novo: as linhas automáticas entram, trocam e saem sem apagar o que a p
   assert.equal(E.juntarPedidosNovos('Texto', [l1], [l1]), 'Texto\n' + l1, 'linha que sumiu da observação é escrita de novo');
 });
 
-t('botão Cancelar: só as rubricas e os cadastros têm (regras.json)', () => {
+t('botão Cancelar: todos os tipos de pedido têm (regras.json)', () => {
   const com = Object.entries(rules.tipos).filter(([, d]) => d.botaoCancelar).map(([k, d]) => `${k}:${d.botaoCancelar}`).sort();
-  assert.deepEqual(com, ['cadastroContribuinte:Cancelar cadastro', 'cadastroEmpregado:Cancelar cadastro', 'cadastroEstagiario:Cancelar cadastro', 'rubricas:Cancelar lançamento']);
+  assert.deepEqual(com, ['afastamento:Cancelar pedido', 'avisoFerias:Cancelar pedido', 'avisoRescisao:Cancelar pedido', 'cadastroContribuinte:Cancelar cadastro', 'cadastroEmpregado:Cancelar cadastro', 'cadastroEstagiario:Cancelar cadastro', 'calculoFerias:Cancelar pedido', 'calculoRescisao:Cancelar pedido', 'geral:Cancelar pedido', 'rubricas:Cancelar lançamento']);
+  assert.equal(Object.keys(rules.tipos).length, com.length, 'nenhum tipo fica sem o botão');
 });
 
 t('nome do arquivo: funcionário, dias e data viram dicas (só quando batem)', () => {
