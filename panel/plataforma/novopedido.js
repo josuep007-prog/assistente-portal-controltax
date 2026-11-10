@@ -18,7 +18,7 @@ export function montarNovopedido(C) {
     const deixado = !aberto && S.plat.pedidoDeixado && S.plat.pedidoDeixado.empresa === S.ctx.empresa ? S.plat.pedidoDeixado : null;
     const R = S.rules;
     const grupos = new Map();
-    for (const it of R.intencoes || []) { const setor = R.tipos[it.tipo]?.setor || 'Outros'; if (!grupos.has(setor)) grupos.set(setor, []); grupos.get(setor).push(it); }
+    for (const it of R.intencoes || []) { const setor = it.grupo || R.tipos[it.tipo]?.setor || 'Outros'; if (!grupos.has(setor)) grupos.set(setor, []); grupos.get(setor).push(it); }
     viewEl.innerHTML = `
       <div id="lote"></div>
       ${S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3 ? `<div class="note ok">${icon('check')}<div><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada.</b> ${passosAbertos().length ? 'Veja o próximo passo:' : 'Quer fazer outra?'}</div></div>` : ''}

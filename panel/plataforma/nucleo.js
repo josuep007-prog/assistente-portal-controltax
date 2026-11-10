@@ -18,8 +18,10 @@ export function montarNucleo(C) {
   chrome.storage.local.get('folhaNada').then(({ folhaNada }) => { S.plat.folhaNada = Array.isArray(folhaNada) ? folhaNada : []; }).catch(() => {});
 
   const MODULOS = [
-    ['inicio', 'Hoje', 'home'], ['pendencias', 'Solicitações', 'list'], ['preencher', 'Novo pedido', 'fill'],
-    ['funcionarios', 'Funcionários', 'users'], ['historico', 'Agenda', 'calendar'], ['documentos', 'Documentos', 'folder'], ['ferramentas', 'Calcular', 'calc']
+    // por assunto (com divisória): acompanhar → pedir → cadastros e prazos
+    ['inicio', 'Hoje', 'home'], ['pendencias', 'Solicitações', 'list'],
+    ['preencher', 'Novo pedido', 'fill'], ['ferramentas', 'Calcular', 'calc'],
+    ['funcionarios', 'Funcionários', 'users'], ['historico', 'Agenda', 'calendar'], ['documentos', 'Documentos', 'folder']
   ];
   const TITULOS = { ...Object.fromEntries(MODULOS.map(m => [m[0], m[1]])), config: 'Configurações' };
   const nomeTipo = (k) => S.rules?.tipos?.[k]?.nome || k;

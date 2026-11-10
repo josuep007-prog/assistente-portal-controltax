@@ -12,7 +12,7 @@ export function montarCasca(C) {
   let montada = false;
   function montarCasca() {
     if (montada) return; montada = true;
-    $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>`).join('');
+    $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>${['pendencias', 'ferramentas'].includes(v) ? '<div class="rail-sep rail-sep-mod" role="separator"></div>' : ''}`).join('');
     $('#rail-bottom').innerHTML = [['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
       .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b></span></button>`).join('');
     document.querySelectorAll('#rail [data-mod]').forEach(b => b.addEventListener('click', async () => {
