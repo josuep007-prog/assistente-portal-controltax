@@ -141,8 +141,21 @@ export function renderAvisosInicio() {
   const hoje = E.iso(E.today());
   const lidos = new Set(S.prefs.avisosLidos || []);
   const lista = (S.rules.avisosEscritorio || []).filter(a => a?.texto && (!a.ate || a.ate >= hoje) && (!a.desde || a.desde <= hoje) && !lidos.has(a.id || a.texto));
-  el.innerHTML = lista.map(a => `<div class="note ${a.nivel === 'importante' ? 'warn' : ''} aviso-esc">${icon(a.nivel === 'importante' ? 'alert' : 'info')}<div>${a.titulo ? `<b>${esc(a.titulo)}</b> ` : ''}${esc(a.texto)}${a.link ? ` <a href="${esc(a.link)}" target="_blank" rel="noopener">Saiba mais</a>` : ''}</div>
-    <button class="icon-btn" data-lido="${esc(a.id || a.texto)}" aria-label="Dispensar aviso">${icon('x', 'ic-sm')}</button></div>`).join('');
+  if (!lista.length) { el.innerHTML = ''; return; }
+  // um cartão só (em vez de uma faixa grande por recado): recolhe e abre, e lembra a escolha deste computador
+  let fechado = false; try { fechado = localStorage.getItem('ct.recados') === 'fechado'; } catch { /* sem armazenamento */ }
+  const importante = lista.some(a => a.nivel === 'importante');
+  el.innerHTML = `<section class="rec-card${importante ? ' warn' : ''}${fechado ? ' fechado' : ''}" aria-label="Recados do escritório">
+    <button type="button" class="rec-h" aria-expanded="${!fechado}">${icon(importante ? 'alert' : 'info', 'ic-sm')}<b>Recados do escritório</b><span class="rec-n">${lista.length}</span><span class="rec-seta" aria-hidden="true">▾</span></button>
+    <div class="rec-l"${fechado ? ' hidden' : ''}>${lista.map(a => `<div class="rec-i${a.nivel === 'importante' ? ' warn' : ''}">
+      <div class="rec-tx" title="${esc((a.titulo ? a.titulo + ' — ' : '') + a.texto)}">${a.titulo ? `<b>${esc(a.titulo)}</b>` : ''}<span>${esc(a.texto)}</span>${a.link ? ` <a href="${esc(a.link)}" target="_blank" rel="noopener">Saiba mais</a>` : ''}</div>
+      <button type="button" class="icon-btn" data-lido="${esc(a.id || a.texto)}" aria-label="Dispensar recado" title="Dispensar">${icon('x', 'ic-sm')}</button></div>`).join('')}</div></section>`;
+  el.querySelector('.rec-h')?.addEventListener('click', (e) => {
+    const sec = el.querySelector('.rec-card'), l = el.querySelector('.rec-l');
+    const fechar = !sec.classList.contains('fechado');
+    sec.classList.toggle('fechado', fechar); l.hidden = fechar; e.currentTarget.setAttribute('aria-expanded', String(!fechar));
+    try { localStorage.setItem('ct.recados', fechar ? 'fechado' : 'aberto'); } catch { /* sem armazenamento */ }
+  });
   el.querySelectorAll('[data-lido]').forEach(b => b.addEventListener('click', () => { S.prefs.avisosLidos = [...(S.prefs.avisosLidos || []), b.dataset.lido].slice(-50); savePrefs(); renderAvisosInicio(); }));
 }
 

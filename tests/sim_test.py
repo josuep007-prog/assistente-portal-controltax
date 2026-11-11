@@ -1388,6 +1388,29 @@ async def teste_cabecalho_fixo(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
+async def teste_recados_hoje(b):
+    """2.39.0: os recados do escritório no Hoje viram um cartão só (recolhe e lembra a escolha; dispensar tira o recado)."""
+    print('\n[Hoje] cartão de recados do escritório')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    n = await pn.locator('.rec-card .rec-i').count()
+    check(await pn.locator('.rec-card').count() == 1 and n >= 1, f'recados: um cartão só com {n} recado(s) (não uma faixa por recado)')
+    check(await pn.locator('.aviso-esc').count() == 0, 'recados: sem as faixas grandes antigas')
+    await pn.click('.rec-h'); await pg.wait_for_timeout(300)
+    check(await pn.locator('.rec-card.fechado').count() == 1 and not await pn.locator('.rec-l').is_visible(), 'recados: clicar no título recolhe o cartão')
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(900)
+    check(await pn.locator('.rec-card.fechado').count() == 1, 'recados: o cartão continua recolhido ao voltar ao Hoje')
+    await pn.click('.rec-h'); await pg.wait_for_timeout(300)
+    await pn.click('.rec-i [data-lido]'); await pg.wait_for_timeout(400)
+    check(await pn.locator('.rec-card .rec-i').count() == n - 1 if n > 1 else await pn.locator('.rec-card').count() == 0, 'recados: dispensar tira só aquele recado')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_blocos_cadastro(b):
     """2.29.2: no formulário próprio do cadastro, o bloco que a pessoa abriu (ou fechou) não muda sozinho quando a tela é redesenhada."""
     print('\n[blocos] blocos do formulário de cadastro não mudam sozinhos')
@@ -3025,7 +3048,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3062,6 +3085,12 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_ocr_tempo(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'rec':   # SIM_SO=rec roda só o cartão de recados do Hoje
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_recados_hoje(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'cab':   # SIM_SO=cab roda só o cabeçalho fixo em tela baixa
