@@ -22,6 +22,7 @@ Desde a 2.16.2 o motor é dividido por assunto. `panel/engine.js` é só uma **f
 | `agenda.js` | Agenda em calendário do mês (puro): `montarMes` (semanas seg–dom, pontos, feriado e dia útil), `eventosDasSolicitacoes`, `eventosDaEquipe`, `mesclarEventos`, `descreverDia`, navegação por teclado e ações nos lembretes (`concluirLembrete`, `adiarLembrete`); textos em `mensagens.agenda`, feriados em `feriadosNomes`/`feriadosMunicipais` |
 | `portal.js` | Documentos publicados pelo escritório (resposta da API) e a forma da resposta |
 | `sino.js` | Sino de novidades: foto mínima (`fotoSino`), o que mudou (`novidadesSino`), `marcarVistas`; textos em `mensagens.sino` |
+| `setores.js` | Setores (Pessoal, Fiscal, Contábil) e documentos que o cliente envia por competência: `setoresAtivos`, `menuDoSetor`, `itensDoSetor`, `situacaoCompetencia`, `textoEnvio`, `pedidosDoEnvio`, `enviosNoPortal`; listas e textos em `config.setores` e `config.documentosCliente` |
 
 Os módulos se importam entre si (há dependências em ciclo, como no arquivo único de antes). Isso funciona porque os módulos só definem funções e constantes: **nada deve chamar função de outro módulo na hora do carregamento** (no nível de cima do arquivo), só dentro de funções.
 
@@ -48,6 +49,7 @@ Desde a 2.16.3 a plataforma em tela cheia é dividida por tela. `panel/plataform
 | `novopedido.js`, `empresa.js` | Novo pedido; escolha e troca da empresa do pedido |
 | `funcionarios.js`, `agenda.js` | Funcionários e ficha; Agenda: calendário do mês (grade `role=grid`, teclado, legenda que liga e desliga tipos), painel do dia, lembretes e "próximo prazo" do Hoje (`C.proximoPrazoHtml`, uma chamada em `hoje.js`) |
 | `documentos.js` | Documentos (das solicitações, do escritório, modelos, listas) |
+| `enviardocs.js` | Enviar documentos por competência (2.40): lista do setor, anexos por item, abre a Solicitação Geral preenchida e marca o envio (`enviosDocs`, `docsNaoSeAplica` no storage, sem nomes de arquivos) |
 | `busca.js` | Busca (Ctrl+K) |
 
 **Como as partes se enxergam:** o que uma parte define e outra usa é registrado em `C` no fim dela (`Object.assign(C, {...})`). Uma parte que usa algo definido por uma parte que monta **antes** pega o valor direto de `C`; o que é definido por uma parte que monta **depois** (só funções) entra por um atalho que chama `C.nome(...)` na hora do uso. Por isso: **nada deve chamar, na hora da montagem, uma função de uma parte posterior**; dentro de funções (em tempo de uso) está tudo disponível. Estado que atravessa partes vai em `S.plat` (por exemplo `S.plat.desenhada`), não em `let` local.

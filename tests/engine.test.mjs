@@ -2164,4 +2164,69 @@ t('de qual empresa é o funcionário: acha a empresa certa, não escolhe quando 
   assert.equal(E.normalizarSolicitacao({ id: 'x', companyId: 'c-9', clientExpanded: { name: 'A', nickname: 'A | 0001-11' } }, 'afastamento', {}).empresaId, 'c-9');
 });
 
+t('setores: ordem, menu e compatibilidade com regras sem setores', () => {
+  assert.deepEqual(E.setoresAtivos(rules), ['Pessoal', 'Fiscal', 'Contábil']);
+  assert.equal(E.menuDoSetor(rules, 'Pessoal'), null, 'Pessoal usa o menu de sempre');
+  assert.ok(E.menuDoSetor(rules, 'Fiscal').includes('enviar'));
+  assert.deepEqual(E.setoresAtivos({ config: {} }), [], 'regras antigas: sem seletor');
+  assert.equal(E.setorPadrao({ config: {} }), '');
+});
+
+t('documentos por competência: itens por setor, periodicidade e dispensa', () => {
+  const out = E.itensDoSetor(rules, 'Fiscal', '10/2026').map(i => i.id);
+  assert.ok(out.includes('nf-saida') && out.includes('vendas-cartao'));
+  assert.ok(!out.includes('extratos'), 'extrato é só do Contábil');
+  assert.ok(!out.includes('inventario'), 'anual só aparece no mês dele');
+  assert.ok(E.itensDoSetor(rules, 'Fiscal', '12/2026').some(i => i.id === 'inventario'));
+  assert.ok(E.itensDoSetor(rules, 'Contábil', '12/2026').some(i => i.id === 'inventario' && i.compartilhado));
+  assert.ok(!E.itensDoSetor(rules, 'Fiscal', '10/2026', { naoSeAplica: ['nf-saida'] }).some(i => i.id === 'nf-saida'), 'dispensa do cliente');
+  const daEmpresa = { ...rules, config: { ...rules.config, documentosNaoSeAplica: ['nf-entrada'] } };
+  assert.ok(!E.itensDoSetor(daEmpresa, 'Fiscal', '10/2026').some(i => i.id === 'nf-entrada'), 'dispensa do escritório por empresa');
+  assert.equal(E.itemValeNaCompetencia({ periodicidade: 'trimestral' }, '03/2026'), true);
+  assert.equal(E.itemValeNaCompetencia({ periodicidade: 'trimestral' }, '04/2026'), false);
+  assert.deepEqual(E.itensDoSetor(rules, 'Fiscal', 'xx'), []);
+});
+
+t('documentos por competência: competências, limite e situação', () => {
+  const hoje = new Date(2026, 10, 11);   // 11/11/2026
+  const cs = E.competenciasDoSetor(rules, hoje, 3).map(c => c.competencia);
+  assert.deepEqual(cs, ['11/2026', '10/2026', '09/2026']);
+  assert.equal(E.competenciaSugerida(rules, hoje), '10/2026');
+  assert.equal(E.fmtDate(E.limiteDaCompetencia(rules, '10/2026')), '10/11/2026');
+  assert.equal(E.fmtDate(E.limiteDaCompetencia(rules, '09/2026')), '13/10/2026', 'dia 10 no sábado e 12/10 feriado: vai para terça 13');
+  const itens = [{ id: 'a', obrigatorio: true }, { id: 'b', obrigatorio: true }, { id: 'c', obrigatorio: false }];
+  const lim = new Date(2026, 10, 10);
+  assert.equal(E.situacaoCompetencia(itens, {}, { limite: lim, hoje: new Date(2026, 10, 5) }).estado, 'pendente');
+  assert.equal(E.situacaoCompetencia(itens, { a: {} }, { limite: lim, hoje: new Date(2026, 10, 5) }).estado, 'parcial');
+  assert.equal(E.situacaoCompetencia(itens, { a: {} }, { limite: lim, hoje }).estado, 'atrasado');
+  assert.equal(E.situacaoCompetencia(itens, { a: {}, b: {} }, { limite: lim, hoje }).estado, 'enviado', 'o opcional não segura');
+  assert.equal(E.situacaoCompetencia(itens, { a: {} }, { dispensados: ['b'], limite: lim, hoje }).estado, 'enviado', '"não se aplica" conta');
+  const fora = E.situacaoCompetencia(itens, {}, { limite: lim, hoje, noPortal: true });
+  assert.equal(fora.estado, 'enviado'); assert.ok(fora.semDetalhe, 'enviado por outro computador');
+});
+
+t('documentos por competência: texto do envio, cópia para outro setor e reconhecimento no portal', () => {
+  const dados = { setor: 'Fiscal', competencia: '10/2026', enviados: [{ rotulo: 'Notas de entrada', n: 2 }, { rotulo: 'Vendas por cartão', n: 1 }], faltam: ['Notas de saída'], dispensados: ['Serviços tomados'] };
+  const t1 = E.textoEnvio(rules, dados);
+  assert.equal(t1.departamento, 'Fiscal');
+  assert.equal(t1.assunto, 'Documentos fiscais – competência 10/2026');
+  assert.match(t1.descricao, /Notas de entrada — 2 arquivos/);
+  assert.match(t1.descricao, /Vendas por cartão — 1 arquivo\n/);
+  assert.match(t1.descricao, /Ainda vou enviar:\n• Notas de saída/);
+  assert.match(t1.descricao, /Não se aplica neste mês:\n• Serviços tomados/);
+  assert.equal(E.textoEnvio(rules, { ...dados, complemento: true }).assunto, 'Documentos fiscais – competência 10/2026 – complemento');
+  assert.equal(E.pedidosDoEnvio(rules, dados).length, 1);
+  const dois = E.pedidosDoEnvio(rules, dados, ['Contábil', 'Fiscal', 'Inexistente']);
+  assert.equal(dois.length, 2, 'só setores que existem e diferentes do de origem');
+  assert.equal(dois[1].departamento, 'Contábil');
+  assert.equal(dois[1].assunto, dois[0].assunto, 'a cópia leva o mesmo assunto');
+  assert.ok(dois[1].descricao.startsWith(dois[0].descricao) && /Cópia da solicitação enviada ao Fiscal\./.test(dois[1].descricao));
+  assert.deepEqual(E.setoresSugeridos(rules, [{ setores: ['Fiscal'] }, { setores: ['Fiscal', 'Contábil'] }], 'Fiscal'), ['Contábil']);
+  const sol = [{ assunto: 'Documentos fiscais - competencia 10/2026 – complemento', numero: 77, estado: 'andamento' }, { assunto: 'DOCUMENTOS CONTÁBEIS – COMPETÊNCIA 9/2026', numero: 78 }, { assunto: 'Guia do DAS – 2ª via – competência 10/2026' }];
+  assert.deepEqual(E.enviosNoPortal(sol, rules).map(x => `${x.setor}|${x.competencia}|${x.numero}`), ['Fiscal|10/2026|77', 'Contábil|09/2026|78']);
+  assert.equal(E.setorDaSolicitacao({ departamento: 'TRIBUTÁRIO' }, rules), 'Fiscal', 'pelo sinônimo do departamento');
+  assert.equal(E.setorDaSolicitacao({ assunto: 'Documentos contábeis – competência 10/2026' }, rules), 'Contábil');
+  assert.equal(E.setorDaSolicitacao({ assunto: 'Outra coisa' }, rules), '');
+});
+
 console.log(`\n${n} testes ok`);
