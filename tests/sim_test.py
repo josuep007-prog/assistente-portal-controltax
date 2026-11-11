@@ -2646,6 +2646,13 @@ async def teste_contraste(b):
         await medir_tela('busca'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(300)
         await pn.click('#rail [data-acao="config"]'); await pg.wait_for_timeout(500)
         await medir_tela('configuracoes')
+        # Enviar documentos (setor Fiscal), com um arquivo anexado e um item dispensado; depois volta ao Pessoal
+        await pn.click('[data-setor="Fiscal"]'); await pg.wait_for_timeout(700)
+        await pn.locator('.env-i[data-item="nf-saida"] input[type=file]').set_input_files([{'name': 'notas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
+        await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check()
+        await medir_tela('enviar-documentos')
+        await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').uncheck()
+        await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(700)
         # detalhe de uma solicitação, em cada aba
         await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)
         await pn.locator('#sol-grupos .hj-card').first.click()

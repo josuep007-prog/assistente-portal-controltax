@@ -1084,9 +1084,7 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .ph-setor { all: unset; box-sizing: border-box; padding: 5px 14px; border-radius: 999px; font: 600 12.5px var(--f-head); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
 .ph-setor:hover { color: var(--ink); }
 .ph-setor:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; }
-.ph-setor.on { background: var(--masthead, #0E151B); color: #fff; box-shadow: var(--shadow-1); }
-:root[data-theme="dark"] .ph-setor.on { background: var(--brand-red, #C2000C); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ph-setor.on { background: var(--brand-red, #C2000C); } }
+.ph-setor.on { background: var(--ink); color: var(--surface); box-shadow: var(--shadow-1); }   /* tinta sobre superfície: contraste alto nos dois temas */
 .env-topo { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .env-intro { flex: 1 1 420px; min-width: 0; }
 .env-intro h3 { margin: 0 0 4px; font: 700 16px/1.2 var(--f-head); }
@@ -1113,9 +1111,11 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-i-st { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: var(--ink-3); background: var(--surface-2); border: 1px solid var(--rule); }
 .env-i.ok .env-i-st, .env-i.pronto .env-i-st { color: #fff; background: #1A9E4B; border-color: #1A9E4B; }
 .env-i.pronto .env-i-st { background: var(--blue-deep); border-color: var(--blue-deep); }
-.env-i.disp { opacity: .72; }
+.env-i.disp { background: var(--surface-2); }
+.env-i.disp .env-i-t b { text-decoration: line-through; text-decoration-color: var(--ink-3); }
 .env-i-t { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .env-i-t b { font: 600 13.5px var(--f-head); }
+.env-i-t .chip { color: var(--ink); }
 .env-dica { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-2); max-width: 80ch; }
 .env-ok { display: flex; align-items: center; gap: 4px; margin-top: 5px; font-size: 12px; color: #17803F; }
 .env-arqs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
@@ -1123,7 +1123,7 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-arq > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .env-i-ac { display: grid; justify-items: end; gap: 5px; }
 .env-na { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
-.env-nunca { all: unset; font-size: 11.5px; color: var(--ink-3); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.env-nunca { all: unset; font-size: 11.5px; color: var(--ink-2); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .env-nunca:hover { color: var(--blue-deep); }
 .env-nunca:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
 .env-rodape { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; background: var(--surface-2); }
