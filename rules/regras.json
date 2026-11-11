@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.10-2",
+  "versao": "2026.11.11-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -69,6 +69,193 @@
       "calculo": 5
     },
     "diaLimiteRubricas": null,
+      "setores": {
+        "_comentario": "Setores da plataforma (2.40). O seletor no topo do menu troca o menu inteiro. 'menu' = vistas na ordem (null = o menu de sempre, do Pessoal). 'departamento' = nome no catálogo da Solicitação Geral (tipos.geral.catalogo.departamentos tem os sinônimos para casar com a lista do portal). 'assuntoEnvio' é o assunto padronizado do envio de documentos: é por ele que a extensão reconhece, ao ler o portal, que a competência já foi enviada — não mude depois de publicado. Sem este bloco a plataforma fica como antes.",
+        "revisarComEscritorio": true,
+        "ordem": [
+          "Pessoal",
+          "Fiscal",
+          "Contábil"
+        ],
+        "Pessoal": {
+          "rotulo": "Pessoal",
+          "departamento": "Pessoal",
+          "menu": null
+        },
+        "Fiscal": {
+          "rotulo": "Fiscal",
+          "departamento": "Fiscal",
+          "menu": [
+            "enviar",
+            "pendencias",
+            "preencher",
+            "historico",
+            "documentos"
+          ],
+          "assuntoEnvio": "Documentos fiscais – competência {competencia}",
+          "pastas": [
+            "fiscal",
+            "impostos",
+            "guias"
+          ]
+        },
+        "Contábil": {
+          "rotulo": "Contábil",
+          "departamento": "Contábil",
+          "menu": [
+            "enviar",
+            "pendencias",
+            "preencher",
+            "historico",
+            "documentos"
+          ],
+          "assuntoEnvio": "Documentos contábeis – competência {competencia}",
+          "pastas": [
+            "contábil",
+            "contabil",
+            "balancete",
+            "balanço"
+          ]
+        }
+      },
+      "documentosCliente": {
+        "_comentario": "Documentos que o cliente envia ao escritório por competência (tela Enviar documentos). Cada item: id, rotulo, setores (um ou mais), periodicidade (mensal | trimestral | anual + mes), obrigatorio (padrão true), dica. limiteDia = dia do mês seguinte até quando enviar (vai para o próximo dia útil). Para tirar um item de uma empresa: empresas[\"TRECHO DO NOME\"].config.documentosNaoSeAplica = [\"id\"]. A lista é uma sugestão: revisar com o escritório antes de publicar.",
+        "revisarComEscritorio": true,
+        "limiteDia": 10,
+        "mesesVisiveis": 12,
+        "copiaParaOutroSetor": "Cópia da solicitação enviada ao {setor}.",
+        "textos": {
+          "enviados": "Documentos enviados nesta solicitação:",
+          "faltam": "Ainda vou enviar:",
+          "dispensados": "Não se aplica neste mês:",
+          "sufixoComplemento": " – complemento",
+          "explica": "Anexe os documentos de cada item e clique em Enviar ao escritório: eu abro a Solicitação Geral já preenchida com a competência e a lista do que foi enviado. Você confere e envia."
+        },
+        "itens": [
+          {
+            "id": "nf-saida",
+            "rotulo": "Notas fiscais de saída e de serviços prestados",
+            "setores": [
+              "Fiscal"
+            ],
+            "periodicidade": "mensal",
+            "dica": "XML ou PDF das notas emitidas no mês. Se o sistema emissor exporta um arquivo único (ZIP), pode mandar ele."
+          },
+          {
+            "id": "nf-entrada",
+            "rotulo": "Notas fiscais de entrada (compras)",
+            "setores": [
+              "Fiscal"
+            ],
+            "periodicidade": "mensal",
+            "dica": "XML ou PDF das notas de compra de mercadorias, insumos e imobilizado."
+          },
+          {
+            "id": "nf-servicos-tomados",
+            "rotulo": "Notas de serviços tomados",
+            "setores": [
+              "Fiscal"
+            ],
+            "periodicidade": "mensal",
+            "obrigatorio": false,
+            "dica": "Serviços contratados de outras empresas (contador não entra): pode haver retenção de ISS, INSS ou IR."
+          },
+          {
+            "id": "vendas-cartao",
+            "rotulo": "Relatório de vendas por cartão e PIX",
+            "setores": [
+              "Fiscal",
+              "Contábil"
+            ],
+            "periodicidade": "mensal",
+            "obrigatorio": false,
+            "dica": "Extrato da maquininha (ou do banco) com as vendas do mês."
+          },
+          {
+            "id": "impostos-pagos",
+            "rotulo": "Comprovantes dos impostos pagos",
+            "setores": [
+              "Fiscal",
+              "Contábil"
+            ],
+            "periodicidade": "mensal",
+            "obrigatorio": false,
+            "dica": "DAS, DARF, guias de ICMS e ISS pagos no mês."
+          },
+          {
+            "id": "extratos",
+            "rotulo": "Extratos bancários de todas as contas",
+            "setores": [
+              "Contábil"
+            ],
+            "periodicidade": "mensal",
+            "dica": "Do primeiro ao último dia do mês, de preferência em PDF e OFX. Inclua contas de aplicação."
+          },
+          {
+            "id": "cartao-empresa",
+            "rotulo": "Faturas do cartão de crédito da empresa",
+            "setores": [
+              "Contábil"
+            ],
+            "periodicidade": "mensal",
+            "obrigatorio": false,
+            "dica": "A fatura fechada no mês, com os lançamentos."
+          },
+          {
+            "id": "pagamentos",
+            "rotulo": "Comprovantes de pagamentos e recebimentos",
+            "setores": [
+              "Contábil"
+            ],
+            "periodicidade": "mensal",
+            "obrigatorio": false,
+            "dica": "Boletos pagos, recibos, transferências a sócios e recebimentos fora da nota."
+          },
+          {
+            "id": "caixa",
+            "rotulo": "Controle de caixa (dinheiro)",
+            "setores": [
+              "Contábil"
+            ],
+            "periodicidade": "mensal",
+            "obrigatorio": false,
+            "dica": "Planilha ou livro caixa das entradas e saídas em dinheiro."
+          },
+          {
+            "id": "contratos",
+            "rotulo": "Contratos novos (empréstimo, financiamento, aluguel)",
+            "setores": [
+              "Contábil"
+            ],
+            "periodicidade": "mensal",
+            "obrigatorio": false,
+            "dica": "Só quando houver contrato novo ou aditivo no mês."
+          },
+          {
+            "id": "inventario",
+            "rotulo": "Inventário de estoque em 31/12",
+            "setores": [
+              "Fiscal",
+              "Contábil"
+            ],
+            "periodicidade": "anual",
+            "mes": 12,
+            "dica": "Quantidade e custo de cada item em estoque no último dia do ano."
+          },
+          {
+            "id": "informes-socios",
+            "rotulo": "Informes de rendimentos e saldos em 31/12",
+            "setores": [
+              "Contábil"
+            ],
+            "periodicidade": "anual",
+            "mes": 12,
+            "obrigatorio": false,
+            "dica": "Informes dos bancos e saldos de empréstimos e aplicações da empresa no fim do ano."
+          }
+        ]
+      },
+      "documentosNaoSeAplica": [],
     "variaveisFolha": {
       "_comentario": "Cartão do Hoje 'Variáveis da folha de MM/AAAA ainda não enviadas' (lote 6). Aparece do dia 'avisarAPartirDoDia' do mês da competência até o 'diaLimite' do mês seguinte (num dia útil; se cair em feriado ou fim de semana, antecipa). A competência é a do mês anterior até o dia limite; depois, a do mês atual. Some quando o portal já tem um Lançamento de Rubricas dessa competência (effectiveDate da lista; sem ela, vale um lançamento criado desde o início do aviso — 'semCompetenciaPelaData', a calibrar no Onvio real) ou quando o cliente clica 'Nada a lançar este mês' (fica guardado neste computador, só para aquele mês). 'Preparar' abre o pedido com o tipo e a competência como sugestão; 'Usar o lançamento do mês passado' leva o tipo e as linhas do último lançamento (deste computador ou do portal), sem a competência antiga.",
       "revisarComEscritorio": true,
