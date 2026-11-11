@@ -3,7 +3,7 @@ import { libsPresentes } from './extract.js';
 import { $, P, S, debounce, definirPlat, esc, icon, packFiles, request, send, standalone, toast, viewEl } from './painel/base.js';
 import { aplicarTamanhoTexto, loadPrefs, loadRules, ligar as ligarConexao } from './painel/conexao.js';
 import { alternarTema, loadEmpregados, render, setView, syncThemeIcon, tipoDef, w, ligar as ligarModo } from './painel/modo.js';
-import { ICONS, bindDrop, entenderTexto, handleFiles, openTipo, ligar as ligarInicio } from './painel/inicio.js';
+import { ICONS, bindDrop, entenderTexto, handleFiles, juntarArquivos, novoItem, openTipo, ligar as ligarInicio } from './painel/inicio.js';
 import { abrirResumoSePronto, renderLote, renderSugestao } from './painel/lote.js';
 import { admissaoDe, gerarTextos, valoresParaChecar } from './painel/valores.js';
 import { renderFieldsOnly, renderPreencher } from './painel/preencher.js';
@@ -25,7 +25,7 @@ definirPlat(montarPlataforma({
   setView, w, tipoDef, openTipo, entenderTexto, handleFiles, bindDrop, gerarTextos, loadEmpregados, fillPortal,
   renderPreencher, renderFerramentas, renderConfig, renderSugestao, renderLote, renderAvisosInicio, renderRepetir, renderModelosInicio, renderFaq,
   prazosDoHistorico, guardarEquipe, mensagemAdmissao, nomeCurto, alternarTema, maskInput, comecarDoZeroSeAbandonado, copiarDiagnostico,
-  abrirResumoSePronto, aplicarSugestoes, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar, renderFieldsOnly, packFiles, retomarPlanilha, salvarRascunhoAgora
+  abrirResumoSePronto, aplicarSugestoes, juntarArquivos, novoItem, admissaoDe, gerarPeloModelo, contextoModelo, valoresParaChecar, renderFieldsOnly, packFiles, retomarPlanilha, salvarRascunhoAgora
 }));
 
 /* =================== Início =================== */

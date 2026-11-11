@@ -23,7 +23,27 @@ export function montarNucleo(C) {
     ['preencher', 'Novo pedido', 'fill'], ['ferramentas', 'Calcular', 'calc'],
     ['funcionarios', 'Funcionários', 'users'], ['historico', 'Agenda', 'calendar'], ['documentos', 'Documentos', 'folder']
   ];
-  const TITULOS = { ...Object.fromEntries(MODULOS.map(m => [m[0], m[1]])), config: 'Configurações' };
+  // vistas que só existem no menu de um setor (regras: config.setores.*.menu)
+  const MODULOS_SETOR = [['enviar', 'Enviar documentos', 'upload']];
+  const TITULOS = { ...Object.fromEntries([...MODULOS, ...MODULOS_SETOR].map(m => [m[0], m[1]])), config: 'Configurações' };
+  /* Setores (2.40): o seletor do cabeçalho troca o menu inteiro. Sem config.setores nas regras, não há seletor e vale o menu de sempre. */
+  function setorAtual() {
+    const lista = E.setoresAtivos(S.rules); if (!lista.length) return '';
+    if (!lista.includes(S.plat.setor)) { let g = ''; try { g = localStorage.getItem('ct.setor') || ''; } catch { /* sem armazenamento */ } S.plat.setor = lista.includes(g) ? g : lista[0]; }
+    return S.plat.setor;
+  }
+  function modulosDoSetor(setor = setorAtual()) {
+    const menu = E.menuDoSetor(S.rules, setor); if (!menu) return MODULOS;
+    const todos = Object.fromEntries([...MODULOS, ...MODULOS_SETOR].map(m => [m[0], m]));
+    const lista = menu.map(v => todos[v]).filter(Boolean);
+    return lista.length ? lista : MODULOS;
+  }
+  /** A vista pedida não está no menu do setor atual (ex.: a busca abriu "Funcionários" estando no Fiscal): passa para o setor que a tem. */
+  function setorDaVista(v) {
+    if (v === 'config' || modulosDoSetor().some(m => m[0] === v)) return;
+    const outro = E.setoresAtivos(S.rules).find(s => modulosDoSetor(s).some(m => m[0] === v));
+    if (outro) { S.plat.setor = outro; try { localStorage.setItem('ct.setor', outro); } catch { /* sem armazenamento */ } C.desenharTrilho?.(); }
+  }
   const nomeTipo = (k) => S.rules?.tipos?.[k]?.nome || k;
   // ícone e cor por família (como no Control Onvio): o ícone vem do atalho do tipo nas regras
   const familiaTipo = (k) => /^cadastro/.test(k) ? 'cadastro' : /Ferias$/.test(k) ? 'ferias' : /Rescisao$/.test(k) ? 'rescisao' : k === 'afastamento' ? 'afastamento' : k === 'rubricas' ? 'rubricas' : 'geral';
@@ -98,5 +118,5 @@ export function montarNucleo(C) {
   function atualizarBadge() { const n = itensVisiveis().filter(i => i.aguardando).length; send({ type: 'setBadge', n }); badge('pendencias', n); C.atualizarSino?.(); }
   const editavel = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
-  Object.assign(C, { MODULOS, P, TITULOS, atualizarBadge, cap, editavel, esperar, familiaTipo, fmt, icTipo, itensVisiveis, ligarSeletorEmpresa, loading, nomeTipo, quando, rotEmpresa, seletorEmpresa, variasEmpresas });
+  Object.assign(C, { MODULOS, MODULOS_SETOR, modulosDoSetor, setorAtual, setorDaVista, P, TITULOS, atualizarBadge, cap, editavel, esperar, familiaTipo, fmt, icTipo, itensVisiveis, ligarSeletorEmpresa, loading, nomeTipo, quando, rotEmpresa, seletorEmpresa, variasEmpresas });
 }

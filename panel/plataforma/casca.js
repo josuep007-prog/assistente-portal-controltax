@@ -5,18 +5,19 @@ import { anel } from '../graficos.js';
 
 export function montarCasca(C) {
   const { A, S, $, esc, icon, request, send, toast, viewEl } = C;
-  const { MODULOS, P, TITULOS, editavel, icTipo, itensVisiveis, nomeTipo, quando } = C;   // definidos em partes que montam antes
+  const { MODULOS, modulosDoSetor, setorAtual, P, TITULOS, editavel, icTipo, itensVisiveis, nomeTipo, quando } = C;   // definidos em partes que montam antes
   const abrirBusca = (...a) => C.abrirBusca(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const montarBusca = (...a) => C.montarBusca(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   /* =================== Casca: trilho, cabeçalho, busca =================== */
   let montada = false;
-  function montarCasca() {
-    if (montada) return; montada = true;
-    // rede de segurança: se algo (foco, scrollIntoView, extensão do navegador) rolar a casca, volta ao topo — o cabeçalho nunca fica cortado
-    for (const el of [document.documentElement, document.body, $('#plat'), document.querySelector('.plat-main')]) el?.addEventListener('scroll', () => { if (el.scrollTop) el.scrollTop = 0; });
-    $('#rail-mods').innerHTML = MODULOS.map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>${['pendencias', 'ferramentas'].includes(v) ? '<div class="rail-sep rail-sep-mod" role="separator"></div>' : ''}`).join('');
-    $('#rail-bottom').innerHTML = [['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
-      .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b></span></button>`).join('');
+  /** Desenha os módulos do trilho conforme o setor escolhido (e de novo quando o setor muda). */
+  let trilhoAss = '';
+  const assinaturaTrilho = () => `${setorAtual()}|${modulosDoSetor().map(m => m[0]).join(',')}|${E.setoresAtivos(S.rules).join(',')}`;
+  /** As regras chegam depois da casca: se o setor ou o menu mudou, redesenha. */
+  function conferirTrilho() { if (montada && assinaturaTrilho() !== trilhoAss) desenharTrilho(); }
+  function desenharTrilho() {
+    trilhoAss = assinaturaTrilho();
+    $('#rail-mods').innerHTML = modulosDoSetor().map(([v, t, ic]) => `<button type="button" class="rail-i" data-mod="${v}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b><small data-resumo="${v}" hidden></small></span><span class="rail-badge" data-badge="${v}" hidden></span></button>${['pendencias', 'ferramentas'].includes(v) ? '<div class="rail-sep rail-sep-mod" role="separator"></div>' : ''}`).join('');
     document.querySelectorAll('#rail [data-mod]').forEach(b => b.addEventListener('click', async () => {
       const noPedido = S.view === 'preencher' && S.ctx.route?.mode === 'form' && !S.plat.escolher;
       // "Novo pedido" de novo, com o formulário na tela: volta para a escolha do tipo; o portal sai do formulário junto e o pedido pode ser retomado
@@ -24,6 +25,34 @@ export function montarCasca(C) {
       if (b.dataset.mod !== 'preencher' && noPedido) await P.sairDoFormulario();   // outra aba da extensão: o portal também sai do formulário
       A.setView(b.dataset.mod);
     }));
+    desenharSetores();
+    marcarModulo(S.view);
+    C.atualizarBadge?.();
+  }
+  /** Seletor de setor no cabeçalho: Pessoal | Fiscal | Contábil. Some quando as regras não têm setores. */
+  function desenharSetores() {
+    const el = $('#plat-setores'); if (!el) return;
+    const lista = E.setoresAtivos(S.rules), atual = setorAtual();
+    el.hidden = lista.length < 2;
+    el.innerHTML = lista.map(s => `<button type="button" role="tab" class="ph-setor${s === atual ? ' on' : ''}" data-setor="${esc(s)}" aria-selected="${s === atual}">${esc(E.setorDef(S.rules, s).rotulo || s)}</button>`).join('');
+    el.querySelectorAll('[data-setor]').forEach(b => b.addEventListener('click', () => trocarSetor(b.dataset.setor)));
+  }
+  async function trocarSetor(setor) {
+    if (setor === setorAtual()) return;
+    if (S.view === 'preencher' && S.ctx.route?.mode === 'form' && !S.plat.escolher) await P.sairDoFormulario();   // como trocar de aba: o portal sai do formulário junto
+    S.plat.setor = setor; try { localStorage.setItem('ct.setor', setor); } catch { /* sem armazenamento */ }
+    desenharTrilho();
+    const mods = modulosDoSetor().map(m => m[0]);
+    const v = mods.includes(S.view) ? S.view : mods[0];
+    if (S.view === v) P.render(v); else A.setView(v);
+  }
+  function montarCasca() {
+    if (montada) return; montada = true;
+    // rede de segurança: se algo (foco, scrollIntoView, extensão do navegador) rolar a casca, volta ao topo — o cabeçalho nunca fica cortado
+    for (const el of [document.documentElement, document.body, $('#plat'), document.querySelector('.plat-main')]) el?.addEventListener('scroll', () => { if (el.scrollTop) el.scrollTop = 0; });
+    desenharTrilho();
+    $('#rail-bottom').innerHTML = [['tema', 'Tema claro/escuro', 'moon'], ['config', 'Configurações', 'gear'], ['minimizar', 'Minimizar', 'minus']]
+      .map(([a, t, ic]) => `<button type="button" class="rail-i" data-acao="${a}" aria-label="${t}"><span class="rail-ico">${icon(ic)}</span><span class="rail-t"><b>${t}</b></span></button>`).join('');
     document.querySelectorAll('#rail [data-acao]').forEach(b => b.addEventListener('click', () => {
       const a = b.dataset.acao;
       if (a === 'minimizar') send({ type: 'modo', modo: 'fechado' });
@@ -38,12 +67,13 @@ export function montarCasca(C) {
     });
     // soltar arquivos em qualquer lugar da plataforma
     let fundo = 0; const temArq = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
-    document.addEventListener('dragenter', (e) => { if (!document.body.classList.contains('plat') || !temArq(e)) return; fundo++; $('#plat-drop').hidden = false; });
+    document.addEventListener('dragenter', (e) => { if (!document.body.classList.contains('plat') || !temArq(e) || S.view === 'enviar') return; fundo++; $('#plat-drop').hidden = false; });
     document.addEventListener('dragleave', () => { fundo = Math.max(0, fundo - 1); if (!fundo) $('#plat-drop').hidden = true; });
     document.addEventListener('dragover', (e) => { if (document.body.classList.contains('plat') && temArq(e)) e.preventDefault(); });
     document.addEventListener('drop', (e) => {
       fundo = 0; $('#plat-drop').hidden = true;
       if (!document.body.classList.contains('plat') || e.defaultPrevented) return;   // as áreas de soltar já trataram
+      if (S.view === 'enviar') { e.preventDefault(); return; }   // Enviar documentos: só vale soltar em cima de um item da lista
       const files = [...(e.dataTransfer?.files || [])]; if (!files.length) return;
       e.preventDefault(); S.plat.escolher = false; A.handleFiles(files, 'arrastar');
     });
@@ -178,5 +208,5 @@ export function montarCasca(C) {
   }
   function atualizarCabecalho() { const e = $('#plat-empresa'); if (e) e.textContent = S.ctx.empresa || 'Portal do Cliente'; }
 
-  Object.assign(C, { atualizarCabecalho, atualizarSino, atualizarSync, badge, estadoLeitura, hora, marcarModulo, montarCasca });
+  Object.assign(C, { conferirTrilho, desenharSetores, desenharTrilho, trocarSetor, atualizarCabecalho, atualizarSino, atualizarSync, badge, estadoLeitura, hora, marcarModulo, montarCasca });
 }

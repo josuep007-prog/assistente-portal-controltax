@@ -7,7 +7,8 @@ export function montarEntrada(C) {
   const { P, assinatura, atualizarCabecalho, atualizarSync, badge, esperar, fmt, hora, marcarModulo, montarCasca, quando, seguroRedesenhar } = C;   // definidos em partes que montam antes
   const dialogo = (...a) => C.dialogo(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderAgenda = (...a) => C.renderAgenda(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
-  const renderDocumentos = (...a) => C.renderDocumentos(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
+  const renderDocumentos = (...a) => C.renderDocumentos(...a);
+  const renderEnviar = (...a) => C.renderEnviar(...a);   // idem (panel/plataforma/enviardocs.js)   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderFuncionarios = (...a) => C.renderFuncionarios(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderPainel = (...a) => C.renderPainel(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderPedido = (...a) => C.renderPedido(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
@@ -69,6 +70,7 @@ export function montarEntrada(C) {
   }
   P.aoEnviar = (tipo, valores = {}) => {
     S.plat.enviado = { tipo, quando: Date.now() };
+    C.marcarEnvioDocs?.(tipo, valores);   // Enviar documentos: marca os itens da competência como enviados
     // o passo seguinte (regras: tipos.*.depoisDeEnviar), menos o que o lote já vai abrir
     const lote = S.lote && !S.lote.concluido ? S.lote.pedidos.filter(x => x.status === 'pendente').map(x => x.tipo) : [];
     const passos = E.proximosPassos(tipo, valores, S.rules).filter(x => !(x.tipo && lote.includes(x.tipo)));
@@ -146,12 +148,12 @@ export function montarEntrada(C) {
   };
 
   P.render = (v) => {
-    montarCasca(); marcarModulo(v);
+    montarCasca(); C.setorDaVista(v); C.conferirTrilho(); marcarModulo(v);
     S.plat.desenhada = assinatura(S.plat.sol);
     const trocou = P.ultimaVista !== v; P.ultimaVista = v;   // entrada suave só ao trocar de tela
     if (v !== 'preencher') S.plat.escolher = false;
     viewEl.className = `view plat-view v-${v}${trocou ? ' entra' : ''}`;
-    return ({ inicio: renderPainel, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();
+    return ({ inicio: renderPainel, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, enviar: renderEnviar, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();
   };
 
   Object.assign(C, { avisoLeitura, continuarRascunho, fazerAgora, passosAbertos });

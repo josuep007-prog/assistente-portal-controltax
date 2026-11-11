@@ -1412,6 +1412,84 @@ async def teste_recados_hoje(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     await ctx.close()
 
+async def teste_enviar_documentos(b):
+    """2.40.0: seletor de setor troca o menu; Enviar documentos anexa por item e abre a Solicitação Geral do setor já preenchida
+    (departamento, assunto com a competência, descrição com a lista, anexos); o cliente envia e a lista é marcada, sem guardar nomes de arquivos."""
+    import datetime
+    print('\n[setores] seletor de setor e Enviar documentos por competência')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    total = lambda: pg.evaluate("window.__ctPlatform.fetchList('tickets/generic').then(r => r.json()).then(j => j.totalItems)")
+    mods = lambda: pn.evaluate("[...document.querySelectorAll('#rail [data-mod]')].map(e => e.dataset.mod)")
+    hoje = datetime.date.today()
+    ant = (hoje.replace(day=1) - datetime.timedelta(days=1))
+    comp = f'{ant.month:02d}/{ant.year}'
+    check(await pn.locator('#plat-setores [data-setor]').count() == 3 and 'inicio' in await mods(), 'setores: o seletor aparece com Pessoal, Fiscal e Contábil; Pessoal mostra o menu de sempre')
+    await pn.click('[data-setor="Fiscal"]'); await pg.wait_for_timeout(900)
+    check(await mods() == ['enviar', 'pendencias', 'preencher', 'historico', 'documentos'], f'setores: Fiscal troca o menu ({await mods()})')
+    check((await pn.locator('#plat-titulo').inner_text()).strip() == 'Enviar documentos' and await pn.locator('.env-mes.on').get_attribute('data-comp') == comp, f'enviar: abre na competência do mês anterior ({comp})')
+    ids = await pn.evaluate("[...document.querySelectorAll('.env-i')].map(e => e.dataset.item)")
+    check('nf-saida' in ids and 'vendas-cartao' in ids and 'extratos' not in ids, f'enviar: a lista é a do Fiscal ({ids})')
+    await pn.locator('.env-i[data-item="nf-saida"] input[type=file]').set_input_files([{'name': 'notas-saida.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4 abc'}, {'name': 'nota 2.xml', 'mimeType': 'text/xml', 'buffer': b'<x/>'}])
+    await pg.wait_for_timeout(300)
+    await pn.locator('.env-i[data-item="vendas-cartao"] input[type=file]').set_input_files([{'name': 'vendas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
+    await pg.wait_for_timeout(300)
+    await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check(); await pg.wait_for_timeout(300)
+    check(await pn.locator('.env-i.pronto').count() == 2 and await pn.locator('.env-i.disp').count() == 1 and '3 arquivos em 2 itens' in await pn.locator('#env-resumo').inner_text(), 'enviar: arquivos anexados por item e "não se aplica neste mês" marcado')
+    antes = await total()
+    await pn.click('#env-enviar')
+    v = {}
+    for _ in range(80):
+        v = await portal()
+        if v.get('department') == 'FISCAL' and v.get('subject') and v.get('description'): break
+        await pg.wait_for_timeout(500)
+    d = v.get('description') or ''
+    check(v.get('department') == 'FISCAL' and v.get('subject') == f'Documentos fiscais – competência {comp}', f"enviar: a Solicitação Geral abre no departamento e com o assunto da competência ({v.get('department')!r}, {v.get('subject')!r})")
+    check('Notas fiscais de saída e de serviços prestados — 2 arquivos' in d and 'Relatório de vendas por cartão e PIX — 1 arquivo' in d and 'Ainda vou enviar:' in d and 'Notas fiscais de entrada (compras)' in d and 'Não se aplica neste mês:' in d and 'Notas de serviços tomados' in d, 'enviar: a descrição traz o que foi enviado, o que falta e o que não se aplica')
+    ok = False
+    for _ in range(40):
+        if await pg.evaluate("[...document.querySelectorAll('.p-chip')].length") == 3: ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, 'enviar: os 3 arquivos foram anexados no portal')
+    for _ in range(20):
+        if await pn.locator('#modal').is_visible(): break
+        await pg.wait_for_timeout(500)
+    check(await pn.locator('#modal').is_visible() and await total() == antes, 'enviar: mostra o resumo e nada é enviado sem o clique do cliente')
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    ok = False
+    for _ in range(40):
+        if await total() == antes + 1: ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, 'enviar: ao confirmar, uma Solicitação Geral a mais no portal')
+    await pg.wait_for_timeout(2500)
+    await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(1200)
+    check(await pn.locator('.env-i.ok[data-item="nf-saida"]').count() == 1 and await pn.locator('.env-i.ok[data-item="vendas-cartao"]').count() == 1 and 'Enviado em' in await pn.locator('.env-i[data-item="nf-saida"]').inner_text(), 'enviar: depois do envio, os itens ficam marcados como enviados')
+    check(await pn.locator('.env-mes.on.st-enviado').count() == 0 and '1 de 2' in await pn.locator('.env-card .pn-card-head').inner_text(), 'enviar: envio em parte — a competência não fica como enviada (1 de 2 obrigatórios)')
+    guardado = await pn.evaluate("chrome.storage.local.get(['enviosDocs', 'docsNaoSeAplica']).then(r => JSON.stringify(r))")
+    check(comp in guardado and 'nf-saida' in guardado and 'notas-saida' not in guardado and 'vendas.pdf' not in guardado, 'enviar: no computador ficam só competência, item e quantidade — sem nomes de arquivos')
+    # "Nunca se aplica a esta empresa" tira o item e dá para voltar
+    await pn.click('.env-i[data-item="impostos-pagos"] [data-nunca]'); await pg.wait_for_timeout(400)
+    check(await pn.locator('.env-i[data-item="impostos-pagos"]').count() == 0 and await pn.locator('.env-fixos [data-voltar="impostos-pagos"]').count() == 1, 'enviar: "nunca se aplica a esta empresa" tira o item da lista')
+    await pn.evaluate("document.querySelector('.env-fixos').open = true"); await pn.click('.env-fixos [data-voltar="impostos-pagos"]'); await pg.wait_for_timeout(400)
+    check(await pn.locator('.env-i[data-item="impostos-pagos"]').count() == 1, 'enviar: "Voltar para a lista" devolve o item')
+    # Contábil tem a lista dele; Pessoal volta ao menu de sempre
+    await pn.click('[data-setor="Contábil"]'); await pg.wait_for_timeout(900)
+    ids = await pn.evaluate("[...document.querySelectorAll('.env-i')].map(e => e.dataset.item)")
+    check('extratos' in ids and 'nf-saida' not in ids and await pn.locator('.env-i.ok').count() == 0, f'setores: Contábil mostra a lista dele, sem os envios do Fiscal ({ids})')
+    await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(900)
+    m = await mods()
+    check(m[0] == 'inicio' and 'funcionarios' in m and 'enviar' not in m, f'setores: Pessoal volta ao menu de sempre ({m})')
+    await pg.reload(); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    check(await pn.locator('.ph-setor.on').get_attribute('data-setor') == 'Pessoal', 'setores: a escolha do setor fica lembrada')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_blocos_cadastro(b):
     """2.29.2: no formulário próprio do cadastro, o bloco que a pessoa abriu (ou fechou) não muda sozinho quando a tela é redesenhada."""
     print('\n[blocos] blocos do formulário de cadastro não mudam sozinhos')
@@ -3049,7 +3127,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3086,6 +3164,12 @@ async def main():
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
             await teste_ocr_tempo(b); await b.close()
+        print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
+        return
+    if os.environ.get('SIM_SO') == 'set':   # SIM_SO=set roda só os setores e o Enviar documentos
+        async with async_playwright() as p:
+            b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
+            await teste_enviar_documentos(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'rec':   # SIM_SO=rec roda só o cartão de recados do Hoje
