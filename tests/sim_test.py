@@ -645,7 +645,8 @@ async def teste_lote4(b):
     lin = pn.locator('#eq-exp .eq-li', has_text='VANESSA PRADO')
     bts = await lin.locator('[data-eq]').all_inner_texts()
     check(bts == ['Prorrogar', 'Encerrar no fim', 'Efetivar'], f'experiência vencendo: Prorrogar, Encerrar no fim e Efetivar ({bts})')
-    await lin.locator('[data-eq]', has_text='Prorrogar').click(); await pg.wait_for_timeout(500)
+    await lin.locator('[data-eq]', has_text='Prorrogar').click()
+    await espera(lambda: pn.locator('#md-prev').count(), 8)   # o modelo abre um instante depois do clique
     prev = await pn.locator('#md-prev').inner_text() if await pn.locator('#md-prev').count() else ''
     check('VANESSA PRADO' in prev and 'por mais 45 dias' in prev, 'Prorrogar: termo pelo modelo com funcionário, admissão e 45 dias')
     await pn.click('#modal .dlg-x'); await pg.wait_for_timeout(300)
