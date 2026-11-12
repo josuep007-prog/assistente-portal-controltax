@@ -17,6 +17,8 @@ Extensão Chrome (Manifest V3) que age por cima do Onvio Portal do Cliente na vi
 - **Nunca** clicar em ADICIONAR, SALVAR E ENVIAR, RASCUNHO ou concluir trâmite no portal real. Testes de preenchimento terminam em CANCELAR.
 - Anexos de teste no portal real: só arquivos fictícios, e remova antes de cancelar.
 - Só a empresa de teste (EMPRESA EXEMPLO SIMPLES NACIONAL LTDA). Não abrir empresas de clientes reais sem o Josué pedir.
+- **Nenhum documento assinado vai ao escritório, só a carta de pedido de demissão** (Josué, 11/11/2026, a mesma regra do Control Onvio): regras, textos e anexos não pedem termo, recibo, aviso ou requerimento assinado (o assinado fica guardado na empresa); os modelos para imprimir e assinar continuam em Documentos. Teste de guarda em `tests/engine.test.mjs`.
+- **Feriados iguais aos do Control Onvio** (Josué, 11/11/2026): Carnaval (segunda e terça) e Corpus Christi contam como feriado nos prazos.
 - Dados de saúde (CID) ficam fora da descrição por padrão. Nada de dados de cliente em logs, testes ou commits.
 - A extensão não envia dados a lugar nenhum além do próprio portal. Não acrescentar telemetria, APIs externas ou IA em nuvem.
 
