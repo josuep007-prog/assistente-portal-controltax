@@ -69,7 +69,7 @@ export function renderPreencher() {
     <div id="lote"></div>${cab}<div id="modo-seguro"></div><div id="rascunho"></div><div id="sug-cad"></div><div id="dica-pedido"></div><div id="confira-leituras"></div><div id="grade-rub"></div><div id="planilha-rub"></div>
     <div class="pd-grid">
       <div class="pd-main"><section class="pn-card"><div class="pn-card-head"><h3>Dados do pedido</h3><small>O que você preencher aqui vai para o portal. Antes de enviar, você confere o resumo.</small></div>
-        <div class="pn-card-body"><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
+        <div class="pn-card-body"><div id="copia-setores"></div><div id="fields"></div><div id="fill-res"></div></div>${dock}</section></div>
       <aside class="pd-side">${drop}${livre}${arquivos}
         <section class="pn-card"><div class="pn-card-head"><h3>Conferência</h3></div><div class="pn-card-body"><div class="checks" id="checks"></div></div></section>
         ${dicas}</aside>
@@ -95,6 +95,7 @@ export function renderPreencher() {
     ${dock}
   `;
   $('#ver-portal')?.addEventListener('click', () => send({ type: 'verPortal' }));
+  P?.renderCopiaSetores?.(tipo);   // Solicitação Geral: "Enviar também para" outro setor (2.41)
   $('#pd-cancelar')?.addEventListener('click', () => cancelarLancamento(tipo));
   $('#pd-voltar')?.addEventListener('click', () => P.voltarEscolha());
   $('#pd-emp')?.addEventListener('click', () => P.trocarEmpresaDoPedido());

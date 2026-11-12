@@ -1133,3 +1133,11 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-fixo { display: flex; align-items: center; gap: 10px; padding: 6px 0 0; }
 .env-fixo span { flex: 1; }
 @media (max-width: 900px) { .env-i { grid-template-columns: 28px minmax(0, 1fr); } .env-i-ac { grid-column: 2; justify-items: start; } }
+/* Enviar também para outro setor (2.41) */
+.copia-setores { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; padding: 9px 12px; border: 1px dashed var(--rule-strong); border-radius: var(--r); background: var(--surface-2); font-size: 12.5px; }
+.copia-setores > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.copia-setores label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--ink); }
+.copia-setores small { flex-basis: 100%; color: var(--ink-2); }
+.env-tambem { margin: 0; border-radius: 0; border-width: 1px 0 0; border-style: dashed; }
+.copia-atual, .copias-pend { margin: 0 0 12px; }
+.copias-pend .btn { flex: none; }
