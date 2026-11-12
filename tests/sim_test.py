@@ -612,14 +612,10 @@ async def teste_lote4(b):
     check(await espera(abono_sim, 10), 'abono do aviso (10 dias) marca SIM no cálculo')
     src = await pn.locator('[data-campo="inicioGozo"] .src').inner_text() if await pn.locator('[data-campo="inicioGozo"] .src').count() else ''
     check('do aviso nº 1041' in src, f'valor do aviso entra como sugestão "do aviso nº 1041" ({src})')
-    # 25: abono → requerimento assinado pedido na conferência, com "Gerar pelo modelo" já preenchido
-    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#checks [data-modelo=abonoFerias]')"), 10)
-    check(ok, 'conferência: falta o requerimento de abono → "Gerar pelo modelo"')
-    if ok:
-        await pn.click('#checks [data-modelo=abonoFerias]'); await pg.wait_for_timeout(500)
-        prev = await pn.locator('#md-prev').inner_text()
-        check('RONALDO DE SOUZA' in prev and 'EMPRESA EXEMPLO' in prev, 'modelo do requerimento já vem com o funcionário e a empresa')
-        await pn.click('#modal .dlg-x')
+    # 25: abono → o requerimento assinado fica guardado na empresa (Josué, 11/11/2026: documento assinado não vai ao escritório): a conferência não o pede
+    await pg.wait_for_timeout(1500)
+    pede = await pn.evaluate("!!document.querySelector('#checks [data-modelo=abonoFerias]') || /Requerimento de abono/.test(document.querySelector('#checks')?.innerText || '')")
+    check(not pede, 'conferência: o requerimento de abono assinado não é pedido (fica guardado na empresa)')
     await fechar_portal()
     # 6 + 33: Calcular → "Pedir o cálculo" leva o motivo e abre o resumo sozinho (nada é enviado)
     await pn.click('#rail [data-mod="ferramentas"]'); await pg.mouse.move(1200, 600); await pg.wait_for_timeout(500)

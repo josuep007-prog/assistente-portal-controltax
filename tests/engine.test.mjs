@@ -583,9 +583,11 @@ t('documento no pedido irmão: pedido de demissão e aviso do empregador → dat
   assert.equal(r.documento.id, 'avisoEmpregador');
   assert.equal(r.campos.tipoAviso.valor, 'INDENIZADO');   // impresso com as duas opções: vale a marcada
   assert.equal(r.campos.dataAvisoPrevio.valor, '01/10/2026');
-  // o anexo "Aviso prévio ou pedido de demissão assinado" aceita os dois documentos
-  const chk = E.runChecks('calculoRescisao', { empregado: 'X', dataDemissao: '10/10/2026', motivo: 'Demitido SEM justa causa' }, [{ nome: 'aviso.pdf', documento: 'avisoEmpregador' }], rules, hoje);
-  assert.ok(chk.some(c => c.nivel === 'ok' && /Aviso prévio ou pedido de demissão assinado anexado/.test(c.mensagem)));
+  // documentos assinados não vão ao escritório (Josué, 11/11/2026): o anexo do cálculo é só a carta de pedido de demissão
+  let chk = E.runChecks('calculoRescisao', { empregado: 'X', dataDemissao: '10/10/2026', motivo: 'Pedido de demissão SEM justa causa' }, [{ nome: 'carta.pdf', documento: 'pedidoDemissao' }], rules, hoje);
+  assert.ok(chk.some(c => c.nivel === 'ok' && /Carta de pedido de demissão assinada/.test(c.mensagem)), JSON.stringify(chk.map(c => c.mensagem)));
+  chk = E.runChecks('calculoRescisao', { empregado: 'X', dataDemissao: '10/10/2026', motivo: 'Demitido SEM justa causa' }, [{ nome: 'aviso.pdf', documento: 'avisoEmpregador' }], rules, hoje);
+  assert.ok(!chk.some(c => c.nivel === 'ok' && /anexad/.test(c.mensagem) && /assinad/i.test(c.mensagem)), 'o aviso do empregador assinado não é pedido');
   // regra geral de opções por palavra: a CAT antiga (tipoCatPalavras) continua valendo
   assert.equal(E.opcaoPorPalavra('Tipo de CAT: trajeto', E.regrasDeOpcoes(rules.documentos.find(d => d.id === 'cat'))[0]), 'Trajeto');
 });
@@ -687,12 +689,10 @@ t('experiência: três saídas, motivo certo no aviso de rescisão, tempo de cas
   // conferência: falta a carta de pedido de demissão → "Gerar pelo modelo"
   let chk = E.runChecks('avisoRescisao', { empregado: 'X', motivo: 'Pedido de demissão SEM justa causa', avisoDadoPor: 'EMPREGADO', dataAviso: '09/10/2026' }, [], rules, hoje);
   assert.equal(chk.find(c => c.grupo === 'Anexos').modelo, 'pedidoDemissao');
-  // abono de férias: o requerimento passa a ser pedido (com o modelo); sem abono, não
+  // abono de férias: o requerimento assinado fica na empresa (Josué, 11/11/2026); não é pedido como anexo, com ou sem abono
   chk = E.runChecks('avisoFerias', { empregado: 'X', inicioGozo: '10/11/2026', diasGozo: '20', diasAbono: '10' }, [], rules, hoje);
-  const req = chk.find(c => /Requerimento de abono/.test(c.mensagem));
-  assert.equal(req.nivel, 'erro'); assert.equal(req.modelo, 'abonoFerias');
-  chk = E.runChecks('avisoFerias', { empregado: 'X', inicioGozo: '10/11/2026', diasGozo: '30', diasAbono: '0' }, [], rules, hoje);
-  assert.equal(chk.find(c => /Requerimento de abono/.test(c.mensagem)).nivel, 'info');
+  assert.equal(chk.find(c => /Requerimento de abono/.test(c.mensagem)), undefined);
+  assert.ok(rules.modelosDocumento.some(x => x.id === 'abonoFerias'), 'o modelo para imprimir e assinar continua em Documentos');
   assert.equal(E.analyzeText('REQUERIMENTO DE ABONO PECUNIÁRIO DE FÉRIAS\nEu requeiro a conversão de 1/3 das férias do período aquisitivo', rules, {}).documento.id, 'requerimentoAbono');
 });
 
@@ -1012,7 +1012,7 @@ t('endereço só do comprovante e da ficha; comprovante em nome de outra pessoa 
   const c = E.analyzeText(conta, rules, { tipoAtual: 'cadastroEmpregado', nome: 'Fulana de Teste' });
   assert.equal(c.documento.id, 'comprovanteEndereco'); assert.equal(c.campos.nome, undefined);
   assert.equal(c.campos.endereco.valor, 'RUA DAS PALMEIRAS'); assert.equal(c.campos.numero.valor, '45'); assert.equal(c.campos.complemento.valor, 'CASA 2'); assert.equal(c.campos.bairro.valor, 'CENTRO'); assert.equal(c.campos.municipio.valor, 'VILA VELHA'); assert.equal(c.campos.cep.valor, '29100-200');
-  assert.equal(c.titular, 'JOSE DE TESTE SOUZA'); assert.ok(c.avisos.some(a => a.id === 'comprovanteOutraPessoa' && /declaração/.test(a.mensagem)));
+  assert.equal(c.titular, 'JOSE DE TESTE SOUZA'); assert.ok(c.avisos.some(a => a.id === 'comprovanteOutraPessoa' && /parente/.test(a.mensagem) && !/declaração/.test(a.mensagem)));
   assert.equal(E.avisoComprovante('FULANA DE TESTE', 'Fulana de Teste', rules), null);
 });
 
@@ -2227,6 +2227,22 @@ t('documentos por competência: texto do envio, cópia para outro setor e reconh
   assert.equal(E.setorDaSolicitacao({ departamento: 'TRIBUTÁRIO' }, rules), 'Fiscal', 'pelo sinônimo do departamento');
   assert.equal(E.setorDaSolicitacao({ assunto: 'Documentos contábeis – competência 10/2026' }, rules), 'Contábil');
   assert.equal(E.setorDaSolicitacao({ assunto: 'Outra coisa' }, rules), '');
+});
+
+t('regra do escritório (Josué, 11/11/2026): nenhum documento assinado vai ao escritório, só a carta de pedido de demissão', () => {
+  const textos = [];
+  const varre = (o, onde) => { if (typeof o === 'string') textos.push([onde, o]); else if (Array.isArray(o)) o.forEach((x, i) => varre(x, onde + '[' + i + ']')); else if (o && typeof o === 'object') for (const k of Object.keys(o)) { if (k.startsWith('_')) continue; varre(o[k], onde + '.' + k); } };
+  varre(rules.config, 'config'); varre(rules.mensagens, 'mensagens'); varre(rules.tipos, 'tipos'); varre(rules.modelosDocumento, 'modelosDocumento'); varre(rules.avisosEscritorio, 'avisosEscritorio'); varre(rules.faq, 'faq');
+  const pede = /(envi[ae]|mande|anexe|junte|traga|segue)[^.;]{0,80}assinad|assinad[^.;]{0,40}(vai junto|ao escrit[óo]rio|anexad)/i;
+  const ruins = textos.filter(([, t]) => pede.test(t) && !/pedido de demiss[ãa]o/i.test(t) && !/n[ãa]o precisa (enviar|mandar)/i.test(t));
+  assert.deepEqual(ruins.map(([o, t]) => o + ': ' + t.slice(0, 120)), []);
+  for (const [k, tp] of Object.entries(rules.tipos)) for (const a of tp.anexos || []) if (/assinad/i.test(a.rotulo || '')) assert.equal(a.documento, 'pedidoDemissao', k + ': ' + a.rotulo);
+});
+
+t('feriados nacionais iguais aos do Control Onvio, com Carnaval e Corpus Christi (Josué, 11/11/2026)', () => {
+  for (const d of ['2026-02-16', '2026-02-17', '2026-06-04', '2027-02-08', '2027-02-09', '2027-05-27']) assert.ok(rules.feriados.includes(d), d);
+  const cal = E.makeCalendar(rules.feriados);
+  assert.equal(cal.isBusiness(new Date(2026, 1, 16)), false, 'segunda de Carnaval');
 });
 
 console.log(`\n${n} testes ok`);
