@@ -9,6 +9,10 @@ export function montarEnviardocs(C) {
   const { A, S, $, esc, icon, toast, viewEl } = C;
   const { P, setorAtual } = C;   // definidos em partes que montam antes
   const MAX_CHAVES = 400;
+  // cópias da Solicitação Geral para outros setores (2.41): a fila fica só na memória (os arquivos também)
+  const copias = S.plat.copias = { fila: [], atual: null };
+  const rot = (s) => E.setorDef(S.rules, s).rotulo || s;
+  const setorDoDepartamento = (dep) => E.setorDaSolicitacao({ departamento: dep }, S.rules) || '';
 
   const env = S.plat.env = { competencia: '', arquivos: new Map(), enviados: {}, naoAplica: [], pronto: false };
   chrome.storage.local.get(['enviosDocs', 'docsNaoSeAplica']).then(({ enviosDocs, docsNaoSeAplica }) => {
@@ -91,6 +95,11 @@ export function montarEnviardocs(C) {
     const comArq = atual.itens.filter(it => arquivosDe(comp, it.id).length);
     const nArq = comArq.reduce((n, it) => n + arquivosDe(comp, it.id).length, 0);
     const faltam = atual.itens.filter(it => it.obrigatorio && !comArq.includes(it) && !enviados[it.id] && !doMesDe(comp, it.id));
+    // "Enviar também para": os setores dos itens anexados que servem a mais de um já vêm marcados (o cliente decide)
+    const outrosSetores = E.setoresAtivos(S.rules).filter(s => s !== setor);
+    const sugeridos = E.setoresSugeridos(S.rules, comArq, setor);
+    const chaveTambem = `${empresa()}|${setor}|${comp}`;
+    const tambem = (env.tambem?.chave === chaveTambem ? env.tambem.setores : sugeridos).filter(s => outrosSetores.includes(s));
     const dispensadosFixos = (cfg().itens || []).filter(i => (i.setores || []).includes(setor) && fixaDe(i.id));
 
     viewEl.innerHTML = `
@@ -107,11 +116,13 @@ export function montarEnviardocs(C) {
           <small>${atual.c.limite ? `Enviar até ${esc(E.fmtDate(atual.c.limite))}` : ''}${atual.sit.total ? ` · ${atual.sit.feitos} de ${atual.sit.total} ${atual.sit.total === 1 ? 'documento obrigatório enviado' : 'documentos obrigatórios enviados'}` : ''}${doPortal.length ? ` · no portal: solicitação nº ${esc(doPortal.map(x => x.numero).filter(Boolean).join(', ') || '—')}` : ''}</small></div>
         ${atual.sit.semDetalhe ? `<div class="aviso-linha">${icon('info')}<span>Esta competência já foi enviada (solicitação nº ${esc(doPortal[0]?.numero || '')} no portal), provavelmente em outro computador. Aqui não tenho o detalhe de quais documentos foram.</span></div>` : ''}
         <div class="env-lista">${atual.itens.map(linha).join('') || '<p class="muted" style="margin:12px 14px">Nenhum documento nesta competência.</p>'}</div>
+        ${outrosSetores.length ? `<div class="copia-setores env-tambem"><span>${icon('copy', 'ic-sm')} Enviar também para:</span>${outrosSetores.map(s => `<label><input type="checkbox" data-tambem="${esc(s)}" ${tambem.includes(s) ? 'checked' : ''}> ${esc(rot(s))}</label>`).join('')}<small class="muted">Depois que o portal salvar a solicitação do ${esc(def.rotulo || setor)}, eu abro uma cópia para cada setor marcado, com o mesmo assunto, a mesma lista e os mesmos anexos. Você confere e envia cada uma.</small></div>` : ''}
         <div class="env-rodape">
           <span class="muted" id="env-resumo">${nArq ? `${plural(nArq, 'arquivo', 'arquivos')} em ${plural(comArq.length, 'item', 'itens')}${faltam.length ? ` · ainda falta: ${esc(faltam.map(f => f.rotulo).join('; '))}` : ''}` : 'Anexe os documentos e envie tudo de uma vez (ou em partes).'}</span>
           <button type="button" class="btn btn-primary" id="env-enviar" ${nArq ? '' : 'disabled'}>${icon('fill', 'ic-sm')} Enviar ao escritório</button>
         </div>
       </section>
+      <div id="copias-pend"></div>
       ${dispensadosFixos.length ? `<details class="env-fixos"><summary>${plural(dispensadosFixos.length, 'documento que não se aplica', 'documentos que não se aplicam')} a esta empresa</summary>
         ${dispensadosFixos.map(i => `<div class="env-fixo"><span>${esc(i.rotulo)}</span><button type="button" class="btn btn-sm" data-voltar="${esc(i.id)}">Voltar para a lista</button></div>`).join('')}</details>` : ''}`;
 
@@ -145,12 +156,14 @@ export function montarEnviardocs(C) {
       });
     });
     viewEl.querySelectorAll('[data-voltar]').forEach(b => b.addEventListener('click', () => { env.naoAplica = env.naoAplica.filter(x => x !== `${empresa()}|${b.dataset.voltar}`); gravarNaoAplica(); renderEnviar(); }));
-    $('#env-enviar')?.addEventListener('click', () => enviarCompetencia(setor, comp));
+    viewEl.querySelectorAll('[data-tambem]').forEach(c => c.addEventListener('change', () => { env.tambem = { chave: chaveTambem, setores: [...viewEl.querySelectorAll('[data-tambem]:checked')].map(x => x.dataset.tambem) }; }));
+    $('#env-enviar')?.addEventListener('click', () => enviarCompetencia(setor, comp, [...viewEl.querySelectorAll('[data-tambem]:checked')].map(x => x.dataset.tambem)));
+    renderCopiasPend();
   }
 
   /** Abre a Solicitação Geral do setor já preenchida (departamento, assunto com a competência, descrição com a lista) e com os
    *  arquivos anexados, e mostra o resumo. Nada é enviado aqui: o cliente confere e clica em enviar. */
-  async function enviarCompetencia(setor, comp) {
+  async function enviarCompetencia(setor, comp, tambemPara = []) {
     const itens = E.itensDoSetor(S.rules, setor, comp, { naoSeAplica: fixas() });
     const comArq = itens.filter(it => arquivosDe(comp, it.id).length);
     if (!comArq.length) { toast('Anexe pelo menos um documento antes de enviar.'); return; }
@@ -169,6 +182,7 @@ export function montarEnviardocs(C) {
     const W = A.w('geral');
     const arquivos = comArq.flatMap(it => arquivosDe(comp, it.id)).map(f => { const x = A.novoItem(f, 'painel'); x.status = 'nao-lido'; x.etapa = 'Documento do envio por competência'; x.progresso = 1; return x; });
     A.juntarArquivos(W, arquivos);
+    W.copiarPara = tambemPara.filter(s => s !== setor);   // as cópias saem depois que o portal salvar esta
     S.plat.envioDocs = { empresa: empresa(), setor, competencia: comp, assunto: pedido.assunto, quando: Date.now(), itens: Object.fromEntries(comArq.map(it => [it.id, arquivosDe(comp, it.id).length])) };
     S.plat.escolher = false;
     A.setView('preencher');
@@ -195,5 +209,73 @@ export function montarEnviardocs(C) {
     toast(`Documentos de ${p.competencia} enviados ao ${E.setorDef(S.rules, p.setor).rotulo || p.setor}: marquei na lista.`);
   }
 
-  Object.assign(C, { enviarCompetencia, marcarEnvioDocs, renderEnviar });
+  /* ---------- Cópias para outros setores (2.41) ----------
+     A Solicitação Geral tem um só Departamento: "enviar também para" vira uma solicitação por setor. Depois que o portal salva a
+     primeira, a extensão abre sozinha a próxima, já com o departamento do outro setor, o mesmo assunto, a mesma descrição (mais a
+     linha "Cópia da solicitação enviada ao …") e os mesmos anexos. Quem envia cada uma é o cliente. */
+  const linhaCopia = (origem) => E.renderTemplate(cfg().copiaParaOutroSetor || 'Cópia da solicitação enviada ao {setor}.', { setor: rot(origem) });
+  /** Chamado por P.aoEnviar ANTES de marcarEnvioDocs: põe as cópias na fila (ou fecha a cópia que acabou de ser enviada). */
+  function copiasAoEnviar(tipo, valores = {}, { arquivos = [], copiarPara = [] } = {}) {
+    if (tipo !== 'geral') return;
+    const igual = (a, b) => E.norm(a || '') === E.norm(b || '');
+    if (copias.atual && igual(valores.assunto, copias.atual.assunto)) copias.atual = null;   // a cópia foi enviada
+    else {
+      copias.atual = null;
+      const origem = setorDoDepartamento(valores.departamento) || setorAtual();
+      const envio = S.plat.envioDocs && igual(S.plat.envioDocs.assunto, valores.assunto) ? { ...S.plat.envioDocs } : null;
+      const alvos = [...new Set(copiarPara)].filter(s => s && s !== origem && E.setoresAtivos(S.rules).includes(s));
+      if (alvos.length) {
+        const descricao = String(valores.descricao || '').includes(linhaCopia(origem)) ? valores.descricao : `${valores.descricao || ''}\n\n${linhaCopia(origem)}`.trim();
+        alvos.forEach((s, i) => copias.fila.push({ setor: s, origem, departamento: E.setorDef(S.rules, s).departamento || s, assunto: valores.assunto || '', descricao,
+          arquivos: arquivos.slice(), empresa: S.ctx.empresa, envio, n: i + 2, total: alvos.length + 1 }));
+      }
+    }
+    if (copias.fila.length) setTimeout(() => { if (!copias.atual) abrirProximaCopia(); }, 1500);
+  }
+  /** Abre a próxima cópia da fila: Solicitação Geral limpa, preenchida e com os mesmos arquivos (sem leitura). */
+  async function abrirProximaCopia() {
+    const c = copias.fila.shift(); if (!c) return;
+    copias.atual = c;
+    S.work.geral = null;
+    const W = A.w('geral');
+    A.juntarArquivos(W, c.arquivos.map(f => { const x = A.novoItem(f, 'painel'); x.status = 'nao-lido'; x.etapa = `Cópia para o ${rot(c.setor)}`; x.progresso = 1; return x; }));
+    if (c.envio) S.plat.envioDocs = { ...c.envio, setor: c.setor, quando: Date.now() };   // a cópia também marca a lista do outro setor
+    S.plat.escolher = false;
+    A.setView('preencher');
+    toast(`Abrindo a cópia para o ${rot(c.setor)} (${c.n} de ${c.total}), com os mesmos textos e anexos…`);
+    await P.novoPedido('geral', { valores: { assunto: c.assunto, descricao: c.descricao }, sugeridos: { departamento: c.departamento }, fonte: `Cópia para o ${rot(c.setor)}`, empresa: c.empresa });
+  }
+  /** Cópias que ainda não foram abertas ou que ficaram sem enviar (o cliente saiu do formulário). */
+  function pendentes() {
+    const noForm = S.ctx.route?.mode === 'form' && S.ctx.tipo === 'geral';
+    return [...(copias.atual && !noForm ? [copias.atual] : []), ...copias.fila];
+  }
+  function renderCopiasPend() {
+    const el = $('#copias-pend'); if (!el) return;
+    const l = pendentes();
+    el.innerHTML = l.length ? `<div class="aviso-linha copias-pend">${icon('copy')}<span><b>${l.length === 1 ? `Falta enviar a cópia para o ${esc(rot(l[0].setor))}` : `Faltam ${l.length} cópias: ${esc(l.map(x => rot(x.setor)).join(', '))}`}</b> — ${esc(l[0].assunto)}.</span>
+      <button type="button" class="btn btn-sm btn-primary" id="copia-abrir">Abrir agora</button><button type="button" class="btn btn-sm" id="copia-descartar">Descartar</button></div>` : '';
+    $('#copia-abrir')?.addEventListener('click', () => { if (copias.atual) { copias.fila.unshift(copias.atual); copias.atual = null; } abrirProximaCopia(); });
+    $('#copia-descartar')?.addEventListener('click', () => { copias.fila = []; copias.atual = null; S.plat.envioDocs = null; renderCopiasPend(); toast('Cópias descartadas: nada foi enviado aos outros setores.'); });
+  }
+  /** No formulário da Solicitação Geral: "Enviar também para" (Novo pedido > Outro assunto e o envio de documentos) ou a faixa da cópia em andamento. */
+  P.renderCopiaSetores = (tipo) => {
+    const el = $('#copia-setores'); if (!el) return;
+    const ativos = E.setoresAtivos(S.rules);
+    if (tipo !== 'geral' || ativos.length < 2) { el.innerHTML = ''; return; }
+    const W = A.w('geral');
+    if (copias.atual) {
+      el.innerHTML = `<div class="aviso-linha copia-atual">${icon('copy')}<span><b>Cópia para o ${esc(rot(copias.atual.setor))} (${copias.atual.n} de ${copias.atual.total})</b> — mesmo assunto, mesma descrição e mesmos anexos da solicitação enviada ao ${esc(rot(copias.atual.origem))}. Confira e envie.</span><button type="button" class="btn btn-sm" id="copia-pular">Não enviar esta cópia</button></div>`;
+      $('#copia-pular')?.addEventListener('click', async () => { copias.atual = null; S.plat.envioDocs = null; await P.voltarEscolha?.(); if (copias.fila.length) abrirProximaCopia(); else toast('Cópia não enviada.'); });
+      return;
+    }
+    const origem = setorDoDepartamento(W.valores?.departamento?.valor) || setorAtual();
+    const outros = ativos.filter(s => s !== origem);
+    W.copiarPara = (W.copiarPara || []).filter(s => outros.includes(s));
+    el.innerHTML = `<div class="copia-setores"><span>${icon('copy', 'ic-sm')} Enviar também para:</span>${outros.map(s => `<label><input type="checkbox" data-copia="${esc(s)}" ${W.copiarPara.includes(s) ? 'checked' : ''}> ${esc(rot(s))}</label>`).join('')}<small class="muted">Depois que o portal salvar esta solicitação, eu abro uma cópia para cada setor marcado, com o mesmo assunto, a mesma descrição e os mesmos anexos.</small></div>`;
+    el.querySelectorAll('[data-copia]').forEach(c => c.addEventListener('change', () => { W.copiarPara = [...el.querySelectorAll('[data-copia]:checked')].map(x => x.dataset.copia); }));
+  };
+  P.renderCopiasPend = renderCopiasPend;
+
+  Object.assign(C, { abrirProximaCopia, copiasAoEnviar, enviarCompetencia, marcarEnvioDocs, renderEnviar });
 }

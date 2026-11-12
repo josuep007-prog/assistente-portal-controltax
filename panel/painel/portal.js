@@ -277,9 +277,12 @@ export async function onFormClosed(m = {}) {
     const enviados = { ...valoresAssistente(tipo), ...(S.ultimoEnvio.valores || {}) };
     await salvarHistorico(tipo, 'enviado');
     await apagarRascunho(tipo);
+    // para as cópias a outros setores (2.41): os mesmos arquivos e os setores marcados, antes de o pedido ser apagado
+    const Wf = S.work[tipo];
+    const extras = { arquivos: (Wf?.arquivos || []).filter(x => !x.removido && !x.outroTipo && (x.anexado || x.jaAnexado) && x.file).map(x => x.file), copiarPara: Wf?.copiarPara || [] };
     S.work[tipo] = null; S.ultimoEnvio = null;
     if (!S.lote) toast('Solicitação enviada. Os próximos prazos estão na Agenda.');
-    P?.aoEnviar(tipo, enviados);
+    P?.aoEnviar(tipo, enviados, extras);
     if (S.view === 'preencher') render();
   }
   loteAoFecharFormulario(enviadoTipo);

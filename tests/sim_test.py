@@ -1436,6 +1436,8 @@ async def teste_enviar_documentos(b):
     await pn.locator('.env-i[data-item="vendas-cartao"] input[type=file]').set_input_files([{'name': 'vendas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
     await pg.wait_for_timeout(300)
     await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check(); await pg.wait_for_timeout(300)
+    check(await pn.locator('[data-tambem="Contábil"]:checked').count() == 1, 'cópia: item que serve a dois setores já marca "Enviar também para: Contábil"')
+    await pn.locator('[data-tambem="Contábil"]').uncheck()   # só o Fiscal neste primeiro envio (a cópia é testada adiante)
     check(await pn.locator('.env-i.pronto').count() == 2 and await pn.locator('.env-i.disp').count() == 1 and '3 arquivos em 2 itens' in await pn.locator('#env-resumo').inner_text(), 'enviar: arquivos anexados por item e "não se aplica neste mês" marcado')
     antes = await total()
     await pn.click('#env-enviar')
@@ -1468,6 +1470,81 @@ async def teste_enviar_documentos(b):
     check(await pn.locator('.env-mes.on.st-enviado').count() == 0 and '1 de 2' in await pn.locator('.env-card .pn-card-head').inner_text(), 'enviar: envio em parte — a competência não fica como enviada (1 de 2 obrigatórios)')
     guardado = await pn.evaluate("chrome.storage.local.get(['enviosDocs', 'docsNaoSeAplica']).then(r => JSON.stringify(r))")
     check(comp in guardado and 'nf-saida' in guardado and 'notas-saida' not in guardado and 'vendas.pdf' not in guardado, 'enviar: no computador ficam só competência, item e quantidade — sem nomes de arquivos')
+    # 2.41: "Enviar também para" — o relatório de vendas serve ao Fiscal e ao Contábil: o Contábil já vem marcado; ao enviar a 1ª, a cópia abre sozinha
+    await pn.locator('.env-i[data-item="vendas-cartao"] input[type=file]').set_input_files([{'name': 'vendas-nov.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4 v'}])
+    await pg.wait_for_timeout(300)
+    await pn.locator('[data-tambem="Contábil"]').check()
+    antes2 = await total()
+    await pn.click('#env-enviar')
+    for _ in range(40):
+        if await pn.locator('#modal').is_visible(): break
+        await pg.wait_for_timeout(500)
+    v1 = await portal()
+    check((v1.get('subject') or '').endswith('– complemento') and await pn.locator('[data-copia="Contábil"]:checked').count() == 1, f"cópia: o complemento abre com o assunto certo e o Contábil marcado ({v1.get('subject')!r})")
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    v2 = {}
+    for _ in range(60):
+        v2 = await portal()
+        if v2.get('department') == 'CONTÁBIL' and v2.get('subject') and 'Cópia da solicitação' in (v2.get('description') or ''): break
+        await pg.wait_for_timeout(500)
+    check(await total() == antes2 + 1, 'cópia: a 1ª foi enviada (uma a mais no portal)')
+    print('   2ª:', repr((v2.get('subject'), (v2.get('description') or '')[-80:]))) if v2.get('subject') != v1.get('subject') else None
+    check(v2.get('department') == 'CONTÁBIL' and v2.get('subject') == v1.get('subject') and (v2.get('description') or '').startswith((v1.get('description') or '').strip()) and 'Cópia da solicitação enviada ao Fiscal.' in (v2.get('description') or ''), f"cópia: a 2ª abre sozinha no Contábil com o mesmo assunto e a descrição copiada ({v2.get('department')!r})")
+    ok = False
+    for _ in range(30):
+        if await pg.evaluate("[...document.querySelectorAll('.p-chip')].some(c => c.textContent.includes('vendas-nov.pdf'))"): ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok and await pn.locator('.copia-atual').count() == 1, 'cópia: os mesmos anexos vão para a 2ª e a faixa "Cópia para o Contábil (2 de 2)" aparece')
+    for _ in range(20):
+        if await pn.locator('#modal').is_visible(): break
+        await pg.wait_for_timeout(500)
+    check(await total() == antes2 + 1, 'cópia: a 2ª não é enviada sem o clique do cliente')
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    ok = False
+    for _ in range(40):
+        if await total() == antes2 + 2: ok = True; break
+        await pg.wait_for_timeout(500)
+    check(ok, 'cópia: ao confirmar, a 2ª também vai ao portal')
+    await pg.wait_for_timeout(2500)
+    await pn.click('[data-setor="Contábil"]'); await pg.wait_for_timeout(900)
+    await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(900)
+    check(await pn.locator('.env-i.ok[data-item="vendas-cartao"]').count() == 1, 'cópia: no Contábil, o relatório de vendas aparece como enviado')
+    await pn.click('[data-setor="Fiscal"]'); await pg.wait_for_timeout(900)
+    await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(900)
+    # 2.41: a mesma opção na Solicitação Geral comum (Novo pedido > texto livre): marca o Contábil e a cópia abre sozinha depois do envio
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(700)
+    if await pn.locator('#pd-voltar').count(): await pn.click('#pd-voltar'); await pg.wait_for_timeout(500)
+    await pn.fill('#free-txt', 'preciso da guia do DAS de outubro'); await pn.click('#free-go')
+    for _ in range(20):
+        if await pn.locator('#sug-go').count(): break
+        await pg.wait_for_timeout(500)
+    await pn.click('#sug-go')
+    for _ in range(60):
+        if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]')   # a empresa: segue com a aberta
+        if await pn.locator('[data-copia="Contábil"]').count() and (await portal()).get('department') == 'FISCAL': break
+        await pg.wait_for_timeout(500)
+    check(await pn.locator('[data-copia="Contábil"]').count() == 1 and await pn.locator('[data-copia="Fiscal"]').count() == 0, 'geral: a Solicitação Geral do Fiscal oferece "Enviar também para" os outros setores')
+    await pn.locator('[data-copia="Contábil"]').check()
+    antes3 = await total()
+    await pn.click('#btn-send')
+    for _ in range(30):
+        if await pn.locator('#m-send').count(): break
+        await pg.wait_for_timeout(500)
+    v3 = await portal()
+    if await pn.locator('#m-send').count(): await pn.click('#m-send')
+    v4 = {}
+    for _ in range(60):
+        v4 = await portal()
+        if v4.get('department') == 'CONTÁBIL' and v4.get('subject') and 'Cópia da solicitação' in (v4.get('description') or ''): break
+        await pg.wait_for_timeout(500)
+    check(await total() >= antes3 + 1 and v4.get('department') == 'CONTÁBIL' and v4.get('subject') == v3.get('subject') and 'Cópia da solicitação enviada ao Fiscal.' in (v4.get('description') or ''), f"geral: depois do envio, a cópia para o Contábil abre sozinha com o mesmo assunto e descrição ({v4.get('department')!r}, {v4.get('subject')!r})")
+    for _ in range(20):
+        if await pn.locator('#m-fix').count(): break
+        await pg.wait_for_timeout(500)
+    if await pn.locator('#m-fix').count(): await pn.click('#m-fix'); await pg.wait_for_timeout(400)   # "Voltar" do resumo, como o cliente faria
+    await pn.click('#copia-pular'); await pg.wait_for_timeout(1200)
+    check(await total() == antes3 + 1 and await pn.locator('.copia-atual').count() == 0, 'geral: "Não enviar esta cópia" sai da cópia sem enviar nada')
+    await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(900)
     # "Nunca se aplica a esta empresa" tira o item e dá para voltar
     await pn.click('.env-i[data-item="impostos-pagos"] [data-nunca]'); await pg.wait_for_timeout(400)
     check(await pn.locator('.env-i[data-item="impostos-pagos"]').count() == 0 and await pn.locator('.env-fixos [data-voltar="impostos-pagos"]').count() == 1, 'enviar: "nunca se aplica a esta empresa" tira o item da lista')
@@ -1476,7 +1553,8 @@ async def teste_enviar_documentos(b):
     # Contábil tem a lista dele; Pessoal volta ao menu de sempre
     await pn.click('[data-setor="Contábil"]'); await pg.wait_for_timeout(900)
     ids = await pn.evaluate("[...document.querySelectorAll('.env-i')].map(e => e.dataset.item)")
-    check('extratos' in ids and 'nf-saida' not in ids and await pn.locator('.env-i.ok').count() == 0, f'setores: Contábil mostra a lista dele, sem os envios do Fiscal ({ids})')
+    oks = await pn.evaluate("[...document.querySelectorAll('.env-i.ok')].map(e => e.dataset.item)")
+    check('extratos' in ids and 'nf-saida' not in ids and oks == ['vendas-cartao'], f'setores: Contábil mostra a lista dele; dos envios do Fiscal só o item copiado conta ({ids}, enviados: {oks})')
     await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(900)
     m = await mods()
     check(m[0] == 'inicio' and 'funcionarios' in m and 'enviar' not in m, f'setores: Pessoal volta ao menu de sempre ({m})')

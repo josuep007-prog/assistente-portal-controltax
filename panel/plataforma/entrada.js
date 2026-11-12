@@ -68,8 +68,9 @@ export function montarEntrada(C) {
     $('#leit-portal').addEventListener('click', () => send({ type: 'verPortal' }));
     $('#leit-diag').addEventListener('click', () => A.copiarDiagnostico?.());
   }
-  P.aoEnviar = (tipo, valores = {}) => {
+  P.aoEnviar = (tipo, valores = {}, extras = {}) => {
     S.plat.enviado = { tipo, quando: Date.now() };
+    C.copiasAoEnviar?.(tipo, valores, extras);   // "Enviar também para" outro setor: a cópia abre sozinha
     C.marcarEnvioDocs?.(tipo, valores);   // Enviar documentos: marca os itens da competência como enviados
     // o passo seguinte (regras: tipos.*.depoisDeEnviar), menos o que o lote já vai abrir
     const lote = S.lote && !S.lote.concluido ? S.lote.pedidos.filter(x => x.status === 'pendente').map(x => x.tipo) : [];

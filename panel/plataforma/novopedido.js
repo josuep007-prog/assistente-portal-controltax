@@ -20,7 +20,7 @@ export function montarNovopedido(C) {
     const grupos = new Map();
     for (const it of R.intencoes || []) { const setor = it.grupo || R.tipos[it.tipo]?.setor || 'Outros'; if (!grupos.has(setor)) grupos.set(setor, []); grupos.get(setor).push(it); }
     viewEl.innerHTML = `
-      <div id="lote"></div>
+      <div id="lote"></div><div id="copias-pend"></div>
       ${S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3 ? `<div class="note ok">${icon('check')}<div><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada.</b> ${passosAbertos().length ? 'Veja o próximo passo:' : 'Quer fazer outra?'}</div></div>` : ''}
       <div id="proximo"></div>
       ${deixado ? `<div class="aviso-linha">${icon('fill')}<span>Você deixou o pedido de <b>${esc(nomeTipo(deixado.tipo))}</b> em andamento: guardei o que você preencheu e o portal saiu do formulário. Escolha outro abaixo ou volte a ele.</span><button type="button" class="btn btn-sm btn-primary" id="pd-continuar" data-retomar="${esc(deixado.tipo)}">Continuar o pedido ${icon('arrow', 'ic-sm')}</button></div>` : ''}
@@ -52,7 +52,7 @@ export function montarNovopedido(C) {
     $('#free-go').addEventListener('click', go);
     $('#free-txt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } });
     A.bindDrop($('#drop-main'));
-    A.renderSugestao(); A.renderLote(); A.renderRepetir(); A.renderModelosInicio();
+    A.renderSugestao(); A.renderLote(); A.renderRepetir(); A.renderModelosInicio(); P.renderCopiasPend?.();
     P.renderProximo($('#proximo'));
   }
   /** Botão "Outro tipo" dentro do pedido: volta para a escolha do tipo (o pedido aberto pode ser retomado). */
