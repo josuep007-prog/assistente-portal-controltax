@@ -898,6 +898,26 @@ async def teste_cadastro_dependentes(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_form_sem_pedido(b):
+    """2.45.4: um formulário que ficou aberto no portal sem o cliente pedir (a leitura da lista de funcionários abre o Afastamento por baixo)
+    não ocupa o Novo pedido: aparece a escolha do tipo, com "Continuar o pedido"; o que o cliente escolhe abre normalmente."""
+    print('\n[novo pedido] formulário aberto sem o cliente pedir')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-leave/add')"); await pg.wait_for_timeout(2500)
+    # o conteúdo marcaria formSemPedido quando o "voltar" da leitura falha; aqui o contexto é marcado direto
+    await pn.evaluate("import('./painel/base.js').then(m => { m.S.ctx.formSemPedido = true; m.S.formEscolhido = null; m.S.plat.escolher = false; m.P.render('preencher'); })"); await pg.wait_for_timeout(600)
+    check(await pn.locator('.pd-escolha').count() == 1 and await pn.locator('#f-empregado').count() == 0 and await pn.locator('#pd-continuar').count() == 1, 'Novo pedido: formulário que ninguém pediu não abre sozinho (escolha do tipo, com "Continuar o pedido")')
+    await pn.click('#pd-continuar'); await pg.wait_for_timeout(800)
+    check(await pn.locator('#f-empregado').count() == 1, '"Continuar o pedido" mostra o formulário')
+    await pn.evaluate("import('./painel/base.js').then(m => { m.S.ctx.formSemPedido = false; })")
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
 async def teste_grade_div(b):
     """2.20.1: a grade do portal real é de blocos (div), não de tabela: lida pela posição, sem mudar nada na tela do Onvio."""
     print('\n[grade em blocos] leitura por posição, escrita e o Onvio intacto')
@@ -3429,7 +3449,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_cadastro(b); await teste_cadastro_dependentes(b); await b.close()
+            await teste_cadastro(b); await teste_cadastro_dependentes(b); await teste_form_sem_pedido(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == '20':   # SIM_SO=20 roda só a parte da plataforma (2.0)
@@ -3790,7 +3810,7 @@ async def main():
         await teste_plataforma(b)
         await teste_agenda(b)
         await teste_mecanica(b)
-        await teste_cadastro(b); await teste_cadastro_dependentes(b)
+        await teste_cadastro(b); await teste_cadastro_dependentes(b); await teste_form_sem_pedido(b)
         await teste_lote4(b)
         await teste_lote6(b)
         await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)

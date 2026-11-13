@@ -7,7 +7,11 @@ export function montarNovopedido(C) {
   /* =================== NOVO PEDIDO =================== */
   function renderPedido() {
     const aberto = S.ctx.route?.mode === 'form' && S.ctx.tipo;
-    if (aberto && !S.plat.escolher) { A.renderPreencher(); return; }
+    // 2.45.4: só mostra o formulário que o cliente escolheu (ou que tem dados); um formulário que ficou aberto no portal sem ele pedir
+    // (ex.: a leitura da lista de funcionários abre o Afastamento por baixo) não ocupa a tela: aparece a escolha, com "Continuar o pedido"
+    const comDados = aberto && (((S.work[S.ctx.tipo]?.arquivos) || []).some(a => !a.removido) || Object.values(S.ctx.form?.campos || {}).some(c => c?.valor));
+    const escolhido = aberto && (!S.ctx.formSemPedido || S.formEscolhido === S.ctx.tipo || comDados || (S.lote && !S.lote.concluido));
+    if (aberto && !S.plat.escolher && escolhido) { A.renderPreencher(); return; }
     // lote passando de um atestado para o outro (pular, trocar de empresa, abrir o próximo): não pisca a escolha do tipo, só a faixa do lote e um aviso
     const L = S.lote;
     if (!aberto && L && !L.concluido && !L.pausado && L.navegando) {
@@ -44,7 +48,7 @@ export function montarNovopedido(C) {
     const mostrarForm = () => { S.plat.escolher = false; };
     // escolher outro tipo, texto ou documento: o pedido deixado fica guardado (Hoje > Para terminar), mas a faixa sai
     viewEl.querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => { S.plat.pedidoDeixado = null; }, true));
-    $('#pd-continuar')?.addEventListener('click', () => { const t = $('#pd-continuar').dataset.retomar; mostrarForm(); if (t) P.retomarPedido(t); else P.render('preencher'); });
+    $('#pd-continuar')?.addEventListener('click', () => { const t = $('#pd-continuar').dataset.retomar; mostrarForm(); if (t) P.retomarPedido(t); else { S.formEscolhido = S.ctx.tipo; P.render('preencher'); } });
     viewEl.querySelectorAll('.intent').forEach(b => b.addEventListener('click', () => { mostrarForm(); A.openTipo(b.dataset.tipo); }));
     $('#drop-main').addEventListener('drop', mostrarForm, true); $('#drop-main').addEventListener('click', mostrarForm, true);
     $('#q').addEventListener('input', (e) => A.renderFaq(e.target.value));

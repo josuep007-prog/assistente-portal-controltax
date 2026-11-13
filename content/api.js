@@ -121,6 +121,13 @@ async function aquecerEmpregados() {
   } finally {
     if (plat.navigate) plat.navigate(volta); else history.back();
     await sleep(700);
+    // o "voltar" nem sempre tira o Onvio do formulário (visto em 13/11/2026: o Afastamento ficava aberto): volta pelo endereço
+    if (!plat.navigate && routeInfo().mode === 'form' && currentPath() !== volta) {
+      history.pushState({}, '', volta); window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+      await sleep(700);
+    }
+    // se mesmo assim o formulário ficou aberto, avisa o painel que ninguém pediu este (Novo pedido mostra a escolha do tipo)
+    formSemPedido = routeInfo().mode === 'form' ? currentPath() : '';
     lastHref = currentPath(); ultimoForm = '';
     navInterna = false;
     sendContext();

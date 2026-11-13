@@ -25,3 +25,6 @@ let modoAberto = 'plataforma';   // o que o botão "Assistente" abre
 let lastHref = '';
 let bypassGuard = false;
 const optionsCache = new Map();
+
+// formulário que a leitura da lista de funcionários deixou aberto sem o cliente pedir (2.45.4; declarado aqui para valer em todos os scripts)
+let formSemPedido = '';
