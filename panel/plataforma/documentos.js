@@ -3,6 +3,7 @@
 import * as E from '../engine.js';
 import * as D from '../dados.js';
 import { criarZip, nomeNoZip } from '../zip.js';
+import { abrirVisualizador } from '../visualizar.js';
 
 export function montarDocumentos(C) {
   const { A, S, $, esc, icon, request, send, toast, viewEl } = C;
@@ -171,6 +172,18 @@ export function montarDocumentos(C) {
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   };
   P.baixarDoEscritorio = baixarUm; P.entregarArquivo = entregar;   // também usados pelo cartão de documentos novos do Hoje
+  /* Ver o documento dentro da extensão (2.45): baixa pelo mesmo caminho do Baixar e mostra no visualizador; nada é guardado. */
+  P.verDocumento = (x) => {
+    if (S.plat.docs?.baixar === false) { request({ type: 'abrirNoPortal', area: 'documentos' }, 30000); return; }   // download não configurado nas regras
+    abrirVisualizador({
+      nome: x.nome, subtitulo: [x.categoria, x.competencia && `competência ${x.competencia}`, x.vencimento && `vence ${x.vencimento}`].filter(Boolean).join(' · '),
+      obter: () => baixarUm(x),
+      aoBaixar: (a) => entregar(a.buf, a.name || x.nome, a.type),
+      aoPortal: () => request({ type: 'abrirNoPortal', area: 'documentos' }, 30000)
+    });
+  };
+  /** Ver um arquivo que já está na memória (Enviados pelo Assistente). */
+  P.verArquivoLocal = (file) => abrirVisualizador({ nome: file.name, subtitulo: 'Arquivo deste computador', obter: async () => ({ ok: true, arquivo: { buf: await file.arrayBuffer(), name: file.name, type: file.type } }), aoBaixar: (a) => entregar(a.buf, a.name, a.type) });
   async function docsEscritorio(el) {
     if (!S.plat.docs) {
       el.innerHTML = loading('Procurando os documentos no portal…');
@@ -213,9 +226,16 @@ export function montarDocumentos(C) {
       vis.sort((a, b) => chave(b.x.competencia || (b.x.criado ? `pub:${new Date(b.x.criado).toISOString().slice(0, 7)}` : '')).localeCompare(chave(a.x.competencia || (a.x.criado ? `pub:${new Date(a.x.criado).toISOString().slice(0, 7)}` : '')))).forEach(v => { const k = v.x.competencia || (v.x.criado ? `pub:${new Date(v.x.criado).toISOString().slice(0, 7)}` : ''); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(v); });
       const rotComp = (c) => { const m = /^(\d{2})\/(\d{4})$/.exec(c || ''); const p = /^pub:(\d{4})-(\d{2})$/.exec(c || ''); const mes = (a, mm) => cap(new Date(+a, +mm - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })); return m ? mes(m[2], m[1]) : p ? `Publicados em ${mes(p[1], p[2])}` : 'Sem data'; };
       $('#pub-lista').innerHTML = `<div class="list-card"><div class="dp-listhead doc-cols"><span>Documento</span><span>Categoria</span><span>Competência</span><span>Publicado</span><span></span></div>
-        ${[...grupos].map(([k, vs]) => `<div class="arq-mes"><span>${esc(rotComp(k))}</span>${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-zip="${esc(k)}" title="Baixa todos os documentos deste grupo num arquivo ZIP">${icon('download', 'ic-sm')} Baixar tudo (ZIP)</button>`}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov"><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b>${x.lido === false ? ' <span class="pill pill-soon">Novo</span>' : ''}${x.vencimento ? ` <span class="muted mono" title="Vencimento informado pelo escritório">vence ${esc(x.vencimento)}</span>` : ''}</span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts"><button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
+        ${[...grupos].map(([k, vs]) => `<div class="arq-mes"><span>${esc(rotComp(k))}</span>${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-zip="${esc(k)}" title="Baixa todos os documentos deste grupo num arquivo ZIP">${icon('download', 'ic-sm')} Baixar tudo (ZIP)</button>`}</div>${vs.map(({ x, n }) => { const [cls, rot] = tipoArquivo(x.arquivo || 'x.pdf'); return `<div class="dp-row doc-cols hov${D.baixar === false ? '' : ' doc-ver'}"${D.baixar === false ? '' : ` data-ver="${n}" tabindex="0" role="button" aria-label="${esc(`Ver ${x.nome}`)}"`}><span class="arq-nome"><span class="arq-ext ext-${cls}">${rot}</span><span class="arq-tx"><b class="ell">${esc(x.nome)}</b>${x.lido === false ? ' <span class="pill pill-soon">Novo</span>' : ''}${x.vencimento ? ` <span class="muted mono" title="Vencimento informado pelo escritório">vence ${esc(x.vencimento)}</span>` : ''}</span></span><span>${esc(x.categoria || '—')}</span><span class="mono">${esc(x.competencia || '—')}</span><span class="mono">${esc(x.data || '—')}</span><span class="row-acts">${D.baixar === false ? '' : `<button type="button" class="btn btn-sm btn-ghost" data-ver-bt="${n}" title="Ver aqui na extensão">${icon('eye', 'ic-sm')} Ver</button>`}<button type="button" class="btn btn-sm" data-baixar="${n}">${D.baixar === false ? `${icon('external', 'ic-sm')} No portal` : `${icon('download', 'ic-sm')} Baixar`}</button></span></div>`; }).join('')}`).join('')
           || `<div class="list-vazio">${itens.length ? 'Nenhum documento com esse filtro.' : 'Nenhum documento publicado.'}</div>`}</div>`;
-      $('#pub-lista').querySelectorAll('[data-baixar]').forEach(b => b.addEventListener('click', async () => {
+      // clicar no documento (ou em Ver) abre o visualizador; Enter e espaço também
+      $('#pub-lista').querySelectorAll('[data-ver]').forEach(r => {
+        r.addEventListener('click', (e) => { if (e.target.closest('button')) return; P.verDocumento(itens[+r.dataset.ver]); });
+        r.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === r) { e.preventDefault(); P.verDocumento(itens[+r.dataset.ver]); } });
+      });
+      $('#pub-lista').querySelectorAll('[data-ver-bt]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); P.verDocumento(itens[+b.dataset.verBt]); }));
+      $('#pub-lista').querySelectorAll('[data-baixar]').forEach(b => b.addEventListener('click', async (e) => {
+        e.stopPropagation();
         if (D.baixar === false) { request({ type: 'abrirNoPortal', area: 'documentos' }, 30000); return; }   // download não configurado nas regras
         const x = itens[+b.dataset.baixar]; b.disabled = true;
         const r = await baixarUm(x); b.disabled = false;
@@ -247,11 +267,16 @@ export function montarDocumentos(C) {
   }
   function docsAnexos(el) {
     const linhas = [];
-    for (const [tipo, W] of Object.entries(S.work)) for (const a of W?.arquivos || []) if (!a.removido) linhas.push({ nome: a.nome, doc: a.analise?.documento?.nome || '—', tipo, quando: 'agora', st: a.jaAnexado || a.anexado ? ['ok', 'no portal'] : a.recusado ? ['late', 'recusado pelo portal'] : ['soon', 'só no Assistente'] });
+    for (const [tipo, W] of Object.entries(S.work)) for (const a of W?.arquivos || []) if (!a.removido) linhas.push({ file: a.file instanceof Blob ? a.file : null, nome: a.nome, doc: a.analise?.documento?.nome || '—', tipo, quando: 'agora', st: a.jaAnexado || a.anexado ? ['ok', 'no portal'] : a.recusado ? ['late', 'recusado pelo portal'] : ['soon', 'só no Assistente'] });
     for (const h of (S.historico || []).filter(h => !S.ctx.empresa || h.empresa === S.ctx.empresa)) for (const n of h.anexos || []) linhas.push({ nome: n, doc: h.valores?.empregado || h.valores?.nome || '—', tipo: h.tipo, quando: new Date(h.quando).toLocaleDateString('pt-BR'), st: h.status === 'enviado' ? ['ok', 'enviado'] : ['today', 'não enviado'] });
     el.innerHTML = `<div class="list-card"><div class="dp-listhead anx-cols"><span>Arquivo</span><span>Documento / funcionário</span><span>Solicitação</span><span>Quando</span></div>
-      ${linhas.map(l => `<div class="dp-row anx-cols hov"><span class="ell"><b>${esc(l.nome)}</b></span><span class="ell">${esc(l.doc)}</span><span><span class="ell">${esc(nomeTipo(l.tipo))}</span></span><span><span class="pill pill-${l.st[0]}">${esc(l.st[1])}</span> <span class="sub">${esc(l.quando)}</span></span></div>`).join('') || '<div class="list-vazio">Os arquivos que você anexar com o Assistente aparecem aqui.</div>'}
+      ${linhas.map((l, n) => `<div class="dp-row anx-cols hov${l.file ? ' doc-ver' : ''}"${l.file ? ` data-anx-ver="${n}" tabindex="0" role="button" aria-label="${esc(`Ver ${l.nome}`)}" title="Ver aqui na extensão"` : ''}><span class="ell"><b>${esc(l.nome)}</b></span><span class="ell">${esc(l.doc)}</span><span><span class="ell">${esc(nomeTipo(l.tipo))}</span></span><span><span class="pill pill-${l.st[0]}">${esc(l.st[1])}</span> <span class="sub">${esc(l.quando)}</span></span></div>`).join('') || '<div class="list-vazio">Os arquivos que você anexar com o Assistente aparecem aqui.</div>'}
       <div class="list-foot">Só os nomes dos arquivos ficam guardados neste computador, nunca o conteúdo.</div></div>`;
+    el.querySelectorAll('[data-anx-ver]').forEach(r => {
+      const ver = () => P.verArquivoLocal(linhas[+r.dataset.anxVer].file);
+      r.addEventListener('click', ver);
+      r.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ver(); } });
+    });
   }
   function docsModelos(el) {
     const M = S.rules.modelosDocumento || [];

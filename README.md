@@ -43,6 +43,11 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.45 — ver documentos na extensão
+
+- Em **Documentos → Publicados pelo escritório**, clicar no documento (ou em **Ver**) abre o arquivo dentro da extensão, sem baixar: PDF (com zoom e páginas), imagens, planilhas (com as abas), Word/ODT (texto) e texto/XML. O que não abre ali oferece **Baixar**. Esc ou X fecham. No Hoje, o cartão **Documentos novos** abre o mesmo visualizador.
+- Tudo acontece no computador do cliente e só na memória (`panel/visualizar.js`); nada é guardado.
+
 ## Novidades da 2.16 — documentos novos
 
 - **Publicados pelo escritório** lista os documentos (forma real da API: `data.items`, `isReadByClientUser`, `containerId`; `config.documentosPortal`): etiqueta **Novo**, filtro **Não lidos (n)**, número no menu lateral e aviso quando chega documento novo (relê a cada ~5 min junto da leitura automática). Várias páginas (`paginacao`, `hasMore`). A extensão só lê: não marca como lido.

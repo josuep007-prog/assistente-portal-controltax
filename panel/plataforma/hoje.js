@@ -432,7 +432,7 @@ export function montarHoje(C) {
       if (!r.ok) { toast(`Não consegui baixar: ${r.motivo}. Você pode abrir no portal.`); return; }
       P.entregarArquivo(r.arquivo.buf, r.arquivo.name || x.nome, r.arquivo.type);
     }));
-    viewEl.querySelectorAll('[data-dn-abrir]').forEach(b => b.addEventListener('click', irDocsNovos));
+    viewEl.querySelectorAll('[data-dn-abrir]').forEach(b => b.addEventListener('click', () => { const x = S.plat.docsHojeLista?.[+b.dataset.dnAbrir]; if (x) P.verDocumento(x); else irDocsNovos(); }));   // 2.45: abre o documento aqui mesmo
     $('#dn-todos')?.addEventListener('click', irDocsNovos);
     viewEl.querySelectorAll('[data-eq-abrir]').forEach(b => b.addEventListener('click', () => acoesEq[+b.dataset.eqAbrir]?.abrir?.()));
     viewEl.querySelectorAll('[data-passo]').forEach(b => b.addEventListener('click', () => passosHtml.acoes[+b.dataset.passo]?.()));

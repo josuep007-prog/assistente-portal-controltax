@@ -48,7 +48,7 @@ Desde a 2.16.3 a plataforma em tela cheia é dividida por tela. `panel/plataform
 | `detalhe.js` | Detalhe da solicitação (Conversa, Dados, O que observar), navegação ‹ › entre a lista vista, destaques em chips (`config.destaquesDetalhe`) e o foco que pisca (`P.focarSolicitacao(ref)`: o sino e os avisos chamam para levar o cliente ao cartão na lista) |
 | `novopedido.js`, `empresa.js` | Novo pedido; escolha e troca da empresa do pedido |
 | `funcionarios.js`, `agenda.js` | Funcionários e ficha; Agenda: calendário do mês (grade `role=grid`, teclado, legenda que liga e desliga tipos), painel do dia, lembretes e "próximo prazo" do Hoje (`C.proximoPrazoHtml`, uma chamada em `hoje.js`) |
-| `documentos.js` | Documentos (das solicitações, do escritório, modelos, listas) |
+| `documentos.js` | Documentos (das solicitações, do escritório, modelos, listas); `P.verDocumento`/`P.verArquivoLocal` abrem o visualizador (`panel/visualizar.js`, 2.45: PDF, imagem, planilha, Word, texto — só na memória) |
 | `enviardocs.js` | Enviar documentos por competência (2.40): lista do setor, anexos por item, abre a Solicitação Geral preenchida e marca o envio (`enviosDocs`, `docsNaoSeAplica` no storage, sem nomes de arquivos) |
 | `setor.js` | Hoje do setor (Fiscal/Contábil: competência, solicitações do setor, prazos, Pedir ao setor) e o cartão Documentos do mês do Hoje do Pessoal (2.42–2.43) |
 | `busca.js` | Busca (Ctrl+K) |
