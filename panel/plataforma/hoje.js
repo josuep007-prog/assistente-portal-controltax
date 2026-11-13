@@ -275,6 +275,7 @@ export function montarHoje(C) {
         <button type="button" class="btn btn-sm" id="hj-lembrete">${icon('plus', 'ic-sm')} Lembrete</button>
         <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
       </div>
+      <div id="hj-docsmes"></div>
       ${heroHtml()}
       ${equipeHtml()}
       ${casosHtml()}`;
@@ -458,6 +459,7 @@ export function montarHoje(C) {
     viewEl.querySelectorAll('.eq-lista').forEach(l => { limitarCinco(l); marcarRolagem(l); });   // até 5 itens à vista; o resto rola
 
     ligarIr(viewEl);
+    C.renderDocsMes?.($('#hj-docsmes'));   // Documentos do mês dos outros setores (2.43)
     A.renderLote(); A.renderAvisosInicio();   // o cartão do documento/texto fica no Novo pedido (mostrarSugestao)
   }
   // Carrossel: um aviso por vez. A barra invisível é o relógio (5 s por volta); passar o mouse ou focar pausa.
