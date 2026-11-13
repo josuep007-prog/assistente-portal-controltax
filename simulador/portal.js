@@ -143,6 +143,8 @@
     items['general-requests'].push({ id: seq++, status: 'Aguardando o cliente', empregado: '', assunto: 'Alvará de funcionamento 2026', tramite: 'Escritório: envie o alvará renovado, por favor.', data: d(5), empresa: OUTRA, apelido: 'MODELO' },
       { id: seq++, status: 'Em andamento', empregado: '', assunto: 'Certidão negativa de débitos', tramite: 'Cliente: aguardo a certidão.', data: d(3), empresa: OUTRA, apelido: 'MODELO' },
       { id: seq++, status: 'Em andamento', empregado: '', assunto: 'Parcelamento do Simples', tramite: 'Cliente: podem simular o parcelamento?', data: d(1), empresa: TERCEIRA, apelido: 'OFICINA' });
+    // setores (2.42): com ct-sim-fiscal, uma Solicitação Geral do Fiscal esperando o cliente na empresa base
+    try { if (localStorage.getItem('ct-sim-fiscal') === '1') items['general-requests'].push({ id: seq++, status: 'Aguardando o cliente', empregado: '', assunto: 'Guia do DAS (Simples Nacional) – competência 10/2026', tramite: 'Escritório: confirme se houve faturamento em outubro.', data: d(3) }); } catch (e) { /* sem armazenamento */ }
     return { v: SEED_V, seq: 1043, items: items };
   }
   var db;

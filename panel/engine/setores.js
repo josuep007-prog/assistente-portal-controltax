@@ -3,6 +3,7 @@
 // Tudo o que é lista, texto e prazo vem de regras.config.setores e regras.config.documentosCliente.
 import { norm, today, addDays, makeCalendar } from './base.js';
 import { renderTemplate } from './modelos.js';
+import { assuntoGeral } from './planilhas.js';
 
 const cfgSetores = (regras) => regras?.config?.setores || null;
 const cfgDocs = (regras) => regras?.config?.documentosCliente || {};
@@ -153,5 +154,21 @@ export function setorDaSolicitacao(item, regras) {
       if (nomes.some(n => n && (n === dep || (' ' + dep + ' ').includes(' ' + n + ' ')))) return s;
     }
   }
-  return enviosNoPortal([item], regras)[0]?.setor || '';
+  const porAssunto = enviosNoPortal([item], regras)[0]?.setor;
+  if (porAssunto) return porAssunto;
+  // pelo catálogo da Solicitação Geral ("Guia do DAS…" é do Fiscal): o departamento do item do catálogo que o assunto lembra
+  if (item?.tipo && item.tipo !== 'geral') return '';
+  const cat = item?.assunto ? assuntoGeral(item.assunto, regras) : null;
+  return cat?.departamento ? (ativos.find(s => norm(setorDef(regras, s).departamento || s) === norm(cat.departamento)) || '') : '';
+}
+/** As solicitações que aparecem num setor: Pessoal (menu de sempre) vê tudo; os outros só as Gerais que são deles. */
+export function solicitacoesDoSetor(itens, regras, setor) {
+  if (!setor || !menuDoSetor(regras, setor)) return itens || [];
+  return (itens || []).filter(i => (i.tipo === 'geral' || !i.tipo) && setorDaSolicitacao(i, regras) === setor);
+}
+/** Prazos da Agenda de um setor: itens de agendaFixa com `setor` (sem `setor` = Pessoal) e, para quem envia documentos, o limite do envio. */
+export function prazosDoSetor(prazos, regras, setor) {
+  const ativos = setoresAtivos(regras); if (!ativos.length || !setor) return prazos || [];
+  const doItem = new Map((regras?.agendaFixa?.itens || []).map(it => [it.id, it.setor || ativos[0]]));
+  return (prazos || []).filter(p => (doItem.get(p.id) || (p.id === 'rubricas' ? ativos[0] : '')) === setor);
 }

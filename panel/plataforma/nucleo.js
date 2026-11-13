@@ -54,7 +54,8 @@ export function montarNucleo(C) {
   const loading = (txt) => `<div class="empty"><div class="spin" style="margin:0 auto 10px"></div>${esc(txt)}</div>`;
   const quando = (d) => { const n = E.diffDays(E.today(), d); return n < 0 ? ['late', `há ${-n} dia(s)`] : n === 0 ? ['today', 'hoje'] : n <= 7 ? ['today', `em ${n} dia(s)`] : ['soon', `em ${n} dias`]; };
   /* várias empresas no mesmo login: por padrão, só a empresa aberta no portal; com mais de uma na tela, cada item mostra a sua */
-  const itensVisiveis = () => E.filtrarPorEmpresa(S.plat.sol?.itens || [], S.plat.empresaFiltro, S.ctx.empresa);
+  // por empresa e, no Fiscal/Contábil, só as Solicitações Gerais do setor (Pessoal vê tudo, como antes)
+  const itensVisiveis = () => E.solicitacoesDoSetor(E.filtrarPorEmpresa(S.plat.sol?.itens || [], S.plat.empresaFiltro, S.ctx.empresa), S.rules, C.setorAtual?.() || '');
   const variasEmpresas = (l) => new Set((l || []).map(i => i.empresa).filter(Boolean)).size > 1;
   const rotEmpresa = (i) => i.empresaApelido || i.empresa || '';
   /* Seletor de empresas (2.5): botão com o resumo da escolha e uma janelinha com caixas de marcar — uma, várias ou

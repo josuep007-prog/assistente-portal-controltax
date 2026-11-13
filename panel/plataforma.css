@@ -1141,3 +1141,27 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-tambem { margin: 0; border-radius: 0; border-width: 1px 0 0; border-style: dashed; }
 .copia-atual, .copias-pend { margin: 0 0 12px; }
 .copias-pend .btn { flex: none; }
+/* Hoje do setor (2.42) */
+.hs-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1100px) { .hs-grid { grid-template-columns: minmax(0, 1fr); } }
+.hs-grid .pn-card-head h3 { display: flex; align-items: center; gap: 6px; }
+.hs-grid .pn-card-head { align-items: center; }
+.hs-env { border-top: 3px solid var(--c, var(--blue-deep)); }
+.hs-env.st-enviado { --c: #1A9E4B; } .hs-env.st-parcial { --c: #D98E04; } .hs-env.st-atrasado { --c: #C2000C; }
+.hs-prog { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hs-prog b { font-size: 22px; }
+.hs-barra { flex: 1 1 140px; height: 8px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--rule); overflow: hidden; }
+.hs-barra i { display: block; height: 100%; background: var(--c, var(--blue-deep)); }
+.hs-lista { display: grid; gap: 6px; }
+.hs-li { all: unset; box-sizing: border-box; display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--rule); border-left: 3px solid #E07B39; border-radius: var(--r); background: var(--surface); cursor: pointer; }
+.hs-li:hover { background: var(--surface-2); }
+.hs-li:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.hs-li b { font: 600 13px var(--f-head); color: var(--ink); }
+.hs-li small { font-size: 12px; color: var(--ink-2); }
+.hs-pz { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.hs-pz li { display: flex; gap: 10px; font-size: 12.5px; color: var(--ink); }
+.hs-pz .mono { flex: none; color: var(--ink-2); }
+.hs-pedidos { display: flex; flex-wrap: wrap; gap: 6px; }
+.hs-ped { all: unset; box-sizing: border-box; padding: 6px 11px; border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--surface); font: 600 12px var(--f-body); color: var(--ink); cursor: pointer; }
+.hs-ped:hover { border-color: var(--blue-deep); background: var(--surface-2); }
+.hs-ped:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }

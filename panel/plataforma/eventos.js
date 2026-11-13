@@ -19,7 +19,13 @@ export function montarEventos(C) {
     const out = []; const fer = E.feriadosDaAgenda(S.rules, S.ctx.empresa); const cal = E.makeCalendar(fer.datas);
     const dentro = (d) => d && d >= de && d <= ate;
     for (let m = new Date(de.getFullYear(), de.getMonth(), 1); m <= ate; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
-      for (const p of E.prazosFixos(S.rules, m.getFullYear(), m.getMonth(), cal)) if (dentro(p.d)) out.push({ d: p.d, tipo: 'legal', titulo: p.titulo, detalhe: p.detalhe });
+      const setor = C.setorAtual?.() || '';
+      if (setor && E.menuDoSetor(S.rules, setor) && (S.rules.config?.documentosCliente?.itens || []).some(i => (i.setores || []).includes(setor))) {
+        // o limite para enviar os documentos da competência anterior (dia limiteDia do mês, no próximo dia útil)
+        const comp = E.competenciaDe(new Date(m.getFullYear(), m.getMonth() - 1, 1)); const lim = E.limiteDaCompetencia(S.rules, comp);
+        if (dentro(lim)) out.push({ d: lim, tipo: 'legal', titulo: `Enviar os documentos de ${comp} ao ${E.setorDef(S.rules, setor).rotulo || setor}`, detalhe: 'Pela tela Enviar documentos' });
+      }
+      for (const p of E.prazosDoSetor(E.prazosFixos(S.rules, m.getFullYear(), m.getMonth(), cal), S.rules, setor)) if (dentro(p.d)) out.push({ d: p.d, tipo: 'legal', titulo: p.titulo, detalhe: p.detalhe });
     }
     const hist = (S.historico || []).filter(h => h.status === 'enviado' && (!S.ctx.empresa || h.empresa === S.ctx.empresa));
     for (const p of A.prazosDoHistorico(hist)) if (dentro(p.d)) out.push({ d: p.d, tipo: 'pedido', titulo: p.titulo, detalhe: [p.detalhe, nomeTipo(p.h.tipo)].filter(Boolean).join(' · '), quem: p.h.valores?.empregado || p.h.valores?.nome || '', pedir: p.pedir || null });

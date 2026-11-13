@@ -277,5 +277,14 @@ export function montarEnviardocs(C) {
   };
   P.renderCopiasPend = renderCopiasPend;
 
-  Object.assign(C, { abrirProximaCopia, copiasAoEnviar, enviarCompetencia, marcarEnvioDocs, renderEnviar });
+  /** Situação da competência sugerida para o Hoje do setor: { competencia, estado, rotulo, feitos, total, limite, faltam }. */
+  function resumoEnvio(setor) {
+    const comp = E.competenciaSugerida(S.rules, E.today());
+    const c = E.competenciasDoSetor(S.rules, E.today()).find(x => x.competencia === comp);
+    if (!c) return null;
+    const { itens, sit } = situacao(setor, c, noPortal(setor));
+    return { competencia: comp, estado: sit.estado, rotulo: ROT[sit.estado] || 'Em andamento', feitos: sit.feitos, total: sit.total, limite: c.limite, faltam: sit.faltam, temItens: itens.length > 0, semDetalhe: sit.semDetalhe };
+  }
+  const irEnviar = (comp) => { env.competencia = comp || env.competencia; A.setView('enviar'); };
+  Object.assign(C, { irEnviar, resumoEnvio, abrirProximaCopia, copiasAoEnviar, enviarCompetencia, marcarEnvioDocs, renderEnviar });
 }
