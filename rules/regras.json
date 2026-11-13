@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.13-4",
+  "versao": "2026.11.13-5",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -3595,6 +3595,7 @@
       "familiaStatus": "rubricas"
     },
     "cadastroEmpregado": {
+      "blocosFixos": true,
       "nome": "Cadastro de Empregado",
       "itensNovos": [{ "campo": "cargo", "rotulo": "cargo", "mensagem": "Solicito o cadastro do cargo \"{valor}\" no Onvio, pois ele ainda não existe na lista de cargos. Depois de cadastrado, favor vincular ao funcionário {nome}." }],
       "botaoCancelar": "Cancelar cadastro",

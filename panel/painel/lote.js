@@ -62,7 +62,7 @@ export async function iniciarLote(pedidos, fora, pessoas = []) {
   const jaNoFormulario = S.ctx.route?.mode === 'form' && !!S.ctx.empresa;
   if (!pedidos.every(p => p.empresaAlvo) && !jaNoFormulario && !(await empresaDoPedido(null))) return;
   for (const p of pedidos) if (!p.empresaAlvo) p.empresaAlvo = 'atual';
-  S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pessoas, pausado: false, concluido: false };
+  S.lote = { pedidos: pedidos.map((p, i) => ({ ...p, n: i + 1, status: 'pendente' })), idx: -1, fora, pessoas, pausado: false, concluido: false, semPerguntarEmpresa: jaNoFormulario };
   S.sugestao = null;
   toast(pessoas.length >= 2 ? (S.rules.mensagens?.lotePessoas || 'Há documentos de {n} pessoas: abri um pedido para cada uma, para não misturar os dados.').replace('{n}', pessoas.length) : `${pedidos.length} solicitações para abrir, uma de cada vez.`);
   await abrirPedido(0);
@@ -100,7 +100,8 @@ export async function abrirPedido(i) {
     applyAnalysis(p.tipo, it, { preencher: false });
   }
   // a pessoa deste pedido não está na lista desta empresa: acha a empresa dela (ou pergunta) e move o pedido
-  for (const it of p.itens) if (it.texto && S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo) { if (await procurarEmpresaDoFuncionario(p.tipo, it)) break; }
+  // (lote começado dentro de um formulário: a empresa já foi escolhida; acha a empresa de quem for de outra, mas não pergunta de novo — 2.36.5)
+  for (const it of p.itens) if (it.texto && S.ctx.route?.mode === 'form' && S.ctx.tipo === p.tipo) { if (await procurarEmpresaDoFuncionario(p.tipo, it, { perguntar: !L.semPerguntarEmpresa })) break; }
   // pedido que veio do texto livre (vários pedidos numa frase, ou aviso e cálculo): os campos entendidos
   if (p.campos) { juntarCampos(p.tipo, Object.fromEntries(Object.entries(p.campos).map(([k, c]) => [k, { ...c }])), 'sua descrição'); gerarTextos(p.tipo); }
   const v = valoresAssistente(p.tipo);

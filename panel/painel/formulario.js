@@ -271,7 +271,13 @@ export function renderFormularioProprio(el, tipo) {
       <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted" id="av-pend" role="status"></span><span class="muted" id="av-listas-st" role="status"></span><button type="button" class="btn btn-sm btn-ghost" id="av-listas" title="Lê de novo as opções das listas (cargo, sindicato…) que estão no Onvio">${icon('refresh', 'ic-sm')} Ler listas do Onvio de novo</button></div></div></div>` : '';
   el.innerHTML = `
     ${avisoAoVivo}
-    ${[...grupos].map(([g, lista], i) => g ? `<details class="pf-grupo" data-g="${esc(g)}" ${abreGrupo(g, i, lista) ? 'open' : ''}><summary>${esc(g)}</summary>${g === OUTROS ? '<small class="hint" style="margin:0 0 8px">Campos do portal que o escritório ainda não incluiu nas regras do Assistente. O que você preencher aqui também vai para o portal.</small>' : ''}<div class="pf-grid">${lista.map(campo).join('')}</div></details>` : `<div class="pf-grid">${lista.map(campo).join('')}</div>`).join('')
+    ${[...grupos].map(([g, lista], i) => {
+      if (!g) return `<div class="pf-grid">${lista.map(campo).join('')}</div>`;
+      const notaOutros = g === OUTROS ? '<small class="hint" style="margin:0 0 8px">Campos do portal que o escritório ainda não incluiu nas regras do Assistente. O que você preencher aqui também vai para o portal.</small>' : '';
+      // 2.45.2: tipos com blocosFixos (cadastro de empregado) mostram todos os blocos abertos, só com o título (sem abrir e fechar)
+      return t.blocosFixos ? `<section class="pf-grupo pf-fixo" data-g="${esc(g)}"><h4 class="pf-grupo-t">${esc(g)}</h4>${notaOutros}<div class="pf-grid">${lista.map(campo).join('')}</div></section>`
+        : `<details class="pf-grupo" data-g="${esc(g)}" ${abreGrupo(g, i, lista) ? 'open' : ''}><summary>${esc(g)}</summary>${notaOutros}<div class="pf-grid">${lista.map(campo).join('')}</div></details>`;
+    }).join('')
       || '<p class="muted">Abrindo o formulário no portal…</p>'}
     ${extras.length || t.descricao?.length ? `<div class="pf-sec">Só para a descrição</div><div class="pf-grid">${extras.map(([k, c]) => {
       const cur0 = W.valores[k]; const sg = ehSugestao(cur0); const cur = sg ? undefined : cur0;

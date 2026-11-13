@@ -60,7 +60,8 @@
     let u; try { u = new URL(p.url, location.href); } catch { responder({ id: p.id, status: 0, erro: 'url' }); return; }
     if (u.origin !== location.origin || !PREFIXOS.some(x => u.pathname.startsWith(x))) { responder({ id: p.id, status: 0, erro: 'recusado' }); return; }
     try {
-      const headers = { accept: 'application/json, text/plain, */*' };
+      // arquivo: pede o arquivo em si (com "accept: json" o servidor de arquivos pode devolver outra coisa no lugar do PDF)
+      const headers = { accept: p.binario ? '*/*' : 'application/json, text/plain, */*' };
       acesso.forEach((v, k) => { headers[k] = v; });
       const r = await buscar.call(window, u.href, { method: 'GET', credentials: 'include', headers, __ctNosso: true });
       if (p.binario) {   // arquivo (download de documento): volta em base64, só se couber no limite pedido
