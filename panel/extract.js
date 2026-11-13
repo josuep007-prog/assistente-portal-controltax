@@ -317,3 +317,8 @@ export async function aiExtract(texto, campos) {
     return Object.fromEntries(Object.entries(j).filter(([, v]) => v && String(v).trim()));
   } catch { return {}; } finally { session.destroy?.(); }
 }
+
+/* ---------- Para o visualizador de documentos (panel/visualizar.js): as mesmas bibliotecas de lib/, carregadas sob demanda ---------- */
+export const carregarPdfjs = () => getPdfjs();
+export async function carregarXlsx() { await loadScript(chrome.runtime.getURL('lib/xlsx/xlsx.full.min.js')); return self.XLSX; }
+export const textoDoWord = (file) => readDoc(file);
