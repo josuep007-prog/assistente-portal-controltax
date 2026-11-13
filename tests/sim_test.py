@@ -1427,7 +1427,8 @@ async def teste_enviar_documentos(b):
     comp = f'{ant.month:02d}/{ant.year}'
     check(await pn.locator('#plat-setores [data-setor]').count() == 3 and 'inicio' in await mods(), 'setores: o seletor aparece com Pessoal, Fiscal e Contábil; Pessoal mostra o menu de sempre')
     await pn.click('[data-setor="Fiscal"]'); await pg.wait_for_timeout(900)
-    check(await mods() == ['enviar', 'pendencias', 'preencher', 'historico', 'documentos'], f'setores: Fiscal troca o menu ({await mods()})')
+    check(await mods() == ['inicio', 'enviar', 'pendencias', 'preencher', 'historico', 'documentos'], f'setores: Fiscal troca o menu ({await mods()})')
+    await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(900)
     check((await pn.locator('#plat-titulo').inner_text()).strip() == 'Enviar documentos' and await pn.locator('.env-mes.on').get_attribute('data-comp') == comp, f'enviar: abre na competência do mês anterior ({comp})')
     ids = await pn.evaluate("[...document.querySelectorAll('.env-i')].map(e => e.dataset.item)")
     check('nf-saida' in ids and 'vendas-cartao' in ids and 'extratos' not in ids, f'enviar: a lista é a do Fiscal ({ids})')
@@ -1526,11 +1527,14 @@ async def teste_enviar_documentos(b):
     check(await pn.locator('[data-copia="Contábil"]').count() == 1 and await pn.locator('[data-copia="Fiscal"]').count() == 0, 'geral: a Solicitação Geral do Fiscal oferece "Enviar também para" os outros setores')
     await pn.locator('[data-copia="Contábil"]').check()
     antes3 = await total()
+    for _ in range(20):
+        v3 = await portal()
+        if v3.get('subject'): break
+        await pg.wait_for_timeout(500)
     await pn.click('#btn-send')
     for _ in range(30):
         if await pn.locator('#m-send').count(): break
         await pg.wait_for_timeout(500)
-    v3 = await portal()
     if await pn.locator('#m-send').count(): await pn.click('#m-send')
     v4 = {}
     for _ in range(60):
@@ -1562,6 +1566,57 @@ async def teste_enviar_documentos(b):
     pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
     check(await pn.locator('.ph-setor.on').get_attribute('data-setor') == 'Pessoal', 'setores: a escolha do setor fica lembrada')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
+async def teste_telas_do_setor(b):
+    """2.42.0: no Fiscal, o Hoje é do setor (competência, solicitações do setor, prazos, pedir ao setor); Solicitações, Agenda e Documentos filtram pelo setor; Pessoal não muda."""
+    print('\n[setores] telas do setor (Hoje, Solicitações, Agenda, Pedir)')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.evaluate("localStorage.setItem('ct-sim-fiscal', '1'); localStorage.removeItem('ct-sim-storage')"); await pg.reload(); await pg.wait_for_timeout(4000)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    portal = lambda: pg.evaluate("""() => Object.fromEntries([...document.querySelectorAll('main [formcontrolname]:not([type=radio])')].map(e => [e.getAttribute('formcontrolname'), e.tagName==='BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))""")
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    tit = lambda: pn.evaluate("document.querySelector('#plat-titulo').textContent.trim()")
+    total_pessoal = await pn.evaluate("document.querySelectorAll('#rail [data-mod]').length")
+    await pn.click('[data-setor="Fiscal"]'); await pg.wait_for_timeout(1000)
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(1200)
+    check(await pn.locator('.hs-env').count() == 1 and await pn.locator('#hs-enviar').count() == 1, 'Hoje do Fiscal: cartão da competência com "Enviar documentos"')
+    txt = await pn.locator('.hs-esp').inner_text()
+    check('Guia do DAS' in txt and 'Informe de rendimentos' not in txt, 'Hoje do Fiscal: só as solicitações do Fiscal esperando o cliente')
+    check('DAS — Simples Nacional' in await pn.locator('.hs-prazos').inner_text() or await pn.locator('.hs-pz li').count() >= 1, 'Hoje do Fiscal: próximos prazos do setor')
+    peds = await pn.evaluate("[...document.querySelectorAll('.hs-ped')].map(b => b.textContent)")
+    check(any('DAS' in p for p in peds) and not any('FGTS' in p for p in peds), f'Hoje do Fiscal: "Pedir ao Fiscal" com o catálogo do Fiscal ({peds[:4]})')
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(1200)
+    sol = await pn.locator('.plat-view').inner_text()
+    check('Guia do DAS' in sol and 'Informe de rendimentos' not in sol, 'Solicitações no Fiscal: só as Gerais do setor')
+    await pn.click('#rail [data-mod="historico"]'); await pg.wait_for_timeout(1200)
+    ag = await pn.locator('.plat-view').inner_text()
+    check('FGTS' not in ag, 'Agenda no Fiscal: sem os prazos do Pessoal (FGTS)')
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(1000)
+    await pn.locator('.hs-ped', has_text='DAS').first.click()
+    v = {}
+    for _ in range(60):
+        v = await portal()
+        if v.get('department') == 'FISCAL' and v.get('subject'): break
+        await pg.wait_for_timeout(500)
+    check(v.get('department') == 'FISCAL' and 'DAS' in (v.get('subject') or ''), f"Pedir ao Fiscal: abre a Solicitação Geral do Fiscal preenchida ({v.get('department')!r}, {v.get('subject')!r})")
+    await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(1000)
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(1200)
+    check(await pn.locator('.hs-env').count() == 0 and await pn.locator('.hj-hero').count() == 1, 'Pessoal: o Hoje de sempre')
+    await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(1000)
+    check('Informe de rendimentos' in await pn.locator('.plat-view').inner_text(), 'Pessoal: Solicitações com tudo, como antes')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await pg.evaluate("localStorage.removeItem('ct-sim-fiscal')")
     await ctx.close()
 
 async def teste_blocos_cadastro(b):
@@ -2722,6 +2777,9 @@ async def teste_contraste(b):
         await medir_tela('configuracoes')
         # Enviar documentos (setor Fiscal), com um arquivo anexado e um item dispensado; depois volta ao Pessoal
         await pn.click('[data-setor="Fiscal"]'); await pg.wait_for_timeout(700)
+        await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(700)
+        await medir_tela('hoje-setor')
+        await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(700)
         await pn.locator('.env-i[data-item="nf-saida"] input[type=file]').set_input_files([{'name': 'notas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
         await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check()
         await medir_tela('enviar-documentos')
@@ -3208,7 +3266,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3250,7 +3308,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'set':   # SIM_SO=set roda só os setores e o Enviar documentos
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_enviar_documentos(b); await b.close()
+            await teste_enviar_documentos(b); await teste_telas_do_setor(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'rec':   # SIM_SO=rec roda só o cartão de recados do Hoje

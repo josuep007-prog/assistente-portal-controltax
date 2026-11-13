@@ -44,12 +44,15 @@ export function montarDocumentos(C) {
     return lendoArquivos;
   }
   function renderDocumentos() {
+    // no Fiscal/Contábil a aba de entrada é a dos publicados pelo escritório (guias, balancetes), até o cliente escolher outra
+    const setorDoc = C.setorAtual?.() || '';
+    if (!S.plat.docAbaEscolhida && E.menuDoSetor(S.rules, setorDoc)) S.plat.docAba = 'escritorio';
     const aba = ABAS_DOC.some(([k]) => k === S.plat.docAba) ? S.plat.docAba : 'solicitacoes';
     const nArq = alvoArquivos().reduce((t, i) => t + (arquivosLidos.get(i.id)?.lista.length || 0), 0);
     const contas = { solicitacoes: arquivosLidos.size ? nArq : null, escritorio: S.plat.docs?.disponivel ? (S.plat.docs.itens || []).length : null,
       modelos: (S.rules.modelosDocumento || []).length, listas: Object.values(S.rules.tipos).filter(t => (t.anexos || []).length).length };
     viewEl.innerHTML = `<div class="dp-tabs" role="tablist">${ABAS_DOC.map(([k, t]) => `<button type="button" role="tab" class="dp-tab${aba === k ? ' active' : ''}" data-doc-aba="${k}" aria-selected="${aba === k}">${t}${contas[k] != null ? ` <span class="tab-n">${contas[k]}</span>` : ''}</button>`).join('')}</div><div id="doc-body"></div>`;
-    viewEl.querySelectorAll('[data-doc-aba]').forEach(b => b.addEventListener('click', () => { S.plat.docAba = b.dataset.docAba; renderDocumentos(); }));
+    viewEl.querySelectorAll('[data-doc-aba]').forEach(b => b.addEventListener('click', () => { S.plat.docAba = b.dataset.docAba; S.plat.docAbaEscolhida = true; renderDocumentos(); }));
     ({ solicitacoes: docsSolicitacoes, escritorio: docsEscritorio, anexos: docsAnexos, modelos: docsModelos, listas: docsListas }[aba])($('#doc-body'));
   }
   function docsSolicitacoes(el) {
@@ -182,9 +185,15 @@ export function montarDocumentos(C) {
       return;
     }
     const F = S.plat.filtroPub || (S.plat.filtroPub = { q: '', cat: '', nl: false });
-    const itens = D.itens || [];
+    // Fiscal/Contábil: só os das pastas do setor (regras: config.setores.*.pastas); sem nenhum, mostra todos com um aviso
+    const setorPub = C.setorAtual?.() || '';
+    const pastas = E.menuDoSetor(S.rules, setorPub) ? (E.setorDef(S.rules, setorPub).pastas || []).map(E.norm).filter(Boolean) : [];
+    const doSetor = pastas.length ? (D.itens || []).filter(x => pastas.some(p => E.norm(`${x.categoria || ''} ${(x.pasta || []).join ? x.pasta.join(' ') : x.pasta || ''} ${x.nome || ''}`).includes(p))) : null;
+    const todos = !!S.plat.pubTodosSetores;
+    const itens = doSetor && doSetor.length && !todos ? doSetor : (D.itens || []);
+    const notaSetor = doSetor ? `<div class="aviso-linha">${icon('folder')}<span>${doSetor.length && !todos ? `Mostrando só as pastas do ${esc(E.setorDef(S.rules, setorPub).rotulo || setorPub)} (${doSetor.length} de ${(D.itens || []).length}).` : doSetor.length ? `Mostrando todos os documentos publicados.` : `Não achei pastas do ${esc(E.setorDef(S.rules, setorPub).rotulo || setorPub)}: mostrando todos os documentos publicados.`}</span>${doSetor.length ? `<button type="button" class="btn btn-sm" id="pub-setor">${todos ? 'Só as do setor' : 'Ver todos'}</button>` : ''}</div>` : '';
     const cats = [...new Set(itens.map(x => x.categoria || 'Outros'))];
-    el.innerHTML = `<div class="dp-toolbar">
+    el.innerHTML = `${notaSetor}<div class="dp-toolbar">
         <input type="search" id="pub-q" placeholder="Buscar documento ou competência…" value="${esc(F.q)}" autocomplete="off">
         <div class="seg" role="group" aria-label="Situação"><button type="button" data-pub-nl="0" aria-pressed="${!F.nl}">Todos <span class="mono arq-n">${itens.length}</span></button><button type="button" data-pub-nl="1" aria-pressed="${F.nl}">Não lidos <span class="mono arq-n">${itens.filter(x => x.lido === false).length}</span></button></div>
         ${cats.length > 6 ? `<select id="pub-cat" aria-label="Pasta"><option value="">Todas as pastas (${itens.length})</option>${cats.map(c => `<option value="${esc(c)}"${F.cat === c ? ' selected' : ''}>${esc(c)} (${itens.filter(x => (x.categoria || 'Outros') === c).length})</option>`).join('')}</select>` : `<div class="seg" role="group" aria-label="Categoria">${[['', 'Todas']].concat(cats.map(c => [c, c])).map(([k, r]) => `<button type="button" data-pub-cat="${esc(k)}" aria-pressed="${F.cat === k}">${esc(r)} <span class="mono arq-n">${k ? itens.filter(x => (x.categoria || 'Outros') === k).length : itens.length}</span></button>`).join('')}</div>`}
@@ -194,6 +203,7 @@ export function montarDocumentos(C) {
         <button class="btn btn-sm" id="doc-portal">${icon('external', 'ic-sm')} Ver no portal</button>
       </div><div id="pub-lista"></div>`;
     $('#pub-ref')?.addEventListener('click', () => { S.plat.docs = null; docsEscritorio(el); });
+    $('#pub-setor')?.addEventListener('click', () => { S.plat.pubTodosSetores = !todos; docsEscritorio(el); });
     const desenhar = () => {
       const q = E.norm(F.q);
       const vis = itens.map((x, n) => ({ x, n })).filter(({ x }) => (!F.cat || (x.categoria || 'Outros') === F.cat) && (!F.nl || x.lido === false) && (!q || E.norm(`${x.nome} ${x.categoria} ${x.competencia}`).includes(q)));

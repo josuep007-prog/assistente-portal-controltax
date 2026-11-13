@@ -62,6 +62,7 @@ export function normalizarSolicitacao(it, tipo, regras, hoje = today()) {
     empregado: texto1(it?.clientEmployeeExpanded?.name, it?.employee?.name, it?.employeeName, it?.selectedEmployee?.name, it?.payrollEntryClientEmployeeExpanded?.name, typeof it?.employee === 'string' ? it.employee : null, it?.name),
     responsavel: texto1(it?.staffResponsibleExpanded?.name),
     empresa: texto1(it?.clientExpanded?.name), empresaApelido: texto1(it?.clientExpanded?.nickname), empresaId: texto1(it?.companyId, it?.clientExpanded?.id),
+    departamento: texto1(it?.departmentExpanded?.name, it?.departmentExpanded?.description, it?.department?.name, typeof it?.department === 'string' ? it.department : null),
     assunto: texto1(it?.subject, it?.title, typeof it?.description === 'string' && it.description.length < 140 ? it.description : null),
     atualizado, parado,
     criado: parseDate(texto1(it?.created, it?.createdAt)),

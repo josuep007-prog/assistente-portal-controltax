@@ -19,6 +19,7 @@ import { montarFuncionarios } from './plataforma/funcionarios.js';
 import { montarAgenda } from './plataforma/agenda.js';
 import { montarDocumentos } from './plataforma/documentos.js';
 import { montarEnviardocs } from './plataforma/enviardocs.js';
+import { montarSetor } from './plataforma/setor.js';
 import { montarBusca } from './plataforma/busca.js';
 
 export function montarPlataforma(A) {
@@ -39,6 +40,7 @@ export function montarPlataforma(A) {
   montarAgenda(C);
   montarDocumentos(C);
   montarEnviardocs(C);
+  montarSetor(C);
   montarBusca(C);
   return C.P;
 }

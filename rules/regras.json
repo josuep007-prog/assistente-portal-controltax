@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.11-2",
+  "versao": "2026.11.13-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -86,6 +86,7 @@
           "rotulo": "Fiscal",
           "departamento": "Fiscal",
           "menu": [
+            "inicio",
             "enviar",
             "pendencias",
             "preencher",
@@ -103,6 +104,7 @@
           "rotulo": "Contábil",
           "departamento": "Contábil",
           "menu": [
+            "inicio",
             "enviar",
             "pendencias",
             "preencher",
@@ -5983,6 +5985,22 @@
   "agendaFixa": {
     "_comentario": "Prazos que valem todo mês (ou todo ano, com 'mes'). quando: {dia, mes?, ajuste: 'antecipa'|'prorroga'} ou {diaUtil: N}. Aparecem na Agenda da plataforma.",
     "itens": [
+      {
+        "id": "das",
+        "setor": "Fiscal",
+        "titulo": "DAS — Simples Nacional (vencimento)",
+        "quando": { "dia": 20, "ajuste": "prorroga" },
+        "detalhe": "Guia do Simples Nacional da competência anterior. Se cair em fim de semana ou feriado, vence no próximo dia útil.",
+        "revisarComEscritorio": true
+      },
+      {
+        "id": "balancete",
+        "setor": "Contábil",
+        "titulo": "Balancete do mês anterior (o escritório publica)",
+        "quando": { "diaUtil": 15 },
+        "detalhe": "Prazo interno sugerido: depende de os documentos do mês chegarem até o dia 10.",
+        "revisarComEscritorio": true
+      },
       {
         "id": "salario",
         "titulo": "Pagamento dos salários",

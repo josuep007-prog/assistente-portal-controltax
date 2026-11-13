@@ -2245,4 +2245,16 @@ t('feriados nacionais iguais aos do Control Onvio, com Carnaval e Corpus Christi
   assert.equal(cal.isBusiness(new Date(2026, 1, 16)), false, 'segunda de Carnaval');
 });
 
+t('setores: solicitações e prazos de cada setor', () => {
+  const itens = [{ tipo: 'geral', assunto: 'Guia do DAS (Simples Nacional) – competência 10/2026' }, { tipo: 'geral', assunto: 'Informe de rendimentos 2025' }, { tipo: 'afastamento', assunto: 'Atestado' }, { tipo: 'geral', departamento: 'CONTÁBIL', assunto: 'Balancete' }];
+  assert.equal(E.solicitacoesDoSetor(itens, rules, 'Pessoal').length, 4, 'Pessoal vê tudo, como antes');
+  assert.deepEqual(E.solicitacoesDoSetor(itens, rules, 'Fiscal').map(i => i.assunto), ['Guia do DAS (Simples Nacional) – competência 10/2026'], 'Fiscal: pelo catálogo');
+  assert.deepEqual(E.solicitacoesDoSetor(itens, rules, 'Contábil').map(i => i.assunto), ['Balancete'], 'Contábil: pelo departamento');
+  const pz = E.prazosFixos(rules, 2026, 10);
+  assert.ok(E.prazosDoSetor(pz, rules, 'Fiscal').some(p => p.id === 'das') && !E.prazosDoSetor(pz, rules, 'Fiscal').some(p => p.id === 'fgts'));
+  assert.ok(E.prazosDoSetor(pz, rules, 'Pessoal').some(p => p.id === 'fgts') && !E.prazosDoSetor(pz, rules, 'Pessoal').some(p => p.id === 'das'));
+  assert.equal(E.fmtDate(pz.find(p => p.id === 'das').d), '23/11/2026', '20/11 é feriado (Consciência Negra): o DAS vai para segunda');
+  assert.deepEqual(E.solicitacoesDoSetor(itens, { config: {} }, 'Fiscal').length, 4, 'regras sem setores: nada muda');
+});
+
 console.log(`\n${n} testes ok`);

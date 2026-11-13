@@ -8,7 +8,9 @@ export function montarEntrada(C) {
   const dialogo = (...a) => C.dialogo(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderAgenda = (...a) => C.renderAgenda(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderDocumentos = (...a) => C.renderDocumentos(...a);
-  const renderEnviar = (...a) => C.renderEnviar(...a);   // idem (panel/plataforma/enviardocs.js)   // definido numa parte que monta depois (chamado só em tempo de uso)
+  const renderEnviar = (...a) => C.renderEnviar(...a);   // idem (panel/plataforma/enviardocs.js)
+  // Hoje: no Fiscal/Contábil é o Hoje do setor (panel/plataforma/setor.js)
+  const renderInicio = (...a) => (E.menuDoSetor(S.rules, C.setorAtual?.() || '') ? C.renderHojeSetor : renderPainel)(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderFuncionarios = (...a) => C.renderFuncionarios(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderPainel = (...a) => C.renderPainel(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const renderPedido = (...a) => C.renderPedido(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
@@ -154,7 +156,7 @@ export function montarEntrada(C) {
     const trocou = P.ultimaVista !== v; P.ultimaVista = v;   // entrada suave só ao trocar de tela
     if (v !== 'preencher') S.plat.escolher = false;
     viewEl.className = `view plat-view v-${v}${trocou ? ' entra' : ''}`;
-    return ({ inicio: renderPainel, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, enviar: renderEnviar, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();
+    return ({ inicio: renderInicio, pendencias: renderSolicitacoes, preencher: renderPedido, funcionarios: renderFuncionarios, historico: renderAgenda, documentos: renderDocumentos, enviar: renderEnviar, ferramentas: A.renderFerramentas, config: A.renderConfig }[v] || renderPainel)();
   };
 
   Object.assign(C, { avisoLeitura, continuarRascunho, fazerAgora, passosAbertos });
