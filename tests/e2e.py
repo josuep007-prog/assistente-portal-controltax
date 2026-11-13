@@ -40,7 +40,8 @@ async def abrir(p, tmp, plataforma=False, url=URL):
             elif 'includeDownloadUrl=true' in u:
                 await r.fulfill(status=200, content_type='application/json', body=json.dumps({'id': did, 'downloadUrl': f'/api/storage/v1/projects/p1/documents/{did}?Token=tokenfalso'}))
             elif 'Token=' in u:
-                await r.fulfill(status=200, content_type='application/pdf', body=f'%PDF-FAKE-{did}'.encode())
+                # um PDF de verdade (para o visualizador desenhar) com a marca do documento no fim (comentário depois do %%EOF)
+                await r.fulfill(status=200, content_type='application/pdf', body=open(os.path.join(FIX, 'pedido-demissao.pdf'), 'rb').read() + f'\n%FAKE-{did}\n'.encode())
             else:
                 await r.fulfill(status=404, body='')
         elif '/api/storage/v1/containers/documents' in u:
@@ -167,22 +168,27 @@ async def cenario_plataforma(p):
     async with page.expect_download(timeout=20000) as dl:
         await pn.locator('#pub-lista [data-baixar]').first.click()
     d1 = await dl.value; conteudo = open(await d1.path(), 'rb').read()
-    check(d1.suggested_filename.endswith('.pdf') and conteudo.startswith(b'%PDF-FAKE-'), f'Baixar entrega o arquivo inteiro, pelos dois passos do portal ({d1.suggested_filename}, {len(conteudo)} bytes)')
+    check(d1.suggested_filename.endswith('.pdf') and conteudo.startswith(b'%PDF-') and b'%FAKE-' in conteudo, f'Baixar entrega o arquivo inteiro, pelos dois passos do portal ({d1.suggested_filename}, {len(conteudo)} bytes)')
     async with page.expect_download(timeout=30000) as dz:
         await pn.locator('#pub-lista [data-zip]').first.click()
     zf = await dz.value; zp = await zf.path()
     with zipfile.ZipFile(zp) as z:
         nomes = z.namelist()
-        check(z.testzip() is None and len(nomes) >= 1 and all(z.read(n).startswith(b'%PDF-FAKE-') for n in nomes), f'Baixar tudo (ZIP) entrega um ZIP válido com os arquivos do grupo ({nomes})')
+        check(z.testzip() is None and len(nomes) >= 1 and all(z.read(n).startswith(b'%PDF-') and b'%FAKE-' in z.read(n) for n in nomes), f'Baixar tudo (ZIP) entrega um ZIP válido com os arquivos do grupo ({nomes})')
     await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(800)
     check(await pn.locator('#eq-docs .dn-li').count() == 1 and '1' in await pn.locator('#eq-docs .eq-n').inner_text(), 'Hoje: cartão "Documentos novos" lista só os não lidos')
     async with page.expect_download(timeout=20000) as dn:
         await pn.locator('#eq-docs [data-dn]').first.click()
     dnv = await dn.value
-    check(open(await dnv.path(), 'rb').read().startswith(b'%PDF-FAKE-'), 'Hoje: o botão do cartão baixa o documento novo')
-    await pn.click('#eq-docs .dn-li'); await page.wait_for_timeout(2500)
-    # 2.45: abre o visualizador (o arquivo do teste não é um PDF de verdade: o visualizador explica e oferece Baixar)
-    check(await pn.locator('.vis').count() == 1 and 'Guia do FGTS' in await pn.locator('.vis-nome').inner_text() and 'Baixar' in await pn.locator('.vis-corpo').inner_text(), 'Hoje: clicar no documento novo abre o visualizador (arquivo que não abre: explica e oferece Baixar)')
+    check(b'%FAKE-' in open(await dnv.path(), 'rb').read(), 'Hoje: o botão do cartão baixa o documento novo')
+    await pn.click('#eq-docs .dn-li')
+    # 2.45: abre o visualizador; com a extensão carregada de verdade, o pdf.js desenha o PDF (sem cair no leitor do Chrome)
+    ok = False
+    for _ in range(30):
+        await page.wait_for_timeout(500)
+        if await pn.evaluate("(() => { const c = document.querySelector('.vis .vis-pg canvas'); return !!c && c.width > 100; })()"): ok = True; break
+    det = await pn.evaluate("(document.querySelector('.vis-corpo')?.dataset.nativo || '') + ' ' + (document.querySelector('.vis-det')?.innerText || '')")
+    check(ok and 'Guia do FGTS' in await pn.locator('.vis-nome').inner_text(), f'Hoje: clicar no documento novo abre o visualizador e o pdf.js desenha o PDF na extensão ({det.strip()!r})')
     await page.keyboard.press('Escape'); await page.wait_for_timeout(300)
     check(await pn.locator('.vis').count() == 0, 'visualizador fecha com Esc')
     await pn.click('#rail [data-mod="inicio"]'); await page.wait_for_timeout(500)

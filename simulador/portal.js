@@ -669,6 +669,8 @@
       });
       // municípios dependem da UF
       ['addressCity', 'birthCity'].forEach(function (fc) { var el = ctx.els[fc]; if (el && el.__setDisabled) { var uf = ctx.value(fc === 'addressCity' ? 'addressState' : 'birthState'); el.__setDisabled(!uf); } });
+      // nome do cônjuge só com estado civil casado(a) ou união estável (como no Onvio real)
+      var sp = ctx.els.spouseName; if (sp && ctx.els.maritalStatus) { var ec = ctx.value('maritalStatus') || ''; var liv = /casad|uni[aã]o/i.test(ec); sp.disabled = !liv; if (!liv) sp.value = ''; }
     }
     applyDeps();
 

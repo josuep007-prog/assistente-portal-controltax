@@ -19,10 +19,56 @@ export const envioPendente = new Map();   // tipo → { t, campos: Set } (só os
 export function agendarEnvioPortal(tipo, k) {
   const p = envioPendente.get(tipo) || { campos: new Set() };
   clearTimeout(p.t); if (k) p.campos.add(k);
-  if (semAoVivo(tipo)) { envioPendente.set(tipo, p); atualizarPendentesAoVivo(tipo); return; }   // cadastros: só guarda; vai ao Onvio pelo botão
+  // cadastros: só guarda; vai ao Onvio pelo botão. Exceção (2.45.1): o campo que LIBERA outro no Onvio (UF → Município, Estado civil → cônjuge)
+  // vai na hora, senão o campo dependente ficaria bloqueado e sem a lista dele até o "Enviar tudo"
+  if (semAoVivo(tipo) && k && dependentesDe(tipo, k).length) { p.campos.delete(k); envioPendente.set(tipo, p); atualizarPendentesAoVivo(tipo); liberarDependentes(tipo, k); return; }
+  if (semAoVivo(tipo)) { envioPendente.set(tipo, p); atualizarPendentesAoVivo(tipo); return; }
   const esperaMs = Math.max(150, S.rules.config?.escritaAoVivo?.esperaMs || 500);
   p.t = setTimeout(() => { envioPendente.delete(tipo); if (S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) fillPortal(tipo, { daPlataforma: true, so: [...p.campos] }); }, esperaMs);
   envioPendente.set(tipo, p);
+}
+
+/** Campos que o Onvio só libera depois de outro (regras: campos.*.dependeDe). */
+export const dependentesDe = (tipo, k) => Object.entries(tipoDef(tipo)?.campos || {}).filter(([, c]) => c.dependeDe === k).map(([f]) => f);
+
+/** Manda ao Onvio o campo que libera outros, espera o portal liberar e traz a lista do dependente (ex.: os municípios da UF escolhida). */
+async function liberarDependentes(tipo, k) {
+  const W = w(tipo), filhos = dependentesDe(tipo, k);
+  if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) return;
+  for (const f of filhos) { delete W.opcoes[f]; delete (W.opcoesTentadas || {})[f]; }   // a lista antiga era de outra UF
+  await fillPortal(tipo, { daPlataforma: true, so: [k] });
+  for (let i = 0; i < 24 && filhos.some(f => campoPortal(f).disabled); i++) {
+    await new Promise(r => setTimeout(r, 250));
+    send({ type: 'getContext' });
+  }
+  for (const f of filhos) {
+    const c = campoDef(tipo, f), livre = !campoPortal(f).disabled;
+    document.querySelectorAll(`#fields [data-k="${CSS.escape(f)}"]`).forEach(i => { i.disabled = !livre; });
+    const campoEl = document.querySelector(`#fields .field.pf[data-campo="${CSS.escape(f)}"]`);
+    if (livre) campoEl?.querySelector('.hint.bloq')?.remove();
+    if (livre && c?.tipo === 'combo' && c.fc && !W.opcoes[f]?.length) {
+      // o portal carrega a lista (ex.: municípios da UF) um pouco depois de liberar o campo: tenta algumas vezes
+      let r = null;
+      for (let i = 0; i < 8 && !r?.options?.length; i++) {
+        if (i) await new Promise(res => setTimeout(res, 800));
+        if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break;
+        try { r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000); } catch { r = null; }
+      }
+      if (r?.options?.length) { W.opcoes[f] = r.options; const dl = document.getElementById(`dl-${f}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
+      devolverFoco(null);
+    }
+  }
+  // o que a pessoa já tinha escrito no dependente (ex.: o município) vai junto no "Enviar tudo"
+  const pend = filhos.filter(f => W.valores[f]?.valor && (W.fonteVerdade || {})[f] === 'plataforma');
+  if (pend.length) { const p = envioPendente.get(tipo) || { campos: new Set() }; pend.forEach(f => p.campos.add(f)); envioPendente.set(tipo, p); atualizarPendentesAoVivo(tipo); }
+}
+
+/** Texto embaixo de um campo que o portal bloqueia: diz qual campo libera (regras), sem citar funcionário onde não há. */
+function dicaBloqueado(tipo, k) {
+  const c = campoDef(tipo, k) || {}, t = tipoDef(tipo);
+  if (c.dicaBloqueado) return c.dicaBloqueado;
+  if (c.dependeDe) return `Escolha ${(t.campos[c.dependeDe]?.rotulo || 'o campo anterior')} primeiro: o Onvio libera este campo depois.`;
+  return t.campos?.empregado ? 'O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).' : 'O Onvio libera este campo depois que outro campo é preenchido.';
 }
 
 /** Descarta o que estava esperando para ir ao Onvio (ao cancelar o pedido). */
@@ -204,7 +250,7 @@ export function renderFormularioProprio(el, tipo) {
       <label for="f-${esc(k)}">${esc(c.rotulo)}${obrig(k, c) ? '<span class="req">*</span>' : ''}${estado[1] ? ` <span class="chip ${estado[0]} pf-st">${estado[1]}</span>` : ''}${fonte ? `<span class="src" title="${esc('De: ' + fonte)}">${esc(fonte)}</span>` : ''}</label>
       ${fieldInput(k, c, { ...(cur || {}), valor }, W)}
       ${erro && (!erroEhCampoVazio(tipo, erro) || erro.mensagem !== MSG_GENERICA_PORTAL) ? `<small class="portal-erro">${esc((erroEhCampoVazio(tipo, erro) ? (M.portalPede || 'O portal pede: {mensagem}') : (M.portalAcusa || 'O portal acusa: {mensagem}')).replace('{mensagem}', erro.mensagem))}</small>` : ''}
-      ${p.disabled ? '<small class="hint">O portal libera este campo depois de outro (por exemplo, depois de escolher o funcionário).</small>' : ''}
+      ${p.disabled ? `<small class="hint bloq">${esc(dicaBloqueado(tipo, k))}</small>` : ''}
       ${baixa ? '<small class="hint">Leitura com dúvida: confira.</small>' : ''}
       ${sugDoc ? htmlSugestao(k, cur) : ''}
       ${cur?.calculado && !daqui && !W.editados.has(k) && cur.explicacao ? `<small class="hint calc-hint">Calculado pelo Assistente: ${esc(cur.explicacao)} Confira.</small>` : ''}
