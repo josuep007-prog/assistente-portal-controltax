@@ -1061,10 +1061,7 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .rec-h:hover { background: var(--surface-2); }
 .rec-h:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
 .rec-n { padding: 0 7px; border-radius: 9px; font: 700 11px/18px var(--f-mono); color: var(--ink); background: color-mix(in srgb, var(--blue-deep) 16%, var(--surface)); }
-.rec-seta { color: var(--ink-3); transition: transform .15s; }
-.rec-res { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12.5px var(--f-body); color: var(--ink-2); }
-.rec-card:not(.fechado) .rec-res { visibility: hidden; }
-.rec-ver { margin-left: auto; flex: none; font: 600 12px var(--f-body); color: var(--blue-deep); }
+.rec-seta { margin-left: auto; color: var(--ink-3); transition: transform .15s; }
 .rec-card.fechado .rec-seta { transform: rotate(-90deg); }
 .rec-l { border-top: 1px solid var(--rule); }
 .rec-i { display: flex; align-items: flex-start; gap: 8px; padding: 7px 6px 7px 14px; }
@@ -1174,81 +1171,3 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .docs-mes-b:hover { border-color: var(--c, var(--blue-deep)); }
 .docs-mes-b:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
 .docs-mes-b.st-atrasado { --c: #C2000C; } .docs-mes-b.st-parcial { --c: #D98E04; } .docs-mes-b.st-pendente { --c: #3C659B; }
-
-/* ===== Hoje 2.44: blocos mais bem divididos ===== */
-/* 1) linha do dia; 2) números do dia; 3) "O que fazer agora" + coluna lateral; 4) consulta lado a lado */
-.hj-dia { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
-.hj-dia .hj-saud { margin: 0; flex: 1; min-width: 0; }
-.hj-dia .hj-barra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
-#avisos-esc:empty, #lote:empty, #proximo:empty { display: none; }
-
-.hj-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-.hj-kpi { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 12px 14px; border: 1px solid var(--rule); border-top: 3px solid var(--k, var(--blue-deep)); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-1); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-.hj-kpi:hover { border-color: color-mix(in srgb, var(--k, var(--blue-deep)) 45%, var(--rule)); border-top-color: var(--k, var(--blue-deep)); box-shadow: 0 4px 14px rgba(16,24,32,.08); }
-.hj-kpi:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
-.hj-kpi-r { font: 600 12.5px var(--f-body); color: var(--ink-2); }
-.hj-kpi b { font: 700 26px/1.1 var(--f-head); color: var(--ink); font-variant-numeric: tabular-nums; }
-.hj-kpi small { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hj-kpi.k-late { --k: var(--hj-late); } .hj-kpi.k-warn { --k: var(--hj-today); } .hj-kpi.k-info { --k: var(--blue-deep); } .hj-kpi.k-ok { --k: var(--ok); }
-
-.hj-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 14px; align-items: start; }
-.hj-col, .hj-lado { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-@media (max-width: 1100px) { .hj-grade { grid-template-columns: minmax(0, 1fr); } }
-
-/* O que fazer agora: uma lista só, com abas */
-.hj-agora .hj-abas { padding: 0 12px; }
-.hj-aba-n { display: inline-block; padding: 0 6px; border-radius: 3px; font: 700 11px var(--f-mono); background: var(--surface-3); color: var(--ink); }
-.hj-agora .hj-passos-l { max-height: 430px; padding: 10px 12px; gap: 6px; }
-.hj-agora .hj-passos-l li { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.hj-agora .hj-passos-l li[hidden] { display: none; }
-.hj-agora .hj-step { flex: 1; min-width: 0; grid-template-columns: 10px minmax(0, 1fr); border-color: transparent; background: transparent; }
-.hj-agora .hj-step:hover { background: var(--surface-2); }
-.hj-agora .hj-passos-l li + li { border-top: 1px solid var(--rule); padding-top: 6px; }
-.hj-agora .hj-passos-l .pill { flex: none; }
-.hj-agora .hj-acao { flex: none; }
-.hj-agora .hj-zen { margin: 12px; }
-@media (max-width: 640px) { .hj-agora .hj-passos-l li { flex-wrap: wrap; } .hj-agora .hj-passos-l .pill { margin-left: 28px; } }
-
-/* coluna lateral: situação, próximos prazos, documentos do mês */
-.hj-lado .hj-hero { display: block; padding: 16px 18px; }
-.hj-lado .hj-hero-g { padding: 0; gap: 16px; }
-.hj-lado .hj-hero .an-svg { width: 104px; height: 104px; }
-.hj-lado .hj-hero-tx h2 { font-size: 17px; }
-.hj-lado .hj-hero-tx p { font-size: 12.5px; }
-.hj-lado .hj-hero .hj-eyebrow { font-size: 11px; }
-.hj-lado .hj-legenda { margin-top: 12px; }
-.hj-lado-c { min-width: 0; }
-.hj-lado-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--rule); }
-.hj-lado-h h3 { margin: 0; font: 600 14px/1.2 var(--f-head); color: var(--ink); }
-.hj-pz-l { display: flex; flex-direction: column; padding: 4px 8px 8px; }
-.hj-pz { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 7px 8px; border-radius: var(--r); cursor: pointer; font-size: 12.5px; color: var(--ink); }
-.hj-pz + .hj-pz { border-top: 1px dashed var(--rule); }
-.hj-pz:hover { background: var(--surface-2); }
-.hj-pz:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
-.hj-pz .mono { font: 600 12px var(--f-mono); color: var(--ink-2); }
-.hj-pz.hoje .mono { color: var(--dp-late); } .hj-pz.perto .mono { color: var(--dp-today); }
-.hj-pz-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hj-lado .pn-vazio { margin: 10px 14px; }
-.hj-docsmes-c:has(#hj-docsmes:empty) { display: none; }
-#hj-docsmes { padding: 10px 12px 12px; }
-#hj-docsmes .docs-mes { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 0; }
-#hj-docsmes .docs-mes > .ic, #hj-docsmes .docs-mes > span { font-size: 12px; color: var(--ink-2); }
-#hj-docsmes .docs-mes > .ic { display: none; }
-#hj-docsmes .docs-mes-b { display: block; padding: 8px 12px; border-radius: var(--r); font-size: 12.5px; }
-
-/* consulta lado a lado: Equipe, Movimento e Documentos novos */
-.hj-baixo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
-.hj-baixo > .hj-equipe { gap: 8px; }
-.hj-col-t { margin: 2px 0 0; font: 600 11.5px var(--f-body); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); }
-.hj-baixo .mv-grade.mv-coluna { grid-template-columns: minmax(0, 1fr); }
-@media (max-width: 1280px) { .hj-baixo { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 760px) { .hj-baixo { grid-template-columns: minmax(0, 1fr); } }
-
-@media (max-height: 759px) {
-  .hj-kpi { padding: 8px 12px; }
-  .hj-kpi b { font-size: 20px; }
-  .hj-kpis { gap: 8px; }
-  .hj-lado .hj-hero { padding: 10px 14px; }
-  .hj-lado .hj-hero .an-svg { width: 88px; height: 88px; }
-  .hj-agora .hj-passos-l { max-height: 300px; }
-}
