@@ -17,6 +17,15 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 | **Histórico** | Guarda (só no computador) o que foi preenchido/enviado para reaproveitar. |
 | **Privacidade** | Tudo é processado localmente. Nenhum dado sai do computador além do que o próprio cliente envia ao portal. |
 
+## Novidades da 2.40 a 2.43 — setores (Pessoal · Fiscal · Contábil)
+
+- **Seletor de setor** no cabeçalho: o menu lateral muda inteiro. O **Pessoal** é o de sempre; **Fiscal** e **Contábil** têm Hoje do setor, Enviar documentos, Solicitações, Novo pedido, Agenda e Documentos.
+- **Enviar documentos por competência:** a lista do que o cliente envia em cada mês (do escritório, nas regras), anexos por item, "não se aplica neste mês" e "nunca se aplica a esta empresa". **Enviar ao escritório** abre a Solicitação Geral já com o departamento, o assunto padronizado ("Documentos fiscais – competência 10/2026"), a descrição com o que foi enviado, o que falta e o que não se aplica, e os anexos. O cliente confere e envia; dá para enviar em partes ("– complemento").
+- **Enviar também para outro setor:** a cópia da Solicitação Geral abre sozinha depois que o portal salva a primeira, com o mesmo assunto, a mesma descrição e os mesmos anexos (também na Solicitação Geral comum).
+- **Hoje do setor:** a competência a enviar, as solicitações do setor que esperam o cliente, os prazos do setor e "Pedir ao setor" (pedidos comuns que abrem a Geral preenchida). No Hoje do Pessoal, o cartão **Documentos do mês** lembra o que falta enviar ao Fiscal e ao Contábil.
+- Solicitações, Agenda e Documentos filtram pelo setor; recados do escritório podem ter `setores`.
+- Regras: `config.setores`, `config.documentosCliente`, `agendaFixa.itens[].setor`, `avisosEscritorio[].setores`; dispensa por empresa em `empresas[trecho].config.documentosNaoSeAplica`. No computador ficam só empresa, competência, item, quantidade e data — nunca nomes de arquivos.
+
 ## Novidades da 2.24 — o melhor do desenho do Control Onvio, adaptado ao cliente
 
 - **Contraste:** tokens `--ink-2`/`--ink-3` mais fortes e fundos cheios com texto branco (`--red-solid`, `--blue-solid`, `--grey-solid`, `--on-solid`); `tests/contraste-lib.js` mede todo texto visível nos dois temas (`SIM_SO=ct`).

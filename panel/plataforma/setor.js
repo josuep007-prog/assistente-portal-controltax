@@ -73,5 +73,15 @@ export function montarSetor(C) {
     A.renderAvisosInicio?.();
   }
 
-  Object.assign(C, { pedidosDoSetor, renderHojeSetor });
+  /** Hoje (Pessoal): os documentos do mês que ainda faltam enviar aos outros setores, com o atalho para a tela de envio. */
+  function renderDocsMes(el) {
+    if (!el) return;
+    const linhas = E.setoresAtivos(S.rules).filter(s => E.menuDoSetor(S.rules, s)).map(s => ({ s, r: C.resumoEnvio?.(s) })).filter(x => x.r?.temItens && ['pendente', 'parcial', 'atrasado'].includes(x.r.estado));
+    if (!linhas.length) { el.innerHTML = ''; return; }
+    // compacto, na linha da saudação (não empurra o destaque nem as seções em telas baixas)
+    el.innerHTML = `<span class="docs-mes">${icon('upload', 'ic-sm')}<span>Documentos de ${esc(linhas[0].r.competencia)}:</span>${linhas.map(({ s, r }) => `<button type="button" class="docs-mes-b st-${esc(r.estado)}" data-docs-setor="${esc(s)}" title="${esc(`${r.feitos} de ${r.total} obrigatórios enviados${r.limite ? ` · enviar até ${fmt(r.limite)}` : ''} — abrir o envio do ${rot(s)}`)}"><b>${esc(rot(s))}</b> · ${esc(r.rotulo)}</button>`).join('')}</span>`;
+    el.querySelectorAll('[data-docs-setor]').forEach(b => b.addEventListener('click', async () => { await C.trocarSetor?.(b.dataset.docsSetor); C.irEnviar?.(); }));
+  }
+
+  Object.assign(C, { pedidosDoSetor, renderDocsMes, renderHojeSetor });
 }

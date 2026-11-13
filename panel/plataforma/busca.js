@@ -26,7 +26,7 @@ export function montarBusca(C) {
     const Q = E.norm(q); const toks = Q.split(' ').filter(Boolean);
     const bate = (s) => toks.every(t => E.norm(s).includes(t));
     const grupos = [];
-    const mods = MODULOS.filter(([, t]) => !Q || bate(t)).map(([v, t, ic]) => ({ titulo: t, sub: 'Ir para', ic, fn: () => A.setView(v) }));
+    const mods = [...MODULOS, ...(E.setoresAtivos(S.rules).length ? C.MODULOS_SETOR || [] : [])].filter(([, t]) => !Q || bate(t)).map(([v, t, ic]) => ({ titulo: t, sub: 'Ir para', ic, fn: () => A.setView(v) }));
     grupos.push(['Ir para', mods.slice(0, Q ? 4 : 7)]);
     // frase com data, número ou funcionário ("férias do Ronaldo dia 10/11"): o 1º resultado entende a frase inteira
     const nomes = (S.plat.emp?.lista || []).map(e => e.nome);

@@ -267,7 +267,7 @@ export function montarHoje(C) {
       <div id="avisos-esc"></div>
       <div id="lote"></div>
       ${enviado}${aviso}<div id="proximo"></div>
-      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}</p>
+      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}<span id="hj-docsmes"></span></p>
       <div class="dp-toolbar hj-barra">
         ${seletorEmpresa()}
         <span class="dp-count">${lido ? plural(base.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length, 'em aberto', 'em aberto') : ''}</span>
@@ -458,6 +458,7 @@ export function montarHoje(C) {
     viewEl.querySelectorAll('.eq-lista').forEach(l => { limitarCinco(l); marcarRolagem(l); });   // até 5 itens à vista; o resto rola
 
     ligarIr(viewEl);
+    C.renderDocsMes?.($('#hj-docsmes'));   // Documentos do mês dos outros setores (2.43)
     A.renderLote(); A.renderAvisosInicio();   // o cartão do documento/texto fica no Novo pedido (mostrarSugestao)
   }
   // Carrossel: um aviso por vez. A barra invisível é o relógio (5 s por volta); passar o mouse ou focar pausa.

@@ -1612,6 +1612,21 @@ async def teste_telas_do_setor(b):
     await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(1000)
     await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(1200)
     check(await pn.locator('.hs-env').count() == 0 and await pn.locator('.hj-hero').count() == 1, 'Pessoal: o Hoje de sempre')
+    # 2.43: no Hoje do Pessoal, "Documentos do mês" dos outros setores leva à tela de envio do setor
+    dm = await pn.locator('#hj-docsmes').inner_text()
+    check('Documentos de' in dm and 'Fiscal' in dm and 'Contábil' in dm, 'Hoje: "Documentos de MM/AAAA" com o Fiscal e o Contábil na linha da saudação')
+    await pn.click('[data-docs-setor="Contábil"]'); await pg.wait_for_timeout(1200)
+    check(await pn.locator('.ph-setor.on').get_attribute('data-setor') == 'Contábil' and (await tit()) == 'Enviar documentos', 'Hoje: "Enviar ao Contábil" abre o envio do Contábil')
+    # recados com setores: os do Pessoal (13º, férias coletivas) não aparecem no Contábil
+    await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(1000)
+    rec = await pn.locator('#avisos-esc').inner_text()
+    check('13º' not in rec and 'Férias coletivas' not in rec, 'recados: os do Pessoal não aparecem no Contábil')
+    # busca (Ctrl+K) acha a tela nova
+    await pn.click('#plat-busca'); await pg.wait_for_timeout(300)
+    await pn.fill('#cmdk-q', 'enviar documentos'); await pg.wait_for_timeout(500)
+    check('Enviar documentos' in await pn.locator('#cmdk-res').inner_text(), 'busca: "Enviar documentos" aparece no Ctrl+K')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(300)
+    await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(1000)
     await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(1000)
     check('Informe de rendimentos' in await pn.locator('.plat-view').inner_text(), 'Pessoal: Solicitações com tudo, como antes')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))

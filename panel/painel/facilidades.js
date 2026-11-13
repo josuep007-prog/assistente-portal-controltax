@@ -140,7 +140,9 @@ export function renderAvisosInicio() {
   const el = $('#avisos-esc'); if (!el) return;
   const hoje = E.iso(E.today());
   const lidos = new Set(S.prefs.avisosLidos || []);
-  const lista = (S.rules.avisosEscritorio || []).filter(a => a?.texto && (!a.ate || a.ate >= hoje) && (!a.desde || a.desde <= hoje) && !lidos.has(a.id || a.texto));
+  // recado com `setores` só aparece nesses setores (sem `setores`: em todos); sem setores nas regras, aparece sempre
+  const setor = P?.setorAtual?.() || '';
+  const lista = (S.rules.avisosEscritorio || []).filter(a => a?.texto && (!a.ate || a.ate >= hoje) && (!a.desde || a.desde <= hoje) && !lidos.has(a.id || a.texto) && (!setor || !Array.isArray(a.setores) || a.setores.includes(setor)));
   if (!lista.length) { el.innerHTML = ''; return; }
   // um cartão só (em vez de uma faixa grande por recado): recolhe e abre, e lembra a escolha deste computador
   let fechado = false; try { fechado = localStorage.getItem('ct.recados') === 'fechado'; } catch { /* sem armazenamento */ }

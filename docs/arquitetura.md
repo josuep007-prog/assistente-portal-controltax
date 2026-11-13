@@ -50,6 +50,7 @@ Desde a 2.16.3 a plataforma em tela cheia é dividida por tela. `panel/plataform
 | `funcionarios.js`, `agenda.js` | Funcionários e ficha; Agenda: calendário do mês (grade `role=grid`, teclado, legenda que liga e desliga tipos), painel do dia, lembretes e "próximo prazo" do Hoje (`C.proximoPrazoHtml`, uma chamada em `hoje.js`) |
 | `documentos.js` | Documentos (das solicitações, do escritório, modelos, listas) |
 | `enviardocs.js` | Enviar documentos por competência (2.40): lista do setor, anexos por item, abre a Solicitação Geral preenchida e marca o envio (`enviosDocs`, `docsNaoSeAplica` no storage, sem nomes de arquivos) |
+| `setor.js` | Hoje do setor (Fiscal/Contábil: competência, solicitações do setor, prazos, Pedir ao setor) e o cartão Documentos do mês do Hoje do Pessoal (2.42–2.43) |
 | `busca.js` | Busca (Ctrl+K) |
 
 **Como as partes se enxergam:** o que uma parte define e outra usa é registrado em `C` no fim dela (`Object.assign(C, {...})`). Uma parte que usa algo definido por uma parte que monta **antes** pega o valor direto de `C`; o que é definido por uma parte que monta **depois** (só funções) entra por um atalho que chama `C.nome(...)` na hora do uso. Por isso: **nada deve chamar, na hora da montagem, uma função de uma parte posterior**; dentro de funções (em tempo de uso) está tudo disponível. Estado que atravessa partes vai em `S.plat` (por exemplo `S.plat.desenhada`), não em `let` local.
