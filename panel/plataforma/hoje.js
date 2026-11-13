@@ -13,14 +13,14 @@ export function montarHoje(C) {
   const tipoArquivo = (...a) => C.tipoArquivo(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   const reaproveitar = (...a) => C.reaproveitar(...a);   // definido numa parte que monta depois (chamado só em tempo de uso)
   /* =================== HOJE (2.1) =================== */
-  /* No formato da tela Hoje do Control Onvio (repositório do escritório), na visão do cliente: rosca "% em dia",
-     quantas esperam sua resposta, carrossel (um aviso por vez, com a bolinha da leitura do portal) e "Próximos passos".
-     Embaixo: situações (filtros) e cartões agrupados por motivo. A classificação é uma só (E.motivoCliente /
-     E.prioridadesCliente), para a rosca, as situações e os cartões baterem. */
+  /* Desde a 2.44: linha do dia, números do dia, "O que fazer agora" (uma lista só, por prioridade, com abas) ao lado da
+     situação (rosca), dos próximos prazos e dos documentos do mês; embaixo, Equipe, Movimento e Documentos novos.
+     A classificação é uma só (E.motivoCliente / E.prioridadesCliente), para a rosca, os números e a lista baterem. */
   const MOT = Object.fromEntries(E.MOTIVOS_CLIENTE.map(m => [m.k, m]));
   const ICONE_MOT = { prescreve: 'clock', responder: 'chat', atrasada: 'alert', respondida: 'check', escritorio: 'briefcase', concluida: 'check' };
   const ROT_CASO = { anexo: 'Anexo não chegou', duplicada: 'Parece repetida', abaErrada: 'Aba certa' };
   const TAG_MOT = { prescreve: 'Prescreve', responder: 'Sua vez', atrasada: 'Passou da expectativa', respondida: 'Respondida', escritorio: 'Com o escritório', concluida: 'Concluída' };
+  const GRUPOS_AGORA = [['tudo', 'Tudo'], ['responder', 'Responder'], ['equipe', 'Equipe'], ['acompanhar', 'Acompanhar'], ['atencao', 'Atenção']];
   const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
   const lerPref = (k, p) => { try { return localStorage.getItem(`ct.${k}`) || p; } catch { return p; } };
   const gravarPref = (k, v) => { try { localStorage.setItem(`ct.${k}`, v); } catch { /* sem armazenamento: vale só nesta visita */ } };
@@ -259,80 +259,125 @@ export function montarHoje(C) {
     const acoesEq = [];
     const quandoLido = sol?.quando ? new Date(sol.quando).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
 
-    const aviso = '';   // falha de leitura: aviso único no topo (avisoLeitura)
     const enviado = S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3
       ? `<div class="aviso-linha ok">${icon('check')}<span><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada ao escritório.</b> Ela aparece aqui assim que o portal registrar.</span></div>` : '';
+    // números do dia e o que alimenta mais de um bloco
+    const abertas = base.filter(i => ['aguardando', 'andamento'].includes(i.estado));
+    const setoresEnvio = (E.setoresAtivos?.(R) || []).filter(s => E.menuDoSetor(R, s));
+    const docsMes = setoresEnvio.map(s => ({ s, r: C.resumoEnvio?.(s) })).filter(x => x.r?.temItens && ['pendente', 'parcial', 'atrasado'].includes(x.r.estado));
+    const rotSetor = (s) => E.setorDef?.(R, s)?.rotulo || s;
+    const docsNovos = S.plat.docs?.disponivel ? (S.plat.docs.itens || []).filter(x => x.lido === false) : null;
+    const irEnvio = async (s) => { await C.trocarSetor?.(s); C.irEnviar?.(); };
+    const irDocsNovos = () => { S.plat.docAba = 'escritorio'; S.plat.filtroPub = { q: '', cat: '', nl: true }; A.setView('documentos'); };
+    const pillQ = (d) => { if (!d) return '<span class="pill">sem data</span>'; const [c, t] = quando(d); return `<span class="pill pill-${c}">${t}</span>`; };
+    const eq = equipeHtml();   // registra as ações da Equipe (acoesEq) antes do resto
 
+    /* Layout (2.44): 1) linha do dia (saudação, empresa, Lembrete, Novo pedido) e recados numa linha; 2) números do dia;
+       3) "O que fazer agora" (uma lista só, por prioridade, com abas) e a coluna lateral (situação, próximos prazos,
+       documentos do mês); 4) o que é consulta, lado a lado: Equipe, Movimento e Documentos novos. */
     viewEl.innerHTML = `
+      <div class="hj-dia">
+        <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}</p>
+        <div class="hj-barra">
+          ${seletorEmpresa()}
+          <button type="button" class="btn btn-sm" id="hj-lembrete">${icon('plus', 'ic-sm')} Lembrete</button>
+          <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
+        </div>
+      </div>
       <div id="avisos-esc"></div>
       <div id="lote"></div>
-      ${enviado}${aviso}<div id="proximo"></div>
-      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}<span id="hj-docsmes"></span></p>
-      <div class="dp-toolbar hj-barra">
-        ${seletorEmpresa()}
-        <span class="dp-count">${lido ? plural(base.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length, 'em aberto', 'em aberto') : ''}</span>
-        <button type="button" class="btn btn-sm" data-ir="pendencias">${icon('list', 'ic-sm')} Ver as solicitações</button>
-        <button type="button" class="btn btn-sm" id="hj-lembrete">${icon('plus', 'ic-sm')} Lembrete</button>
-        <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
+      ${enviado}<div id="proximo"></div>
+      ${kpisHtml()}
+      <div class="hj-grade">
+        <div class="hj-col">${agoraHtml()}${eq.folha}${eq.terminar}</div>
+        <aside class="hj-lado" aria-label="Situação, prazos e documentos do mês">
+          ${heroHtml()}
+          ${prazosHtml()}
+          <section class="pn-card hj-lado-c hj-docsmes-c"><div class="hj-lado-h"><h3>Documentos do mês</h3></div><div id="hj-docsmes"></div></section>
+        </aside>
       </div>
-      ${heroHtml()}
-      ${equipeHtml()}
-      ${casosHtml()}`;
+      <div class="hj-baixo">
+        <div class="hj-equipe"><h3 class="hj-col-t">Equipe</h3>${eq.equipe}</div>
+        ${movimentoHtml()}
+        ${eq.docs}
+      </div>`;
 
+    // Números do dia: cada um abre a lista já filtrada
+    function kpisHtml() {
+      const k = (id, rotulo, n, sub, cls) => `<button type="button" class="hj-kpi ${cls}" data-kpi="${id}"><span class="hj-kpi-r">${esc(rotulo)}</span><b${lido && animar ? ` data-conta="${n}" data-de="0"` : ''}>${lido ? n : '—'}</b><small>${esc(lido ? sub : 'Lendo o portal…')}</small></button>`;
+      const comEsc = abertas.filter(i => i.lado === 'esc').length, comCli = abertas.filter(i => i.lado === 'cli').length;
+      const out = [
+        k('espera', 'Esperam você', suaVez, cont.prescreve ? `${cont.prescreve} perto de prescrever` : suaVez ? 'o escritório respondeu' : 'nada esperando você', 'k-late'),
+        k('atrasada', 'Passaram da expectativa', cont.atrasada, cont.atrasada ? 'com o escritório, além do esperado' : 'nenhuma atrasada', 'k-warn'),
+        k('abertas', 'Em aberto', abertas.length, `${comEsc} com o escritório · ${comCli} com você`, 'k-info'),
+      ];
+      if (setoresEnvio.length) out.push(k('docsmes', 'Documentos do mês', docsMes.length, docsMes.length ? `${docsMes.length === 1 ? 'setor' : 'setores'} com envio ${docsMes.some(x => x.r.estado === 'atrasado') ? 'atrasado' : 'pendente'} (${docsMes[0].r.competencia})` : 'tudo enviado este mês', docsMes.some(x => x.r.estado === 'atrasado') ? 'k-late' : 'k-warn'));
+      if (docsNovos) out.push(`<button type="button" class="hj-kpi k-ok" data-kpi="docsnovos"><span class="hj-kpi-r">Documentos novos</span><b>${docsNovos.length}</b><small>publicados e ainda não lidos</small></button>`);
+      return `<div class="hj-kpis">${out.join('')}</div>`;
+    }
     function heroHtml() {
-      const slides = slidesDoCarrossel();
-      const estadoLeitura = !sol ? 'parado' : sol.semAcesso || sol.erros.length ? 'erro' : '';
-      const dica = !sol ? 'Lendo o portal…' : sol.semAcesso ? 'Não consegui ler o portal agora' : `Portal lido às ${quandoLido}`;
       const titulo = !sol ? 'Lendo suas solicitações no portal…'
         : sol.semAcesso ? 'Não consegui ler suas solicitações agora'
-        : suaVez ? `<em data-conta="${suaVez}" data-de="0">${suaVez}</em> ${suaVez === 1 ? 'solicitação espera' : 'solicitações esperam'} sua resposta`
+        : suaVez ? `<em data-conta="${suaVez}" data-de="0">${suaVez}</em> ${suaVez === 1 ? 'espera' : 'esperam'} sua resposta`
         : total ? `Tudo em dia do seu lado ${icon('check')}` : 'Nenhuma solicitação em aberto';
-      const abertas = base.filter(i => ['aguardando', 'andamento'].includes(i.estado));
-      const resumo = lido ? [plural(abertas.length, 'em aberto', 'em aberto'), `${abertas.filter(i => i.lado === 'esc').length} com o escritório`, `${abertas.filter(i => i.lado === 'cli').length} com você`]
-        .concat(cont.atrasada ? [`${cont.atrasada} ${cont.atrasada === 1 ? 'passou' : 'passaram'} da expectativa`] : []).join(' · ') : 'Os números vêm do próprio portal, com o seu acesso.';
-      const passos = passosHtml();
+      const resumo = lido ? [plural(abertas.length, 'em aberto', 'em aberto'), `${abertas.filter(i => i.lado === 'esc').length} com o escritório`].join(' · ') : 'Os números vêm do próprio portal, com o seu acesso.';
       return `<section class="hj-hero" style="--i:0"${lido ? ' data-pronto' : ''}>
         <div class="hj-hero-g">
           <div class="hj-donut">${anel(fatias, { ativo: null, rotulo: 'em dia', anima: animar, centro: { n: lido ? pctDia : 0, de: animar ? 0 : pctDia, suf: '%' }, titulo: 'Solicitações por situação (clique numa parte para ver as solicitações)' })}</div>
           <div class="hj-hero-tx">
-            <span class="hj-eyebrow">Suas solicitações no portal${quandoLido ? ` · lidas às ${quandoLido}` : ''}</span>
             <h2 id="hj-titulo">${titulo}</h2>
             <p>${resumo}</p>
-            <div class="hj-tick ${estadoLeitura}${slides.length < 2 ? ' uno' : ''}" id="hj-tick" role="region" aria-label="Avisos, um por vez" aria-live="off">
-              <span class="hj-bola" title="${esc(dica)}" aria-label="${esc(dica)}"></span>
-              <div class="hj-tick-palco">${slides.length ? slides.map((s, n) => `<button type="button" class="hj-tk${n === 0 ? ' on' : ''}" data-slide="${n}"${n ? ' tabindex="-1" aria-hidden="true"' : ''} style="--c:${s.c}"><span class="hj-tk-tag">${esc(s.tag)}</span><b>${esc(s.txt)}</b><small>${esc(s.sub)}</small></button>`).join('')
-                : `<span class="hj-tk on vazio"><b>${!sol ? 'Lendo o portal…' : 'Nada pedindo sua atenção agora.'}</b><small>${sol ? 'Quando o escritório responder, aparece aqui.' : ''}</small></span>`}</div>
-              <i class="hj-tick-relogio"><i></i></i>
-            </div>
-            <div class="hj-legenda">${fatias.filter(f => f.n).map(f => `<span><i style="background:${cor(f.cor)}"></i>${esc(f.rot)} <b>${f.n}</b></span>`).join('')}</div>
+            ${quandoLido ? `<span class="hj-eyebrow">Lidas no portal às ${quandoLido}</span>` : ''}
           </div>
         </div>
-        <div class="hj-passos"><h3>Próximos passos</h3>${passos.html}</div>
+        <div class="hj-legenda">${fatias.filter(f => f.n).map(f => `<span><i style="background:${cor(f.cor)}"></i>${esc(f.rot)} <b>${f.n}</b></span>`).join('')}</div>
       </section>`;
     }
-    function slidesDoCarrossel() {
+    // Próximos prazos (Agenda): os 5 primeiros dos próximos 45 dias
+    function prazosHtml() {
+      let evs = [];
+      try { evs = eventosEntre(hoje, E.addDays(hoje, 45)).filter(e => e.d).sort((a, b) => a.d - b.d).slice(0, 5); } catch { evs = []; }
+      prazosHtml.evs = evs;
+      const linhas = evs.map((e, n) => { const f = E.diffDays(hoje, e.d); return `<button type="button" class="hj-pz${f <= 0 ? ' hoje' : f <= 3 ? ' perto' : ''}" data-pz="${n}"><span class="mono">${f <= 0 ? 'hoje' : f === 1 ? 'amanhã' : fmt(e.d).slice(0, 5)}</span><span class="hj-pz-t">${esc(e.titulo)}</span></button>`; }).join('');
+      return `<section class="pn-card hj-lado-c hj-prazos"><div class="hj-lado-h"><h3>Próximos prazos</h3><button type="button" class="btn btn-sm btn-ghost" data-ir="historico">Agenda ${icon('right', 'ic-sm')}</button></div>
+        ${linhas ? `<div class="hj-pz-l">${linhas}</div>` : `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhum prazo nos próximos 45 dias.</div>`}</section>`;
+    }
+    /* O que fazer agora: tudo o que pede uma ação do cliente numa lista só, na ordem de prioridade (o que antes ficava em
+       Próximos passos, no carrossel, em Atenção nas suas solicitações e nos Documentos do mês). Abas por grupo. */
+    function passosDoDia() {
       const out = [];
-      for (const p of atencao.slice(0, 12)) {
-        const i = p.item;
-        out.push({ tag: TAG_MOT[p.motivo], txt: `${i.numero ? `nº ${i.numero} · ` : ''}${i.assunto || nomeTipo(i.tipo)}: ${E.acaoCliente(i, p.motivo).toLowerCase()}`, sub: [comEmpresa && rotEmpresa(i), nomeTipo(i.tipo), empDe(i), i.responsavel && `com ${i.responsavel}`].filter(Boolean).join(' · '), c: cor(MOT[p.motivo].cor), fn: () => abrirDetalhe(i) });
+      const add = (grupo, c, titulo, sub, fn, pill, acao = null, cls = '') => out.push({ grupo, c, titulo, sub, fn, pill, acao, cls });
+      const pillTxt = (cls, txt) => `<span class="pill pill-${cls}">${esc(txt)}</span>`;
+      for (const p of atencao.slice(0, 10)) {
+        const i = p.item, vez = p.motivo !== 'atrasada';
+        add(vez ? 'responder' : 'acompanhar', cor(MOT[p.motivo].cor), E.acaoCliente(i, p.motivo), [comEmpresa && rotEmpresa(i), i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo), empDe(i)].filter(Boolean).join(' · '), () => abrirDetalhe(i),
+          pillTxt(p.motivo === 'atrasada' ? 'today' : 'late', TAG_MOT[p.motivo]), vez ? { rotulo: 'Responder', pri: true, fn: () => abrirDetalhe(i) } : null);
       }
-      for (const l of lems) out.push({ tag: 'Lembrete de hoje', txt: l.texto, sub: [l.hora, l.obs].filter(Boolean).join(' · ') || 'Agenda', c: 'var(--blue-deep)', fn: () => editarLembrete(l, E.iso(hoje)) });
-      for (const e of prazos) { const [, t] = quando(e.d); out.push({ tag: ROT_EV[e.tipo], txt: e.titulo, sub: [cap(t), e.detalhe].filter(Boolean).join(' · '), c: 'var(--hj-today)', fn: () => abrirDia(E.iso(e.d)) }); }
-      slidesDoCarrossel.ultimo = out;
+      for (const x of avisos.filter(x => x.falta != null && x.falta <= 10)) add('equipe', 'var(--viz-crit)', `Pedir o cálculo ${x.tipo === 'ferias' ? 'de férias' : 'da rescisão'} · pagamento até ${fmt(x.pagamento)}`, [A.nomeCurto(x.item.empregado), x.enviarAte ? `envie até ${fmt(x.enviarAte)}` : ''].filter(Boolean).join(' · '), () => pedirCalculoDoAviso(x.item), pillQ(x.enviarAte || x.pagamento), { rotulo: 'Pedir o cálculo', fn: () => pedirCalculoDoAviso(x.item) });
+      for (const s of docsMes) add('atencao', s.r.estado === 'atrasado' ? 'var(--hj-late)' : 'var(--hj-today)', `Enviar os documentos de ${s.r.competencia} ao ${rotSetor(s.s)}`, `${s.r.feitos} de ${s.r.total} obrigatórios enviados${s.r.limite ? ` · até ${fmt(s.r.limite)}` : ''}`, () => irEnvio(s.s), pillTxt(s.r.estado === 'atrasado' ? 'late' : 'today', s.r.rotulo), { rotulo: 'Enviar documentos', fn: () => irEnvio(s.s) });
+      for (const c of casos) {
+        const i = c.item;
+        const acao = c.tipo === 'abaErrada' ? { rotulo: `Pedir em ${S.rules.tipos[c.aba]?.nome || 'outra aba'}`, fn: () => P.novoPedido(c.aba) }
+          : c.tipo === 'duplicada' ? { rotulo: `Ver a nº ${c.outra.numero}`, fn: () => abrirDetalhe(c.outra) }
+          : { rotulo: 'Anexar no portal', fn: () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, numero: i.numero }, 30000) };
+        add('atencao', c.tipo === 'anexo' ? 'var(--hj-late)' : 'var(--hj-today)', [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '), c.porque, () => abrirDetalhe(i), pillTxt(c.tipo === 'anexo' ? 'late' : 'today', ROT_CASO[c.tipo]), acao, ` caso-${c.tipo}`);
+      }
+      for (const x of legais.filter(x => x.falta <= 5)) add('equipe', 'var(--viz-crit)', `${x.titulo} até ${fmt(x.alvo)}`, [x.item.empregado, x.ref].filter(Boolean).join(' · '), () => abrirDetalhe(x.item, { aba: 'observar' }), pillQ(x.alvo));
+      if (folha && folha.falta <= 3) add('equipe', 'var(--hj-today)', `Enviar as variáveis da folha de ${folha.competencia} até ${fmt(folha.limite)}`, 'Lançamento de Rubricas', () => prepararFolha(folha), pillQ(folha.limite), { rotulo: 'Preparar', fn: () => prepararFolha(folha) });
+      for (const p of prio.filter(p => p.motivo === 'respondida').slice(0, 4)) { const i = p.item; add('acompanhar', cor(MOT.respondida.cor), E.acaoCliente(i, 'respondida'), [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '), () => abrirDetalhe(i), pillTxt('ok', TAG_MOT.respondida)); }
+      for (const l of lems) add('acompanhar', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)), pillTxt('soon', 'lembrete'), null, ' n-lem');
+      for (const e of prazos) { const [, t] = quando(e.d); add('atencao', 'var(--hj-today)', e.titulo, `${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, () => abrirDia(E.iso(e.d)), pillQ(e.d), e.pedir ? { rotulo: 'Fazer agora', fn: () => fazerAgora(e.pedir) } : null); }
       return out;
     }
-    function passosHtml() {
-      const li = [], acoes = []; let n = 2;
-      const passo = (cls, c, titulo, sub, fn, fim = icon('right', 'ic-sm')) => { acoes.push(fn); li.push(`<li style="--i:${n++}"><button type="button" class="hj-step${cls}" data-passo="${acoes.length - 1}" style="--c:${c}"><i></i><span><b>${esc(titulo)}</b><small>${esc(sub)}</small></span>${fim}</button></li>`); };
-      for (const p of atencao.slice(0, 8)) { const i = p.item; passo('', cor(MOT[p.motivo].cor), E.acaoCliente(i, p.motivo), [comEmpresa && rotEmpresa(i), i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo), empDe(i)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
-      for (const x of avisos.filter(x => x.falta != null && x.falta <= 10)) passo('', 'var(--viz-crit)', `Pedir o cálculo ${x.tipo === 'ferias' ? 'de férias' : 'da rescisão'} · pagamento até ${fmt(x.pagamento)}`, [A.nomeCurto(x.item.empregado), x.enviarAte ? `envie até ${fmt(x.enviarAte)}` : ''].filter(Boolean).join(' · '), () => pedirCalculoDoAviso(x.item));
-      for (const p of prio.filter(p => p.motivo === 'respondida').slice(0, 4)) { const i = p.item; passo('', cor(MOT.respondida.cor), E.acaoCliente(i, 'respondida'), [i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '), () => abrirDetalhe(i)); }
-      for (const x of legais.filter(x => x.falta <= 5)) passo('', 'var(--viz-crit)', `${x.titulo} até ${fmt(x.alvo)}`, [x.item.empregado, x.ref].filter(Boolean).join(' · '), () => abrirDetalhe(x.item, { aba: 'observar' }));
-      if (folha && folha.falta <= 3) passo('', 'var(--hj-today)', `Enviar as variáveis da folha de ${folha.competencia} até ${fmt(folha.limite)}`, 'Preparar o Lançamento de Rubricas', () => prepararFolha(folha));
-      for (const l of lems) passo(' n-lem', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)));
-      for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${e.pedir ? 'Fazer agora · ' : ''}${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, e.pedir ? () => fazerAgora(e.pedir) : () => abrirDia(E.iso(e.d))); }
-      passosHtml.acoes = acoes;
-      return { html: li.length ? `<ol class="hj-passos-l" id="hj-passos">${li.join('')}</ol>` : `<div class="hj-zen">${icon('check')}<span>${sol ? 'Nada para fazer agora. Tudo em dia!' : 'Lendo o portal…'}</span></div>` };
+    function agoraHtml() {
+      const itens = passosDoDia(); agoraHtml.itens = itens;
+      const n = (g) => g === 'tudo' ? itens.length : itens.filter(x => x.grupo === g).length;
+      let aba = lerPref('hojeAba', 'tudo'); if (!GRUPOS_AGORA.some(([g]) => g === aba) || !n(aba)) aba = 'tudo';
+      const abas = `<div class="dp-tabs hj-abas" role="tablist" aria-label="Filtrar o que fazer">${GRUPOS_AGORA.filter(([g]) => g === 'tudo' || n(g)).map(([g, r]) => `<button type="button" role="tab" class="dp-tab${g === aba ? ' active' : ''}" aria-selected="${g === aba}" data-aba="${g}">${r} <span class="hj-aba-n">${n(g)}</span></button>`).join('')}</div>`;
+      const li = itens.map((x, k) => `<li data-grupo="${x.grupo}"${aba !== 'tudo' && x.grupo !== aba ? ' hidden' : ''} style="--i:${k + 2}"><button type="button" class="hj-step${x.cls}" data-passo="${k}" style="--c:${x.c}"><i></i><span><b>${esc(x.titulo)}</b><small>${esc(x.sub)}</small></span></button>${x.pill || ''}${x.acao ? `<button type="button" class="btn btn-sm${x.acao.pri ? ' btn-primary' : ''} hj-acao" data-passo-acao="${k}">${esc(x.acao.rotulo)}</button>` : ''}</li>`).join('');
+      const corpo = itens.length ? `${abas}<ol class="hj-passos-l" id="hj-passos">${li}</ol>`
+        : `<div class="hj-zen">${icon('check')}<span>${sol ? 'Nada para fazer agora. Tudo em dia!' : 'Lendo o portal…'}</span></div>`;
+      return painel({ id: 'hj-agora', cls: 'hj-agora', titulo: 'O que fazer agora', resumo: itens.length ? 'em ordem de prioridade' : '', contador: itens.length, dica: ajuda('agora'), padrao: true, corpo, corpoCls: 'hj-agora-c' });
     }
     // Equipe: experiência vencendo, férias a vencer e avisos sem o cálculo (com o atalho para pedir)
     function equipeHtml() {
@@ -344,7 +389,6 @@ export function montarHoje(C) {
         const bts = lista.map((a, k) => { if (k) acoesEq.push({ acao: a.fn }); return `<button type="button" class="btn btn-sm${a.cls ? ' ' + a.cls : ''}" data-eq="${k ? acoesEq.length - 1 : n}"${a.titulo ? ` title="${esc(a.titulo)}"` : ''}>${esc(a.rotulo)}</button>`; }).join('');
         return `<div class="pn-li eq-li"${abrir ? ` data-eq-abrir="${n}"` : ''}><div class="main"><b>${esc(titulo)}</b><small>${esc(sub)}</small></div><div class="eq-acoes">${pill}${bts}</div></div>`;
       };
-      const pillQ = (d) => { if (!d) return '<span class="pill">sem data</span>'; const [c, t] = quando(d); return `<span class="pill pill-${c}">${t}</span>`; };
       const vazio = (txt) => `<div class="pn-vazio">${icon('check', 'ic-sm')} ${esc(txt)}</div>`;
       const exp = equipe.experiencia.filter(x => !expEfetivado(x.nome, x.n)).map(x => linha(x.nome, `Fim dos ${x.n} dias em ${fmt(x.fim)} · prorrogar, encerrar no fim ou efetivar`, pillQ(x.fim), acoesExperiencia(x.nome, admissaoDe(x.nome), x.n)));
       const fer = equipe.ferias.map(x => linha(x.nome, `${x.falta < 0 ? 'Prazo para conceder passou em' : 'Conceder até'} ${fmt(x.limite)} · período ${x.aquisitivo}`, pillQ(x.limite), S.rules.tipos.avisoFerias ? { rotulo: 'Programar', fn: () => programarFerias(x.nome) } : null));
@@ -370,25 +414,24 @@ export function montarHoje(C) {
       };
       // documentos que o escritório publicou e o portal ainda mostra como não lidos (como a aba Não lidos do portal)
       const docsCard = () => {
-        const D = S.plat.docs; S.plat.docsHojeLista = [];
-        if (!D?.disponivel) return '';
-        const nl = (D.itens || []).filter(x => x.lido === false);
-        S.plat.docsHojeLista = nl.slice(0, 5);
-        const linhas = S.plat.docsHojeLista.map((x, n) => { const [cls, rot] = tipoArquivo(x.arquivo || x.nome || 'x.pdf'); return `<div class="dn-li" data-dn-abrir="${n}"><span class="arq-ext ext-${cls}">${rot}</span><div class="main"><b title="${esc(x.nome)}">${esc(x.nome)}</b><small>${esc(x.pasta || x.categoria || 'Documento')}</small><small class="mono">${esc([x.data, x.vencimento && `vence ${x.vencimento}`].filter(Boolean).join(' · '))}</small></div><button type="button" class="btn btn-sm dn-bx" data-dn="${n}" title="${D.baixar === false ? 'Abrir no portal' : 'Baixar'}" aria-label="Baixar ${esc(x.nome)}">${icon(D.baixar === false ? 'external' : 'download', 'ic-sm')}</button></div>`; }).join('');
-        return painel({ id: 'eq-docs', cls: 'hj-docs', titulo: 'Documentos novos', contador: nl.length, dica: ajuda('documentos'), padrao: nl.length > 0,
-          corpo: `${linhas || `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhum documento novo.</div>`}${nl.length > S.plat.docsHojeLista.length ? `<button type="button" class="btn btn-sm btn-ghost dn-todos" id="dn-todos">Ver os ${nl.length} não lidos ${icon('right', 'ic-sm')}</button>` : ''}` });
+        S.plat.docsHojeLista = [];
+        if (!docsNovos) return '';
+        S.plat.docsHojeLista = docsNovos.slice(0, 3);
+        const D = S.plat.docs;
+        const linhas = S.plat.docsHojeLista.map((x, n) => { const [cls, rot] = tipoArquivo(x.arquivo || x.nome || 'x.pdf'); return `<div class="dn-li" data-dn-abrir="${n}"><span class="arq-ext ext-${cls}">${rot}</span><div class="main"><b title="${esc(x.nome)}">${esc(x.nome)}</b><small>${esc([x.pasta || x.categoria || 'Documento', x.vencimento && `vence ${x.vencimento}`].filter(Boolean).join(' · '))}</small></div><button type="button" class="btn btn-sm dn-bx" data-dn="${n}" title="${D.baixar === false ? 'Abrir no portal' : 'Baixar'}" aria-label="Baixar ${esc(x.nome)}">${icon(D.baixar === false ? 'external' : 'download', 'ic-sm')}</button></div>`; }).join('');
+        return painel({ id: 'eq-docs', cls: 'hj-docs', titulo: 'Documentos novos', contador: docsNovos.length, dica: ajuda('documentos'), padrao: docsNovos.length > 0,
+          corpo: `${linhas || `<div class="pn-vazio">${icon('check', 'ic-sm')} Nenhum documento novo.</div>`}${docsNovos.length > S.plat.docsHojeLista.length ? `<button type="button" class="btn btn-sm btn-ghost dn-todos" id="dn-todos">Ver os ${docsNovos.length} em Documentos ${icon('right', 'ic-sm')}</button>` : ''}` });
       };
       // o que mais exige o cliente vem aberto: prazo legal a menos de 5 dias e férias a conceder em até 30
-      return `<div class="hj-equipe">
-        ${folhaCard()}
-        ${term.length ? card('eq-terminar', 'Para terminar', 'terminar', term, '') : ''}
-        ${card('eq-legais', 'Prazos legais', 'legais', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…', legais.some(x => x.falta <= 5))}
-        ${card('eq-avisos', 'Aviso sem cálculo', 'avisos', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
-        ${card('eq-exp', 'Experiência vencendo', 'experiencia', exp, 'Nenhuma experiência vencendo.')}
-        ${card('eq-ferias', 'Férias a vencer', 'ferias', fer, 'Nenhuma férias a vencer.', equipe.ferias.some(x => x.falta <= 30))}
-        ${movimentoHtml()}
-        ${docsCard()}
-      </div>`;
+      return {
+        folha: folhaCard(),
+        terminar: term.length ? card('eq-terminar', 'Para terminar', 'terminar', term, '') : '',
+        equipe: `${card('eq-legais', 'Prazos legais', 'legais', leg, lido ? 'Nenhum prazo legal perto.' : 'Lendo o portal…', legais.some(x => x.falta <= 5))}
+          ${card('eq-avisos', 'Aviso sem cálculo', 'avisos', avs, lido ? 'Nenhum aviso esperando o cálculo.' : 'Lendo o portal…')}
+          ${card('eq-exp', 'Experiência vencendo', 'experiencia', exp, 'Nenhuma experiência vencendo.')}
+          ${card('eq-ferias', 'Férias a vencer', 'ferias', fer, 'Nenhuma férias a vencer.', equipe.ferias.some(x => x.falta <= 30))}`,
+        docs: docsCard(),
+      };
     }
     /* Movimento das suas solicitações: barras empilhadas das últimas semanas (abertas × concluídas) e, quando as conversas
        já lidas trazem as datas, o tempo até a 1ª resposta do escritório. Só em memória; aparece com 3+ solicitações no período. */
@@ -403,27 +446,12 @@ export function montarHoje(C) {
           <div class="mv-kpi"><b>${esc(d(m.resposta.mediana))}</b><small>mediana de ${plural(m.resposta.n, 'conversa lida', 'conversas lidas')}</small></div>
           ${linhaSimples(semanas.map(w => ({ rot: w.rotulo, y: w.resposta.mediana })), { nome: 'Dias até a 1ª resposta', sufixo: ' d', cor: 's2', titulo: 'Dias até a 1ª resposta do escritório, por semana em que a solicitação foi aberta' })}</div>` : '';
       return painel({ id: 'eq-movimento', cls: 'hj-movimento', titulo: 'Movimento das suas solicitações', resumo: `${plural(m.abertas, 'aberta', 'abertas')} · ${plural(m.concluidas, 'concluída', 'concluídas')} em ${semanas.length} semanas`,
-        direita: `<span class="mv-mini">${miniBarras(semanas.map(w => ({ rot: `semana de ${w.rotulo}`, n: w.abertas })), { titulo: 'Abertas por semana' })}</span>`, dica: S.rules.config?.movimento?.ajuda || '', padrao: false, corpoCls: 'pn-card-body',
-        corpo: `<div class="mv-grade${resp ? '' : ' so-barras'}"><div class="mv-bloco"><h4>Abertas por você × concluídas, por semana</h4>${barras}</div>${resp}</div>` });
-    }
-    // Atenção nas suas solicitações (casos do Control Onvio na visão do cliente)
-    function casosHtml() {
-      if (!casos.length) return '';
-      return painel({ id: 'hj-casos', cls: 'hj-casos', titulo: 'Atenção nas suas solicitações', contador: casos.length, dica: ajuda('casos'), padrao: true,
-        corpo: `<div class="eq-lista">${casos.map(c => {
-          const i = c.item;
-          const acao = c.tipo === 'abaErrada' ? { rotulo: `Pedir em ${S.rules.tipos[c.aba]?.nome || 'outra aba'}`, fn: () => P.novoPedido(c.aba) }
-            : c.tipo === 'duplicada' ? { rotulo: `Ver a nº ${c.outra.numero}`, fn: () => abrirDetalhe(c.outra) }
-            : { rotulo: 'Anexar no portal', fn: () => request({ type: 'abrirNoPortal', slug: S.rules.tipos[i.tipo]?.slug, numero: i.numero }, 30000) };
-          acoesEq.push({ acao: acao.fn, abrir: () => abrirDetalhe(i) });
-          const n = acoesEq.length - 1;
-          return `<div class="pn-li eq-li caso-${c.tipo}" data-eq-abrir="${n}"><span class="pill pill-${c.tipo === 'anexo' ? 'late' : 'today'}">${ROT_CASO[c.tipo]}</span><div class="main"><b>${esc([i.numero && `nº ${i.numero}`, i.assunto || nomeTipo(i.tipo)].filter(Boolean).join(' · '))}</b><small>${esc(c.porque)}</small></div><div class="eq-acoes"><button type="button" class="btn btn-sm" data-eq="${n}">${esc(acao.rotulo)}</button></div></div>`;
-        }).join('')}</div>` });
+        direita: `<span class="mv-mini">${miniBarras(semanas.map(w => ({ rot: `semana de ${w.rotulo}`, n: w.abertas })), { titulo: 'Abertas por semana' })}</span>`, dica: S.rules.config?.movimento?.ajuda || 'Movimento das suas solicitações nas últimas semanas.', padrao: false, corpoCls: 'pn-card-body',
+        corpo: `<div class="mv-grade mv-coluna"><div class="mv-bloco"><h4>Abertas por você × concluídas, por semana</h4>${barras}</div>${resp}</div>` });
     }
 
     // ---------- interações ----------
     viewEl.querySelectorAll('[data-eq]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); acoesEq[+b.dataset.eq]?.acao?.(); }));
-    const irDocsNovos = () => { S.plat.docAba = 'escritorio'; S.plat.filtroPub = { q: '', cat: '', nl: true }; A.setView('documentos'); };
     viewEl.querySelectorAll('[data-dn]').forEach(b => b.addEventListener('click', async (e) => {
       e.stopPropagation();
       const x = S.plat.docsHojeLista?.[+b.dataset.dn]; if (!x) return;
@@ -435,10 +463,27 @@ export function montarHoje(C) {
     viewEl.querySelectorAll('[data-dn-abrir]').forEach(b => b.addEventListener('click', irDocsNovos));
     $('#dn-todos')?.addEventListener('click', irDocsNovos);
     viewEl.querySelectorAll('[data-eq-abrir]').forEach(b => b.addEventListener('click', () => acoesEq[+b.dataset.eqAbrir]?.abrir?.()));
-    viewEl.querySelectorAll('[data-passo]').forEach(b => b.addEventListener('click', () => passosHtml.acoes[+b.dataset.passo]?.()));
-    viewEl.querySelectorAll('[data-slide]').forEach(b => b.addEventListener('click', () => slidesDoCarrossel.ultimo[+b.dataset.slide]?.fn()));
+    viewEl.querySelectorAll('[data-passo]').forEach(b => b.addEventListener('click', () => agoraHtml.itens[+b.dataset.passo]?.fn()));
+    viewEl.querySelectorAll('[data-passo-acao]').forEach(b => b.addEventListener('click', () => agoraHtml.itens[+b.dataset.passoAcao]?.acao?.fn()));
+    viewEl.querySelectorAll('[data-pz]').forEach(b => b.addEventListener('click', () => { const e = prazosHtml.evs[+b.dataset.pz]; if (e) abrirDia(E.iso(e.d)); }));
+    // abas do "O que fazer agora": só escondem linhas (a escolha fica neste navegador)
+    viewEl.querySelectorAll('.hj-abas [data-aba]').forEach(b => b.addEventListener('click', () => {
+      const g = b.dataset.aba; gravarPref('hojeAba', g);
+      viewEl.querySelectorAll('.hj-abas [data-aba]').forEach(x => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', String(x === b)); });
+      viewEl.querySelectorAll('#hj-passos > li').forEach(li => { li.hidden = g !== 'tudo' && li.dataset.grupo !== g; });
+    }));
+    // números do dia → a lista filtrada
+    const filtrarSol = (motivo) => { Object.assign(S.plat.filtroSol, { motivo, tipo: '', q: '' }); A.setView('pendencias'); };
+    viewEl.querySelectorAll('[data-kpi]').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.kpi;
+      if (k === 'espera') filtrarSol(cont.prescreve && !cont.responder ? 'prescreve' : cont.responder ? 'responder' : '');
+      else if (k === 'atrasada') filtrarSol(cont.atrasada ? 'atrasada' : '');
+      else if (k === 'abertas') filtrarSol('');
+      else if (k === 'docsmes') irEnvio((docsMes[0] || { s: setoresEnvio[0] }).s);
+      else if (k === 'docsnovos') irDocsNovos();
+    }));
     // a rosca leva às Solicitações já filtradas por aquela situação (como no Control Onvio)
-    viewEl.querySelectorAll('.an-f[data-motivo]').forEach(b => b.addEventListener('click', () => { Object.assign(S.plat.filtroSol, { motivo: b.dataset.motivo, tipo: '', q: '' }); A.setView('pendencias'); }));
+    viewEl.querySelectorAll('.an-f[data-motivo]').forEach(b => b.addEventListener('click', () => filtrarSol(b.dataset.motivo)));
     $('#hj-lembrete').addEventListener('click', () => editarLembrete(null, E.iso(E.today())));
     // a planilha solta no cartão da folha abre o lançamento já com ela
     const fd = $('#eq-folha');
@@ -452,25 +497,13 @@ export function montarHoje(C) {
     ligarPaineis(viewEl);
     ligarDicas(viewEl);
     if (animar) { viewEl.classList.remove('hj-anim'); void viewEl.offsetWidth; viewEl.classList.add('hj-anim'); setTimeout(() => viewEl.classList.remove('hj-anim'), 1600); animarNumeros(viewEl); }
-    iniciarCarrossel($('#hj-tick'));
     P.renderProximo($('#proximo'));
     marcarRolagem($('#hj-passos'));
     viewEl.querySelectorAll('.eq-lista').forEach(l => { limitarCinco(l); marcarRolagem(l); });   // até 5 itens à vista; o resto rola
 
     ligarIr(viewEl);
-    C.renderDocsMes?.($('#hj-docsmes'));   // Documentos do mês dos outros setores (2.43)
+    C.renderDocsMes?.($('#hj-docsmes'));   // Documentos do mês dos outros setores (2.43); o cartão some quando está tudo enviado
     A.renderLote(); A.renderAvisosInicio();   // o cartão do documento/texto fica no Novo pedido (mostrarSugestao)
-  }
-  // Carrossel: um aviso por vez. A barra invisível é o relógio (5 s por volta); passar o mouse ou focar pausa.
-  function iniciarCarrossel(raiz) {
-    if (!raiz) return;
-    const sl = [...raiz.querySelectorAll('.hj-tk')];
-    if (sl.length < 2) return;
-    const ir = () => {
-      const at = sl.findIndex(x => x.classList.contains('on')), prox = (at + 1) % sl.length;
-      sl.forEach((x, n) => { x.classList.toggle('on', n === prox); x.classList.toggle('sai', n === at); x.tabIndex = n === prox ? 0 : -1; x.setAttribute('aria-hidden', String(n !== prox)); });
-    };
-    raiz.querySelector('.hj-tick-relogio i').addEventListener('animationiteration', () => { if (!document.hidden && raiz.isConnected) ir(); });
   }
   // Listas da Equipe e dos casos: a altura vai até o fim do 5º item (as linhas mudam de altura conforme a largura do cartão).
   function limitarCinco(lst) {
