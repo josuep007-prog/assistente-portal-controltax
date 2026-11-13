@@ -344,6 +344,23 @@ async def teste_plataforma(b):
     check(ok, 'visualizador: o botão "Ver" também abre')
     await pn.click('.vis .vis-x'); await pg.wait_for_timeout(300)
     check(await pn.locator('.vis').count() == 0, 'visualizador: o X fecha')
+    # 2.45.1: o tipo vem dos bytes (nome sem extensão) e o PDF que o pdf.js não abre vai para o leitor do Chrome
+    await pn.evaluate("""async () => { const V = await import('./visualizar.js'); const D = await (await fetch('../exemplos/atestado.pdf')).arrayBuffer();
+      V.abrirVisualizador({ nome: 'Guia sem extensão', obter: async () => ({ ok: true, arquivo: { buf: D, name: 'Guia sem extensao', type: 'application/octet-stream' } }) }); }""")
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.vis .vis-pg canvas')"), 20)
+    check(ok, 'visualizador: arquivo sem extensão no nome abre como PDF pelos bytes')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+    await pn.evaluate("""async () => { const V = await import('./visualizar.js'); const D = new Uint8Array(await (await fetch('../exemplos/atestado.pdf')).arrayBuffer());
+      let b = ''; for (const x of D) b += String.fromCharCode(x); const T = new TextEncoder().encode(btoa(b)).buffer;
+      V.abrirVisualizador({ nome: 'em base64.pdf', obter: async () => ({ ok: true, arquivo: { buf: T, name: 'em base64.pdf', type: 'application/pdf' } }) }); }""")
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.vis .vis-pg canvas')"), 20)
+    check(ok, 'visualizador: PDF que chega como texto base64 também abre')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+    await pn.evaluate("""async () => { const V = await import('./visualizar.js'); const D = new TextEncoder().encode('%PDF-1.4 arquivo quebrado').buffer;
+      V.abrirVisualizador({ nome: 'quebrado.pdf', obter: async () => ({ ok: true, arquivo: { buf: D, name: 'quebrado.pdf', type: 'application/pdf' } }) }); }""")
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.vis .vis-nativo')"), 15)
+    check(ok, 'visualizador: PDF que o pdf.js não abre vai para o leitor de PDF do Chrome')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
     await pn.click('[data-doc-aba="modelos"]'); await pg.wait_for_timeout(300)
     await pn.click('[data-mdl="0"]'); await pg.wait_for_timeout(300)
     await pn.fill('#md-empregado', 'JOAO DA SILVA'); await pn.dispatch_event('#md-empregado', 'input')
@@ -830,6 +847,43 @@ async def teste_cadastro(b):
     check(ok, f"ficha colada preenche nome e mãe ({v.get('name')}, {v.get('motherName')})")
     check('Nome:' not in (v.get('comments') or '') and 'Nome:' not in (v.get('description') or ''), 'o texto colado não vai para observações/descrição')
     await pg.click('main button:has-text("CANCELAR")'); await pg.wait_for_timeout(800)   # o cadastro é um assistente de etapas
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
+async def teste_cadastro_dependentes(b):
+    """2.45.1: no cadastro (nada vai ao Onvio enquanto preenche), a UF e o estado civil vão na hora para o Onvio liberar o Município
+    (com a lista dele) e o Nome do cônjuge; a dica do campo bloqueado diz qual campo libera."""
+    print('\n[cadastro] campos que o Onvio libera depois de outro (UF → Município, estado civil → cônjuge)')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    await pg.set_viewport_size({'width': 1401, 'height': 900}); await pg.set_viewport_size({'width': 1400, 'height': 900})
+    await pg.evaluate("window.__ctSim.go('/clientcenter/pt/actions/service-request/employee-registration/add')"); await pg.wait_for_timeout(4000)
+    pn = next(f for f in pg.frames if 'panel/panel.html' in f.url)
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    dica = await pn.evaluate("document.querySelector('[data-campo=municipio] .hint.bloq')?.innerText || ''")
+    check(await pn.evaluate("document.querySelector('#f-municipio')?.disabled") and 'UF' in dica and 'funcionário' not in dica, f'Município bloqueado, com a dica de escolher a UF ({dica!r})')
+    if not await pn.evaluate("document.querySelector('[data-g=Pessoal]').open"): await pn.click('[data-g="Pessoal"] > summary')
+    await pn.fill('#f-uf', 'SP'); await pn.dispatch_event('#f-uf', 'change')
+    ok = await espera(lambda: pn.evaluate("document.querySelector('#f-municipio')?.disabled === false && !document.querySelector('[data-campo=municipio] .hint.bloq')"), 20)
+    uf = await pg.evaluate("document.querySelector('[formcontrolname=addressState] input')?.value")
+    check(ok and uf == 'São Paulo', f'escolher a UF vai na hora ao Onvio e libera o Município ({uf})')
+    ok = await espera(lambda: pn.evaluate("document.querySelectorAll('#dl-municipio option').length > 3"), 40)
+    check(ok, 'a lista de municípios da UF chega ao campo')
+    check(await pn.evaluate("document.querySelector('#f-conjuge')?.disabled") and 'estado civil' in (await pn.evaluate("document.querySelector('[data-campo=conjuge] .hint.bloq')?.innerText || ''")), 'Nome do cônjuge bloqueado, com a dica do estado civil')
+    await pn.fill('#f-estadoCivil', 'Casado'); await pn.dispatch_event('#f-estadoCivil', 'change')
+    ok = await espera(lambda: pn.evaluate("document.querySelector('#f-conjuge')?.disabled === false"), 20)
+    check(ok, 'estado civil casado libera o Nome do cônjuge')
+    await pn.fill('#f-municipio', 'Campinas'); await pn.dispatch_event('#f-municipio', 'change'); await pg.wait_for_timeout(500)
+    check('1 campo' in (await pn.evaluate("document.querySelector('#av-pend')?.innerText || ''")) and not await pg.evaluate("document.querySelector('[formcontrolname=addressCity] input')?.value"), 'o resto continua esperando o "Enviar tudo" (o município não foi sozinho)')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
@@ -3375,7 +3429,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'cad':   # SIM_SO=cad roda só o cadastro (lote 3)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_cadastro(b); await b.close()
+            await teste_cadastro(b); await teste_cadastro_dependentes(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == '20':   # SIM_SO=20 roda só a parte da plataforma (2.0)
@@ -3736,7 +3790,7 @@ async def main():
         await teste_plataforma(b)
         await teste_agenda(b)
         await teste_mecanica(b)
-        await teste_cadastro(b)
+        await teste_cadastro(b); await teste_cadastro_dependentes(b)
         await teste_lote4(b)
         await teste_lote6(b)
         await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)

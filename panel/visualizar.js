@@ -13,6 +13,21 @@ const ICO = {
 };
 const ic = (k) => `<svg class="ic ic-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO[k]}</svg>`;
 
+/** O tipo pelos primeiros bytes do arquivo ('pdf', 'imagem', 'zip', 'html', 'texto' ou ''). */
+export function formaDosBytes(buf) {
+  const b = new Uint8Array(buf, 0, Math.min(1024, buf.byteLength));
+  const ini = String.fromCharCode(...b.subarray(0, 16));
+  if (String.fromCharCode(...b).includes('%PDF-')) return 'pdf';
+  if ((b[0] === 0x89 && ini.slice(1, 4) === 'PNG') || (b[0] === 0xFF && b[1] === 0xD8) || ini.startsWith('GIF8') || (ini.startsWith('RIFF') && ini.slice(8, 12) === 'WEBP') || ini.startsWith('BM')) return 'imagem';
+  if (ini.startsWith('PK')) return 'zip';
+  const tx = new TextDecoder('utf-8').decode(b.subarray(0, 300)).trim().toLowerCase();
+  if (tx.startsWith('<!doctype html') || tx.startsWith('<html')) return 'html';
+  if (tx.startsWith('<?xml') || tx.startsWith('{') || tx.startsWith('[')) return 'texto';
+  return '';
+}
+/** Os primeiros caracteres legíveis (para o detalhe técnico; nenhum dado do documento além do formato). */
+const inicioLegivel = (buf) => String.fromCharCode(...new Uint8Array(buf, 0, Math.min(5, buf.byteLength))).replace(/[^\x20-\x7e]/g, '·');
+
 /** Qual visualização serve para o arquivo (pelo tipo informado ou pela extensão). */
 export function formaDeVer(nome, tipo = '') {
   const x = extensao(nome), t = String(tipo || '').toLowerCase();
@@ -76,8 +91,8 @@ export function abrirVisualizador({ nome, subtitulo = '', obter, aoBaixar, aoPor
   raiz.querySelectorAll('[data-z]').forEach(b => b.addEventListener('click', () => mudarZoom(+b.dataset.z)));
   raiz.querySelector('[data-vis="fechar"]').focus();
 
-  const mensagem = (txt, comBaixar = true) => {
-    corpo.innerHTML = `<div class="vis-msg vis-aviso"><b>${esc(txt)}</b>${comBaixar && arquivo ? `<span>Baixe o arquivo para abrir com um programa do seu computador.</span><button type="button" class="btn btn-primary btn-sm" data-vis-baixar>${ic('baixar')} Baixar</button>` : ''}</div>`;
+  const mensagem = (txt, comBaixar = true, detalhe = '') => {
+    corpo.innerHTML = `<div class="vis-msg vis-aviso"><b>${esc(txt)}</b>${comBaixar && arquivo ? `<span>Baixe o arquivo para abrir com um programa do seu computador.</span><button type="button" class="btn btn-primary btn-sm" data-vis-baixar>${ic('baixar')} Baixar</button>` : ''}${detalhe ? `<small class="vis-det">${esc(detalhe)}</small>` : ''}</div>`;
     corpo.querySelector('[data-vis-baixar]')?.addEventListener('click', () => aoBaixar?.(arquivo));
   };
 
@@ -86,17 +101,37 @@ export function abrirVisualizador({ nome, subtitulo = '', obter, aoBaixar, aoPor
     try { r = await obter(); } catch (e) { r = { ok: false, motivo: e?.message }; }
     if (fechado) return;
     if (!r?.ok || !r.arquivo?.buf) { mensagem(`Não consegui abrir o documento: ${r?.motivo || 'sem resposta do portal'}.`, false); return; }
-    arquivo = r.arquivo; btBaixar.disabled = false;
-    const nomeArq = arquivo.name || nome, forma = formaDeVer(nomeArq, arquivo.type);
+    arquivo = r.arquivo;
+    if (!(arquivo.buf instanceof ArrayBuffer)) arquivo.buf = arquivo.buf?.buffer instanceof ArrayBuffer ? arquivo.buf.buffer.slice(arquivo.buf.byteOffset, arquivo.buf.byteOffset + arquivo.buf.byteLength) : await new Blob([arquivo.buf]).arrayBuffer();
+    // arquivo que chegou como texto base64 (ex.: "JVBERi0…" é um PDF): volta a ser binário
+    try { const ini = new TextDecoder('ascii').decode(new Uint8Array(arquivo.buf, 0, Math.min(8, arquivo.buf.byteLength))); if (/^(JVBERi|iVBORw|\/9j\/)/.test(ini)) { const bin = atob(new TextDecoder('ascii').decode(arquivo.buf).replace(/\s+/g, '')); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); arquivo = { ...arquivo, buf: u.buffer }; } } catch { /* não era base64 */ }
+    btBaixar.disabled = false;
+    // o tipo vem dos primeiros bytes (o nome do Onvio nem sempre traz a extensão); o nome só decide quando os bytes não dizem
+    const nomeArq = arquivo.name || nome, pelosBytes = formaDosBytes(arquivo.buf), forma = pelosBytes === 'pdf' || pelosBytes === 'imagem' ? pelosBytes : (formaDeVer(nomeArq, arquivo.type) || pelosBytes);
+    const detalhe = (e) => `Detalhe técnico: ${String(e?.message || e || 'erro').slice(0, 140)} · ${forma || 'tipo desconhecido'} · ${arquivo.buf.byteLength} bytes · começa com “${inicioLegivel(arquivo.buf)}”`;
     try {
-      if (forma === 'pdf') await verPdf();
+      if (forma === 'pdf') await verPdf().catch(e => verPdfNativo(e));
       else if (forma === 'imagem') verImagem();
       else if (forma === 'planilha') await verPlanilha(nomeArq);
       else if (forma === 'word') await verWord(nomeArq);
       else if (forma === 'texto') verTexto();
+      else if (forma === 'html') mensagem('O portal devolveu uma página em vez do arquivo.', true, detalhe('página HTML'));
       else mensagem('Este tipo de arquivo não abre aqui na extensão.');
-    } catch { if (!fechado) mensagem('Não consegui mostrar este arquivo aqui.'); }
+    } catch (e) { if (!fechado) mensagem('Não consegui mostrar este arquivo aqui.', true, detalhe(e)); }
   })();
+
+  /* Se o pdf.js não conseguir (PDF com algo que ele não desenha), o leitor de PDF do próprio Chrome mostra o arquivo. */
+  function verPdfNativo(erro) {
+    if (fechado) return;
+    observador?.disconnect(); try { pdf?.destroy(); } catch { /* já liberado */ } pdf = null; redesenhar = null;
+    if (!url) url = URL.createObjectURL(new Blob([arquivo.buf], { type: 'application/pdf' }));
+    zoomBox.hidden = true; pag.textContent = '';
+    corpo.innerHTML = `<iframe class="vis-nativo" title="${esc(nome)}" src="${url}#view=FitH"></iframe>`;
+    // o foco fica fora do leitor do Chrome (ele pega o foco ao carregar), senão o Esc não chega aqui
+    const fx = raiz.querySelector('[data-vis="fechar"]'); fx.focus();
+    corpo.querySelector('iframe').addEventListener('load', () => setTimeout(() => { if (!fechado) fx.focus(); }, 300));
+    corpo.dataset.nativo = String(erro?.message || erro || '').slice(0, 140);   // só para o diagnóstico
+  }
 
   async function verPdf() {
     const pdfjs = await carregarPdfjs();
@@ -119,8 +154,10 @@ export function abrirVisualizador({ nome, subtitulo = '', obter, aoBaixar, aoPor
       await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
       if (!fechado && desenhados.get(i) === zoom) div.replaceChildren(cv);
     };
-    observador = new IntersectionObserver((ents) => ents.forEach(e => { if (e.isIntersecting) desenhar(e.target).catch(() => {}); }), { root: corpo, rootMargin: '600px 0px' });
     ajustarCaixas();
+    // a 1ª página desenha antes de mostrar: se ela falhar, vai para o leitor do Chrome (catch do chamador)
+    await desenhar(corpo.querySelector('.vis-pg'));
+    observador = new IntersectionObserver((ents) => ents.forEach(e => { if (e.isIntersecting) desenhar(e.target).catch(() => {}); }), { root: corpo, rootMargin: '600px 0px' });
     corpo.querySelectorAll('.vis-pg').forEach(d => observador.observe(d));
     const atual = () => { const topo = corpo.getBoundingClientRect().top; let k = 1; corpo.querySelectorAll('.vis-pg').forEach(d => { if (d.getBoundingClientRect().top - topo < corpo.clientHeight / 2) k = +d.dataset.pg; }); pag.textContent = n > 1 ? `Página ${k} de ${n}` : '1 página'; };
     corpo.addEventListener('scroll', atual, { passive: true }); atual();
