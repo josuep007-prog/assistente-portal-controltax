@@ -473,7 +473,7 @@ export function montarHoje(C) {
       viewEl.querySelectorAll('#hj-passos > li').forEach(li => { li.hidden = g !== 'tudo' && li.dataset.grupo !== g; });
     }));
     // números do dia → a lista filtrada
-    const filtrarSol = (motivo) => { Object.assign(S.plat.filtroSol, { motivo, tipo: '', q: '' }); A.setView('pendencias'); };
+    const filtrarSol = (motivo) => { Object.assign(S.plat.filtroSol, { motivo: motivo || null, tipo: '', q: '' }); A.setView('pendencias'); };
     viewEl.querySelectorAll('[data-kpi]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.kpi;
       if (k === 'espera') filtrarSol(cont.prescreve && !cont.responder ? 'prescreve' : cont.responder ? 'responder' : '');

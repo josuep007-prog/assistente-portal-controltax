@@ -3193,6 +3193,7 @@ async def teste_hoje_enxuto(b):
     check(await pn.locator('.hj-baixo .hj-equipe #eq-avisos').count() == 1 and await pn.locator('.hj-baixo #eq-movimento').count() == 1, 'Hoje 2.44: Equipe e Movimento lado a lado embaixo')
     await pn.click('.hj-kpi[data-kpi="atrasada"]'); await pg.wait_for_timeout(600)
     check(await pn.locator('.hj-sit[data-sit="atrasada"].on').count() == 1, 'Hoje 2.44: "Passaram da expectativa" abre as Solicitações filtradas')
+    await pn.click('.hj-sit[data-sit="atrasada"]'); await pg.wait_for_timeout(300)   # tira o filtro (as Solicitações abaixo começam sem ele)
     await pn.click('#rail [data-mod="inicio"]'); await pg.wait_for_timeout(900)
     # seções recolhíveis: estado coerente, padrão pela ação do cliente, escolha guardada só como ids → true/false
     info = await pn.evaluate("""() => [...document.querySelectorAll('.hj-painel')].map(s => { const b = s.querySelector('.hj-painel-bt'), c = s.querySelector(':scope > .hj-painel-c');
