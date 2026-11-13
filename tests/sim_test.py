@@ -1614,7 +1614,7 @@ async def teste_telas_do_setor(b):
     check(await pn.locator('.hs-env').count() == 0 and await pn.locator('.hj-hero').count() == 1, 'Pessoal: o Hoje de sempre')
     # 2.43: no Hoje do Pessoal, "Documentos do mês" dos outros setores leva à tela de envio do setor
     dm = await pn.locator('#hj-docsmes').inner_text()
-    check('Documentos do mês' in dm and 'Fiscal' in dm and 'Contábil' in dm, 'Hoje: cartão "Documentos do mês" com o Fiscal e o Contábil')
+    check('Documentos de' in dm and 'Fiscal' in dm and 'Contábil' in dm, 'Hoje: "Documentos de MM/AAAA" com o Fiscal e o Contábil na linha da saudação')
     await pn.click('[data-docs-setor="Contábil"]'); await pg.wait_for_timeout(1200)
     check(await pn.locator('.ph-setor.on').get_attribute('data-setor') == 'Contábil' and (await tit()) == 'Enviar documentos', 'Hoje: "Enviar ao Contábil" abre o envio do Contábil')
     # recados com setores: os do Pessoal (13º, férias coletivas) não aparecem no Contábil

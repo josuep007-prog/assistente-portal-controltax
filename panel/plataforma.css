@@ -1165,9 +1165,9 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .hs-ped { all: unset; box-sizing: border-box; padding: 6px 11px; border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--surface); font: 600 12px var(--f-body); color: var(--ink); cursor: pointer; }
 .hs-ped:hover { border-color: var(--blue-deep); background: var(--surface-2); }
 .hs-ped:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
-/* Documentos do mês no Hoje (2.43) */
-.docs-mes-l { display: grid; gap: 8px; }
-.docs-mes-i { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); }
-.docs-mes-i b { font: 600 13px var(--f-head); }
-.docs-mes-i small { flex: 1; }
-.docs-mes-i.st-atrasado { --c: #C2000C; } .docs-mes-i.st-parcial { --c: #D98E04; } .docs-mes-i.st-pendente { --c: #3C659B; }
+/* Documentos do mês no Hoje (2.43): pílulas na linha da saudação */
+.docs-mes { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.docs-mes-b { all: unset; box-sizing: border-box; padding: 3px 10px; border: 1px solid color-mix(in srgb, var(--c, var(--ink-3)) 50%, var(--rule)); border-radius: 999px; background: color-mix(in srgb, var(--c, var(--ink-3)) 12%, var(--surface)); font-size: 12px; color: var(--ink); cursor: pointer; }
+.docs-mes-b:hover { border-color: var(--c, var(--blue-deep)); }
+.docs-mes-b:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.docs-mes-b.st-atrasado { --c: #C2000C; } .docs-mes-b.st-parcial { --c: #D98E04; } .docs-mes-b.st-pendente { --c: #3C659B; }

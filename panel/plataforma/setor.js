@@ -78,8 +78,8 @@ export function montarSetor(C) {
     if (!el) return;
     const linhas = E.setoresAtivos(S.rules).filter(s => E.menuDoSetor(S.rules, s)).map(s => ({ s, r: C.resumoEnvio?.(s) })).filter(x => x.r?.temItens && ['pendente', 'parcial', 'atrasado'].includes(x.r.estado));
     if (!linhas.length) { el.innerHTML = ''; return; }
-    el.innerHTML = `<section class="pn-card docs-mes"><div class="pn-card-head"><h3>${icon('upload', 'ic-sm')} Documentos do mês</h3><small>Os documentos de ${esc(linhas[0].r.competencia)} que o escritório espera de você.</small></div>
-      <div class="pn-card-body"><div class="docs-mes-l">${linhas.map(({ s, r }) => `<div class="docs-mes-i st-${esc(r.estado)}"><span class="pill env-pill st-${esc(r.estado)}">${esc(r.rotulo)}</span><b>${esc(rot(s))}</b><small class="muted">${r.feitos} de ${r.total} obrigatórios${r.limite ? ` · até ${esc(fmt(r.limite))}` : ''}</small><button type="button" class="btn btn-sm" data-docs-setor="${esc(s)}">${icon('upload', 'ic-sm')} Enviar ao ${esc(rot(s))}</button></div>`).join('')}</div></div></section>`;
+    // compacto, na linha da saudação (não empurra o destaque nem as seções em telas baixas)
+    el.innerHTML = `<span class="docs-mes">${icon('upload', 'ic-sm')}<span>Documentos de ${esc(linhas[0].r.competencia)}:</span>${linhas.map(({ s, r }) => `<button type="button" class="docs-mes-b st-${esc(r.estado)}" data-docs-setor="${esc(s)}" title="${esc(`${r.feitos} de ${r.total} obrigatórios enviados${r.limite ? ` · enviar até ${fmt(r.limite)}` : ''} — abrir o envio do ${rot(s)}`)}"><b>${esc(rot(s))}</b> · ${esc(r.rotulo)}</button>`).join('')}</span>`;
     el.querySelectorAll('[data-docs-setor]').forEach(b => b.addEventListener('click', async () => { await C.trocarSetor?.(b.dataset.docsSetor); C.irEnviar?.(); }));
   }
 

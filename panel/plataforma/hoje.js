@@ -267,7 +267,7 @@ export function montarHoje(C) {
       <div id="avisos-esc"></div>
       <div id="lote"></div>
       ${enviado}${aviso}<div id="proximo"></div>
-      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}</p>
+      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}<span id="hj-docsmes"></span></p>
       <div class="dp-toolbar hj-barra">
         ${seletorEmpresa()}
         <span class="dp-count">${lido ? plural(base.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length, 'em aberto', 'em aberto') : ''}</span>
@@ -275,7 +275,6 @@ export function montarHoje(C) {
         <button type="button" class="btn btn-sm" id="hj-lembrete">${icon('plus', 'ic-sm')} Lembrete</button>
         <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
       </div>
-      <div id="hj-docsmes"></div>
       ${heroHtml()}
       ${equipeHtml()}
       ${casosHtml()}`;
