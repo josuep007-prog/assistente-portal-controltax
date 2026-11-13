@@ -140,7 +140,8 @@ function sendContext() {
   const tipo = r.slug ? tipoBySlug(r.slug) : null;
   const empresa = companyName(); notaEmpresa(empresa);
   if (navInterna) return;   // navegação feita pelo Assistente para buscar dados: a tela de quem usa não mudou
-  post({ type: 'context', route: r, tipo, empresa, empresaApelido: apelidoDaEmpresa(), versao: VERSAO, modo, form: r.mode === 'form' ? snapshot(tipo) : null, grade: gradeInfo() });
+  if (formSemPedido && currentPath() !== formSemPedido) formSemPedido = '';   // saiu dele: não vale mais
+  post({ type: 'context', route: r, tipo, empresa, empresaApelido: apelidoDaEmpresa(), versao: VERSAO, modo, form: r.mode === 'form' ? snapshot(tipo) : null, grade: gradeInfo(), formSemPedido: !!formSemPedido && r.mode === 'form' });
 }
 /* Texto do botão conforme a tela: no formulário, convida a preencher */
 function atualizarLauncher() {

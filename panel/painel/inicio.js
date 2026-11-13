@@ -247,7 +247,7 @@ export async function openTipo(tipo, { manter = false, semEmpresa = false, suger
   // com mais de uma empresa no acesso, pergunta para qual é o pedido e troca no portal antes de abrir o formulário
   // (se este pedido já está aberto, a empresa já foi escolhida)
   if (!semEmpresa && !(await empresaDoPedido(tipo, { sugerida }))) return false;
-  S.abrindo = tipo;
+  S.abrindo = tipo; S.formEscolhido = tipo;   // o cliente (ou o Assistente, por ele) escolheu este pedido
   await request({ type: 'navigate', slug: t.slug, add: true }, 12000);
   w(tipo);
   if (S.plat) S.plat.escolher = false;   // plataforma: mostra o formulário (mesmo se este pedido já estava aberto)

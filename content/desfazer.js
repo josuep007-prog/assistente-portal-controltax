@@ -266,6 +266,7 @@ async function waitForForm(ms) {
 
 async function navigate(slug, add) {
   const path = BASE + slug + (add ? '/add' : '');
+  if (!navInterna) formSemPedido = '';   // o cliente pediu este formulário pela extensão
   if (currentPath() === path) return;
   if (plat.navigate) plat.navigate(path);
   else {

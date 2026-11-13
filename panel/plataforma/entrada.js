@@ -27,7 +27,10 @@ export function montarEntrada(C) {
     atualizarCabecalho();
     badge('preencher', S.ctx.route?.mode === 'form' ? 1 : 0);
     const formAgora = S.ctx.route?.mode === 'form' ? `${S.ctx.route.path}|${S.ctx.tipo}` : '';
-    if (formAgora !== ultimoForm) { ultimoForm = formAgora; S.plat.escolher = false; }   // abriu (ou fechou) um formulário
+    if (formAgora !== ultimoForm) {   // abriu (ou fechou) um formulário
+      ultimoForm = formAgora; S.plat.escolher = false;
+      if (!formAgora) S.formEscolhido = null;   // saiu do formulário: a próxima escolha recomeça
+    }
     if (empresaMudou) { S.plat.empresaFiltro = ''; S.plat.sol = null; S.plat.emp = null; S.plat.docs = null; if (document.body.classList.contains('plat')) P.entrou(); }
   };
   /* Janela do portal (2.5.2): nunca fica fixa na tela. Aparece por cima quando é a resposta a algo que o cliente
