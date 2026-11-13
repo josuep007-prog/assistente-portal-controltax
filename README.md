@@ -106,7 +106,7 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 
 ## Novidades da 2.5
 
-- **Solicitações** no formato do escritório: cartões por tipo (`.tipo-c`, com "esperam você"), situações (`.hj-sit`) e cartões agrupados pela situação; Cartões, Lista ou Tabela (`ct.solVis`). O Hoje fica com o resumo (rosca, carrossel, próximos passos, Equipe, Atenção) e a rosca leva às Solicitações filtradas.
+- **Solicitações** no formato do escritório: cartões por tipo (`.tipo-c`, com "esperam você"), situações (`.hj-sit`) e cartões agrupados pela situação; Cartões, Lista ou Tabela (`ct.solVis`). O Hoje fica com o resumo (números do dia, "O que fazer agora", rosca, próximos prazos, Equipe, Movimento) e a rosca e os números levam às Solicitações filtradas.
 - **Várias empresas no mesmo login:** seletor com caixas de marcar (uma, várias ou todas; "só esta"; "Só a aberta no portal"), com quantas solicitações cada empresa tem em aberto e quantas esperam você. A escolha fica só na memória.
 - **Funcionários:** lista com rolagem e a busca fixa; ficha do funcionário (dados do portal em português, tempo de casa, período aquisitivo, experiência, solicitações em aberto e Histórico das encerradas, atalhos Pedir/Simular). Nada é guardado.
 - **Documentos:** "Nas solicitações" (arquivos dos trâmites, do escritório e os seus, por mês, com busca e filtro; lidos na hora, 40 solicitações por vez) e "Publicados pelo escritório" com categoria e competência.
@@ -140,7 +140,7 @@ Tudo lido na hora com o acesso do próprio portal e nunca guardado (só o veredi
 ## Novidades da 2.1 — Hoje
 
 Referências do **Control Onvio** (a extensão da visão do escritório, `josuep007-prog/Assistente-interno-portal-do-cliente-`) trazidas para a visão do cliente:
-- **Hoje** (no lugar do Painel), no formato da tela Hoje do Control Onvio: rosca de "% em dia" (do seu lado), "N solicitações esperam sua resposta", carrossel com um aviso por vez (a bolinha mostra que o portal foi lido), **próximos passos** (responder, lembretes de hoje, prazos dos próximos 3 dias), situações que filtram e cartões por motivo com o anel de dias parada — ou em lista.
+- **Hoje** (desde a 2.44): linha do dia com recados numa linha; cinco números do dia que abrem a lista filtrada; **O que fazer agora** — uma lista só, por prioridade, com abas (Tudo, Responder, Equipe, Acompanhar, Atenção) e o botão da ação em cada linha; coluna lateral com a situação, os próximos prazos e os documentos do mês; embaixo, Equipe, Movimento e Documentos novos. Antes (2.1–2.43), no formato da tela Hoje do Control Onvio: rosca de "% em dia" (do seu lado), "N solicitações esperam sua resposta", carrossel com um aviso por vez (a bolinha mostra que o portal foi lido), **próximos passos** (responder, lembretes de hoje, prazos dos próximos 3 dias), situações que filtram e cartões por motivo com o anel de dias parada — ou em lista.
 - **Motivos do cliente** (`E.MOTIVOS_CLIENTE`): responda antes de prescrever (faltam `config.prescricaoAvisoDias` dias dos 30), esperando sua resposta, passou da expectativa de conclusão, com o escritório e concluídas nos últimos 30 dias.
 - **Situações reais do Onvio:** o `genericStatus` tem sentido por família (padrão, cadastro, rubricas) — `config.statusSolicitacao.familias` nas regras, com quem está com a vez (você ou o escritório).
 - **Listas como o portal pede** (página 1 em diante, 200 por vez, com funcionário e responsável) e a **Solicitação Geral** (`service-requesting/v1/tickets/generic`).

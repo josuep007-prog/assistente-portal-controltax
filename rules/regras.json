@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.13-2",
+  "versao": "2026.11.13-3",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -473,6 +473,7 @@
     "hoje": {
       "_comentario": "Textos de ajuda do Hoje e das Solicitações (aparecem na dica ⓘ ao lado do título). Podem ser trocados sem nova versão.",
       "ajudas": {
+        "agora": "Tudo o que pede uma ação sua, numa lista só e na ordem de prioridade: responder o escritório, pedir cálculos, enviar documentos e o que pode atrasar o atendimento. Use as abas para ver um grupo de cada vez.",
         "folha": "As variáveis da folha (horas extras, faltas, comissões…) devem chegar ao escritório até o dia combinado de cada mês. Prepare o lançamento aqui e confira no portal antes de enviar.",
         "terminar": "Pedidos que você começou a preencher e não enviou nos últimos 7 dias, guardados só neste computador.",
         "legais": "Prazos da lei que dependem de você: pagamento dos cálculos de férias e de rescisão em aberto e o eSocial das admissões.",
