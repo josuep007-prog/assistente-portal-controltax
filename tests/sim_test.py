@@ -356,6 +356,17 @@ async def teste_plataforma(b):
     ok = await espera(lambda: pn.evaluate("!!document.querySelector('.vis .vis-pg canvas')"), 20)
     check(ok, 'visualizador: PDF que chega como texto base64 também abre')
     await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+    await pn.evaluate("""async () => { const V = await import('./visualizar.js'); const D = new Uint8Array(await (await fetch('../exemplos/atestado.pdf')).arrayBuffer());
+      let b = ''; for (const x of D) b += String.fromCharCode(x); const T = new TextEncoder().encode(JSON.stringify({ data: { content: btoa(b) } })).buffer;
+      V.abrirVisualizador({ nome: 'em json.pdf', obter: async () => ({ ok: true, arquivo: { buf: T, name: 'em json.pdf', type: 'application/json' } }) }); }""")
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.vis .vis-pg canvas')"), 20)
+    check(ok, 'visualizador: PDF que chega dentro de um JSON (base64) também abre')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+    await pn.evaluate("""async () => { const V = await import('./visualizar.js'); const T = new TextEncoder().encode('Acesso negado').buffer;
+      V.abrirVisualizador({ nome: 'guia.pdf', obter: async () => ({ ok: true, arquivo: { buf: T, name: 'guia.pdf', type: 'application/pdf' } }) }); }""")
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('.vis-corpo')?.innerText || '').includes('não é um PDF') && (document.querySelector('.vis-det')?.innerText || '').includes('Detalhe técnico')"), 10)
+    check(ok and 'não é PDF' in await pn.evaluate("import('./visualizar.js').then(m => m.diagnosticoVisualizador())"), 'visualizador: "PDF" que não é PDF explica com o detalhe técnico (e vai ao diagnóstico)')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
     await pn.evaluate("""async () => { const V = await import('./visualizar.js'); const D = new TextEncoder().encode('%PDF-1.4 arquivo quebrado').buffer;
       V.abrirVisualizador({ nome: 'quebrado.pdf', obter: async () => ({ ok: true, arquivo: { buf: D, name: 'quebrado.pdf', type: 'application/pdf' } }) }); }""")
     ok = await espera(lambda: pn.evaluate("!!document.querySelector('.vis .vis-nativo')"), 15)
@@ -523,7 +534,7 @@ async def teste_mecanica(b):
 
     # 15 e 2: cadastro na plataforma — campos fora das regras e só o campo mudado vai ao portal
     await abrir('employee-registration')
-    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#f-extra\\\\:eSocialRegistration') && [...document.querySelectorAll('.pf-grupo > summary')].some(s => s.textContent.includes('Outros campos do portal'))"), 10)
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('#f-extra\\\\:eSocialRegistration') && [...document.querySelectorAll('.pf-grupo > summary, .pf-grupo > .pf-grupo-t')].some(s => s.textContent.includes('Outros campos do portal'))"), 10)
     check(ok, 'campos do portal fora das regras aparecem em "Outros campos do portal"')
     await pn.evaluate("document.querySelectorAll('.pf-grupo').forEach(d => d.open = true)")
     await pn.fill('#f-extra\\:eSocialRegistration', 'ABC-77'); await pn.dispatch_event('#f-extra\\:eSocialRegistration', 'change')
@@ -871,7 +882,7 @@ async def teste_cadastro_dependentes(b):
         return False
     dica = await pn.evaluate("document.querySelector('[data-campo=municipio] .hint.bloq')?.innerText || ''")
     check(await pn.evaluate("document.querySelector('#f-municipio')?.disabled") and 'UF' in dica and 'funcionário' not in dica, f'Município bloqueado, com a dica de escolher a UF ({dica!r})')
-    if not await pn.evaluate("document.querySelector('[data-g=Pessoal]').open"): await pn.click('[data-g="Pessoal"] > summary')
+    check(await pn.locator('[data-g="Pessoal"] > summary').count() == 0 and await pn.locator('#f-uf').is_visible(), 'cadastro: o bloco Pessoal fica sempre aberto (sem abrir e fechar)')
     await pn.fill('#f-uf', 'SP'); await pn.dispatch_event('#f-uf', 'change')
     ok = await espera(lambda: pn.evaluate("document.querySelector('#f-municipio')?.disabled === false && !document.querySelector('[data-campo=municipio] .hint.bloq')"), 20)
     uf = await pg.evaluate("document.querySelector('[formcontrolname=addressState] input')?.value")
@@ -1722,28 +1733,17 @@ async def teste_blocos_cadastro(b):
     tarefa = asyncio.create_task(_auto())
     await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
     await pn.click('.pd-escolha .intent[data-tipo="cadastroEmpregado"]')
-    await pn.locator('details.pf-grupo').first.wait_for(state='attached', timeout=20000)
-    estado = lambda: pn.evaluate("[...document.querySelectorAll('details.pf-grupo')].map(d => d.open)")
-    n = len(await estado())
-    check(n >= 3, f'blocos: o cadastro tem vários blocos ({n})')
-    # a pessoa clica num bloco que estava fechado (cabeçalho) e depois num campo de dentro dele; o redesenho que vem do portal (etapas, listas)
-    # não pode fechar esse bloco nem abrir outros
-    await pn.evaluate("[...document.querySelectorAll('details.pf-grupo')].forEach((d, i) => { d.open = (i === 0); })"); await pg.wait_for_timeout(300)
-    alvo = pn.locator('details.pf-grupo').nth(1)
-    await alvo.locator('summary').click(); await pg.wait_for_timeout(300)
-    esperado = ''.join('1' if x else '0' for x in await estado())
-    await pn.evaluate("document.activeElement && document.activeElement.blur && document.activeElement.blur()")   # o foco sai do formulário (clicou em outro lugar)
-    seq = []
-    for r in range(6):
-        # o portal muda por baixo (um campo dele recebe um valor): o painel recebe o contexto novo e pode redesenhar o formulário
+    await pn.locator('.pf-grupo').first.wait_for(state='attached', timeout=20000)
+    # 2.45.2: no cadastro de empregado os blocos não abrem e fecham: todos à vista, só com o título; continuam assim depois de redesenhar
+    info = lambda: pn.evaluate("[document.querySelectorAll('.pf-grupo').length, document.querySelectorAll('details.pf-grupo').length, document.querySelectorAll('.pf-grupo-t').length, [...document.querySelectorAll('.pf-grupo .field.pf')].filter(f => !f.getClientRects().length).length]")
+    n, det, tit, escondidos = await info()
+    check(n >= 3 and det == 0 and tit == n and escondidos == 0, f'blocos: cadastro com {n} blocos sempre abertos, sem abrir/fechar e nenhum campo escondido ({det} recolhíveis, {escondidos} escondidos)')
+    for r in range(3):
         await pg.evaluate("""(r) => { const i = [...document.querySelectorAll('input[formcontrolname]:not([type=checkbox]):not([type=radio]):not([disabled])')].find(x => x.offsetParent !== null && x.type !== 'file');
           if (i) { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'TESTE ' + r); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); i.dispatchEvent(new Event('blur')); } }""", r)
         await pg.wait_for_timeout(900)
-        seq.append(await pn.evaluate("[[...document.querySelectorAll('details.pf-grupo')].map(d => d.open ? 1 : 0).join(''), (document.activeElement && document.activeElement.dataset && document.activeElement.dataset.k) || document.activeElement.tagName]"))
-    print('   sequência (blocos abertos, foco):', seq)
-    antes = seq[0]
-    depois = seq[-1]
-    check(all(x[0] == esperado for x in seq), f'blocos: depois de redesenhar, cada bloco continua como a pessoa deixou (esperado {esperado}; vistos {[x[0] for x in seq]})')
+    n2, det2, _, esc2 = await info()
+    check(det2 == 0 and esc2 == 0 and n2 == n, 'blocos: depois de redesenhar, continuam todos abertos')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()

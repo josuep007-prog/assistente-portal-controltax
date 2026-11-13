@@ -3,7 +3,7 @@
 import * as E from '../engine.js';
 import * as D from '../dados.js';
 import { criarZip, nomeNoZip } from '../zip.js';
-import { abrirVisualizador } from '../visualizar.js';
+import { abrirVisualizador, diagnosticoVisualizador } from '../visualizar.js';
 
 export function montarDocumentos(C) {
   const { A, S, $, esc, icon, request, send, toast, viewEl } = C;
@@ -171,6 +171,7 @@ export function montarDocumentos(C) {
     const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   };
+  (S.pv || (S.pv = {})).visDiag = diagnosticoVisualizador;   // o "Copiar diagnóstico" mostra o que o visualizador recebeu (só formato e tamanho)
   P.baixarDoEscritorio = baixarUm; P.entregarArquivo = entregar;   // também usados pelo cartão de documentos novos do Hoje
   /* Ver o documento dentro da extensão (2.45): baixa pelo mesmo caminho do Baixar e mostra no visualizador; nada é guardado. */
   P.verDocumento = (x) => {

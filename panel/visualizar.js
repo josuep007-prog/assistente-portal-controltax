@@ -13,6 +13,10 @@ const ICO = {
 };
 const ic = (k) => `<svg class="ic ic-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO[k]}</svg>`;
 
+/** O que aconteceu na última vez que o visualizador abriu um arquivo (só formato, tamanho e erro; para o "Copiar diagnóstico"). */
+let ultimoDiag = '';
+export const diagnosticoVisualizador = () => ultimoDiag;
+
 /** O tipo pelos primeiros bytes do arquivo ('pdf', 'imagem', 'zip', 'html', 'texto' ou ''). */
 export function formaDosBytes(buf) {
   const b = new Uint8Array(buf, 0, Math.min(1024, buf.byteLength));
@@ -103,30 +107,44 @@ export function abrirVisualizador({ nome, subtitulo = '', obter, aoBaixar, aoPor
     if (!r?.ok || !r.arquivo?.buf) { mensagem(`Não consegui abrir o documento: ${r?.motivo || 'sem resposta do portal'}.`, false); return; }
     arquivo = r.arquivo;
     if (!(arquivo.buf instanceof ArrayBuffer)) arquivo.buf = arquivo.buf?.buffer instanceof ArrayBuffer ? arquivo.buf.buffer.slice(arquivo.buf.byteOffset, arquivo.buf.byteOffset + arquivo.buf.byteLength) : await new Blob([arquivo.buf]).arrayBuffer();
+    // arquivo que chegou embrulhado em JSON (texto base64 dentro de um campo, ou uma string entre aspas): tira do embrulho
+    try {
+      const ini = new TextDecoder('utf-8').decode(new Uint8Array(arquivo.buf, 0, Math.min(1, arquivo.buf.byteLength)));
+      if (ini === '{' || ini === '"') {
+        const j = JSON.parse(new TextDecoder('utf-8').decode(arquivo.buf));
+        const achar = (o, d = 0) => { if (typeof o === 'string') return /^(JVBERi|iVBORw|\/9j\/|UEsDB)/.test(o) ? o : null; if (!o || typeof o !== 'object' || d > 4) return null; for (const v of Object.values(o)) { const r = achar(v, d + 1); if (r) return r; } return null; };
+        const b64 = achar(j);
+        if (b64) arquivo = { ...arquivo, buf: new TextEncoder().encode(b64).buffer, embrulho: 'json' };
+      }
+    } catch { /* não era JSON */ }
     // arquivo que chegou como texto base64 (ex.: "JVBERi0…" é um PDF): volta a ser binário
     try { const ini = new TextDecoder('ascii').decode(new Uint8Array(arquivo.buf, 0, Math.min(8, arquivo.buf.byteLength))); if (/^(JVBERi|iVBORw|\/9j\/)/.test(ini)) { const bin = atob(new TextDecoder('ascii').decode(arquivo.buf).replace(/\s+/g, '')); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); arquivo = { ...arquivo, buf: u.buffer }; } } catch { /* não era base64 */ }
     btBaixar.disabled = false;
     // o tipo vem dos primeiros bytes (o nome do Onvio nem sempre traz a extensão); o nome só decide quando os bytes não dizem
     const nomeArq = arquivo.name || nome, pelosBytes = formaDosBytes(arquivo.buf), forma = pelosBytes === 'pdf' || pelosBytes === 'imagem' ? pelosBytes : (formaDeVer(nomeArq, arquivo.type) || pelosBytes);
-    const detalhe = (e) => `Detalhe técnico: ${String(e?.message || e || 'erro').slice(0, 140)} · ${forma || 'tipo desconhecido'} · ${arquivo.buf.byteLength} bytes · começa com “${inicioLegivel(arquivo.buf)}”`;
+    const resumo = () => `${forma || 'tipo desconhecido'} · ${arquivo.buf.byteLength} bytes · começa com “${inicioLegivel(arquivo.buf)}” · bytes dizem ${pelosBytes || 'nada'} · tipo informado ${arquivo.type || '-'}${arquivo.embrulho ? ' · veio em JSON' : ''}`;
+    const detalhe = (e) => `Detalhe técnico: ${String(e?.message || e || 'erro').slice(0, 140)} · ${resumo()}`;
+    ultimoDiag = `aberto · ${resumo()}`;
     try {
-      if (forma === 'pdf') await verPdf().catch(e => verPdfNativo(e));
+      // PDF pelo nome, mas os bytes não são de PDF: nem o pdf.js nem o leitor do Chrome abrem; explica com o detalhe (para calibrar)
+      if (forma === 'pdf' && pelosBytes !== 'pdf') { ultimoDiag = `não é PDF · ${resumo()}`; mensagem('O arquivo que o portal entregou não é um PDF que dê para abrir.', true, detalhe('os bytes não são de PDF')); return; }
+      if (forma === 'pdf') await verPdf().catch(e => { ultimoDiag = `pdf.js falhou (${String(e?.message || e).slice(0, 80)}) · leitor do Chrome · ${resumo()}`; verPdfNativo(e, detalhe(e)); });
       else if (forma === 'imagem') verImagem();
       else if (forma === 'planilha') await verPlanilha(nomeArq);
       else if (forma === 'word') await verWord(nomeArq);
       else if (forma === 'texto') verTexto();
       else if (forma === 'html') mensagem('O portal devolveu uma página em vez do arquivo.', true, detalhe('página HTML'));
       else mensagem('Este tipo de arquivo não abre aqui na extensão.');
-    } catch (e) { if (!fechado) mensagem('Não consegui mostrar este arquivo aqui.', true, detalhe(e)); }
+    } catch (e) { ultimoDiag = `falhou (${String(e?.message || e).slice(0, 80)}) · ${resumo()}`; if (!fechado) mensagem('Não consegui mostrar este arquivo aqui.', true, detalhe(e)); }
   })();
 
   /* Se o pdf.js não conseguir (PDF com algo que ele não desenha), o leitor de PDF do próprio Chrome mostra o arquivo. */
-  function verPdfNativo(erro) {
+  function verPdfNativo(erro, det = '') {
     if (fechado) return;
     observador?.disconnect(); try { pdf?.destroy(); } catch { /* já liberado */ } pdf = null; redesenhar = null;
     if (!url) url = URL.createObjectURL(new Blob([arquivo.buf], { type: 'application/pdf' }));
     zoomBox.hidden = true; pag.textContent = '';
-    corpo.innerHTML = `<iframe class="vis-nativo" title="${esc(nome)}" src="${url}#view=FitH"></iframe>`;
+    corpo.innerHTML = `${det ? `<small class="vis-det vis-det-faixa">${esc(det)}</small>` : ''}<iframe class="vis-nativo" title="${esc(nome)}" src="${url}#view=FitH"></iframe>`;
     // o foco fica fora do leitor do Chrome (ele pega o foco ao carregar), senão o Esc não chega aqui
     const fx = raiz.querySelector('[data-vis="fechar"]'); fx.focus();
     corpo.querySelector('iframe').addEventListener('load', () => setTimeout(() => { if (!fechado) fx.focus(); }, 300));
