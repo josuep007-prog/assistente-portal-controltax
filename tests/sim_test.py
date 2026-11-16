@@ -118,6 +118,8 @@ async def teste_plataforma(b):
     check('VANESSA PRADO' in await pn.locator('#eq-exp').inner_text(), 'Hoje: experiência vencendo')
     check(await pn.locator('#eq-ferias .eq-li').count() >= 1, 'Hoje: férias a vencer')
     # cartão estreito (4 colunas numa tela larga): nada passa da borda; com mais de 5 itens, a lista rola
+    # (a seção só abre sozinha com férias a conceder em até 30 dias, o que depende da data de hoje: abre para medir)
+    if await pn.locator('#eq-ferias .hj-painel-bt[aria-expanded="false"]').count(): await pn.click('#eq-ferias .hj-painel-bt'); await pg.wait_for_timeout(300)
     cabe = await pn.evaluate("""(() => { const c = document.querySelector('#eq-ferias'); c.style.width = '300px';
       const r = c.getBoundingClientRect(); const ok = [...c.querySelectorAll('.eq-li .btn, .eq-li .pill')].every(b => b.getBoundingClientRect().right <= r.right + 1);
       c.style.width = ''; return ok; })()""")
@@ -695,6 +697,8 @@ async def teste_lote4(b):
     await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(500)
     check(await pn.locator('#eq-exp .eq-li', has_text='VANESSA PRADO').count() == 0, 'Efetivar: dispensa o aviso da experiência')
     # 21: "Programar" férias a vencer → aviso com a 1ª data que vale, pagamento e data do aviso calculados
+    # (a seção só abre sozinha com férias a conceder em até 30 dias, o que depende da data de hoje)
+    if await pn.locator('#eq-ferias .hj-painel-bt[aria-expanded="false"]').count(): await pn.click('#eq-ferias .hj-painel-bt'); await pg.wait_for_timeout(300)
     await pn.locator('#eq-ferias .eq-li').first.locator('[data-eq]').click()
     async def programado():
         v = await portal(); return bool(v.get('vacationStartDate')) and bool(v.get('paymentDate')) and v.get('noticeDate') == br(hoje)
