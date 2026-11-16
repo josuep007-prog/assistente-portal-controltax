@@ -43,6 +43,10 @@ Extensão do Chrome que age **por cima** do Onvio Portal do Cliente (visão do c
 - **Lote por pessoa** (`E.montarPedidosLote`); **PDF com vários documentos** (`config.ocrMaxPaginas`).
 - **ASO** escolhe o pedido (`tipoPorExame`, `config.aso`); **regra dos 60 dias** (`config.regra60dias`, pergunta ligada por padrão); **recorte da foto** (`config.recorteLeitura`). Itens marcados `revisarComEscritorio`.
 
+## Novidades da 2.46 — Enviar documentos lê e separa por item
+
+- No Fiscal e no Contábil, em **Enviar documentos**, solte todos os arquivos do mês de uma vez: a extensão lê no computador (XML de nota, ZIP de XMLs, PDF com texto, planilhas), coloca cada um no item certo e avisa o que parece de outro mês, de outra empresa, de outro setor ou repetido. O que não reconhecer fica para o cliente escolher. Palavras de cada item em `documentosCliente.itens[].reconhecer`; nada é guardado.
+
 ## Novidades da 2.45 — ver documentos na extensão
 
 - Em **Documentos → Publicados pelo escritório**, clicar no documento (ou em **Ver**) abre o arquivo dentro da extensão, sem baixar: PDF (com zoom e páginas), imagens, planilhas (com as abas), Word/ODT (texto) e texto/XML. O que não abre ali oferece **Baixar**. Esc ou X fecham. No Hoje, o cartão **Documentos novos** abre o mesmo visualizador.

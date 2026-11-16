@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.13-5",
+  "versao": "2026.11.16-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -126,6 +126,30 @@
         "limiteDia": 10,
         "mesesVisiveis": 12,
         "copiaParaOutroSetor": "Cópia da solicitação enviada ao {setor}.",
+        "leitura": {
+          "ativo": true,
+          "_comentario": "2.46: a extensão lê no computador do cliente os arquivos soltos em Enviar documentos (XML de nota e PDF com texto; fotos e escaneados ficam para a fase 2) e coloca cada um no item certo. As palavras de cada item ficam em itens[].reconhecer (fortes valem 3, comuns 1; excluir zera). Nada é guardado.",
+          "pontosMinimos": 3,
+          "maxPaginas": 3,
+          "nf": {
+            "saida": "nf-saida",
+            "entrada": "nf-entrada",
+            "servicoPrestado": "nf-saida",
+            "servicoTomado": "nf-servicos-tomados"
+          },
+          "textos": {
+            "solte": "Solte aqui todos os documentos do mês: eu leio no seu computador e separo por item.",
+            "outraEmpresa": "Esta nota é da empresa {outra}, não da {empresa}.",
+            "empresaNaoCitada": "Não achei a {empresa} nesta nota ({partes}). Confira se ela é desta empresa.",
+            "empresaNaoCitadaPdf": "Parece uma nota fiscal, mas não achei a {empresa} nela. Confira se é desta empresa e escolha o item.",
+            "outraEmpresaPdf": "Este documento cita a empresa {outra}, não a {empresa}.",
+            "outroSetor": "Parece ser “{rotulo}”, que vai para o {setores}.",
+            "outraCompetencia": "Este documento parece ser de {doc}, e você está enviando a competência {comp}.",
+            "repetido": "Este arquivo repete {outro} (mesmo conteúdo ou a mesma nota).",
+            "naoReconheci": "Não reconheci estes arquivos: escolha o item de cada um.",
+            "semTexto": "imagem ou PDF escaneado (sem texto): escolha o item"
+          }
+        },
         "textos": {
           "enviados": "Documentos enviados nesta solicitação:",
           "faltam": "Ainda vou enviar:",
@@ -136,6 +160,7 @@
         "itens": [
           {
             "id": "nf-saida",
+            "reconhecer": {"fortes": ["danfe", "documento auxiliar da nota fiscal", "nota fiscal de serviço eletrônica", "nota fiscal de servicos eletronica", "nfs-e", "nf-e"], "palavras": ["chave de acesso", "emitente", "destinatário", "prestador de serviços", "tomador de serviços", "valor total da nota", "natureza da operação"]},
             "rotulo": "Notas fiscais de saída e de serviços prestados",
             "setores": [
               "Fiscal"
@@ -164,6 +189,7 @@
           },
           {
             "id": "vendas-cartao",
+            "reconhecer": {"fortes": ["relatório de vendas", "extrato de vendas", "vendas por cartão", "maquininha", "cielo", "getnet", "pagseguro", "sumup", "stone pagamentos", "rede s.a", "mercado pago"], "palavras": ["bandeira", "débito", "crédito", "mdr", "recebíveis", "antecipação", "valor bruto", "valor líquido", "pix", "parcelado"]},
             "rotulo": "Relatório de vendas por cartão e PIX",
             "setores": [
               "Fiscal",
@@ -175,6 +201,7 @@
           },
           {
             "id": "impostos-pagos",
+            "reconhecer": {"fortes": ["documento de arrecadação", "darf", "das - documento", "simples nacional", "guia da previdência", "gps", "gare", "dctfweb", "guia do fgts", "fgts digital", "darj", "dam"], "palavras": ["comprovante de pagamento", "código de barras", "período de apuração", "receita federal", "tributo", "competência", "autenticação"]},
             "rotulo": "Comprovantes dos impostos pagos",
             "setores": [
               "Fiscal",
@@ -186,6 +213,7 @@
           },
           {
             "id": "extratos",
+            "reconhecer": {"fortes": ["extrato de conta", "extrato bancário", "extrato conta corrente", "saldo anterior", "extrato mensal"], "palavras": ["agência", "conta corrente", "saldo", "lançamentos", "histórico", "saldo do dia", "banco"], "excluir": ["fatura do cartão", "pagamento mínimo"]},
             "rotulo": "Extratos bancários de todas as contas",
             "setores": [
               "Contábil"
@@ -195,6 +223,7 @@
           },
           {
             "id": "cartao-empresa",
+            "reconhecer": {"fortes": ["fatura do cartão", "fatura cartão", "pagamento mínimo", "limite de crédito", "total da fatura"], "palavras": ["vencimento", "cartão de crédito", "compras", "anuidade", "encargos"]},
             "rotulo": "Faturas do cartão de crédito da empresa",
             "setores": [
               "Contábil"
@@ -205,6 +234,7 @@
           },
           {
             "id": "pagamentos",
+            "reconhecer": {"fortes": ["comprovante de transferência", "comprovante pix", "comprovante de pagamento de boleto", "recibo de pagamento"], "palavras": ["comprovante", "pagador", "favorecido", "beneficiário", "ted", "pix", "autenticação"], "excluir": ["documento de arrecadação", "darf", "simples nacional", "dctfweb"]},
             "rotulo": "Comprovantes de pagamentos e recebimentos",
             "setores": [
               "Contábil"
@@ -215,6 +245,7 @@
           },
           {
             "id": "caixa",
+            "reconhecer": {"fortes": ["controle de caixa", "livro caixa", "fluxo de caixa", "movimento de caixa"], "palavras": ["entradas", "saídas", "saldo em dinheiro", "sangria", "suprimento"]},
             "rotulo": "Controle de caixa (dinheiro)",
             "setores": [
               "Contábil"
@@ -225,6 +256,7 @@
           },
           {
             "id": "contratos",
+            "reconhecer": {"fortes": ["contrato de", "instrumento particular", "cédula de crédito", "termo aditivo"], "palavras": ["cláusula", "contratante", "contratada", "locador", "locatário", "financiamento", "empréstimo", "parcelas", "testemunhas"]},
             "rotulo": "Contratos novos (empréstimo, financiamento, aluguel)",
             "setores": [
               "Contábil"
@@ -235,6 +267,7 @@
           },
           {
             "id": "inventario",
+            "reconhecer": {"fortes": ["inventário", "registro de inventário"], "palavras": ["estoque", "quantidade", "valor unitário", "31/12"]},
             "rotulo": "Inventário de estoque em 31/12",
             "setores": [
               "Fiscal",
@@ -246,6 +279,7 @@
           },
           {
             "id": "informes-socios",
+            "reconhecer": {"fortes": ["informe de rendimentos", "comprovante de rendimentos", "informe de rendimento"], "palavras": ["ano-calendário", "imposto de renda retido", "rendimentos", "saldo em 31/12"]},
             "rotulo": "Informes de rendimentos e saldos em 31/12",
             "setores": [
               "Contábil"

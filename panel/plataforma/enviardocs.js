@@ -4,6 +4,7 @@
  * Os arquivos ficam só na memória até o envio; no computador fica guardado apenas o que foi marcado (empresa, competência, id do item,
  * quantidade e data) — nunca nomes de arquivos. Quem envia é sempre o cliente, pelo resumo "Conferir e enviar". */
 import * as E from '../engine.js';
+import { readFile, carregarXlsx } from '../extract.js';
 
 export function montarEnviardocs(C) {
   const { A, S, $, esc, icon, toast, viewEl } = C;
@@ -14,7 +15,8 @@ export function montarEnviardocs(C) {
   const rot = (s) => E.setorDef(S.rules, s).rotulo || s;
   const setorDoDepartamento = (dep) => E.setorDaSolicitacao({ departamento: dep }, S.rules) || '';
 
-  const env = S.plat.env = { competencia: '', arquivos: new Map(), enviados: {}, naoAplica: [], pronto: false };
+  // leituras (2.46): File → { estado: 'lendo'|'ok'|'semTexto', analise, hash, auto, ok } — só na memória, some com o arquivo
+  const env = S.plat.env = { competencia: '', arquivos: new Map(), enviados: {}, naoAplica: [], pronto: false, leituras: new Map(), semItem: new Map(), lendo: null };
   chrome.storage.local.get(['enviosDocs', 'docsNaoSeAplica']).then(({ enviosDocs, docsNaoSeAplica }) => {
     env.enviados = enviosDocs && typeof enviosDocs === 'object' ? enviosDocs : {};
     env.naoAplica = Array.isArray(docsNaoSeAplica) ? docsNaoSeAplica : [];
@@ -30,6 +32,90 @@ export function montarEnviardocs(C) {
   const fixaDe = (id) => env.naoAplica.includes(`${empresa()}|${id}`);
   const doMesDe = (comp, id) => env.naoAplica.includes(`${empresa()}|${comp}|${id}`);
   const fixas = () => (cfg().itens || []).map(i => i.id).filter(fixaDe);
+  /* ---------- leitura dos arquivos (2.46, fase 1: XML de nota, ZIP de XMLs e PDF/planilha com texto; sem OCR) ---------- */
+  const leituraAtiva = () => !!cfg().leitura && cfg().leitura.ativo !== false;
+  const TL = () => cfg().leitura?.textos || {};
+  const chaveSem = (setor, comp) => `${empresa()}|${setor}|${comp}`;
+  const semItemDe = (setor, comp) => env.semItem.get(chaveSem(setor, comp)) || [];
+  const extDe = (n) => (/\.([a-z0-9]{1,5})$/i.exec(n || '') || [])[1]?.toLowerCase() || '';
+  const mesmo = (a, b) => a === b || (a.name === b.name && a.size === b.size && a.lastModified === b.lastModified);
+  async function hashDe(buf) { try { const h = await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(h)].slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join(''); } catch { return ''; } }
+  /** Lê um arquivo no computador do cliente e diz em que item ele cai (nada sai daqui nem fica guardado). */
+  async function analisarArquivo(f, ctx) {
+    const x = extDe(f.name), buf = await f.arrayBuffer(), hash = await hashDe(buf);
+    const dec = (u8) => new TextDecoder('utf-8').decode(u8);
+    if (x === 'xml') return { hash, analise: E.analisarDocumentoCliente({ nome: f.name, xml: dec(buf) }, S.rules, ctx) };
+    if (x === 'zip') {   // ZIP de notas (XML): lê cada nota de dentro; o ZIP vai inteiro para o escritório
+      const XLSX = await carregarXlsx();
+      const cfb = XLSX.CFB.read(new Uint8Array(buf), { type: 'array' });
+      const xs = cfb.FileIndex.filter(e => /\.xml$/i.test(e.name) && e.content?.length).slice(0, 1000)
+        .map(e => E.analisarDocumentoCliente({ nome: e.name, xml: dec(e.content instanceof Uint8Array ? e.content : new Uint8Array(e.content)) }, S.rules, ctx));
+      const r = E.resumirVarias(xs);
+      return r ? { hash, analise: r } : { hash, semTexto: true };
+    }
+    if (/^(pdf|xlsx|xls|csv|ods|txt|docx|odt)$/.test(x)) {
+      const r = await readFile(f, null, { ocr: false });
+      const texto = String(r?.texto || '').trim();
+      if (texto.length < 40) return { hash, semTexto: true };   // imagem dentro do PDF (escaneado): fica para a fase do OCR
+      return { hash, analise: E.analisarDocumentoCliente({ nome: f.name, texto }, S.rules, ctx) };
+    }
+    return { hash, semTexto: true };
+  }
+  function ctxAnalise(setor, comp, itens) {
+    const outras = (P.empresasDoLogin?.() || []).map(e => e.nome).filter(n => n && n !== empresa());
+    const cnpj = (S.plat.sol?.itens || []).find(i => i.empresa === empresa() && i.empresaCnpj)?.empresaCnpj || '';
+    return { empresa: empresa(), empresaCnpj: cnpj, outrasEmpresas: outras, competencia: comp, itensDoSetor: itens, setor };
+  }
+  /** Tira o arquivo de onde ele estiver (itens e "não reconhecidos", de qualquer competência). */
+  function tirarDeTudo(f) {
+    for (const [k, l] of [...env.arquivos]) if (l.includes(f)) { const n = l.filter(x => x !== f); if (n.length) env.arquivos.set(k, n); else env.arquivos.delete(k); }
+    for (const [k, l] of [...env.semItem]) if (l.includes(f)) { const n = l.filter(x => x !== f); if (n.length) env.semItem.set(k, n); else env.semItem.delete(k); }
+  }
+  const porNoItem = (comp, id, f) => { tirarDeTudo(f); const k = chaveArq(comp, id); env.arquivos.set(k, [...(env.arquivos.get(k) || []), f]); };
+  const porSemItem = (setor, comp, f) => { tirarDeTudo(f); const k = chaveSem(setor, comp); env.semItem.set(k, [...(env.semItem.get(k) || []), f]); };
+  const tirarArquivo = (f) => { tirarDeTudo(f); env.leituras.delete(f); };
+  /** Junta arquivos ao envio. Sem item (soltos na área geral): a leitura escolhe o item; com item: vai para ele e a leitura só confere. */
+  async function lerParaEnvio(files, setor, comp, itemFixo = null) {
+    const ja = [...env.arquivos.values(), ...env.semItem.values()].flat();
+    const novos = [...files].filter(f => f && f.size && !ja.some(x => mesmo(x, f)));
+    if (!novos.length) return;
+    for (const f of novos) {
+      if (itemFixo) porNoItem(comp, itemFixo, f); else porSemItem(setor, comp, f);
+      env.leituras.set(f, { estado: leituraAtiva() ? 'lendo' : 'ok', auto: false });
+    }
+    if (!leituraAtiva()) { renderEnviar(); return; }
+    const itens = E.itensDoSetor(S.rules, setor, comp, { naoSeAplica: fixas() });
+    const ctx = ctxAnalise(setor, comp, itens);
+    env.lendo = { n: 0, m: novos.length + (env.lendo ? env.lendo.m - env.lendo.n : 0) };
+    renderEnviar();
+    for (const f of novos) {
+      let r; try { r = await analisarArquivo(f, ctx); } catch { r = { semTexto: true }; }
+      const info = env.leituras.get(f);
+      if (info) {   // pode ter sido tirado enquanto lia
+        Object.assign(info, { estado: r.semTexto ? 'semTexto' : 'ok', analise: r.analise || null, hash: r.hash || '' });
+        const alvo = r.analise?.item;
+        if (!itemFixo && alvo && itens.some(i => i.id === alvo) && !doMesDe(comp, alvo) && semItemDe(setor, comp).includes(f)) { porNoItem(comp, alvo, f); info.auto = true; }
+      }
+      if (env.lendo) env.lendo.n++;
+      if (S.view === 'enviar') renderEnviar();
+    }
+    if (env.lendo && env.lendo.n >= env.lendo.m) env.lendo = null;
+    if (S.view === 'enviar') renderEnviar();
+  }
+  // soltar em qualquer lugar da tela Enviar documentos = soltar na área geral (só com a leitura ligada nas regras)
+  P.soltarNoEnvio = (files) => { if (leituraAtiva() && files?.length) lerParaEnvio(files, setorAtual(), env.competencia); };
+  /** Avisos dos arquivos desta competência: outro mês, outra empresa, outro setor e repetidos (mesmo conteúdo ou mesma nota). */
+  function avisosDoMes(setor, comp, itens) {
+    const lista = [...itens.flatMap(it => arquivosDe(comp, it.id).map(f => ({ f, item: it.id }))), ...semItemDe(setor, comp).map(f => ({ f, item: null }))];
+    const out = [];
+    const rep = E.notasRepetidas(lista.map(({ f }) => { const a = env.leituras.get(f)?.analise; return { id: f, chaves: [env.leituras.get(f)?.hash, ...(a?.chaves || (a?.chave ? [a.chave] : []))].filter(Boolean) }; }));
+    for (const { f, item } of lista) {
+      const info = env.leituras.get(f); if (!info || info.ok) continue;
+      for (const av of info.analise?.avisos || []) if (av.tipo !== 'outroSetor' || item) out.push({ f, item, av });
+      if (rep.has(f)) out.push({ f, item, av: { tipo: 'repetido', texto: (TL().repetido || 'Este arquivo repete {outro}.').replace('{outro}', `“${rep.get(f).name}”`) } });
+    }
+    return out;
+  }
   const gravarNaoAplica = () => chrome.storage.local.set({ docsNaoSeAplica: env.naoAplica = env.naoAplica.slice(-MAX_CHAVES) });
   /** O que já foi enviado desta competência para o setor (deste computador). */
   function enviadosDoSetor(comp, setor) {
@@ -74,6 +160,18 @@ export function montarEnviardocs(C) {
     const emps = P.empresasDoLogin?.() || [];
     const T = cfg().textos || {};
 
+    // opções para mudar o arquivo de item (só os itens desta competência que não foram dispensados)
+    const opcoesItens = (atualId) => atual.itens.filter(i => !doMesDe(comp, i.id)).map(i => `<option value="${esc(i.id)}"${i.id === atualId ? ' selected' : ''}>${esc(i.rotulo)}</option>`).join('');
+    const rotLeitura = (f) => {
+      const info = env.leituras.get(f); if (!info) return '';
+      if (info.estado === 'lendo') return `<small class="env-lido lendo">${icon('refresh', 'ic-sm')} lendo…</small>`;
+      if (info.estado === 'semTexto') return `<small class="env-lido">${esc(TL().semTexto || 'imagem ou PDF escaneado (sem texto)')}</small>`;
+      const a = info.analise; if (!a) return '';
+      return `<small class="env-lido">${info.auto ? '<span class="chip ok">reconhecido</span>' : ''}${esc(a.resumo || '')}</small>`;
+    };
+    const chipArquivo = (f, i, itemId) => `<div class="env-arq" title="${esc(f.name)}">${icon('clip', 'ic-sm')}<span class="env-arq-n">${esc(f.name)}</span>${rotLeitura(f)}
+      ${leituraAtiva() ? `<select class="env-mover" data-mover-de="${esc(itemId || '')}" data-i="${i}" aria-label="Mudar ${esc(f.name)} de item"><option value="" disabled>Mudar para…</option>${opcoesItens(itemId)}</select>` : ''}
+      <button type="button" class="icon-btn" data-tirar="${i}" aria-label="Tirar ${esc(f.name)}">${icon('x', 'ic-sm')}</button></div>`;
     const linha = (it) => {
       const arqs = arquivosDe(comp, it.id), env1 = enviados[it.id], disp = doMesDe(comp, it.id);
       const estado = disp ? 'disp' : arqs.length ? 'pronto' : env1 ? 'ok' : '';
@@ -83,7 +181,7 @@ export function montarEnviardocs(C) {
           <div class="env-i-t"><b>${esc(it.rotulo)}</b>${it.obrigatorio ? '' : '<span class="chip">opcional</span>'}${(it.setores || []).filter(s => s !== setor).map(s => `<span class="chip info" title="Este documento também serve ao ${esc(s)}">também ${esc(E.setorDef(S.rules, s).rotulo || s)}</span>`).join('')}</div>
           ${it.dica ? `<small class="env-dica">${esc(it.dica)}</small>` : ''}
           ${env1 ? `<small class="env-ok">${icon('check', 'ic-sm')} Enviado em ${esc(E.fmtDate(new Date(env1.quando)))} (${plural(env1.n || 1, 'arquivo', 'arquivos')}). Pode anexar mais e enviar um complemento.</small>` : ''}
-          ${arqs.length ? `<div class="env-arqs">${arqs.map((f, i) => `<span class="env-arq" title="${esc(f.name)}">${icon('clip', 'ic-sm')}<span>${esc(f.name)}</span><button type="button" class="icon-btn" data-tirar="${i}" aria-label="Tirar ${esc(f.name)}">${icon('x', 'ic-sm')}</button></span>`).join('')}</div>` : ''}
+          ${arqs.length ? `<div class="env-arqs">${arqs.map((f, i) => chipArquivo(f, i, it.id)).join('')}</div>` : ''}
         </div>
         <div class="env-i-ac">
           ${disp ? '' : `<button type="button" class="btn btn-sm" data-anexar>${icon('upload', 'ic-sm')} ${arqs.length ? 'Anexar mais' : 'Anexar'}</button><input type="file" multiple hidden>`}
@@ -101,6 +199,10 @@ export function montarEnviardocs(C) {
     const chaveTambem = `${empresa()}|${setor}|${comp}`;
     const tambem = (env.tambem?.chave === chaveTambem ? env.tambem.setores : sugeridos).filter(s => outrosSetores.includes(s));
     const dispensadosFixos = (cfg().itens || []).filter(i => (i.setores || []).includes(setor) && fixaDe(i.id));
+    const semItem = semItemDe(setor, comp);
+    const avisos = leituraAtiva() ? avisosDoMes(setor, comp, atual.itens) : [];
+    const lendoAgora = [...atual.itens.flatMap(it => arquivosDe(comp, it.id)), ...semItem].some(f => env.leituras.get(f)?.estado === 'lendo');
+    const guardarRolagem = viewEl.scrollTop;
 
     viewEl.innerHTML = `
       <div class="env-topo">
@@ -115,11 +217,23 @@ export function montarEnviardocs(C) {
         <div class="pn-card-head"><h3>Competência ${esc(comp)}</h3><span class="pill env-pill st-${atual.sit.estado}">${esc(ROT[atual.sit.estado] || 'Em andamento')}</span>
           <small>${atual.c.limite ? `Enviar até ${esc(E.fmtDate(atual.c.limite))}` : ''}${atual.sit.total ? ` · ${atual.sit.feitos} de ${atual.sit.total} ${atual.sit.total === 1 ? 'documento obrigatório enviado' : 'documentos obrigatórios enviados'}` : ''}${doPortal.length ? ` · no portal: solicitação nº ${esc(doPortal.map(x => x.numero).filter(Boolean).join(', ') || '—')}` : ''}</small></div>
         ${atual.sit.semDetalhe ? `<div class="aviso-linha">${icon('info')}<span>Esta competência já foi enviada (solicitação nº ${esc(doPortal[0]?.numero || '')} no portal), provavelmente em outro computador. Aqui não tenho o detalhe de quais documentos foram.</span></div>` : ''}
+        ${leituraAtiva() ? `<div class="env-solta" id="env-solta" role="button" tabindex="0">${icon('upload')}<div><b>${esc(TL().solte || 'Solte aqui todos os documentos do mês: eu leio no seu computador e separo por item.')}</b><small>XML de nota fiscal (ou um ZIP com elas), PDF, planilha… Ou clique para escolher. Você confere tudo antes de enviar.</small></div><input type="file" multiple hidden id="env-solta-inp"></div>
+          ${env.lendo ? `<div class="env-lendo" role="status">${icon('refresh', 'ic-sm')} Lendo os arquivos… ${env.lendo.n} de ${env.lendo.m}</div>` : ''}` : ''}
+        ${semItem.length ? `<div class="env-sem"><h4>${esc(TL().naoReconheci || 'Não reconheci estes arquivos: escolha o item de cada um.')}</h4>${semItem.map((f, i) => {
+          const info = env.leituras.get(f), os = info?.analise?.outroSetor;
+          return `<div class="env-arq env-sem-i">${icon('clip', 'ic-sm')}<span class="env-arq-n">${esc(f.name)}</span>${info?.estado === 'lendo' ? rotLeitura(f) : `<small class="env-lido">${esc(os ? `Parece ser “${os.rotulo}” (${os.setores.join(' e ')})` : info?.estado === 'semTexto' ? (TL().semTexto || 'sem texto') : (info?.analise?.resumo || 'não reconhecido'))}</small>`}
+            <select class="env-mover" data-sem="${i}" aria-label="Escolher o item de ${esc(f.name)}"><option value="" selected disabled>Escolha o item…</option>${opcoesItens('')}</select>
+            <button type="button" class="icon-btn" data-sem-tirar="${i}" aria-label="Tirar ${esc(f.name)}">${icon('x', 'ic-sm')}</button></div>`;
+        }).join('')}</div>` : ''}
+        ${avisos.length ? `<div class="env-avisos" id="env-avisos"><h4>${icon('alert', 'ic-sm')} Confira antes de enviar</h4>${avisos.map((a, n) => `<div class="env-av env-av-${esc(a.av.tipo)}"><div><b>${esc(a.f.name)}</b><span>${esc(a.av.texto)}</span></div><div class="env-av-ac">
+            ${a.av.tipo === 'competencia' && comps.some(c => c.competencia === a.av.competencia) ? `<button type="button" class="btn btn-sm" data-av-mover="${n}">Mover para ${esc(a.av.competencia)}</button>` : ''}
+            ${['empresa', 'repetido'].includes(a.av.tipo) ? `<button type="button" class="btn btn-sm" data-av-tirar="${n}">Tirar</button>` : ''}
+            <button type="button" class="btn btn-sm btn-ghost" data-av-ok="${n}">Está certo</button></div></div>`).join('')}</div>` : ''}
         <div class="env-lista">${atual.itens.map(linha).join('') || '<p class="muted" style="margin:12px 14px">Nenhum documento nesta competência.</p>'}</div>
         ${outrosSetores.length ? `<div class="copia-setores env-tambem"><span>${icon('copy', 'ic-sm')} Enviar também para:</span>${outrosSetores.map(s => `<label><input type="checkbox" data-tambem="${esc(s)}" ${tambem.includes(s) ? 'checked' : ''}> ${esc(rot(s))}</label>`).join('')}<small class="muted">Depois que o portal salvar a solicitação do ${esc(def.rotulo || setor)}, eu abro uma cópia para cada setor marcado, com o mesmo assunto, a mesma lista e os mesmos anexos. Você confere e envia cada uma.</small></div>` : ''}
         <div class="env-rodape">
-          <span class="muted" id="env-resumo">${nArq ? `${plural(nArq, 'arquivo', 'arquivos')} em ${plural(comArq.length, 'item', 'itens')}${faltam.length ? ` · ainda falta: ${esc(faltam.map(f => f.rotulo).join('; '))}` : ''}` : 'Anexe os documentos e envie tudo de uma vez (ou em partes).'}</span>
-          <button type="button" class="btn btn-primary" id="env-enviar" ${nArq ? '' : 'disabled'}>${icon('fill', 'ic-sm')} Enviar ao escritório</button>
+          <span class="muted" id="env-resumo">${nArq ? `${plural(nArq, 'arquivo', 'arquivos')} em ${plural(comArq.length, 'item', 'itens')}${faltam.length ? ` · ainda falta: ${esc(faltam.map(f => f.rotulo).join('; '))}` : ''}` : 'Anexe os documentos e envie tudo de uma vez (ou em partes).'}${semItem.length ? ` · ${plural(semItem.length, 'arquivo sem item não vai', 'arquivos sem item não vão')} junto` : ''}${lendoAgora ? ' · esperando a leitura terminar' : ''}</span>
+          <button type="button" class="btn btn-primary" id="env-enviar" ${nArq && !lendoAgora ? '' : 'disabled'}>${icon('fill', 'ic-sm')} Enviar ao escritório</button>
         </div>
       </section>
       <div id="copias-pend"></div>
@@ -131,19 +245,15 @@ export function montarEnviardocs(C) {
     $('#env-trocar')?.addEventListener('click', async () => { await P.escolherEmpresa?.({ tipo: null }); renderEnviar(); });
     viewEl.querySelectorAll('.env-i').forEach(el => {
       const id = el.dataset.item, k = chaveArq(comp, id);
-      const juntar = (files) => {
-        const novos = [...files].filter(f => f && f.size); if (!novos.length) return;
-        const ja = arquivosDe(comp, id);
-        env.arquivos.set(k, [...ja, ...novos.filter(f => !ja.some(x => x.name === f.name && x.size === f.size))]);
-        renderEnviar();
-      };
+      const juntar = (files) => lerParaEnvio(files, setor, comp, id);   // vai para este item; a leitura só confere (mês, empresa, repetido)
       const inp = el.querySelector('input[type=file]');
       el.querySelector('[data-anexar]')?.addEventListener('click', () => inp.click());
       inp?.addEventListener('change', () => { juntar(inp.files); inp.value = ''; });
       el.addEventListener('dragover', (e) => { if (![...(e.dataTransfer?.types || [])].includes('Files') || doMesDe(comp, id)) return; e.preventDefault(); el.classList.add('over'); });
       el.addEventListener('dragleave', () => el.classList.remove('over'));
       el.addEventListener('drop', (e) => { if (doMesDe(comp, id)) return; e.preventDefault(); el.classList.remove('over'); juntar(e.dataTransfer?.files || []); });
-      el.querySelectorAll('[data-tirar]').forEach(b => b.addEventListener('click', () => { const l = arquivosDe(comp, id).slice(); l.splice(+b.dataset.tirar, 1); if (l.length) env.arquivos.set(k, l); else env.arquivos.delete(k); renderEnviar(); }));
+      el.querySelectorAll('[data-tirar]').forEach(b => b.addEventListener('click', () => { const f = arquivosDe(comp, id)[+b.dataset.tirar]; if (f) tirarArquivo(f); renderEnviar(); }));
+      el.querySelectorAll('select[data-mover-de]').forEach(sel => sel.addEventListener('change', () => { const f = arquivosDe(comp, id)[+sel.dataset.i]; if (f && sel.value && sel.value !== id) { porNoItem(comp, sel.value, f); const info = env.leituras.get(f); if (info) info.auto = false; } renderEnviar(); }));
       el.querySelector('[data-na]')?.addEventListener('change', (e) => {
         const chave = `${empresa()}|${comp}|${id}`;
         env.naoAplica = e.target.checked ? [...new Set([...env.naoAplica, chave])] : env.naoAplica.filter(x => x !== chave);
@@ -155,6 +265,27 @@ export function montarEnviardocs(C) {
         gravarNaoAplica(); renderEnviar(); toast('Tirei este documento da lista desta empresa. Para voltar, veja no fim da página.');
       });
     });
+    // área geral: solta tudo e a leitura separa por item
+    const solta = $('#env-solta');
+    if (solta) {
+      const inp = $('#env-solta-inp');
+      solta.addEventListener('click', (e) => { if (e.target !== inp) inp.click(); });
+      solta.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inp.click(); } });
+      inp.addEventListener('change', () => { lerParaEnvio(inp.files, setor, comp); inp.value = ''; });
+      solta.addEventListener('dragover', (e) => { if (![...(e.dataTransfer?.types || [])].includes('Files')) return; e.preventDefault(); solta.classList.add('over'); });
+      solta.addEventListener('dragleave', () => solta.classList.remove('over'));
+      solta.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); solta.classList.remove('over'); lerParaEnvio(e.dataTransfer?.files || [], setor, comp); });
+    }
+    viewEl.querySelectorAll('select[data-sem]').forEach(sel => sel.addEventListener('change', () => { const f = semItem[+sel.dataset.sem]; if (f && sel.value) porNoItem(comp, sel.value, f); renderEnviar(); }));
+    viewEl.querySelectorAll('[data-sem-tirar]').forEach(b => b.addEventListener('click', () => { const f = semItem[+b.dataset.semTirar]; if (f) tirarArquivo(f); renderEnviar(); }));
+    viewEl.querySelectorAll('[data-av-mover]').forEach(b => b.addEventListener('click', () => {
+      const a = avisos[+b.dataset.avMover]; if (!a) return;
+      if (a.item) porNoItem(a.av.competencia, a.item, a.f); else porSemItem(setor, a.av.competencia, a.f);
+      toast(`Movi “${a.f.name}” para a competência ${a.av.competencia}.`); renderEnviar();
+    }));
+    viewEl.querySelectorAll('[data-av-tirar]').forEach(b => b.addEventListener('click', () => { const a = avisos[+b.dataset.avTirar]; if (a) tirarArquivo(a.f); renderEnviar(); }));
+    viewEl.querySelectorAll('[data-av-ok]').forEach(b => b.addEventListener('click', () => { const a = avisos[+b.dataset.avOk]; const info = a && env.leituras.get(a.f); if (info) info.ok = true; renderEnviar(); }));
+    if (guardarRolagem) viewEl.scrollTop = guardarRolagem;
     viewEl.querySelectorAll('[data-voltar]').forEach(b => b.addEventListener('click', () => { env.naoAplica = env.naoAplica.filter(x => x !== `${empresa()}|${b.dataset.voltar}`); gravarNaoAplica(); renderEnviar(); }));
     viewEl.querySelectorAll('[data-tambem]').forEach(c => c.addEventListener('change', () => { env.tambem = { chave: chaveTambem, setores: [...viewEl.querySelectorAll('[data-tambem]:checked')].map(x => x.dataset.tambem) }; }));
     $('#env-enviar')?.addEventListener('click', () => enviarCompetencia(setor, comp, [...viewEl.querySelectorAll('[data-tambem]:checked')].map(x => x.dataset.tambem)));

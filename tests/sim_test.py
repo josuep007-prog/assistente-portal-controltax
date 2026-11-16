@@ -118,6 +118,8 @@ async def teste_plataforma(b):
     check('VANESSA PRADO' in await pn.locator('#eq-exp').inner_text(), 'Hoje: experiência vencendo')
     check(await pn.locator('#eq-ferias .eq-li').count() >= 1, 'Hoje: férias a vencer')
     # cartão estreito (4 colunas numa tela larga): nada passa da borda; com mais de 5 itens, a lista rola
+    # (a seção só abre sozinha com férias a conceder em até 30 dias, o que depende da data de hoje: abre para medir)
+    if await pn.locator('#eq-ferias .hj-painel-bt[aria-expanded="false"]').count(): await pn.click('#eq-ferias .hj-painel-bt'); await pg.wait_for_timeout(300)
     cabe = await pn.evaluate("""(() => { const c = document.querySelector('#eq-ferias'); c.style.width = '300px';
       const r = c.getBoundingClientRect(); const ok = [...c.querySelectorAll('.eq-li .btn, .eq-li .pill')].every(b => b.getBoundingClientRect().right <= r.right + 1);
       c.style.width = ''; return ok; })()""")
@@ -695,6 +697,8 @@ async def teste_lote4(b):
     await pn.click('#modal .btn-primary'); await pg.wait_for_timeout(500)
     check(await pn.locator('#eq-exp .eq-li', has_text='VANESSA PRADO').count() == 0, 'Efetivar: dispensa o aviso da experiência')
     # 21: "Programar" férias a vencer → aviso com a 1ª data que vale, pagamento e data do aviso calculados
+    # (a seção só abre sozinha com férias a conceder em até 30 dias, o que depende da data de hoje)
+    if await pn.locator('#eq-ferias .hj-painel-bt[aria-expanded="false"]').count(): await pn.click('#eq-ferias .hj-painel-bt'); await pg.wait_for_timeout(300)
     await pn.locator('#eq-ferias .eq-li').first.locator('[data-eq]').click()
     async def programado():
         v = await portal(); return bool(v.get('vacationStartDate')) and bool(v.get('paymentDate')) and v.get('noticeDate') == br(hoje)
@@ -1507,6 +1511,87 @@ async def teste_recados_hoje(b):
     await pn.click('.rec-i [data-lido]'); await pg.wait_for_timeout(400)
     check(await pn.locator('.rec-card .rec-i').count() == n - 1 if n > 1 else await pn.locator('.rec-card').count() == 0, 'recados: dispensar tira só aquele recado')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
+def _pdf_texto(linhas):
+    """PDF mínimo com texto (Helvetica), para a leitura sem OCR."""
+    conteudo = 'BT /F1 11 Tf 50 780 Td 14 TL ' + ' '.join('(%s) Tj T*' % l.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)') for l in linhas) + ' ET'
+    objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+            '<< /Length %d >>\nstream\n%s\nendstream' % (len(conteudo.encode('latin-1')), conteudo), '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>']
+    out = '%PDF-1.4\n'; offs = []
+    for i, o in enumerate(objs): offs.append(len(out.encode('latin-1'))); out += '%d 0 obj\n%s\nendobj\n' % (i + 1, o)
+    x = len(out.encode('latin-1'))
+    out += 'xref\n0 %d\n0000000000 65535 f \n' % (len(objs) + 1) + ''.join('%010d 00000 n \n' % o for o in offs) + 'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(objs) + 1, x)
+    return out.encode('latin-1')
+
+def _nfe(emit, dest, n, data):
+    ch = ('3526101234567800019955001%09d1%08d' % (n, n))[:44].ljust(44, '0')
+    return (f'<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe{ch}"><ide><mod>55</mod><serie>1</serie><nNF>{n}</nNF><dhEmi>{data}T10:00:00-03:00</dhEmi></ide>'
+            f'<emit><CNPJ>12345678000199</CNPJ><xNome>{emit}</xNome></emit><dest><CNPJ>98765432000188</CNPJ><xNome>{dest}</xNome></dest><total><ICMSTot><vNF>150.00</vNF></ICMSTot></total></infNFe></NFe></nfeProc>').encode()
+
+async def teste_leitura_envio(b):
+    """2.46: em Enviar documentos, os arquivos soltos na área geral são lidos no computador (XML e PDF com texto) e vão para o item certo;
+    avisos de outro mês, outra empresa, outro setor e repetidos; o cliente muda o item ou tira o arquivo."""
+    import datetime
+    print('\n[enviar] leitura dos documentos (XML e PDF com texto)')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    hoje = datetime.date.today()
+    ant = hoje.replace(day=1) - datetime.timedelta(days=1)
+    ant2 = ant.replace(day=1) - datetime.timedelta(days=1)
+    comp, comp2 = f'{ant.month:02d}/{ant.year}', f'{ant2.month:02d}/{ant2.year}'
+    d1, d2 = f'{ant.year}-{ant.month:02d}-05', f'{ant2.year}-{ant2.month:02d}-20'
+    EMP = 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA'
+    await pn.click('[data-setor="Fiscal"]'); await pg.wait_for_timeout(900)
+    await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(1200)
+    check(await pn.locator('#env-solta').count() == 1, 'enviar: área para soltar todos os documentos do mês')
+    saida = _nfe(EMP, 'CLIENTE FICTICIO SA', 101, d1)
+    arquivos = [
+        {'name': 'nota 101.xml', 'mimeType': 'text/xml', 'buffer': saida},
+        {'name': 'compra 55.xml', 'mimeType': 'text/xml', 'buffer': _nfe('FORNECEDOR FICTICIO LTDA', EMP, 55, d2)},
+        {'name': 'nota da outra.xml', 'mimeType': 'text/xml', 'buffer': _nfe('COMERCIO MODELO DE ALIMENTOS LTDA', 'CLIENTE FICTICIO SA', 7, d1)},
+        {'name': 'copia nota 101.xml', 'mimeType': 'text/xml', 'buffer': saida},
+        {'name': 'extrato.pdf', 'mimeType': 'application/pdf', 'buffer': _pdf_texto(['BANCO FICTICIO', 'Extrato de conta corrente', f'Saldo anterior 01/{ant.month:02d}/{ant.year}', f'15/{ant.month:02d}/{ant.year} PIX recebido 200,00', 'Agencia 0001'])},
+        {'name': 'vendas cartao.pdf', 'mimeType': 'application/pdf', 'buffer': _pdf_texto(['Relatorio de vendas', 'Maquininha Cielo', f'Vendas de {ant.month:02d}/{ant.year}', 'Bandeira Visa Credito valor bruto 1.000,00 valor liquido 970,00'])},
+    ]
+    await pn.locator('#env-solta-inp').set_input_files(arquivos)
+    ok = await espera(lambda: pn.evaluate("!document.querySelector('.env-lido.lendo') && !document.querySelector('.env-lendo')"), 40)
+    check(ok, 'enviar: leitura termina')
+    no = lambda item: pn.evaluate(f"[...document.querySelectorAll('.env-i[data-item=\"{item}\"] .env-arq-n')].map(e => e.textContent)")
+    check(set(await no('nf-saida')) == {'nota 101.xml', 'copia nota 101.xml'}, f"leitura: nota emitida pela empresa vai para saída ({await no('nf-saida')})")
+    check(await no('nf-entrada') == ['compra 55.xml'], 'leitura: nota em que a empresa é destinatária vai para entrada')
+    check(await no('vendas-cartao') == ['vendas cartao.pdf'], 'leitura: PDF com texto reconhecido pelas palavras das regras (vendas por cartão)')
+    check('NF-e nº 101' in await pn.locator('.env-i[data-item="nf-saida"]').inner_text() and await pn.locator('.env-i[data-item="nf-saida"] .chip.ok').count() >= 1, 'leitura: o arquivo mostra o que foi lido ("reconhecido")')
+    sem = await pn.locator('.env-sem').inner_text()
+    check('nota da outra.xml' in sem and 'extrato.pdf' in sem and 'Contábil' in sem, f'leitura: sem item — nota de outra empresa e o extrato (que é do Contábil)')
+    av = await pn.locator('#env-avisos').inner_text()
+    check(f'parece ser de {comp2}' in av and 'COMERCIO MODELO' in av and 'repete' in av, f'leitura: avisos de outro mês, outra empresa e repetido ({av[:200]!r})')
+    # ações: tirar o repetido, mover a de outro mês, escolher o item à mão
+    await pn.locator('.env-av', has_text='repete').locator('[data-av-tirar]').click(); await pg.wait_for_timeout(300)
+    check(await no('nf-saida') == ['nota 101.xml'] or await no('nf-saida') == ['copia nota 101.xml'], 'aviso: "Tirar" tira o repetido')
+    await pn.locator('.env-av', has_text=f'parece ser de {comp2}').locator('[data-av-mover]').click(); await pg.wait_for_timeout(400)
+    check(await no('nf-entrada') == [] and await pn.locator('.env-mes.on').get_attribute('data-comp') == comp, 'aviso: "Mover" leva a nota para a competência dela')
+    await pn.locator('.env-sem-i', has_text='nota da outra.xml').locator('select[data-sem]').select_option('nf-entrada'); await pg.wait_for_timeout(300)
+    check(await no('nf-entrada') == ['nota da outra.xml'], 'sem item: o cliente escolhe o item à mão')
+    await pn.locator('.env-i[data-item="vendas-cartao"] select[data-mover-de]').select_option('nf-servicos-tomados'); await pg.wait_for_timeout(300)
+    check(await no('nf-servicos-tomados') == ['vendas cartao.pdf'], 'mudar de item pela lista do arquivo')
+    await pn.click(f'.env-mes[data-comp="{comp2}"]'); await pg.wait_for_timeout(400)
+    check(await no('nf-entrada') == ['compra 55.xml'], f'a nota movida está na competência {comp2}')
+    stored = await pn.evaluate("chrome.storage.local.get(null).then(o => JSON.stringify(o))")
+    check('nota 101' not in stored and 'FORNECEDOR' not in stored and 'extrato' not in stored, 'nada da leitura fica guardado (nem nomes de arquivos)')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
 async def teste_enviar_documentos(b):
@@ -3371,7 +3456,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3413,7 +3498,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'set':   # SIM_SO=set roda só os setores e o Enviar documentos
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_enviar_documentos(b); await teste_telas_do_setor(b); await b.close()
+            await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_telas_do_setor(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'rec':   # SIM_SO=rec roda só o cartão de recados do Hoje
