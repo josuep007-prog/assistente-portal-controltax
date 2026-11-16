@@ -206,7 +206,7 @@ export function analisarDocumentoCliente(doc, regras, ctx = {}) {
         const de = doMes[0], ate = doMes.at(-1), ultimo = new Date(de.getFullYear(), de.getMonth() + 1, 0).getDate();
         const dm = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
         out.periodo = { de: dm(de), ate: dm(ate) };
-        if (de.getDate() > 1 + (+P.folgaInicio) || ate.getDate() < ultimo - (+P.folgaFim)) avisos.push({ tipo: 'periodo', texto: (T.periodoIncompleto || 'Este extrato vai de {de} a {ate}: confira se falta o começo ou o fim do mês.').replace('{de}', out.periodo.de).replace('{ate}', out.periodo.ate) });
+        if (doMes.length >= 2 && (de.getDate() > 1 + (+P.folgaInicio) || ate.getDate() < ultimo - (+P.folgaFim))) avisos.push({ tipo: 'periodo', texto: (T.periodoIncompleto || 'Este extrato vai de {de} a {ate}: confira se falta o começo ou o fim do mês.').replace('{de}', out.periodo.de).replace('{ate}', out.periodo.ate) });
       }
       out.resumo = [rotuloDe(out.item).split(' ')[0], out.conta.banco, out.conta.conta && `conta final ${out.conta.conta}`, out.periodo && `${out.periodo.de} a ${out.periodo.ate}`].filter(Boolean).join(' · ');
     }
@@ -222,6 +222,7 @@ export function analisarDocumentoCliente(doc, regras, ctx = {}) {
   if (out.item && doSetor.size && !doSetor.has(out.item)) {
     const it = itens.find(i => i.id === out.item);
     out.outroSetor = { item: out.item, rotulo: it?.rotulo || out.item, setores: it?.setores || [] };
+    for (let i = avisos.length - 1; i >= 0; i--) if (avisos[i].tipo === 'periodo') avisos.splice(i, 1);   // o período é conferido no envio do setor certo
     avisos.push({ tipo: 'outroSetor', texto: (T.outroSetor || 'Parece ser “{rotulo}”, que vai para o {setores}.').replace('{rotulo}', out.outroSetor.rotulo).replace('{setores}', out.outroSetor.setores.join(' e ')) });
     out.item = null;
   }

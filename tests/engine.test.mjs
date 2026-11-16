@@ -2302,6 +2302,10 @@ t('envio por competência (2.48): período do extrato, sequência das notas e de
   assert.equal(inteiro.resumo, 'Extratos · Inter · conta final 3456 · 01/10 a 31/10');
   const meio = E.analisarDocumentoCliente({ nome: 'extrato.pdf', texto: 'Extrato de conta corrente\nSaldo anterior 10/10/2026\n15/10/2026 PIX\n20/10/2026 Saldo do dia' }, rules, ctx);
   assert.ok(meio.avisos.some(a => a.tipo === 'periodo' && a.texto.includes('10/10 a 20/10')), 'extrato que não cobre o mês todo');
+  const noFiscal = E.analisarDocumentoCliente({ nome: 'extrato.pdf', texto: 'Extrato de conta corrente\nSaldo anterior 10/10/2026\n20/10/2026 Saldo do dia' }, rules, { ...ctx, setor: 'Fiscal', itensDoSetor: E.itensDoSetor(rules, 'Fiscal', '10/2026', {}) });
+  assert.ok(noFiscal.avisos.some(a => a.tipo === 'outroSetor') && !noFiscal.avisos.some(a => a.tipo === 'periodo'), 'extrato no envio do Fiscal: só diz que é do Contábil');
+  const umaData = E.analisarDocumentoCliente({ nome: 'extrato.pdf', texto: 'Extrato de conta corrente\nSaldo anterior 10/10/2026' }, rules, ctx);
+  assert.ok(!umaData.avisos.some(a => a.tipo === 'periodo'), 'uma data só não basta para dizer o período');
   const notas = [101, 102, 104, 105, 108].map(n => ({ tipo: 'nfe', serie: '1', numero: String(n) }));
   assert.deepEqual(E.faltasNaSequencia(notas), [{ tipo: 'nfe', serie: '1', de: 101, ate: 108, faltam: [103, 106, 107] }]);
   assert.deepEqual(E.faltasNaSequencia([{ tipo: 'nfe', serie: '1', numero: '1' }, { tipo: 'nfe', serie: '1', numero: '500' }]), [], 'buraco grande demais: não avisa (outra série ou sistema)');
