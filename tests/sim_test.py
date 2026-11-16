@@ -1570,17 +1570,28 @@ async def teste_leitura_envio(b):
     ok = await espera(lambda: pn.evaluate("!document.querySelector('.env-lido.lendo') && !document.querySelector('.env-lendo')"), 40)
     check(ok, 'enviar: leitura termina')
     no = lambda item: pn.evaluate(f"[...document.querySelectorAll('.env-i[data-item=\"{item}\"] .env-arq-n')].map(e => e.textContent)")
-    check(set(await no('nf-saida')) == {'nota 101.xml', 'copia nota 101.xml'}, f"leitura: nota emitida pela empresa vai para saída ({await no('nf-saida')})")
+    check(await no('nf-saida') == ['nota 101.xml'], f"leitura: nota emitida pela empresa vai para saída; a cópia repetida fica de fora ({await no('nf-saida')})")
+    desc = await pn.locator('#env-desc').inner_text() if await pn.locator('#env-desc').count() else ''
+    check('repetido' in desc and 'copia nota 101.xml' in desc and 'igual a “nota 101.xml”' in desc, f'repetido: aviso de que a cópia não foi incluída ({desc[:160]!r})')
     check(await no('nf-entrada') == ['compra 55.xml'], 'leitura: nota em que a empresa é destinatária vai para entrada')
     check(await no('vendas-cartao') == ['vendas cartao.pdf'], 'leitura: PDF com texto reconhecido pelas palavras das regras (vendas por cartão)')
     check('NF-e nº 101' in await pn.locator('.env-i[data-item="nf-saida"]').inner_text() and await pn.locator('.env-i[data-item="nf-saida"] .chip.ok').count() >= 1, 'leitura: o arquivo mostra o que foi lido ("reconhecido")')
     sem = await pn.locator('.env-sem').inner_text()
     check('nota da outra.xml' in sem and 'extrato.pdf' in sem and 'Contábil' in sem, f'leitura: sem item — nota de outra empresa e o extrato (que é do Contábil)')
     av = await pn.locator('#env-avisos').inner_text()
-    check(f'parece ser de {comp2}' in av and 'COMERCIO MODELO' in av and 'repete' in av, f'leitura: avisos de outro mês, outra empresa e repetido ({av[:200]!r})')
-    # ações: tirar o repetido, mover a de outro mês, escolher o item à mão
-    await pn.locator('.env-av', has_text='repete').locator('[data-av-tirar]').click(); await pg.wait_for_timeout(300)
-    check(await no('nf-saida') == ['nota 101.xml'] or await no('nf-saida') == ['copia nota 101.xml'], 'aviso: "Tirar" tira o repetido')
+    check(f'parece ser de {comp2}' in av and 'COMERCIO MODELO' in av and 'repete' not in av, f'leitura: avisos de outro mês e outra empresa; o repetido não é aviso, já saiu ({av[:200]!r})')
+    # clicar no nome abre o arquivo na extensão para conferir
+    await pn.locator('.env-i[data-item="vendas-cartao"] .env-arq-n').click()
+    ok = await espera(lambda: pn.evaluate("!!document.querySelector('.vis .vis-pg canvas') && document.querySelector('.vis-nome').textContent === 'vendas cartao.pdf'"), 20)
+    check(ok, 'clicar no nome do arquivo abre o documento no visualizador da extensão')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(300)
+    check(await pn.locator('.vis').count() == 0 and await pn.locator('#env-solta').count() == 1, 'o visualizador fecha e volta ao envio')
+    # "Incluir mesmo assim" devolve a cópia ao lado da original; "Entendi" some com o aviso
+    await pn.locator('[data-desc-incluir]').first.click(); await pg.wait_for_timeout(300)
+    check(set(await no('nf-saida')) == {'nota 101.xml', 'copia nota 101.xml'} and await pn.locator('#env-desc').count() == 0, 'repetido: "Incluir mesmo assim" coloca a cópia junto da original')
+    await pn.locator('.env-i[data-item="nf-saida"] .env-arq', has_text='copia nota 101.xml').locator('[data-tirar]').click(); await pg.wait_for_timeout(300)
+    check(await no('nf-saida') == ['nota 101.xml'], 'o cliente tira a cópia de novo pelo X')
+    # ações: mover a de outro mês, escolher o item à mão
     await pn.locator('.env-av', has_text=f'parece ser de {comp2}').locator('[data-av-mover]').click(); await pg.wait_for_timeout(400)
     check(await no('nf-entrada') == [] and await pn.locator('.env-mes.on').get_attribute('data-comp') == comp, 'aviso: "Mover" leva a nota para a competência dela')
     await pn.locator('.env-sem-i', has_text='nota da outra.xml').locator('select[data-sem]').select_option('nf-entrada'); await pg.wait_for_timeout(300)

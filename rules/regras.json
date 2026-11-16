@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.16-3",
+  "versao": "2026.11.17-1",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -157,7 +157,8 @@
             "colocarEm": "Colocar em “{rotulo}”",
             "sugestaoOcr": "Lido em imagem: confira o item.",
             "sequencia": "Entre as notas nº {de} e {ate} faltam: {faltam}. Se foram canceladas, está tudo certo; senão, anexe-as.",
-            "periodoIncompleto": "Este extrato vai de {de} a {ate}: confira se falta o começo ou o fim do mês."
+            "periodoIncompleto": "Este extrato vai de {de} a {ate}: confira se falta o começo ou o fim do mês.",
+            "descartados": "Não incluí {n} arquivo(s) repetido(s): já há um igual no envio. Clique no nome para conferir."
           }
         },
         "textos": {

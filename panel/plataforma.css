@@ -1250,3 +1250,11 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-av b { color: var(--ink); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .env-av-ac { display: flex; gap: 6px; flex-wrap: wrap; }
 @media (prefers-reduced-motion: reduce) { .env-lido.lendo .ic, .env-lendo .ic { animation: none; } }
+
+/* ===== Enviar documentos 2.49: nome do arquivo abre o visualizador; repetidos deixados de fora ===== */
+.env-arq-n { all: unset; box-sizing: border-box; min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink); cursor: pointer; border-radius: 2px; }
+.env-arq-n:hover { color: var(--blue-deep); text-decoration: underline; }
+.env-arq-n:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; }
+.env-desc { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--blue-deep) 40%, var(--rule)); border-left: 3px solid var(--blue-deep); border-radius: var(--r); background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.env-desc h4 { margin: 0 0 2px; font: 600 12.5px var(--f-head); color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.env-desc .env-arq { background: var(--surface-2); }
