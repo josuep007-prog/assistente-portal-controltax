@@ -1639,6 +1639,53 @@ async def teste_leitura_envio(b):
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
+async def teste_leitura_duvida(b):
+    """2.50: no Contábil, o controle de caixa (CSV) e o extrato OFX entram sozinhos; o que tem pouca palavra entra no item mais provável
+    marcado "confira" e o quadro "Está certo?" deixa confirmar ou mudar."""
+    import datetime
+    print('\n[enviar] na dúvida, coloca no mais provável e pergunta')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def espera(cond, s=30):
+        for _ in range(s * 2):
+            try:
+                if await cond(): return True
+            except Exception: pass
+            await pg.wait_for_timeout(500)
+        return False
+    hoje = datetime.date.today(); ant = hoje.replace(day=1) - datetime.timedelta(days=1)
+    mm, aa = f'{ant.month:02d}', ant.year
+    ultimo = ant.day
+    await pn.click('[data-setor="Contábil"]'); await pg.wait_for_timeout(900)
+    await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(1200)
+    ofx = f'OFXHEADER:100\nDATA:OFXSGML\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM><BANKID>0341<ACCTID>123456</BANKACCTFROM><BANKTRANLIST><DTSTART>{aa}{mm}01<DTEND>{aa}{mm}{ultimo:02d}<STMTTRN><DTPOSTED>{aa}{mm}15<TRNAMT>200.00</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>'
+    csv = f'Data;Histórico;Entrada;Saída;Saldo\n01/{mm}/{aa};Saldo inicial;;;500,00\n{ultimo:02d}/{mm}/{aa};Venda;100,00;;600,00\n'
+    await pn.locator('#env-solta-inp').set_input_files([
+        {'name': f'06_controle_caixa_{mm}-{aa}.csv', 'mimeType': 'text/csv', 'buffer': csv.encode()},
+        {'name': f'03c_extrato_conta_corrente_{mm}-{aa}.ofx', 'mimeType': 'application/x-ofx', 'buffer': ofx.encode()},
+        {'name': 'scan001.pdf', 'mimeType': 'application/pdf', 'buffer': _pdf_texto(['Favorecido FULANO DE TAL', f'Valor 100,00 em 10/{mm}/{aa}'])},
+        {'name': 'scan002.pdf', 'mimeType': 'application/pdf', 'buffer': _pdf_texto(['Pagador EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', f'Recebido em 12/{mm}/{aa} referente a servicos'])},
+    ])
+    ok = await espera(lambda: pn.evaluate("!document.querySelector('.env-lido.lendo') && !document.querySelector('.env-lendo')"), 60)
+    no = lambda item: pn.evaluate(f"[...document.querySelectorAll('.env-i[data-item=\"{item}\"] .env-arq-n')].map(e => e.textContent)")
+    check(ok and await no('caixa') == [f'06_controle_caixa_{mm}-{aa}.csv'], f"CSV do controle de caixa reconhecido pelo nome e pelas colunas ({await no('caixa')})")
+    ext = await pn.locator('.env-i[data-item="extratos"]').inner_text()
+    check(f'03c_extrato_conta_corrente_{mm}-{aa}.ofx' in ext and 'Itaú' in ext and 'conta final 3456' in ext, f'OFX lido: extrato do Itaú, conta final e período ({ext[:200]!r})')
+    duv = await pn.locator('#env-duv').inner_text() if await pn.locator('#env-duv').count() else ''
+    check('scan001.pdf' in duv and 'scan002.pdf' in duv and 'Está certo' in duv, f'na dúvida: entram no item mais provável e o quadro pergunta ({duv[:200]!r})')
+    check(set(await no('pagamentos')) == {'scan001.pdf', 'scan002.pdf'} and await pn.locator('.env-i[data-item="pagamentos"] .chip.warn').count() == 2, 'os arquivos com dúvida ficam no item marcados "confira"')
+    check(await pn.locator('.env-sem').count() == 0, 'nada fica em "Não reconheci"')
+    await pn.locator('.env-duv-i', has_text='scan001.pdf').locator('[data-duv-ok]').click(); await pg.wait_for_timeout(300)
+    check(await pn.locator('.env-duv-i', has_text='scan001.pdf').count() == 0 and await pn.locator('.env-i[data-item="pagamentos"] .chip.warn').count() == 1, '"Está certo" confirma o lugar')
+    await pn.locator('.env-duv-i', has_text='scan002.pdf').locator('select[data-duv-mover]').select_option('caixa'); await pg.wait_for_timeout(300)
+    check('scan002.pdf' in await no('caixa') and await pn.locator('#env-duv').count() == 0, 'mudar pela pergunta leva o arquivo para o item escolhido e a pergunta some')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
+    await ctx.close()
+
 async def teste_enviar_documentos(b):
     """2.40.0: seletor de setor troca o menu; Enviar documentos anexa por item e abre a Solicitação Geral do setor já preenchida
     (departamento, assunto com a competência, descrição com a lista, anexos); o cliente envia e a lista é marcada, sem guardar nomes de arquivos."""
@@ -3501,7 +3548,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_leitura_duvida(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3543,7 +3590,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'set':   # SIM_SO=set roda só os setores e o Enviar documentos
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_telas_do_setor(b); await b.close()
+            await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_leitura_duvida(b); await teste_telas_do_setor(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'rec':   # SIM_SO=rec roda só o cartão de recados do Hoje

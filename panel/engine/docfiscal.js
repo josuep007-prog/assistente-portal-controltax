@@ -87,16 +87,40 @@ function itemDaNota(nota, empresa, empresaCnpj, regras) {
 
 /* ---------- PDF com texto: palavras das regras ---------- */
 /** Pontua cada item pelas palavras de `reconhecer` (fortes valem 3, comuns 1; `excluir` zera). Devolve [{ id, pontos }] do maior para o menor. */
-export function pontuarItens(texto, regras) {
+export function pontuarItens(texto, regras, nomeArquivo = '') {
   const t = ` ${norm(texto).replace(/\s+/g, ' ')} `;
+  const n = ` ${norm(String(nomeArquivo).replace(/\.[a-z0-9]{1,5}$/i, '')).replace(/\s+/g, ' ')} `;   // "06_controle_caixa_10-2026.csv" → "06 controle caixa 10 2026"
   const esc = (x) => x.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-  const tem = (p) => new RegExp(`(^|[^a-z0-9])${esc(norm(p))}(?![a-z0-9])`).test(t);   // palavra inteira ("dam" não acha "damasco")
+  const em = (alvo) => (p) => new RegExp(`(^|[^a-z0-9])${esc(norm(p))}(?![a-z0-9])`).test(alvo);   // palavra inteira ("dam" não acha "damasco")
+  const tem = em(t), noNome = em(n);
   return (regras?.config?.documentosCliente?.itens || []).map(it => {
     const r = it.reconhecer || {};
     if ((r.excluir || []).some(tem)) return { id: it.id, pontos: 0 };
-    const pontos = (r.fortes || []).filter(tem).length * 3 + (r.palavras || []).filter(tem).length;
+    // palavras do nome do arquivo (o cliente costuma nomear: "extrato", "controle caixa", "notas saida") valem 2
+    const pontos = (r.fortes || []).filter(tem).length * 3 + (r.palavras || []).filter(tem).length + (r.nomes || []).filter(noNome).length * 2;
     return { id: it.id, pontos };
   }).filter(x => x.pontos > 0).sort((a, b) => b.pontos - a.pontos);
+}
+/** Tira do texto os nomes das empresas (inteiros e sem LTDA/ME…), para as palavras do próprio nome não contarem na classificação. */
+export function semNomesDeEmpresas(texto, nomes) {
+  let t = ` ${norm(texto).replace(/\s+/g, ' ')} `;
+  for (const n of (nomes || []).filter(Boolean)) {
+    for (const frase of [norm(n), tokensEmpresa(n).join(' ')]) if (frase && frase.split(' ').length >= 2) t = t.split(` ${frase} `).join(' ');
+  }
+  return t.trim();
+}
+/** Lê um extrato OFX (o arquivo de extrato que os bancos exportam): banco, conta (4 últimos dígitos), período e as datas dos lançamentos. */
+export function lerOfx(texto, regras) {
+  const t = String(texto || '');
+  if (!/OFXHEADER|<OFX>/i.test(t)) return null;
+  const v = (k) => (new RegExp(`<${k}>\\s*([^<\\r\\n]+)`, 'i').exec(t) || [])[1]?.trim() || '';
+  const data = (s) => { const m = /^(\d{4})(\d{2})(\d{2})/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const codigos = cfgLeitura(regras).codigosBanco || {};
+  const bankId = v('BANKID').replace(/^0+(?=\d{3}$)/, '');
+  const banco = v('ORG') || codigos[bankId] || codigos[bankId.padStart(3, '0')] || (bankId ? `banco ${bankId}` : '');
+  const acct = v('ACCTID').replace(/\D/g, '');
+  const lanc = [...t.matchAll(/<DTPOSTED>\s*(\d{8})/gi)].map(m => data(m[1])).filter(Boolean);
+  return { banco, conta: acct.length >= 4 ? acct.slice(-4) : '', de: data(v('DTSTART')), ate: data(v('DTEND')), lancamentos: lanc };
 }
 /** Os meses (MM/AAAA) das datas do texto, com quantas vezes aparecem. */
 export function mesesDoTexto(texto) {
@@ -180,11 +204,16 @@ export function analisarDocumentoCliente(doc, regras, ctx = {}) {
     }
   } else {
     const texto = String(doc.texto || '');
-    const pts = pontuarItens(`${doc.nome || ''}\n${texto}`, regras);
+    const ofx = lerOfx(texto, regras);
+    // o nome da empresa não conta como palavra do item ("… SIMPLES NACIONAL LTDA" não é guia do Simples)
+    const pts = ofx ? [{ id: L.ofxItem || 'extratos', pontos: 99 }] : pontuarItens(semNomesDeEmpresas(texto, [ctx.empresa, ...(ctx.outrasEmpresas || [])]), regras, doc.nome || '');
     const melhor = pts[0];
     const minimo = +L.pontosMinimos || 3;
-    if (melhor && melhor.pontos >= minimo && (!pts[1] || melhor.pontos > pts[1].pontos)) {
-      out.item = melhor.id; out.conf = Math.min(0.9, 0.5 + melhor.pontos / 12);
+    const certo = melhor && melhor.pontos >= minimo && (!pts[1] || melhor.pontos > pts[1].pontos);
+    // 2.50: sem certeza (poucas palavras ou empate), ainda assim aponta o mais provável — o cliente confirma ou muda
+    if (melhor && !certo) { out.duvida = true; out.alternativas = pts.slice(0, 3).map(p => p.id); }
+    if (melhor) {
+      out.item = melhor.id; out.conf = certo ? Math.min(0.9, 0.5 + melhor.pontos / 12) : 0.4;
       // nota em PDF (DANFE / NFS-e impressa): a posição da empresa no papel diz se ela emitiu ou recebeu
       const nf = { saida: 'nf-saida', entrada: 'nf-entrada', servicoTomado: 'nf-servicos-tomados', ...(L.nf || {}) };
       if ([nf.saida, nf.entrada, nf.servicoTomado].includes(melhor.id) && ctx.empresa) {
@@ -199,9 +228,11 @@ export function analisarDocumentoCliente(doc, regras, ctx = {}) {
     // extrato (e o que mais as regras pedirem): de qual a qual dia do mês ele vai, banco e conta (4 últimos dígitos)
     const P = { itens: ['extratos'], folgaInicio: 5, folgaFim: 5, ...(L.periodo || {}) };
     if (out.item && P.itens.includes(out.item)) {
-      out.conta = contaDoExtrato(texto, regras);
+      out.conta = ofx ? { banco: ofx.banco, conta: ofx.conta } : contaDoExtrato(texto, regras);
       const cp = /^(\d{2})\/(\d{4})$/.exec(ctx.competencia || '');
-      const doMes = cp ? datasDoTexto(texto).filter(d => d.getMonth() + 1 === +cp[1] && d.getFullYear() === +cp[2]).sort((a, b) => a - b) : [];
+      const datasDoc = ofx ? [ofx.de, ofx.ate, ...ofx.lancamentos].filter(Boolean) : datasDoTexto(texto);
+      if (ofx) { const c = new Map(); datasDoc.forEach(d => { const k = compDeData(d); c.set(k, (c.get(k) || 0) + 1); }); out.mesesCitadosOfx = [...c].sort((a, b) => b[1] - a[1]).map(x => x[0]); }
+      const doMes = cp ? datasDoc.filter(d => d.getMonth() + 1 === +cp[1] && d.getFullYear() === +cp[2]).sort((a, b) => a - b) : [];
       if (doMes.length) {
         const de = doMes[0], ate = doMes.at(-1), ultimo = new Date(de.getFullYear(), de.getMonth() + 1, 0).getDate();
         const dm = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
@@ -211,13 +242,16 @@ export function analisarDocumentoCliente(doc, regras, ctx = {}) {
       out.resumo = [rotuloDe(out.item).split(' ')[0], out.conta.banco, out.conta.conta && `conta final ${out.conta.conta}`, out.periodo && `${out.periodo.de} a ${out.periodo.ate}`].filter(Boolean).join(' · ');
     }
     // de que mês é: o mês que mais aparece; se nenhuma data cair na competência escolhida, avisa
-    const meses = mesesDoTexto(texto);
+    const meses = out.mesesCitadosOfx ? out.mesesCitadosOfx.map(c => ({ competencia: c })) : mesesDoTexto(texto);
     out.competenciaDoc = meses[0]?.competencia || null;
     out.mesesCitados = meses.map(m => m.competencia);
     // outra empresa do mesmo acesso citada e a aberta não
     const outra = (ctx.outrasEmpresas || []).find(e => textoCitaEmpresa(texto, e));
     if (outra && !(ctx.empresa && textoCitaEmpresa(texto, ctx.empresa))) avisos.push({ tipo: 'empresa', texto: (T.outraEmpresaPdf || 'Este documento cita a empresa {outra}, não a {empresa}.').replace('{outra}', outra).replace('{empresa}', ctx.empresa || '') });
   }
+  // na dúvida, prefere a alternativa que é deste setor
+  if (out.duvida && out.item && doSetor.size && !doSetor.has(out.item)) { const alt = (out.alternativas || []).find(id => doSetor.has(id)); if (alt) out.item = alt; }
+  if (out.duvida && out.item) out.resumo = rotuloDe(out.item);
   // item de outro setor (ex.: nota no envio do Contábil): não entra na lista deste, mas diz onde vai
   if (out.item && doSetor.size && !doSetor.has(out.item)) {
     const it = itens.find(i => i.id === out.item);

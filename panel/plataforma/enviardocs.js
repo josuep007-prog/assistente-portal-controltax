@@ -63,6 +63,10 @@ export function montarEnviardocs(C) {
     if (/^(jpe?g|png|webp|bmp|gif)$/.test(x)) return lerPorOcr(f, ctx, hash);
     const dec = (u8) => new TextDecoder('utf-8').decode(u8);
     if (x === 'xml') return { hash, analise: E.analisarDocumentoCliente({ nome: f.name, xml: dec(buf) }, S.rules, ctx) };
+    if (x === 'ofx') {   // extrato OFX (texto; bancos antigos mandam em windows-1252)
+      let t = dec(buf); if ((t.match(/\uFFFD/g) || []).length > 3) t = new TextDecoder('windows-1252').decode(buf);
+      return { hash, analise: E.analisarDocumentoCliente({ nome: f.name, texto: t }, S.rules, ctx) };
+    }
     if (x === 'zip') {   // ZIP de notas (XML): lê cada nota de dentro; o ZIP vai inteiro para o escritório
       const XLSX = await carregarXlsx();
       const cfb = XLSX.CFB.read(new Uint8Array(buf), { type: 'array' });
@@ -126,6 +130,7 @@ export function montarEnviardocs(C) {
     const ctx = ctxAnalise(setor, comp, itens);
     env.lendo = { n: 0, m: novos.length + (env.lendo ? env.lendo.m - env.lendo.n : 0) };
     renderEnviar();
+    let duvidasNovas = 0;
     for (const f of novos) {
       let r; try { r = env.leituras.get(f)?.pulado ? { semTexto: true } : await analisarArquivo(f, ctx); } catch { r = { semTexto: true }; }
       const info = env.leituras.get(f);
@@ -144,14 +149,19 @@ export function montarEnviardocs(C) {
         const alvo = info.analise?.item;
         // lido por OCR: só entra sozinho no item com leitura boa e muitas palavras do item; senão fica como sugestão ("Colocar em …")
         const seguro = !r.ocr || ((r.confianca || 0) >= (+OCR().confiancaMinima || 70) && (info.analise?.conf || 0) >= 0.7);
+        // 2.50: com certeza, entra sozinho; na dúvida (poucas palavras, empate ou leitura de imagem fraca), entra no item mais provável
+        // marcado "confira" e o cliente confirma ou muda no quadro "Está certo?"
         if (!itemFixo && alvo && itens.some(i => i.id === alvo) && !doMesDe(comp, alvo) && semItemDe(setor, comp).includes(f)) {
-          if (seguro) { porNoItem(comp, alvo, f); info.auto = true; } else info.sugestao = alvo;
+          const duvida = !!info.analise?.duvida || !seguro;
+          porNoItem(comp, alvo, f); info.auto = !duvida; info.duvida = duvida;
+          if (duvida) duvidasNovas++;
         }
       }
       if (env.lendo) env.lendo.n++;
       if (S.view === 'enviar') renderEnviar();
     }
     if (env.lendo && env.lendo.n >= env.lendo.m) env.lendo = null;
+    if (duvidasNovas) toast((TL().duvidaToast || 'Coloquei {n} arquivo(s) com dúvida: confira.').replace('{n}', duvidasNovas));
     if (S.view === 'enviar') renderEnviar();
   }
   // soltar em qualquer lugar da tela Enviar documentos = soltar na área geral (só com a leitura ligada nas regras)
@@ -231,7 +241,7 @@ export function montarEnviardocs(C) {
       if (info.estado === 'lendo') return `<small class="env-lido lendo">${icon('refresh', 'ic-sm')} <span data-lendo="${idDe(f)}">lendo…</span></small><button type="button" class="btn btn-sm btn-ghost env-pular" data-pular-leitura="${idDe(f)}" title="Não esperar a leitura: você escolhe o item">${esc(TL().pular || 'Pular a leitura')}</button>`;
       if (info.estado === 'semTexto') return `<small class="env-lido">${esc(info.pulado ? (TL().pulado || 'leitura pulada: escolha o item') : (TL().semTexto || 'imagem ou PDF escaneado (sem texto)'))}</small>`;
       const a = info.analise; if (!a) return '';
-      return `<small class="env-lido">${info.auto ? '<span class="chip ok">reconhecido</span>' : ''}${info.ocr ? `<span class="chip" title="Lido de uma imagem (OCR): confira">imagem${info.confianca != null ? ` · ${info.confianca}%` : ''}</span>` : ''}${esc(a.resumo || '')}</small>`;
+      return `<small class="env-lido">${info.duvida ? '<span class="chip warn" title="Coloquei aqui por ser o mais provável: confira">confira</span>' : info.auto ? '<span class="chip ok">reconhecido</span>' : ''}${info.ocr ? `<span class="chip" title="Lido de uma imagem (OCR): confira">imagem${info.confianca != null ? ` · ${info.confianca}%` : ''}</span>` : ''}${esc(a.resumo || '')}</small>`;
     };
     const chipArquivo = (f, i, itemId) => `<div class="env-arq">${icon('clip', 'ic-sm')}${nomeArq(f)}${rotLeitura(f)}
       ${leituraAtiva() ? `<select class="env-mover" data-mover-de="${esc(itemId || '')}" data-i="${i}" aria-label="Mudar ${esc(f.name)} de item"><option value="" disabled>Mudar para…</option>${opcoesItens(itemId)}</select>` : ''}
@@ -265,6 +275,7 @@ export function montarEnviardocs(C) {
     const dispensadosFixos = (cfg().itens || []).filter(i => (i.setores || []).includes(setor) && fixaDe(i.id));
     const semItem = semItemDe(setor, comp);
     const descartados = env.descartados.filter(d => d.empresa === empresa() && d.comp === comp);
+    const duvidas = atual.itens.flatMap(it => arquivosDe(comp, it.id).filter(f => env.leituras.get(f)?.duvida && env.leituras.get(f)?.estado !== 'lendo').map(f => ({ f, item: it })));
     const avisos = leituraAtiva() ? avisosDoMes(setor, comp, atual.itens) : [];
     const lendoAgora = [...atual.itens.flatMap(it => arquivosDe(comp, it.id)), ...semItem].some(f => env.leituras.get(f)?.estado === 'lendo');
     const guardarRolagem = viewEl.scrollTop;
@@ -291,6 +302,10 @@ export function montarEnviardocs(C) {
             <select class="env-mover" data-sem="${i}" aria-label="Escolher o item de ${esc(f.name)}"><option value="" selected disabled>Escolha o item…</option>${opcoesItens('')}</select>
             <button type="button" class="icon-btn" data-sem-tirar="${i}" aria-label="Tirar ${esc(f.name)}">${icon('x', 'ic-sm')}</button></div>`;
         }).join('')}</div>` : ''}
+        ${duvidas.length ? `<div class="env-duv" id="env-duv" role="status"><h4>${icon('info', 'ic-sm')} ${esc((TL().duvidas || 'Coloquei {n} arquivo(s) onde acho que vão. Está certo?').replace('{n}', duvidas.length))}</h4>${duvidas.map((d, n) => `<div class="env-arq env-duv-i">${icon('clip', 'ic-sm')}${nomeArq(d.f)}<small class="env-lido">em <b>${esc(d.item.rotulo)}</b></small>
+            <button type="button" class="btn btn-sm btn-primary" data-duv-ok="${n}">Está certo</button>
+            <select class="env-mover" data-duv-mover="${n}" aria-label="Mudar ${esc(d.f.name)} de item"><option value="" selected disabled>Mudar para…</option>${opcoesItens('')}</select></div>`).join('')}
+            ${duvidas.length > 1 ? `<div><button type="button" class="btn btn-sm" id="env-duv-todos">Está tudo certo</button></div>` : ''}</div>` : ''}
         ${descartados.length ? `<div class="env-desc" id="env-desc" role="status"><h4>${icon('copy', 'ic-sm')} ${esc((TL().descartados || 'Não incluí {n} arquivo(s) repetido(s): já há um igual no envio.').replace('{n}', descartados.length))}</h4>${descartados.map((d, n) => `<div class="env-arq env-desc-i">${icon('clip', 'ic-sm')}${nomeArq(d.f)}<small class="env-lido">igual a “${esc(d.igual.name)}”</small><button type="button" class="btn btn-sm btn-ghost" data-desc-incluir="${n}">Incluir mesmo assim</button></div>`).join('')}<div><button type="button" class="btn btn-sm" id="env-desc-ok">Entendi</button></div></div>` : ''}
         ${avisos.length ? `<div class="env-avisos" id="env-avisos"><h4>${icon('alert', 'ic-sm')} Confira antes de enviar</h4>${avisos.map((a, n) => `<div class="env-av env-av-${esc(a.av.tipo)}"><div><b>${esc(a.f ? a.f.name : (atual.itens.find(i => i.id === a.item)?.rotulo || ''))}</b><span>${esc(a.av.texto)}</span></div><div class="env-av-ac">
             ${a.av.tipo === 'competencia' && comps.some(c => c.competencia === a.av.competencia) ? `<button type="button" class="btn btn-sm" data-av-mover="${n}">Mover para ${esc(a.av.competencia)}</button>` : ''}
@@ -299,7 +314,7 @@ export function montarEnviardocs(C) {
         <div class="env-lista">${atual.itens.map(linha).join('') || '<p class="muted" style="margin:12px 14px">Nenhum documento nesta competência.</p>'}</div>
         ${outrosSetores.length ? `<div class="copia-setores env-tambem"><span>${icon('copy', 'ic-sm')} Enviar também para:</span>${outrosSetores.map(s => `<label><input type="checkbox" data-tambem="${esc(s)}" ${tambem.includes(s) ? 'checked' : ''}> ${esc(rot(s))}</label>`).join('')}<small class="muted">Depois que o portal salvar a solicitação do ${esc(def.rotulo || setor)}, eu abro uma cópia para cada setor marcado, com o mesmo assunto, a mesma lista e os mesmos anexos. Você confere e envia cada uma.</small></div>` : ''}
         <div class="env-rodape">
-          <span class="muted" id="env-resumo">${nArq ? `${plural(nArq, 'arquivo', 'arquivos')} em ${plural(comArq.length, 'item', 'itens')}${faltam.length ? ` · ainda falta: ${esc(faltam.map(f => f.rotulo).join('; '))}` : ''}` : 'Anexe os documentos e envie tudo de uma vez (ou em partes).'}${semItem.length ? ` · ${plural(semItem.length, 'arquivo sem item não vai', 'arquivos sem item não vão')} junto` : ''}${lendoAgora ? ' · esperando a leitura terminar' : ''}</span>
+          <span class="muted" id="env-resumo">${nArq ? `${plural(nArq, 'arquivo', 'arquivos')} em ${plural(comArq.length, 'item', 'itens')}${faltam.length ? ` · ainda falta: ${esc(faltam.map(f => f.rotulo).join('; '))}` : ''}` : 'Anexe os documentos e envie tudo de uma vez (ou em partes).'}${semItem.length ? ` · ${plural(semItem.length, 'arquivo sem item não vai', 'arquivos sem item não vão')} junto` : ''}${duvidas.length ? ` · ${plural(duvidas.length, 'arquivo para confirmar o item', 'arquivos para confirmar o item')}` : ''}${lendoAgora ? ' · esperando a leitura terminar' : ''}</span>
           <button type="button" class="btn btn-primary" id="env-enviar" ${nArq && !lendoAgora ? '' : 'disabled'}>${icon('fill', 'ic-sm')} Enviar ao escritório</button>
         </div>
       </section>
@@ -320,7 +335,7 @@ export function montarEnviardocs(C) {
       el.addEventListener('dragleave', () => el.classList.remove('over'));
       el.addEventListener('drop', (e) => { if (doMesDe(comp, id)) return; e.preventDefault(); el.classList.remove('over'); juntar(e.dataTransfer?.files || []); });
       el.querySelectorAll('[data-tirar]').forEach(b => b.addEventListener('click', () => { const f = arquivosDe(comp, id)[+b.dataset.tirar]; if (f) tirarArquivo(f); renderEnviar(); }));
-      el.querySelectorAll('select[data-mover-de]').forEach(sel => sel.addEventListener('change', () => { const f = arquivosDe(comp, id)[+sel.dataset.i]; if (f && sel.value && sel.value !== id) { porNoItem(comp, sel.value, f); const info = env.leituras.get(f); if (info) info.auto = false; } renderEnviar(); }));
+      el.querySelectorAll('select[data-mover-de]').forEach(sel => sel.addEventListener('change', () => { const f = arquivosDe(comp, id)[+sel.dataset.i]; if (f && sel.value && sel.value !== id) { porNoItem(comp, sel.value, f); const info = env.leituras.get(f); if (info) { info.auto = false; info.duvida = false; } } renderEnviar(); }));
       el.querySelector('[data-na]')?.addEventListener('change', (e) => {
         const chave = `${empresa()}|${comp}|${id}`;
         env.naoAplica = e.target.checked ? [...new Set([...env.naoAplica, chave])] : env.naoAplica.filter(x => x !== chave);
@@ -344,6 +359,15 @@ export function montarEnviardocs(C) {
       solta.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); solta.classList.remove('over'); lerParaEnvio(e.dataTransfer?.files || [], setor, comp); });
     }
     viewEl.querySelectorAll('[data-ver-arq]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); const f = naTela[+b.dataset.verArq]; if (f) P.verArquivoLocal?.(f); }));
+    const confirmar = (d) => { const info = env.leituras.get(d.f); if (info) { info.duvida = false; info.auto = true; } };
+    viewEl.querySelectorAll('[data-duv-ok]').forEach(b => b.addEventListener('click', () => { const d = duvidas[+b.dataset.duvOk]; if (d) confirmar(d); renderEnviar(); }));
+    $('#env-duv-todos')?.addEventListener('click', () => { duvidas.forEach(confirmar); renderEnviar(); });
+    viewEl.querySelectorAll('select[data-duv-mover]').forEach(sel => sel.addEventListener('change', () => {
+      const d = duvidas[+sel.dataset.duvMover]; if (!d || !sel.value) return;
+      if (sel.value !== d.item.id) porNoItem(comp, sel.value, d.f);
+      const info = env.leituras.get(d.f); if (info) { info.duvida = false; info.auto = false; }
+      renderEnviar();
+    }));
     viewEl.querySelectorAll('[data-desc-incluir]').forEach(b => b.addEventListener('click', () => {
       const d = descartados[+b.dataset.descIncluir]; if (!d) return;
       env.descartados = env.descartados.filter(x => x !== d);
