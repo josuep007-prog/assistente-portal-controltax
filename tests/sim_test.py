@@ -1589,8 +1589,26 @@ async def teste_leitura_envio(b):
     check(await no('nf-servicos-tomados') == ['vendas cartao.pdf'], 'mudar de item pela lista do arquivo')
     await pn.click(f'.env-mes[data-comp="{comp2}"]'); await pg.wait_for_timeout(400)
     check(await no('nf-entrada') == ['compra 55.xml'], f'a nota movida está na competência {comp2}')
+    # 2.47: foto (OCR) — comprovante de imposto vira texto e cai no item; "Pular a leitura" para o OCR
+    await pn.click(f'.env-mes[data-comp="{comp}"]'); await pg.wait_for_timeout(400)
+    await pn.evaluate("""async (comp) => {
+      const img = async (linhas, nome) => { const c = document.createElement('canvas'); c.width = 1400; c.height = 120 + linhas.length * 90; const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000'; g.font = 'bold 54px Arial'; linhas.forEach((l, i) => g.fillText(l, 60, 120 + i * 90));
+        const b = await new Promise(r => c.toBlob(r, 'image/png')); return new File([b], nome, { type: 'image/png' }); };
+      const f = await img(['COMPROVANTE DE PAGAMENTO', 'DOCUMENTO DE ARRECADACAO', 'DO SIMPLES NACIONAL', 'PERIODO DE APURACAO ' + comp], 'foto guia.png');
+      const m = await import('./painel/base.js'); m.P.soltarNoEnvio([f]); }""", comp)
+    ok = await espera(lambda: pn.evaluate("(() => { const i = document.querySelector('.env-i[data-item=\"impostos-pagos\"]'); return !!i && i.innerText.includes('foto guia.png') && !document.querySelector('.env-lido.lendo'); })()"), 90)
+    txt = await pn.locator('.env-i[data-item="impostos-pagos"]').inner_text() if ok else (await pn.locator('.env-card').inner_text())[:400]
+    check(ok and 'imagem' in txt, f'OCR: foto do comprovante lida e colocada em "Comprovantes dos impostos pagos" ({txt[:160]!r})')
+    await pn.evaluate("""async () => { const c = document.createElement('canvas'); c.width = 1600; c.height = 1600; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 1600, 1600);
+      g.fillStyle = '#000'; g.font = '40px Arial'; for (let i = 0; i < 30; i++) g.fillText('LINHA DE TEXTO PARA DEMORAR A LEITURA ' + i, 40, 60 + i * 50);
+      const b = await new Promise(r => c.toBlob(r, 'image/png')); const m = await import('./painel/base.js'); m.P.soltarNoEnvio([new File([b], 'foto longa.png', { type: 'image/png' })]); }""")
+    ok = await espera(lambda: pn.locator('.env-sem-i', has_text='foto longa.png').locator('[data-pular-leitura]').count(), 10)
+    if ok: await pn.locator('.env-sem-i', has_text='foto longa.png').locator('[data-pular-leitura]').click()
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('.env-sem')?.innerText || '').includes('leitura pulada')"), 20)
+    check(ok, '"Pular a leitura" para o OCR e deixa o cliente escolher o item')
     stored = await pn.evaluate("chrome.storage.local.get(null).then(o => JSON.stringify(o))")
-    check('nota 101' not in stored and 'FORNECEDOR' not in stored and 'extrato' not in stored, 'nada da leitura fica guardado (nem nomes de arquivos)')
+    check('nota 101' not in stored and 'FORNECEDOR' not in stored and 'extrato' not in stored and 'foto' not in stored, 'nada da leitura fica guardado (nem nomes de arquivos)')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 
