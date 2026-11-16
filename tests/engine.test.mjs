@@ -2257,4 +2257,41 @@ t('setores: solicitações e prazos de cada setor', () => {
   assert.deepEqual(E.solicitacoesDoSetor(itens, { config: {} }, 'Fiscal').length, 4, 'regras sem setores: nada muda');
 });
 
+t('envio por competência (2.46): XML de nota, PDF com texto, mês e empresa', () => {
+  const emp = 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA';
+  const ctx = { empresa: emp, outrasEmpresas: ['COMERCIO MODELO DE ALIMENTOS LTDA'], competencia: '10/2026', itensDoSetor: E.itensDoSetor(rules, 'Fiscal', '10/2026', {}), setor: 'Fiscal' };
+  const nfe = (emit, dest, n, data) => `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe3526101234567800019955001000000${String(n).padStart(3, '0')}1000000${String(n).padStart(3, '0')}"><ide><mod>55</mod><serie>1</serie><nNF>${n}</nNF><dhEmi>${data}T10:00:00-03:00</dhEmi><tpNF>1</tpNF></ide><emit><CNPJ>12345678000199</CNPJ><xNome>${emit}</xNome></emit><dest><CNPJ>98765432000188</CNPJ><xNome>${dest}</xNome></dest><total><ICMSTot><vNF>150.00</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+  const saida = E.analisarDocumentoCliente({ nome: 'nota.xml', xml: nfe('EMPRESA EXEMPLO SIMPLES NACIONAL', 'CLIENTE FICTICIO SA', 101, '2026-10-05') }, rules, ctx);
+  assert.equal(saida.item, 'nf-saida'); assert.equal(saida.resumo, 'NF-e nº 101 · 05/10/2026'); assert.equal(saida.avisos.length, 0);
+  assert.equal(saida.chave.length, 44, 'chave de acesso lida');
+  const entrada = E.analisarDocumentoCliente({ nome: 'compra.xml', xml: nfe('FORNECEDOR FICTICIO LTDA', 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA ME', 55, '2026-09-28') }, rules, ctx);
+  assert.equal(entrada.item, 'nf-entrada', 'destinatário = empresa → entrada');
+  assert.ok(entrada.avisos.some(a => a.tipo === 'competencia' && a.competencia === '09/2026'), 'nota de setembro no envio de outubro');
+  const outra = E.analisarDocumentoCliente({ nome: 'x.xml', xml: nfe('COMERCIO MODELO DE ALIMENTOS LTDA', 'CLIENTE FICTICIO SA', 7, '2026-10-02') }, rules, ctx);
+  assert.equal(outra.item, null); assert.ok(outra.avisos[0].texto.includes('COMERCIO MODELO'), 'nota de outra empresa do acesso');
+  const nfse = E.analisarDocumentoCliente({ nome: 'nfse.xml', xml: '<?xml version="1.0"?><CompNfse><Nfse><InfNfse><Numero>88</Numero><DataEmissao>2026-10-10T09:00:00</DataEmissao><ValorServicos>900,00</ValorServicos><PrestadorServico><IdentificacaoPrestador><Cnpj>11111111000111</Cnpj></IdentificacaoPrestador><RazaoSocial>CONSULTORIA FICTICIA ME</RazaoSocial></PrestadorServico><TomadorServico><IdentificacaoTomador><CpfCnpj><Cnpj>12345678000199</Cnpj></CpfCnpj></IdentificacaoTomador><RazaoSocial>EMPRESA EXEMPLO SIMPLES NACIONAL LTDA</RazaoSocial></TomadorServico></InfNfse></Nfse></CompNfse>' }, rules, ctx);
+  assert.equal(nfse.item, 'nf-servicos-tomados'); assert.ok(nfse.resumo.startsWith('NFS-e nº 88'));
+  // PDF com texto: palavras das regras
+  const extrato = E.analisarDocumentoCliente({ nome: 'extrato.pdf', texto: 'BANCO FICTICIO\nExtrato de conta corrente\nAgência 0001 Conta 12345-6\nSaldo anterior 01/10/2026 1.000,00\n15/10/2026 PIX recebido 200,00\n31/10/2026 Saldo do dia' }, rules, { ...ctx, setor: 'Contábil', itensDoSetor: E.itensDoSetor(rules, 'Contábil', '10/2026', {}) });
+  assert.equal(extrato.item, 'extratos'); assert.equal(extrato.competenciaDoc, '10/2026'); assert.equal(extrato.avisos.length, 0);
+  const fatura = E.analisarDocumentoCliente({ nome: 'fatura.pdf', texto: 'Fatura do cartão de crédito\nVencimento 10/11/2026\nTotal da fatura R$ 1.234,00\nPagamento mínimo\nCompras 05/10/2026 POSTO' }, rules, { ...ctx, setor: 'Contábil', itensDoSetor: E.itensDoSetor(rules, 'Contábil', '10/2026', {}) });
+  assert.equal(fatura.item, 'cartao-empresa'); assert.ok(!fatura.avisos.some(a => a.tipo === 'competencia'), 'fatura com compras do mês: sem aviso de competência (vencimento no mês seguinte)');
+  const darf = E.analisarDocumentoCliente({ nome: 'guia.pdf', texto: 'Comprovante de Pagamento\nDocumento de Arrecadação do Simples Nacional\nPeríodo de apuração: 10/2026' }, rules, ctx);
+  assert.equal(darf.item, 'impostos-pagos');
+  // nota no envio do Contábil: diz que é do Fiscal
+  const noContabil = E.analisarDocumentoCliente({ nome: 'nota.xml', xml: nfe('EMPRESA EXEMPLO SIMPLES NACIONAL', 'CLIENTE', 101, '2026-10-05') }, rules, { ...ctx, setor: 'Contábil', itensDoSetor: E.itensDoSetor(rules, 'Contábil', '10/2026', {}) });
+  assert.equal(noContabil.item, null); assert.ok(noContabil.avisos.some(a => a.tipo === 'outroSetor' && a.texto.includes('Fiscal')));
+  // DANFE em PDF: a empresa no topo é a emitente
+  const danfe = E.analisarDocumentoCliente({ nome: 'danfe.pdf', texto: 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA\nRua Fictícia, 1\nDANFE Documento Auxiliar da Nota Fiscal Eletrônica\nChave de acesso 3526...\nDestinatário CLIENTE FICTICIO SA\nEmissão 05/10/2026' }, rules, ctx);
+  assert.equal(danfe.item, 'nf-saida');
+  const nada = E.analisarDocumentoCliente({ nome: 'foto.pdf', texto: '' }, rules, ctx);
+  assert.equal(nada.item, null);
+  // ZIP de notas e repetidas
+  const r = E.resumirVarias([saida, E.analisarDocumentoCliente({ nome: 'b.xml', xml: nfe('EMPRESA EXEMPLO SIMPLES NACIONAL', 'X SA', 103, '2026-10-07') }, rules, ctx)]);
+  assert.equal(r.item, 'nf-saida'); assert.equal(r.resumo, '2 NF-e, nº 101 a 103');
+  assert.deepEqual([...E.notasRepetidas([{ id: 'a', chaves: [saida.chave] }, { id: 'b', chaves: ['x', saida.chave] }])], [['b', 'a']]);
+  assert.ok(E.mesmaEmpresa('EMPRESA EXEMPLO SIMPLES NACIONAL', emp) && !E.mesmaEmpresa('EMPRESA MODELO', emp));
+  assert.equal(E.pontuarItens('Rua Damasco, 10', rules).some(p => p.id === 'impostos-pagos'), false, 'palavra inteira');
+});
+
 console.log(`\n${n} testes ok`);

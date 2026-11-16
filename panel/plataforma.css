@@ -1224,3 +1224,29 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .vis-det-faixa { display: block; max-width: none; padding: 6px 14px; background: #10161B; border-bottom: 1px solid rgba(255,255,255,.08); }
 .vis-corpo:has(.vis-nativo) { display: flex; flex-direction: column; }
 .vis-corpo:has(.vis-nativo) .vis-nativo { flex: 1; }
+
+/* ===== Enviar documentos: leitura dos arquivos (2.46) ===== */
+.env-arqs { flex-direction: column; flex-wrap: nowrap; }
+.env-arq { max-width: 100%; border-radius: var(--r); padding: 4px 4px 4px 8px; gap: 8px; flex-wrap: wrap; }
+.env-arq-n { min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink); }
+.env-lido { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 11.5px; min-width: 0; }
+.env-lido .chip { font-size: 10.5px; }
+.env-lido.lendo .ic { animation: vis-gira 1s linear infinite; }
+.env-mover { margin-left: auto; max-width: 220px; font-size: 12px; padding: 2px 6px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); color: var(--ink); }
+.env-solta { display: flex; align-items: center; gap: 12px; margin: 12px 14px 4px; padding: 14px 16px; border: 2px dashed var(--rule-strong); border-radius: var(--r); background: var(--surface-2); cursor: pointer; color: var(--ink-2); }
+.env-solta:hover, .env-solta.over { border-color: var(--blue-deep); background: color-mix(in srgb, var(--blue-deep) 8%, var(--surface)); }
+.env-solta:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.env-solta > .ic { width: 22px; height: 22px; color: var(--blue-deep); flex: none; }
+.env-solta b { display: block; color: var(--ink); font-size: 13px; }
+.env-solta small { color: var(--ink-2); font-size: 12px; }
+.env-lendo { margin: 6px 14px 0; font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.env-lendo .ic { animation: vis-gira 1s linear infinite; }
+.env-sem { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--dp-today) 45%, var(--rule)); border-radius: var(--r); background: var(--dp-today-bg); display: flex; flex-direction: column; gap: 6px; }
+.env-sem h4, .env-avisos h4 { margin: 0 0 2px; font: 600 12.5px var(--f-head); color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.env-sem .env-arq { background: var(--surface); }
+.env-avisos { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--dp-late) 40%, var(--rule)); border-left: 3px solid var(--dp-late); border-radius: var(--r); background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.env-av { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
+.env-av > div:first-child { flex: 1; min-width: 220px; display: flex; flex-direction: column; }
+.env-av b { color: var(--ink); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-av-ac { display: flex; gap: 6px; flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .env-lido.lendo .ic, .env-lendo .ic { animation: none; } }

@@ -73,7 +73,7 @@ export function montarCasca(C) {
     document.addEventListener('drop', (e) => {
       fundo = 0; $('#plat-drop').hidden = true;
       if (!document.body.classList.contains('plat') || e.defaultPrevented) return;   // as áreas de soltar já trataram
-      if (S.view === 'enviar') { e.preventDefault(); return; }   // Enviar documentos: só vale soltar em cima de um item da lista
+      if (S.view === 'enviar') { e.preventDefault(); P.soltarNoEnvio?.([...(e.dataTransfer?.files || [])]); return; }   // Enviar documentos: a leitura separa por item (2.46)
       const files = [...(e.dataTransfer?.files || [])]; if (!files.length) return;
       e.preventDefault(); S.plat.escolher = false; A.handleFiles(files, 'arrastar');
     });

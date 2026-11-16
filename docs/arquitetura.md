@@ -23,6 +23,7 @@ Desde a 2.16.2 o motor é dividido por assunto. `panel/engine.js` é só uma **f
 | `portal.js` | Documentos publicados pelo escritório (resposta da API) e a forma da resposta |
 | `sino.js` | Sino de novidades: foto mínima (`fotoSino`), o que mudou (`novidadesSino`), `marcarVistas`; textos em `mensagens.sino` |
 | `setores.js` | Setores (Pessoal, Fiscal, Contábil) e documentos que o cliente envia por competência: `setoresAtivos`, `menuDoSetor`, `itensDoSetor`, `situacaoCompetencia`, `textoEnvio`, `pedidosDoEnvio`, `enviosNoPortal`; listas e textos em `config.setores` e `config.documentosCliente` |
+| `docfiscal.js` | Leitura dos documentos do envio por competência (2.46): `lerNotaXml` (NF-e, NFC-e, NFS-e), `analisarDocumentoCliente` (item, mês, empresa, outro setor), `resumirVarias` (ZIP), `notasRepetidas`; palavras em `documentosCliente.itens[].reconhecer` e `documentosCliente.leitura` |
 
 Os módulos se importam entre si (há dependências em ciclo, como no arquivo único de antes). Isso funciona porque os módulos só definem funções e constantes: **nada deve chamar função de outro módulo na hora do carregamento** (no nível de cima do arquivo), só dentro de funções.
 
