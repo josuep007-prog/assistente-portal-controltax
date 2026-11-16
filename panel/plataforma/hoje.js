@@ -39,7 +39,7 @@ export function montarHoje(C) {
   /** { id, titulo (HTML), resumo (texto curto ao lado do título), contador, direita (HTML), dica, padrao (abre sozinha?), cls, corpo, corpoCls } */
   function painel({ id, titulo, resumo = '', contador = null, direita = '', dica = '', padrao = false, cls = '', corpo, corpoCls = 'pn-card-body eq-body' }) {
     const guardado = lerSecoes()[id], aberto = typeof guardado === 'boolean' ? guardado : !!padrao;
-    return `<section class="pn-card hj-painel${aberto ? ' aberto' : ''}${cls ? ' ' + cls : ''}" id="${id}" data-painel="${id}">
+    return `<section class="pn-card hj-painel${aberto ? ' aberto' : ''}${contador === 0 ? ' vazio' : ''}${cls ? ' ' + cls : ''}" id="${id}" data-painel="${id}">
       <div class="hj-painel-h"><button type="button" class="hj-painel-bt" aria-expanded="${aberto}" aria-controls="${id}-c"><span class="hj-seta">${icon('right', 'ic-sm')}</span><span class="hj-painel-t">${titulo}</span>${resumo ? `<span class="hj-painel-r">${esc(resumo)}</span>` : ''}<span class="spacer"></span>${direita}${contador != null ? `<span class="eq-n">${contador}</span>` : ''}</button>${dicaI(dica, 'Sobre esta seção')}</div>
       <div class="hj-painel-c ${corpoCls}" id="${id}-c"${aberto ? '' : ' hidden'}>${corpo}</div></section>`;
   }
@@ -263,21 +263,30 @@ export function montarHoje(C) {
     const enviado = S.plat.enviado && Date.now() - S.plat.enviado.quando < 5 * 60e3
       ? `<div class="aviso-linha ok">${icon('check')}<span><b>Solicitação de ${esc(nomeTipo(S.plat.enviado.tipo))} enviada ao escritório.</b> Ela aparece aqui assim que o portal registrar.</span></div>` : '';
 
+    const passos = passosHtml();
     viewEl.innerHTML = `
-      <div id="avisos-esc"></div>
       <div id="lote"></div>
       ${enviado}${aviso}<div id="proximo"></div>
-      <p class="hj-saud"><span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>${C.proximoPrazoHtml?.() || ''}<span id="hj-docsmes"></span></p>
       <div class="dp-toolbar hj-barra">
+        <span class="hj-saud-t"><b>${saudacao()}!</b> · ${esc(cap(hoje.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })))}</span>
         ${seletorEmpresa()}
         <span class="dp-count">${lido ? plural(base.filter(i => ['aguardando', 'andamento'].includes(i.estado)).length, 'em aberto', 'em aberto') : ''}</span>
         <button type="button" class="btn btn-sm" data-ir="pendencias">${icon('list', 'ic-sm')} Ver as solicitações</button>
         <button type="button" class="btn btn-sm" id="hj-lembrete">${icon('plus', 'ic-sm')} Lembrete</button>
         <button type="button" class="btn btn-sm btn-primary" data-ir="preencher">${icon('plus', 'ic-sm')} Novo pedido</button>
       </div>
-      ${heroHtml()}
-      ${equipeHtml()}
-      ${casosHtml()}`;
+      <div class="hj-saud hj-faixa">${C.proximoPrazoHtml?.() || ''}<span id="hj-docsmes"></span></div>
+      <div class="hj-grade">
+        <div class="hj-col">
+          ${heroHtml()}
+          ${equipeHtml()}
+          ${casosHtml()}
+        </div>
+        <aside class="hj-lado">
+          <section class="pn-card hj-passos-c"><div class="hj-passos"><h3>Próximos passos${passos.n ? ` <span class="eq-n">${passos.n}</span>` : ''}</h3>${passos.html}</div></section>
+          <div id="avisos-esc"></div>
+        </aside>
+      </div>`;
 
     function heroHtml() {
       const slides = slidesDoCarrossel();
@@ -290,7 +299,6 @@ export function montarHoje(C) {
       const abertas = base.filter(i => ['aguardando', 'andamento'].includes(i.estado));
       const resumo = lido ? [plural(abertas.length, 'em aberto', 'em aberto'), `${abertas.filter(i => i.lado === 'esc').length} com o escritório`, `${abertas.filter(i => i.lado === 'cli').length} com você`]
         .concat(cont.atrasada ? [`${cont.atrasada} ${cont.atrasada === 1 ? 'passou' : 'passaram'} da expectativa`] : []).join(' · ') : 'Os números vêm do próprio portal, com o seu acesso.';
-      const passos = passosHtml();
       return `<section class="hj-hero" style="--i:0"${lido ? ' data-pronto' : ''}>
         <div class="hj-hero-g">
           <div class="hj-donut">${anel(fatias, { ativo: null, rotulo: 'em dia', anima: animar, centro: { n: lido ? pctDia : 0, de: animar ? 0 : pctDia, suf: '%' }, titulo: 'Solicitações por situação (clique numa parte para ver as solicitações)' })}</div>
@@ -307,7 +315,6 @@ export function montarHoje(C) {
             <div class="hj-legenda">${fatias.filter(f => f.n).map(f => `<span><i style="background:${cor(f.cor)}"></i>${esc(f.rot)} <b>${f.n}</b></span>`).join('')}</div>
           </div>
         </div>
-        <div class="hj-passos"><h3>Próximos passos</h3>${passos.html}</div>
       </section>`;
     }
     function slidesDoCarrossel() {
@@ -332,7 +339,7 @@ export function montarHoje(C) {
       for (const l of lems) passo(' n-lem', 'var(--blue-deep)', l.texto, `Lembrete de hoje${l.hora ? ` · ${l.hora}` : ''}`, () => editarLembrete(l, E.iso(hoje)));
       for (const e of prazos) { const [, t] = quando(e.d); passo('', 'var(--hj-today)', e.titulo, `${e.pedir ? 'Fazer agora · ' : ''}${cap(t)} · ${e.detalhe || ROT_EV[e.tipo]}`, e.pedir ? () => fazerAgora(e.pedir) : () => abrirDia(E.iso(e.d))); }
       passosHtml.acoes = acoes;
-      return { html: li.length ? `<ol class="hj-passos-l" id="hj-passos">${li.join('')}</ol>` : `<div class="hj-zen">${icon('check')}<span>${sol ? 'Nada para fazer agora. Tudo em dia!' : 'Lendo o portal…'}</span></div>` };
+      return { n: li.length, html: li.length ? `<ol class="hj-passos-l" id="hj-passos">${li.join('')}</ol>` : `<div class="hj-zen">${icon('check')}<span>${sol ? 'Nada para fazer agora. Tudo em dia!' : 'Lendo o portal…'}</span></div>` };
     }
     // Equipe: experiência vencendo, férias a vencer e avisos sem o cálculo (com o atalho para pedir)
     function equipeHtml() {

@@ -1332,3 +1332,41 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-card .env-i .env-arq .env-mover { opacity: 0; transition: opacity .12s; }
 .env-card .env-i .env-arq:hover .env-mover, .env-card .env-i .env-arq:focus-within .env-mover { opacity: 1; }
 @media (hover: none) { .env-card .env-i .env-arq .env-mover { opacity: 1; } }
+
+/* 2.52 — Hoje (Pessoal) reorganizado: barra numa linha, prazo e documentos do mês em dois cartões, duas colunas
+   (situação + seções à esquerda; próximos passos + recados à direita); seções fechadas viram uma fileira de abas */
+.hj-barra .hj-saud-t { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.hj-barra .hj-saud-t b { font: 700 14px var(--f-head); color: var(--ink); }
+.hj-faixa { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.hj-faixa:empty, .hj-faixa:not(:has(.hj-prazo)):not(:has(.docs-mes)) { display: none; }
+.hj-faixa .hj-sep { display: none; }
+.hj-faixa .hj-prazo, .hj-faixa .docs-mes { box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; width: 100%; min-height: 48px; margin: 0; padding: 10px 14px; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-1); font: 600 13px var(--f-head); color: var(--ink); text-align: left; }
+.hj-faixa .hj-prazo { cursor: pointer; }
+.hj-faixa .hj-prazo:hover { border-color: var(--rule-strong); background: var(--surface-2); }
+.hj-faixa .hj-prazo > span { font: 500 12px var(--f-mono); color: var(--ink-2); }
+.hj-faixa #hj-docsmes:empty { display: none; }
+.hj-faixa .docs-mes > span { font: 500 12.5px var(--f-body); color: var(--ink-2); }
+.hj-grade { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.hj-col, .hj-lado { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.plat-view .hj-col > * + *, .plat-view .hj-lado > * + * { margin-top: 0; }
+.hj-grade .hj-hero { grid-template-columns: minmax(0, 1fr); }
+.hj-passos-c { overflow: hidden; }
+.hj-lado .hj-passos { border: 0; background: var(--surface); padding: 14px 16px; }
+.hj-lado .hj-passos h3 { display: flex; align-items: center; gap: 6px; font: 700 14px var(--f-head); text-transform: none; letter-spacing: 0; color: var(--ink); }
+.hj-lado .hj-passos-l { max-height: 420px; }
+.hj-lado #avisos-esc:empty { display: none; }
+.hj-lado .rec-card { margin: 0; }
+.hj-grade .hj-equipe { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.hj-grade .hj-equipe > .hj-painel { order: 0; margin: 0; }
+.hj-grade .hj-equipe > .hj-painel.aberto { order: 1; grid-column: 1 / -1; }
+.hj-grade .hj-equipe > .hj-painel:not(.aberto) .hj-seta, .hj-grade .hj-equipe > .hj-painel:not(.aberto) .hj-painel-r, .hj-grade .hj-equipe > .hj-painel:not(.aberto) .mv-mini { display: none; }
+.hj-grade .hj-equipe > .hj-painel:not(.aberto) .hj-painel-t { overflow: hidden; text-overflow: ellipsis; }
+.hj-grade .hj-equipe > .hj-painel:not(.aberto) .hj-painel-bt { padding: 12px 8px 12px 14px; }
+.hj-grade .hj-equipe > .hj-painel.vazio:not(.aberto) .hj-painel-t { color: var(--ink-2); font-weight: 500; }
+.hj-grade .hj-equipe > .hj-painel.aberto { box-shadow: var(--shadow-1); }
+@media (max-width: 1180px) { .hj-grade { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) { .hj-grade .hj-equipe { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-height: 760px) { .hj-faixa .hj-prazo, .hj-faixa .docs-mes { min-height: 40px; padding: 7px 12px; } .hj-grade, .hj-col, .hj-lado { gap: 10px; } }
+.hj-lado .rec-tx { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.hj-lado .rec-tx b { display: block; margin: 0 0 2px; }
+.hj-lado .rec-i { padding: 10px 8px 10px 16px; }
