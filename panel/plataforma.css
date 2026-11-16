@@ -1141,7 +1141,6 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .copia-setores > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
 .copia-setores label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--ink); }
 .copia-setores small { flex-basis: 100%; color: var(--ink-2); }
-.env-tambem { margin: 0; border-radius: 0; border-width: 1px 0 0; border-style: dashed; }
 .copia-atual, .copias-pend { margin: 0 0 12px; }
 .copias-pend .btn { flex: none; }
 /* Hoje do setor (2.42) */
@@ -1262,3 +1261,74 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-duv h4 { margin: 0 0 2px; font: 600 12.5px var(--f-head); color: var(--ink); display: flex; align-items: center; gap: 6px; }
 .env-duv .env-arq { background: var(--surface-2); }
 .env-duv .env-lido b { color: var(--ink); }
+
+/* 2.51 — Enviar documentos mais limpo: mês com setas, itens em dois grupos, opções no "⋯", envio no rodapé fixo */
+.env-card { display: block; }
+.env-cab { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.env-nav { display: inline-flex; align-items: stretch; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); }
+.env-nav-bt { all: unset; box-sizing: border-box; display: grid; place-items: center; width: 32px; color: var(--ink-2); cursor: pointer; }
+.env-nav-bt:hover:not([disabled]) { background: var(--surface-2); color: var(--ink); }
+.env-nav-bt[disabled] { opacity: .35; cursor: default; }
+.env-nav-bt:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
+.env-cab .env-mes { all: unset; display: inline-flex; align-items: center; padding: 6px 14px; border-left: 1px solid var(--rule); border-right: 1px solid var(--rule); }
+.env-cab .env-mes b { font: 700 15px var(--f-head); color: var(--ink); text-transform: none; }
+.env-cab-i { color: var(--ink-2); font-size: 12.5px; }
+.env-outros, .env-mais { position: relative; }
+.env-outros > summary, .env-mais > summary { list-style: none; cursor: pointer; }
+.env-outros > summary::-webkit-details-marker, .env-mais > summary::-webkit-details-marker { display: none; }
+.env-outros-l { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; width: 360px; padding: 6px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-2, 0 8px 24px rgba(0,0,0,.18)); }
+.env-op { all: unset; box-sizing: border-box; display: grid; gap: 1px; padding: 6px 8px; border-radius: var(--r); border-left: 3px solid var(--c, var(--rule-strong)); cursor: pointer; font-size: 12px; }
+.env-op b { font: 600 12.5px var(--f-head); text-transform: capitalize; color: var(--ink); }
+.env-op span { color: var(--ink-2); font-size: 11px; }
+.env-op:hover, .env-op.on { background: var(--surface-2); }
+.env-op:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; }
+.env-op.st-enviado { --c: #1A9E4B; } .env-op.st-parcial { --c: #D98E04; } .env-op.st-atrasado { --c: #C2000C; } .env-op.st-pendente { --c: #3C659B; }
+.env-cab .env-emp { padding: 3px 4px 3px 10px; font-size: 12px; }
+.env-prog { height: 5px; margin-top: 12px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.env-prog i { display: block; height: 100%; background: #1A9E4B; }
+.env-card .aviso-linha { margin: 12px 0 0; }
+.env-card .env-solta { margin: 16px 0 0; padding: 14px 18px; border-width: 1.5px; border-radius: 8px; background: var(--surface); }
+.env-solta-ic { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: color-mix(in srgb, var(--blue-deep) 16%, var(--surface)); color: var(--blue-deep); }
+.env-solta-ic .ic { width: 18px; height: 18px; }
+.env-card .env-lendo, .env-card .env-sem, .env-card .env-duv, .env-card .env-desc, .env-card .env-avisos { margin: 12px 0 0; }
+.env-duv { background: color-mix(in srgb, var(--dp-today) 12%, var(--surface)); }
+.env-duv h4, .env-desc h4 { display: flex; align-items: center; gap: 6px; margin: 0; font: 600 12.5px var(--f-head); color: var(--ink); }
+.env-duv-i { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 6px; border-top: 1px solid var(--rule); font-size: 12px; }
+.env-duv-i .env-mover { margin-left: 0; }
+.env-grupo { display: flex; align-items: center; gap: 10px; margin: 22px 0 8px; font: 600 11.5px var(--f-body); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); }
+.env-grupo::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.env-card .env-lista { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-1); }
+.env-card .env-i { grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 10px 14px; }
+.env-card .env-i:last-child { border-bottom: 0; }
+.env-card .env-i-st { width: 18px; height: 18px; background: transparent; border: 1.5px solid var(--rule-strong); }
+.env-card .env-i.disp { background: transparent; }
+.env-card .env-i.disp .env-i-st { border-style: dashed; }
+.env-card .env-i.disp .env-i-t b { color: var(--ink-2); }
+.env-i-t { gap: 4px 8px; }
+.env-i-t .dica-i { width: 20px; height: 20px; }
+.env-tb { color: var(--ink-2); font-size: 12px; }
+.env-desfazer { all: unset; color: var(--blue-deep); font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.env-desfazer:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.env-card .env-i-ac { display: flex; align-items: center; gap: 6px; }
+.env-mais > summary.icon-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r); color: var(--ink-2); }
+.env-mais[open] > summary.icon-btn, .env-mais > summary.icon-btn:hover { background: var(--surface-3); color: var(--ink); }
+.env-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: grid; gap: 2px; width: 250px; padding: 6px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--surface); box-shadow: var(--shadow-2, 0 8px 24px rgba(0,0,0,.18)); }
+.env-menu .env-na, .env-menu .env-nunca { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 4px; font-size: 12.5px; color: var(--ink); text-decoration: none; }
+.env-menu .env-na:hover, .env-menu .env-nunca:hover { background: var(--surface-2); color: var(--ink); }
+.env-menu-dica { margin-top: 4px; padding: 8px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-2); }
+.env-menu-dica b { display: block; color: var(--ink); margin-bottom: 2px; }
+.env-card .env-arqs { flex-direction: row; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.env-card .env-arq { padding: 2px 4px 2px 8px; gap: 6px; border-radius: 4px; background: var(--surface-2); border-color: var(--rule); }
+.env-card .env-arq .env-mover { margin-left: 0; max-width: 150px; font-size: 11.5px; padding: 1px 4px; border-color: var(--rule); background: transparent; color: var(--ink-2); }
+.env-card .env-arq > .ic { display: none; }
+.env-rodape { position: sticky; bottom: -28px; z-index: 5; margin-top: 18px; padding: 12px 16px; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); box-shadow: 0 -6px 18px rgba(0,0,0,.08); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.env-resumo { flex: 1 1 260px; font-size: 12.5px; color: var(--ink-2); }
+.env-resumo b { color: var(--ink); }
+.env-tambem { display: inline-flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--ink-2); }
+.env-tambem label { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); cursor: pointer; }
+@media (max-width: 900px) { .env-card .env-i { grid-template-columns: 22px minmax(0, 1fr); } .env-card .env-i-ac { grid-column: 2; } .env-outros-l { width: 280px; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-height: 760px) { .env-rodape { bottom: -20px; } }
+.env-cab .spacer, .env-duv .spacer, .env-desc .spacer { flex: 1; }
+.env-card .env-i .env-arq .env-mover { opacity: 0; transition: opacity .12s; }
+.env-card .env-i .env-arq:hover .env-mover, .env-card .env-i .env-arq:focus-within .env-mover { opacity: 1; }
+@media (hover: none) { .env-card .env-i .env-arq .env-mover { opacity: 1; } }

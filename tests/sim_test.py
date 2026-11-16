@@ -1598,10 +1598,10 @@ async def teste_leitura_envio(b):
     check(await no('nf-entrada') == ['nota da outra.xml'], 'sem item: o cliente escolhe o item à mão')
     await pn.locator('.env-i[data-item="vendas-cartao"] select[data-mover-de]').select_option('nf-servicos-tomados'); await pg.wait_for_timeout(300)
     check(await no('nf-servicos-tomados') == ['vendas cartao.pdf'], 'mudar de item pela lista do arquivo')
-    await pn.click(f'.env-mes[data-comp="{comp2}"]'); await pg.wait_for_timeout(400)
+    await pn.click('.env-outros > summary'); await pn.click(f'.env-op[data-comp-ir="{comp2}"]'); await pg.wait_for_timeout(400)
     check(await no('nf-entrada') == ['compra 55.xml'], f'a nota movida está na competência {comp2}')
     # 2.47: foto (OCR) — comprovante de imposto vira texto e cai no item; "Pular a leitura" para o OCR
-    await pn.click(f'.env-mes[data-comp="{comp}"]'); await pg.wait_for_timeout(400)
+    await pn.click('.env-outros > summary'); await pn.click(f'.env-op[data-comp-ir="{comp}"]'); await pg.wait_for_timeout(400)
     await pn.evaluate("""async (comp) => {
       const img = async (linhas, nome) => { const c = document.createElement('canvas'); c.width = 1400; c.height = 120 + linhas.length * 90; const g = c.getContext('2d');
         g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000'; g.font = 'bold 54px Arial'; linhas.forEach((l, i) => g.fillText(l, 60, 120 + i * 90));
@@ -1714,7 +1714,7 @@ async def teste_enviar_documentos(b):
     await pg.wait_for_timeout(300)
     await pn.locator('.env-i[data-item="vendas-cartao"] input[type=file]').set_input_files([{'name': 'vendas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
     await pg.wait_for_timeout(300)
-    await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check(); await pg.wait_for_timeout(300)
+    await pn.click('.env-i[data-item="nf-servicos-tomados"] .env-mais > summary'); await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check(); await pg.wait_for_timeout(300)
     check(await pn.locator('[data-tambem="Contábil"]:checked').count() == 1, 'cópia: item que serve a dois setores já marca "Enviar também para: Contábil"')
     await pn.locator('[data-tambem="Contábil"]').uncheck()   # só o Fiscal neste primeiro envio (a cópia é testada adiante)
     check(await pn.locator('.env-i.pronto').count() == 2 and await pn.locator('.env-i.disp').count() == 1 and '3 arquivos em 2 itens' in await pn.locator('#env-resumo').inner_text(), 'enviar: arquivos anexados por item e "não se aplica neste mês" marcado')
@@ -1746,7 +1746,7 @@ async def teste_enviar_documentos(b):
     await pg.wait_for_timeout(2500)
     await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(1200)
     check(await pn.locator('.env-i.ok[data-item="nf-saida"]').count() == 1 and await pn.locator('.env-i.ok[data-item="vendas-cartao"]').count() == 1 and 'Enviado em' in await pn.locator('.env-i[data-item="nf-saida"]').inner_text(), 'enviar: depois do envio, os itens ficam marcados como enviados')
-    check(await pn.locator('.env-mes.on.st-enviado').count() == 0 and '1 de 2' in await pn.locator('.env-card .pn-card-head').inner_text(), 'enviar: envio em parte — a competência não fica como enviada (1 de 2 obrigatórios)')
+    check(await pn.locator('.env-mes.on.st-enviado').count() == 0 and '1 de 2' in await pn.locator('#env-cab').inner_text(), 'enviar: envio em parte — a competência não fica como enviada (1 de 2 obrigatórios)')
     guardado = await pn.evaluate("chrome.storage.local.get(['enviosDocs', 'docsNaoSeAplica']).then(r => JSON.stringify(r))")
     check(comp in guardado and 'nf-saida' in guardado and 'notas-saida' not in guardado and 'vendas.pdf' not in guardado, 'enviar: no computador ficam só competência, item e quantidade — sem nomes de arquivos')
     # 2.41: "Enviar também para" — o relatório de vendas serve ao Fiscal e ao Contábil: o Contábil já vem marcado; ao enviar a 1ª, a cópia abre sozinha
@@ -1828,7 +1828,7 @@ async def teste_enviar_documentos(b):
     check(await total() == antes3 + 1 and await pn.locator('.copia-atual').count() == 0, 'geral: "Não enviar esta cópia" sai da cópia sem enviar nada')
     await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(900)
     # "Nunca se aplica a esta empresa" tira o item e dá para voltar
-    await pn.click('.env-i[data-item="impostos-pagos"] [data-nunca]'); await pg.wait_for_timeout(400)
+    await pn.click('.env-i[data-item="impostos-pagos"] .env-mais > summary'); await pn.click('.env-i[data-item="impostos-pagos"] [data-nunca]'); await pg.wait_for_timeout(400)
     check(await pn.locator('.env-i[data-item="impostos-pagos"]').count() == 0 and await pn.locator('.env-fixos [data-voltar="impostos-pagos"]').count() == 1, 'enviar: "nunca se aplica a esta empresa" tira o item da lista')
     await pn.evaluate("document.querySelector('.env-fixos').open = true"); await pn.click('.env-fixos [data-voltar="impostos-pagos"]'); await pg.wait_for_timeout(400)
     check(await pn.locator('.env-i[data-item="impostos-pagos"]').count() == 1, 'enviar: "Voltar para a lista" devolve o item')
@@ -3063,9 +3063,9 @@ async def teste_contraste(b):
         await medir_tela('hoje-setor')
         await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(700)
         await pn.locator('.env-i[data-item="nf-saida"] input[type=file]').set_input_files([{'name': 'notas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
-        await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check()
+        await pn.click('.env-i[data-item="nf-servicos-tomados"] .env-mais > summary'); await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check()
         await medir_tela('enviar-documentos')
-        await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').uncheck()
+        await pn.click('.env-i[data-item="nf-servicos-tomados"] [data-na-desfazer]')
         await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(700)
         # detalhe de uma solicitação, em cada aba
         await pn.click('#rail [data-mod="pendencias"]'); await pg.wait_for_timeout(600)

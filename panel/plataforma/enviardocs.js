@@ -249,18 +249,22 @@ export function montarEnviardocs(C) {
     const linha = (it) => {
       const arqs = arquivosDe(comp, it.id), env1 = enviados[it.id], disp = doMesDe(comp, it.id);
       const estado = disp ? 'disp' : arqs.length ? 'pronto' : env1 ? 'ok' : '';
+      const outros = (it.setores || []).filter(s => s !== setor).map(s => E.setorDef(S.rules, s).rotulo || s);
       return `<div class="env-i ${estado}" data-item="${esc(it.id)}">
-        <span class="env-i-st" aria-hidden="true">${icon(disp ? 'minus' : env1 || arqs.length ? 'check' : 'file', 'ic-sm')}</span>
+        <span class="env-i-st" aria-hidden="true">${disp ? '' : env1 || arqs.length ? icon('check', 'ic-sm') : ''}</span>
         <div class="env-i-tx">
-          <div class="env-i-t"><b>${esc(it.rotulo)}</b>${it.obrigatorio ? '' : '<span class="chip">opcional</span>'}${(it.setores || []).filter(s => s !== setor).map(s => `<span class="chip info" title="Este documento também serve ao ${esc(s)}">também ${esc(E.setorDef(S.rules, s).rotulo || s)}</span>`).join('')}</div>
-          ${it.dica ? `<small class="env-dica">${esc(it.dica)}</small>` : ''}
-          ${env1 ? `<small class="env-ok">${icon('check', 'ic-sm')} Enviado em ${esc(E.fmtDate(new Date(env1.quando)))} (${plural(env1.n || 1, 'arquivo', 'arquivos')}). Pode anexar mais e enviar um complemento.</small>` : ''}
+          <div class="env-i-t"><b>${esc(it.rotulo)}</b>${it.dica ? `<button type="button" class="dica-i" data-tip="${esc(it.dica)}" title="${esc(it.dica)}" aria-label="${esc(`O que enviar: ${it.dica}`)}">${icon('info', 'ic-sm')}</button>` : ''}${outros.length && !disp ? `<span class="env-tb" title="Este documento também serve ao ${esc(outros.join(' e '))}">também ${esc(outros.join(' e '))}</span>` : ''}${disp ? `<span class="env-tb">não tenho neste mês</span><button type="button" class="env-desfazer" data-na-desfazer>desfazer</button>` : ''}</div>
+          ${env1 && !disp ? `<small class="env-ok">${icon('check', 'ic-sm')} Enviado em ${esc(E.fmtDate(new Date(env1.quando)))} (${plural(env1.n || 1, 'arquivo', 'arquivos')}). Pode anexar mais e enviar um complemento.</small>` : ''}
           ${arqs.length ? `<div class="env-arqs">${arqs.map((f, i) => chipArquivo(f, i, it.id)).join('')}</div>` : ''}
         </div>
         <div class="env-i-ac">
-          ${disp ? '' : `<button type="button" class="btn btn-sm" data-anexar>${icon('upload', 'ic-sm')} ${arqs.length ? 'Anexar mais' : 'Anexar'}</button><input type="file" multiple hidden>`}
-          <label class="env-na" title="Este documento não existe neste mês (ex.: não houve compra)"><input type="checkbox" data-na ${disp ? 'checked' : ''}> Não se aplica neste mês</label>
-          <button type="button" class="env-nunca" data-nunca title="Tira este item da lista desta empresa em todos os meses (dá para voltar atrás no fim da página)">Nunca se aplica a esta empresa</button>
+          ${disp ? '' : `<button type="button" class="btn btn-sm" data-anexar>${icon('plus', 'ic-sm')} ${arqs.length ? 'Anexar mais' : 'Anexar'}</button><input type="file" multiple hidden>`}
+          <details class="env-mais"><summary class="icon-btn" aria-label="Mais opções de ${esc(it.rotulo)}" title="Mais opções">${icon('more', 'ic-sm')}</summary>
+            <div class="env-menu" role="menu">
+              <label class="env-na" title="Este documento não existe neste mês (ex.: não houve compra)"><input type="checkbox" data-na ${disp ? 'checked' : ''}> Não tenho neste mês</label>
+              <button type="button" class="env-nunca" data-nunca title="Tira este item da lista desta empresa em todos os meses (dá para voltar atrás no fim da página)">Esta empresa nunca tem</button>
+              ${it.dica ? `<div class="env-menu-dica"><b>O que enviar aqui</b>${esc(it.dica)}</div>` : ''}
+            </div></details>
         </div>
       </div>`;
     };
@@ -280,20 +284,29 @@ export function montarEnviardocs(C) {
     const lendoAgora = [...atual.itens.flatMap(it => arquivosDe(comp, it.id)), ...semItem].some(f => env.leituras.get(f)?.estado === 'lendo');
     const guardarRolagem = viewEl.scrollTop;
 
+    const idx = meses.indexOf(atual);
+    const maisNovo = meses[idx - 1], maisVelho = meses[idx + 1];   // a lista vem do mês mais recente para o mais antigo
+    const obrig = atual.itens.filter(i => i.obrigatorio), opc = atual.itens.filter(i => !i.obrigatorio);
+    const pct = atual.sit.total ? Math.round(100 * atual.sit.feitos / atual.sit.total) : 0;
+    const nomeLongo = (c) => { const t = new Date(c.ano, c.mes - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(' de ', ' '); return t[0].toUpperCase() + t.slice(1); };
     viewEl.innerHTML = `
-      <div class="env-topo">
-        <div class="env-intro"><h3>Documentos para o ${esc(def.rotulo || setor)}</h3><p class="muted">${esc(T.explica || 'Anexe os documentos de cada item e clique em Enviar ao escritório.')}</p></div>
-        <div class="env-emp">${icon('briefcase', 'ic-sm')}<span>${esc(P.apelidoDe?.(empresa()) || empresa() || 'Empresa')}</span>${emps.length > 1 ? '<button type="button" class="btn btn-sm" id="env-trocar">Trocar empresa</button>' : ''}</div>
-      </div>
-      <div class="env-meses" role="tablist" aria-label="Competência">
-        ${meses.map(m => `<button type="button" role="tab" class="env-mes st-${m.sit.estado}${m.c.competencia === comp ? ' on' : ''}" data-comp="${m.c.competencia}" aria-selected="${m.c.competencia === comp}" title="${esc(`Competência ${m.c.competencia} — ${ROT[m.sit.estado] || 'Em andamento'}`)}">
-          <b>${esc(nomeMes(m.c.ano, m.c.mes))}</b><small>${m.c.ano}</small><span class="env-mes-st">${esc(ROT[m.sit.estado] || 'Em andamento')}</span></button>`).join('')}
-      </div>
-      <section class="pn-card env-card">
-        <div class="pn-card-head"><h3>Competência ${esc(comp)}</h3><span class="pill env-pill st-${atual.sit.estado}">${esc(ROT[atual.sit.estado] || 'Em andamento')}</span>
-          <small>${atual.c.limite ? `Enviar até ${esc(E.fmtDate(atual.c.limite))}` : ''}${atual.sit.total ? ` · ${atual.sit.feitos} de ${atual.sit.total} ${atual.sit.total === 1 ? 'documento obrigatório enviado' : 'documentos obrigatórios enviados'}` : ''}${doPortal.length ? ` · no portal: solicitação nº ${esc(doPortal.map(x => x.numero).filter(Boolean).join(', ') || '—')}` : ''}</small></div>
+      <section class="env-card">
+        <div class="env-cab" id="env-cab">
+          <div class="env-nav" role="group" aria-label="Competência">
+            <button type="button" class="env-nav-bt" ${maisVelho ? `data-comp-ir="${maisVelho.c.competencia}"` : 'disabled'} aria-label="Mês anterior">${icon('left', 'ic-sm')}</button>
+            <span class="env-mes on st-${atual.sit.estado}" data-comp="${comp}"><b>${esc(nomeLongo(atual.c))}</b></span>
+            <button type="button" class="env-nav-bt" ${maisNovo ? `data-comp-ir="${maisNovo.c.competencia}"` : 'disabled'} aria-label="Mês seguinte">${icon('right', 'ic-sm')}</button>
+          </div>
+          <span class="pill env-pill st-${atual.sit.estado}">${esc(ROT[atual.sit.estado] || 'Em andamento')}</span>
+          <small class="env-cab-i">${atual.c.limite ? `enviar até ${esc(E.fmtDate(atual.c.limite))}` : ''}${atual.sit.total ? ` · ${atual.sit.feitos} de ${atual.sit.total} ${atual.sit.total === 1 ? 'obrigatório enviado' : 'obrigatórios enviados'}` : ''}${doPortal.length ? ` · no portal: nº ${esc(doPortal.map(x => x.numero).filter(Boolean).join(', ') || '—')}` : ''}</small>
+          <span class="spacer"></span>
+          <details class="env-outros"><summary class="btn btn-sm btn-ghost">Outros meses ▾</summary>
+            <div class="env-outros-l" role="menu">${meses.map(m => `<button type="button" class="env-op st-${m.sit.estado}${m.c.competencia === comp ? ' on' : ''}" data-comp-ir="${m.c.competencia}"><b>${esc(nomeMes(m.c.ano, m.c.mes))} ${m.c.ano}</b><span>${esc(ROT[m.sit.estado] || 'Em andamento')}</span></button>`).join('')}</div></details>
+          <span class="env-emp" title="Empresa">${icon('briefcase', 'ic-sm')}<span>${esc(P.apelidoDe?.(empresa()) || empresa() || 'Empresa')}</span>${emps.length > 1 ? '<button type="button" class="btn btn-sm btn-ghost" id="env-trocar">Trocar</button>' : ''}</span>
+        </div>
+        ${atual.sit.total ? `<div class="env-prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Obrigatórios enviados"><i style="width:${pct}%"></i></div>` : ''}
         ${atual.sit.semDetalhe ? `<div class="aviso-linha">${icon('info')}<span>Esta competência já foi enviada (solicitação nº ${esc(doPortal[0]?.numero || '')} no portal), provavelmente em outro computador. Aqui não tenho o detalhe de quais documentos foram.</span></div>` : ''}
-        ${leituraAtiva() ? `<div class="env-solta" id="env-solta" role="button" tabindex="0">${icon('upload')}<div><b>${esc(TL().solte || 'Solte aqui todos os documentos do mês: eu leio no seu computador e separo por item.')}</b><small>XML de nota fiscal (ou um ZIP com elas), PDF, planilha… Ou clique para escolher. Você confere tudo antes de enviar.</small></div><input type="file" multiple hidden id="env-solta-inp"></div>
+        ${leituraAtiva() ? `<div class="env-solta" id="env-solta" role="button" tabindex="0"><span class="env-solta-ic">${icon('upload')}</span><div><b>${esc(TL().solteCurto || 'Solte aqui os documentos do mês')}</b><small>${esc(TL().solteDica || 'Eu leio no seu computador e separo por item. Ou clique para escolher os arquivos.')}</small></div><input type="file" multiple hidden id="env-solta-inp"></div>
           ${env.lendo ? `<div class="env-lendo" role="status">${icon('refresh', 'ic-sm')} Lendo os arquivos… ${env.lendo.n} de ${env.lendo.m}</div>` : ''}` : ''}
         ${semItem.length ? `<div class="env-sem"><h4>${esc(TL().naoReconheci || 'Não reconheci estes arquivos: escolha o item de cada um.')}</h4>${semItem.map((f, i) => {
           const info = env.leituras.get(f), os = info?.analise?.outroSetor;
@@ -302,28 +315,33 @@ export function montarEnviardocs(C) {
             <select class="env-mover" data-sem="${i}" aria-label="Escolher o item de ${esc(f.name)}"><option value="" selected disabled>Escolha o item…</option>${opcoesItens('')}</select>
             <button type="button" class="icon-btn" data-sem-tirar="${i}" aria-label="Tirar ${esc(f.name)}">${icon('x', 'ic-sm')}</button></div>`;
         }).join('')}</div>` : ''}
-        ${duvidas.length ? `<div class="env-duv" id="env-duv" role="status"><h4>${icon('info', 'ic-sm')} ${esc((TL().duvidas || 'Coloquei {n} arquivo(s) onde acho que vão. Está certo?').replace('{n}', duvidas.length))}</h4>${duvidas.map((d, n) => `<div class="env-arq env-duv-i">${icon('clip', 'ic-sm')}${nomeArq(d.f)}<small class="env-lido">em <b>${esc(d.item.rotulo)}</b></small>
+        ${duvidas.length ? `<div class="env-duv" id="env-duv" role="status"><h4>${icon('alert', 'ic-sm')} ${esc((TL().duvidas || 'Coloquei {n} arquivo(s) onde acho que vão. Está certo?').replace('{n}', duvidas.length))}${duvidas.length > 1 ? `<span class="spacer"></span><button type="button" class="btn btn-sm" id="env-duv-todos">Está tudo certo</button>` : ''}</h4>${duvidas.map((d, n) => `<div class="env-duv-i">${nomeArq(d.f)}<small class="env-lido">em <b>${esc(d.item.rotulo)}</b></small><span class="spacer"></span>
             <button type="button" class="btn btn-sm btn-primary" data-duv-ok="${n}">Está certo</button>
-            <select class="env-mover" data-duv-mover="${n}" aria-label="Mudar ${esc(d.f.name)} de item"><option value="" selected disabled>Mudar para…</option>${opcoesItens('')}</select></div>`).join('')}
-            ${duvidas.length > 1 ? `<div><button type="button" class="btn btn-sm" id="env-duv-todos">Está tudo certo</button></div>` : ''}</div>` : ''}
-        ${descartados.length ? `<div class="env-desc" id="env-desc" role="status"><h4>${icon('copy', 'ic-sm')} ${esc((TL().descartados || 'Não incluí {n} arquivo(s) repetido(s): já há um igual no envio.').replace('{n}', descartados.length))}</h4>${descartados.map((d, n) => `<div class="env-arq env-desc-i">${icon('clip', 'ic-sm')}${nomeArq(d.f)}<small class="env-lido">igual a “${esc(d.igual.name)}”</small><button type="button" class="btn btn-sm btn-ghost" data-desc-incluir="${n}">Incluir mesmo assim</button></div>`).join('')}<div><button type="button" class="btn btn-sm" id="env-desc-ok">Entendi</button></div></div>` : ''}
+            <select class="env-mover" data-duv-mover="${n}" aria-label="Mudar ${esc(d.f.name)} de item"><option value="" selected disabled>Mudar para…</option>${opcoesItens('')}</select></div>`).join('')}</div>` : ''}
+        ${descartados.length ? `<div class="env-desc" id="env-desc" role="status"><h4>${icon('copy', 'ic-sm')} ${esc((TL().descartados || 'Não incluí {n} arquivo(s) repetido(s): já há um igual no envio.').replace('{n}', descartados.length))}<span class="spacer"></span><button type="button" class="btn btn-sm" id="env-desc-ok">Entendi</button></h4>${descartados.map((d, n) => `<div class="env-arq env-desc-i">${icon('clip', 'ic-sm')}${nomeArq(d.f)}<small class="env-lido">igual a “${esc(d.igual.name)}”</small><button type="button" class="btn btn-sm btn-ghost" data-desc-incluir="${n}">Incluir mesmo assim</button></div>`).join('')}</div>` : ''}
         ${avisos.length ? `<div class="env-avisos" id="env-avisos"><h4>${icon('alert', 'ic-sm')} Confira antes de enviar</h4>${avisos.map((a, n) => `<div class="env-av env-av-${esc(a.av.tipo)}"><div><b>${esc(a.f ? a.f.name : (atual.itens.find(i => i.id === a.item)?.rotulo || ''))}</b><span>${esc(a.av.texto)}</span></div><div class="env-av-ac">
             ${a.av.tipo === 'competencia' && comps.some(c => c.competencia === a.av.competencia) ? `<button type="button" class="btn btn-sm" data-av-mover="${n}">Mover para ${esc(a.av.competencia)}</button>` : ''}
             ${['empresa', 'repetido'].includes(a.av.tipo) ? `<button type="button" class="btn btn-sm" data-av-tirar="${n}">Tirar</button>` : ''}
             <button type="button" class="btn btn-sm btn-ghost" data-av-ok="${n}">Está certo</button></div></div>`).join('')}</div>` : ''}
-        <div class="env-lista">${atual.itens.map(linha).join('') || '<p class="muted" style="margin:12px 14px">Nenhum documento nesta competência.</p>'}</div>
-        ${outrosSetores.length ? `<div class="copia-setores env-tambem"><span>${icon('copy', 'ic-sm')} Enviar também para:</span>${outrosSetores.map(s => `<label><input type="checkbox" data-tambem="${esc(s)}" ${tambem.includes(s) ? 'checked' : ''}> ${esc(rot(s))}</label>`).join('')}<small class="muted">Depois que o portal salvar a solicitação do ${esc(def.rotulo || setor)}, eu abro uma cópia para cada setor marcado, com o mesmo assunto, a mesma lista e os mesmos anexos. Você confere e envia cada uma.</small></div>` : ''}
-        <div class="env-rodape">
-          <span class="muted" id="env-resumo">${nArq ? `${plural(nArq, 'arquivo', 'arquivos')} em ${plural(comArq.length, 'item', 'itens')}${faltam.length ? ` · ainda falta: ${esc(faltam.map(f => f.rotulo).join('; '))}` : ''}` : 'Anexe os documentos e envie tudo de uma vez (ou em partes).'}${semItem.length ? ` · ${plural(semItem.length, 'arquivo sem item não vai', 'arquivos sem item não vão')} junto` : ''}${duvidas.length ? ` · ${plural(duvidas.length, 'arquivo para confirmar o item', 'arquivos para confirmar o item')}` : ''}${lendoAgora ? ' · esperando a leitura terminar' : ''}</span>
-          <button type="button" class="btn btn-primary" id="env-enviar" ${nArq && !lendoAgora ? '' : 'disabled'}>${icon('fill', 'ic-sm')} Enviar ao escritório</button>
-        </div>
+        ${obrig.length ? `<h4 class="env-grupo">Obrigatório</h4><div class="env-lista">${obrig.map(linha).join('')}</div>` : ''}
+        ${opc.length ? `<h4 class="env-grupo">Se houver no mês</h4><div class="env-lista">${opc.map(linha).join('')}</div>` : ''}
+        ${atual.itens.length ? '' : '<p class="muted" style="margin:12px 0">Nenhum documento nesta competência.</p>'}
       </section>
       <div id="copias-pend"></div>
       ${dispensadosFixos.length ? `<details class="env-fixos"><summary>${plural(dispensadosFixos.length, 'documento que não se aplica', 'documentos que não se aplicam')} a esta empresa</summary>
-        ${dispensadosFixos.map(i => `<div class="env-fixo"><span>${esc(i.rotulo)}</span><button type="button" class="btn btn-sm" data-voltar="${esc(i.id)}">Voltar para a lista</button></div>`).join('')}</details>` : ''}`;
+        ${dispensadosFixos.map(i => `<div class="env-fixo"><span>${esc(i.rotulo)}</span><button type="button" class="btn btn-sm" data-voltar="${esc(i.id)}">Voltar para a lista</button></div>`).join('')}</details>` : ''}
+      <div class="env-rodape">
+        <span class="env-resumo" id="env-resumo">${nArq ? `<b>${plural(nArq, 'arquivo', 'arquivos')}</b> em ${plural(comArq.length, 'item', 'itens')}${faltam.length ? ` · ainda falta: ${esc(faltam.map(f => f.rotulo).join('; '))}` : ' · nenhum obrigatório faltando'}` : 'Anexe os documentos e envie tudo de uma vez (ou em partes).'}${semItem.length ? ` · ${plural(semItem.length, 'arquivo sem item não vai', 'arquivos sem item não vão')} junto` : ''}${duvidas.length ? ` · ${plural(duvidas.length, 'arquivo para confirmar o item', 'arquivos para confirmar o item')}` : ''}${lendoAgora ? ' · esperando a leitura terminar' : ''}</span>
+        ${outrosSetores.length ? `<span class="env-tambem" title="Depois que o portal salvar a solicitação do ${esc(def.rotulo || setor)}, eu abro uma cópia para cada setor marcado, com o mesmo assunto, a mesma lista e os mesmos anexos. Você confere e envia cada uma.">Enviar também ao${outrosSetores.map(s => `<label><input type="checkbox" data-tambem="${esc(s)}" ${tambem.includes(s) ? 'checked' : ''}> ${esc(rot(s))}</label>`).join('')}</span>` : ''}
+        <button type="button" class="btn btn-primary" id="env-enviar" ${nArq && !lendoAgora ? '' : 'disabled'}>${icon('fill', 'ic-sm')} Conferir e enviar ao escritório</button>
+      </div>`;
 
     // ---- ligações
-    viewEl.querySelectorAll('[data-comp]').forEach(b => b.addEventListener('click', () => { env.competencia = b.dataset.comp; renderEnviar(); }));
+    viewEl.querySelectorAll('[data-comp-ir]').forEach(b => b.addEventListener('click', () => { env.competencia = b.dataset.compIr; renderEnviar(); }));
+    // menus "⋯" e "Outros meses": um aberto por vez; fecha ao clicar fora
+    const menus = [...viewEl.querySelectorAll('details.env-mais, details.env-outros')];
+    menus.forEach(d => d.addEventListener('toggle', () => { if (d.open) menus.forEach(o => { if (o !== d) o.open = false; }); }));
+    viewEl.addEventListener('click', (e) => menus.forEach(d => { if (d.open && !d.contains(e.target)) d.open = false; }));
     $('#env-trocar')?.addEventListener('click', async () => { await P.escolherEmpresa?.({ tipo: null }); renderEnviar(); });
     viewEl.querySelectorAll('.env-i').forEach(el => {
       const id = el.dataset.item, k = chaveArq(comp, id);
@@ -341,6 +359,9 @@ export function montarEnviardocs(C) {
         env.naoAplica = e.target.checked ? [...new Set([...env.naoAplica, chave])] : env.naoAplica.filter(x => x !== chave);
         if (e.target.checked) env.arquivos.delete(k);
         gravarNaoAplica(); renderEnviar();
+      });
+      el.querySelector('[data-na-desfazer]')?.addEventListener('click', () => {
+        env.naoAplica = env.naoAplica.filter(x => x !== `${empresa()}|${comp}|${id}`); gravarNaoAplica(); renderEnviar();
       });
       el.querySelector('[data-nunca]')?.addEventListener('click', () => {
         env.naoAplica = [...new Set([...env.naoAplica, `${empresa()}|${id}`])]; env.arquivos.delete(k);
