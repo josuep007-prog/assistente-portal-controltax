@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.16-2",
+  "versao": "2026.11.16-3",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -130,6 +130,8 @@
           "ativo": true,
           "_comentario": "2.46: a extensão lê no computador do cliente os arquivos soltos em Enviar documentos (XML de nota e PDF com texto; fotos e escaneados ficam para a fase 2) e coloca cada um no item certo. As palavras de cada item ficam em itens[].reconhecer (fortes valem 3, comuns 1; excluir zera). Nada é guardado.",
           "pontosMinimos": 3,
+          "sequenciaMax": 30,
+          "periodo": {"itens": ["extratos"], "folgaInicio": 5, "folgaFim": 5, "_comentario": "2.48: o extrato deve cobrir o mês da competência; com mais de 5 dias faltando no começo ou no fim, avisa."},
           "ocr": {"ativo": true, "maxPaginas": 2, "confiancaMinima": 70, "tempoMaxSeg": 40, "_comentario": "2.47: foto e PDF escaneado passam pelo OCR (só as primeiras páginas). Abaixo da confiança mínima, ou com poucas palavras do item, o arquivo não entra sozinho: fica a sugestão \"Colocar em …\"."},
           "maxPaginas": 3,
           "nf": {
@@ -153,7 +155,9 @@
             "pular": "Pular a leitura",
             "pulado": "leitura pulada: escolha o item",
             "colocarEm": "Colocar em “{rotulo}”",
-            "sugestaoOcr": "Lido em imagem: confira o item."
+            "sugestaoOcr": "Lido em imagem: confira o item.",
+            "sequencia": "Entre as notas nº {de} e {ate} faltam: {faltam}. Se foram canceladas, está tudo certo; senão, anexe-as.",
+            "periodoIncompleto": "Este extrato vai de {de} a {ate}: confira se falta o começo ou o fim do mês."
           }
         },
         "textos": {

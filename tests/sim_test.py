@@ -1607,8 +1607,24 @@ async def teste_leitura_envio(b):
     if ok: await pn.locator('.env-sem-i', has_text='foto longa.png').locator('[data-pular-leitura]').click()
     ok = await espera(lambda: pn.evaluate("(document.querySelector('.env-sem')?.innerText || '').includes('leitura pulada')"), 20)
     check(ok, '"Pular a leitura" para o OCR e deixa o cliente escolher o item')
+    # 2.48: buraco na numeração das notas emitidas e o detalhe na descrição da Solicitação Geral
+    await pn.locator('#env-solta-inp').set_input_files([{'name': 'nota 103.xml', 'mimeType': 'text/xml', 'buffer': _nfe(EMP, 'CLIENTE FICTICIO SA', 103, d1)}])
+    ok = await espera(lambda: pn.evaluate("(document.querySelector('#env-avisos')?.innerText || '').includes('faltam: 102')"), 20)
+    check(ok, 'sequência: notas 101 e 103 → avisa que falta a 102')
+    await pn.locator('.env-av-sequencia [data-av-ok]').click(); await pg.wait_for_timeout(300)
+    check(await pn.locator('.env-av-sequencia').count() == 0, 'sequência: "Está certo" (nota cancelada) tira o aviso')
+    await pn.click('#env-enviar')
+    desc = ''
+    for _ in range(60):
+        desc = await pg.evaluate("document.querySelector('main [formcontrolname=description]')?.value || ''")
+        if 'NF-e' in desc: break
+        await pg.wait_for_timeout(500)
+    check('(2 NF-e, nº 101 a 103)' in desc, f'descrição: o que foi lido vai junto ao escritório ({desc[:200]!r})')
     stored = await pn.evaluate("chrome.storage.local.get(null).then(o => JSON.stringify(o))")
-    check('nota 101' not in stored and 'FORNECEDOR' not in stored and 'extrato' not in stored and 'foto' not in stored, 'nada da leitura fica guardado (nem nomes de arquivos)')
+    envios = await pn.evaluate("chrome.storage.local.get(['enviosDocs', 'docsNaoSeAplica']).then(o => JSON.stringify(o))")
+    # o que a leitura achou (emitente, cliente, conta) não é guardado; a marcação do envio não tem nomes de arquivos
+    # (o rascunho e o histórico do pedido guardam os nomes dos anexos, como em qualquer pedido)
+    check('FORNECEDOR' not in stored and 'CLIENTE FICTICIO' not in stored and 'COMERCIO MODELO' not in stored and 'conta final' not in stored and '.xml' not in envios and '.png' not in envios, 'nada do que a leitura achou fica guardado; a marcação do envio não tem nomes de arquivos')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:3]) if erros else ''))
     await ctx.close()
 

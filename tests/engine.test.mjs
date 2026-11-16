@@ -2294,4 +2294,21 @@ t('envio por competência (2.46): XML de nota, PDF com texto, mês e empresa', (
   assert.equal(E.pontuarItens('Rua Damasco, 10', rules).some(p => p.id === 'impostos-pagos'), false, 'palavra inteira');
 });
 
+t('envio por competência (2.48): período do extrato, sequência das notas e detalhe na descrição', () => {
+  const ctx = { empresa: 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', competencia: '10/2026', itensDoSetor: E.itensDoSetor(rules, 'Contábil', '10/2026', {}), setor: 'Contábil' };
+  const inteiro = E.analisarDocumentoCliente({ nome: 'extrato.pdf', texto: 'Banco Inter\nExtrato de conta corrente\nConta 12345-6\nSaldo anterior 01/10/2026\n15/10/2026 PIX 200,00\n31/10/2026 Saldo do dia' }, rules, ctx);
+  assert.equal(inteiro.item, 'extratos'); assert.deepEqual(inteiro.conta, { banco: 'Inter', conta: '3456' });
+  assert.deepEqual(inteiro.periodo, { de: '01/10', ate: '31/10' }); assert.ok(!inteiro.avisos.some(a => a.tipo === 'periodo'));
+  assert.equal(inteiro.resumo, 'Extratos · Inter · conta final 3456 · 01/10 a 31/10');
+  const meio = E.analisarDocumentoCliente({ nome: 'extrato.pdf', texto: 'Extrato de conta corrente\nSaldo anterior 10/10/2026\n15/10/2026 PIX\n20/10/2026 Saldo do dia' }, rules, ctx);
+  assert.ok(meio.avisos.some(a => a.tipo === 'periodo' && a.texto.includes('10/10 a 20/10')), 'extrato que não cobre o mês todo');
+  const notas = [101, 102, 104, 105, 108].map(n => ({ tipo: 'nfe', serie: '1', numero: String(n) }));
+  assert.deepEqual(E.faltasNaSequencia(notas), [{ tipo: 'nfe', serie: '1', de: 101, ate: 108, faltam: [103, 106, 107] }]);
+  assert.deepEqual(E.faltasNaSequencia([{ tipo: 'nfe', serie: '1', numero: '1' }, { tipo: 'nfe', serie: '1', numero: '500' }]), [], 'buraco grande demais: não avisa (outra série ou sistema)');
+  assert.equal(E.detalheDoItem([{ nota: notas[0] }, { notas: notas.slice(1) }]), '5 NF-e, nº 101 a 108');
+  assert.equal(E.detalheDoItem([inteiro]), 'Inter conta final 3456 01/10 a 31/10');
+  const d = E.textoEnvio(rules, { setor: 'Fiscal', competencia: '10/2026', enviados: [{ rotulo: 'Notas fiscais de saída', n: 2, detalhe: '5 NF-e, nº 101 a 108' }] }).descricao;
+  assert.ok(d.includes('• Notas fiscais de saída — 2 arquivos (5 NF-e, nº 101 a 108)'));
+});
+
 console.log(`\n${n} testes ok`);

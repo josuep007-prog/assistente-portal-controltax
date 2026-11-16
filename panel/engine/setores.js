@@ -102,7 +102,7 @@ export function textoEnvio(regras, { setor, competencia, enviados = [], faltam =
     + (complemento ? (T.sufixoComplemento || ' – complemento') : '');
   const linhas = [
     T.enviados || 'Documentos enviados nesta solicitação:',
-    ...enviados.map(e => `• ${e.rotulo}${e.n ? ` — ${plural(e.n, 'arquivo', 'arquivos')}` : ''}`)
+    ...enviados.map(e => `• ${e.rotulo}${e.n ? ` — ${plural(e.n, 'arquivo', 'arquivos')}` : ''}${e.detalhe ? ` (${e.detalhe})` : ''}`)
   ];
   if (faltam.length) linhas.push('', T.faltam || 'Ainda vou enviar:', ...faltam.map(r => `• ${r}`));
   if (dispensados.length) linhas.push('', T.dispensados || 'Não se aplica neste mês:', ...dispensados.map(r => `• ${r}`));

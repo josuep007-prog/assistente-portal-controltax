@@ -136,6 +136,15 @@ export function montarEnviardocs(C) {
       for (const av of info.analise?.avisos || []) if (av.tipo !== 'outroSetor' || item) out.push({ f, item, av });
       if (rep.has(f)) out.push({ f, item, av: { tipo: 'repetido', texto: (TL().repetido || 'Este arquivo repete {outro}.').replace('{outro}', `“${rep.get(f).name}”`) } });
     }
+    // 2.48: buracos na numeração das notas que a empresa emitiu (pode ser nota cancelada: o cliente marca "Está certo")
+    const idSaida = cfg().leitura?.nf?.saida || 'nf-saida';
+    const notas = arquivosDe(comp, idSaida).flatMap(f => { const a = env.leituras.get(f)?.analise; return a?.notas || (a?.nota ? [a.nota] : []); });
+    for (const g of E.faltasNaSequencia(notas, +cfg().leitura?.sequenciaMax || 30)) {
+      const chave = `${empresa()}|${comp}|${g.tipo}|${g.serie}|${g.faltam.join(',')}`;
+      if (env.avisosOk?.has(chave)) continue;
+      const nums = g.faltam.length > 8 ? `${g.faltam.slice(0, 8).join(', ')}…` : g.faltam.join(', ');
+      out.push({ f: null, item: idSaida, av: { tipo: 'sequencia', chave, texto: (TL().sequencia || 'Entre as notas nº {de} e {ate} faltam: {faltam}. Se foram canceladas, está tudo certo; senão, anexe-as.').replace('{de}', g.de).replace('{ate}', g.ate).replace('{faltam}', nums) } });
+    }
     return out;
   }
   const gravarNaoAplica = () => chrome.storage.local.set({ docsNaoSeAplica: env.naoAplica = env.naoAplica.slice(-MAX_CHAVES) });
@@ -248,7 +257,7 @@ export function montarEnviardocs(C) {
             <select class="env-mover" data-sem="${i}" aria-label="Escolher o item de ${esc(f.name)}"><option value="" selected disabled>Escolha o item…</option>${opcoesItens('')}</select>
             <button type="button" class="icon-btn" data-sem-tirar="${i}" aria-label="Tirar ${esc(f.name)}">${icon('x', 'ic-sm')}</button></div>`;
         }).join('')}</div>` : ''}
-        ${avisos.length ? `<div class="env-avisos" id="env-avisos"><h4>${icon('alert', 'ic-sm')} Confira antes de enviar</h4>${avisos.map((a, n) => `<div class="env-av env-av-${esc(a.av.tipo)}"><div><b>${esc(a.f.name)}</b><span>${esc(a.av.texto)}</span></div><div class="env-av-ac">
+        ${avisos.length ? `<div class="env-avisos" id="env-avisos"><h4>${icon('alert', 'ic-sm')} Confira antes de enviar</h4>${avisos.map((a, n) => `<div class="env-av env-av-${esc(a.av.tipo)}"><div><b>${esc(a.f ? a.f.name : (atual.itens.find(i => i.id === a.item)?.rotulo || ''))}</b><span>${esc(a.av.texto)}</span></div><div class="env-av-ac">
             ${a.av.tipo === 'competencia' && comps.some(c => c.competencia === a.av.competencia) ? `<button type="button" class="btn btn-sm" data-av-mover="${n}">Mover para ${esc(a.av.competencia)}</button>` : ''}
             ${['empresa', 'repetido'].includes(a.av.tipo) ? `<button type="button" class="btn btn-sm" data-av-tirar="${n}">Tirar</button>` : ''}
             <button type="button" class="btn btn-sm btn-ghost" data-av-ok="${n}">Está certo</button></div></div>`).join('')}</div>` : ''}
@@ -312,7 +321,12 @@ export function montarEnviardocs(C) {
       toast(`Movi “${a.f.name}” para a competência ${a.av.competencia}.`); renderEnviar();
     }));
     viewEl.querySelectorAll('[data-av-tirar]').forEach(b => b.addEventListener('click', () => { const a = avisos[+b.dataset.avTirar]; if (a) tirarArquivo(a.f); renderEnviar(); }));
-    viewEl.querySelectorAll('[data-av-ok]').forEach(b => b.addEventListener('click', () => { const a = avisos[+b.dataset.avOk]; const info = a && env.leituras.get(a.f); if (info) info.ok = true; renderEnviar(); }));
+    viewEl.querySelectorAll('[data-av-ok]').forEach(b => b.addEventListener('click', () => {
+      const a = avisos[+b.dataset.avOk]; if (!a) return;
+      if (!a.f) (env.avisosOk || (env.avisosOk = new Set())).add(a.av.chave);   // aviso do item (sequência): só nesta visita, na memória
+      else { const info = env.leituras.get(a.f); if (info) info.ok = true; }
+      renderEnviar();
+    }));
     if (guardarRolagem) viewEl.scrollTop = guardarRolagem;
     viewEl.querySelectorAll('[data-voltar]').forEach(b => b.addEventListener('click', () => { env.naoAplica = env.naoAplica.filter(x => x !== `${empresa()}|${b.dataset.voltar}`); gravarNaoAplica(); renderEnviar(); }));
     viewEl.querySelectorAll('[data-tambem]').forEach(c => c.addEventListener('change', () => { env.tambem = { chave: chaveTambem, setores: [...viewEl.querySelectorAll('[data-tambem]:checked')].map(x => x.dataset.tambem) }; }));
@@ -332,7 +346,7 @@ export function montarEnviardocs(C) {
     const complemento = !!Object.keys(ja).length || noPortal(setor).some(x => x.competencia === comp);
     const [pedido] = E.pedidosDoEnvio(S.rules, {
       setor, competencia: comp, complemento,
-      enviados: comArq.map(it => ({ rotulo: it.rotulo, n: arquivosDe(comp, it.id).length })),
+      enviados: comArq.map(it => ({ rotulo: it.rotulo, n: arquivosDe(comp, it.id).length, detalhe: E.detalheDoItem(arquivosDe(comp, it.id).map(f => env.leituras.get(f)?.analise)) })),
       faltam: faltam.map(it => it.rotulo), dispensados: dispMes.map(it => it.rotulo)
     });
     const bt = $('#env-enviar'); if (bt) { bt.disabled = true; bt.textContent = 'Abrindo a solicitação…'; }
