@@ -107,6 +107,50 @@ export function mesesDoTexto(texto) {
   return [...conta].sort((a, b) => b[1] - a[1]).map(([competencia, n]) => ({ competencia, n }));
 }
 
+/** As datas do texto (dd/mm/aaaa ou dd/mm/aa), na ordem em que aparecem. */
+export function datasDoTexto(texto) {
+  const out = [];
+  for (const m of String(texto || '').matchAll(/\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})\b/g)) {
+    const d = +m[1], mes = +m[2], ano = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+    if (d >= 1 && d <= 31 && mes >= 1 && mes <= 12 && ano >= 2000 && ano <= 2100) { const dt = new Date(ano, mes - 1, d); if (dt.getMonth() === mes - 1) out.push(dt); }
+  }
+  return out;
+}
+/** Banco e conta (só os 4 últimos dígitos) de um extrato, para o resumo. */
+export function contaDoExtrato(texto, regras) {
+  const t = String(texto || '');
+  const bancos = cfgLeitura(regras).bancos || ['Banco do Brasil', 'Itaú', 'Bradesco', 'Santander', 'Caixa Econômica', 'Nubank', 'Inter', 'Sicoob', 'Sicredi', 'C6 Bank', 'BTG', 'Safra', 'Banrisul', 'Mercado Pago', 'PagBank', 'Stone'];
+  const nt = ` ${norm(t)} `;
+  const banco = bancos.find(b => nt.includes(` ${norm(b)} `)) || '';
+  const m = /\bconta(?:\s+corrente)?\s*(?:n[º°o.]*)?\s*[:\-]?\s*([\d][\d.\- ]{2,18}\d)/i.exec(t);
+  const dig = m ? m[1].replace(/\D/g, '') : '';
+  return { banco, conta: dig.length >= 4 ? dig.slice(-4) : '' };
+}
+/** Buracos na numeração das notas emitidas (por tipo e série). Só avisa até `max` números faltando (mais que isso, é outra série/sistema). */
+export function faltasNaSequencia(notas, max = 30) {
+  const grupos = new Map();
+  for (const n of notas || []) { const num = +n.numero; if (!(num > 0)) continue; const k = `${n.tipo}|${n.serie || ''}`; if (!grupos.has(k)) grupos.set(k, new Set()); grupos.get(k).add(num); }
+  const out = [];
+  for (const [k, set] of grupos) {
+    const nums = [...set].sort((a, b) => a - b); if (nums.length < 2) continue;
+    const faltam = []; for (let x = nums[0] + 1; x < nums.at(-1) && faltam.length <= max; x++) if (!set.has(x)) faltam.push(x);
+    if (faltam.length && faltam.length <= max) { const [tipo, serie] = k.split('|'); out.push({ tipo, serie, de: nums[0], ate: nums.at(-1), faltam }); }
+  }
+  return out;
+}
+/** Uma linha curta para a descrição da solicitação, a partir do que foi lido nos arquivos de um item. */
+export function detalheDoItem(analises) {
+  const lista = (analises || []).filter(Boolean);
+  const notas = lista.flatMap(a => a.notas || (a.nota ? [a.nota] : []));
+  if (notas.length) {
+    const nums = notas.map(n => +n.numero).filter(n => n > 0).sort((a, b) => a - b);
+    const tipos = [...new Set(notas.map(n => ({ nfe: 'NF-e', nfce: 'NFC-e', nfse: 'NFS-e' }[n.tipo])))].join('/');
+    return `${notas.length} ${tipos}${nums.length ? `, nº ${nums[0]}${nums.length > 1 ? ` a ${nums.at(-1)}` : ''}` : ''}`;
+  }
+  const contas = lista.filter(a => a.conta && (a.conta.banco || a.conta.conta)).map(a => [a.conta.banco, a.conta.conta && `conta final ${a.conta.conta}`, a.periodo && `${a.periodo.de} a ${a.periodo.ate}`].filter(Boolean).join(' '));
+  return [...new Set(contas)].join('; ');
+}
+
 /**
  * Analisa um documento do envio. doc = { nome, texto, xml? }; ctx = { empresa, empresaCnpj?, outrasEmpresas?, competencia, itensDoSetor: [{ id, rotulo }], setor }.
  * Devolve { item, conf, resumo, competenciaDoc, avisos: [{ tipo, texto, ... }], nota?, chave?, outroSetor? }.
@@ -152,6 +196,20 @@ export function analisarDocumentoCliente(doc, regras, ctx = {}) {
       }
       out.resumo = rotuloDe(out.item || melhor.id);
     }
+    // extrato (e o que mais as regras pedirem): de qual a qual dia do mês ele vai, banco e conta (4 últimos dígitos)
+    const P = { itens: ['extratos'], folgaInicio: 5, folgaFim: 5, ...(L.periodo || {}) };
+    if (out.item && P.itens.includes(out.item)) {
+      out.conta = contaDoExtrato(texto, regras);
+      const cp = /^(\d{2})\/(\d{4})$/.exec(ctx.competencia || '');
+      const doMes = cp ? datasDoTexto(texto).filter(d => d.getMonth() + 1 === +cp[1] && d.getFullYear() === +cp[2]).sort((a, b) => a - b) : [];
+      if (doMes.length) {
+        const de = doMes[0], ate = doMes.at(-1), ultimo = new Date(de.getFullYear(), de.getMonth() + 1, 0).getDate();
+        const dm = (d) => `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+        out.periodo = { de: dm(de), ate: dm(ate) };
+        if (de.getDate() > 1 + (+P.folgaInicio) || ate.getDate() < ultimo - (+P.folgaFim)) avisos.push({ tipo: 'periodo', texto: (T.periodoIncompleto || 'Este extrato vai de {de} a {ate}: confira se falta o começo ou o fim do mês.').replace('{de}', out.periodo.de).replace('{ate}', out.periodo.ate) });
+      }
+      out.resumo = [rotuloDe(out.item).split(' ')[0], out.conta.banco, out.conta.conta && `conta final ${out.conta.conta}`, out.periodo && `${out.periodo.de} a ${out.periodo.ate}`].filter(Boolean).join(' · ');
+    }
     // de que mês é: o mês que mais aparece; se nenhuma data cair na competência escolhida, avisa
     const meses = mesesDoTexto(texto);
     out.competenciaDoc = meses[0]?.competencia || null;
@@ -188,7 +246,7 @@ export function resumirVarias(analises) {
   for (const a of lista) for (const av of a.avisos) { const k = `${av.tipo}|${av.competencia || ''}|${av.texto}`; if (!vistos.has(k)) { vistos.add(k); avisos.push(av); } }
   const comps = new Map(); lista.forEach(a => { if (a.competenciaDoc) comps.set(a.competenciaDoc, (comps.get(a.competenciaDoc) || 0) + 1); });
   return { item, conf: item ? Math.min(...lista.filter(a => a.item === item).map(a => a.conf)) : 0, resumo, avisos, competenciaDoc: [...comps].sort((a, b) => b[1] - a[1])[0]?.[0] || null,
-    chaves: notas.map(n => n.chave).filter(Boolean), varias: lista.length };
+    chaves: notas.map(n => n.chave).filter(Boolean), varias: lista.length, notas };
 }
 
 /** Notas repetidas entre os arquivos (mesma chave de acesso), para avisar. Recebe [{ id, chaves: [] }] e devolve Map(id → id do repetido). */
