@@ -30,6 +30,18 @@ def check(c, m):
     if not c: falhas.append(m)
 
 
+
+async def _nao_tenho(pn, item):
+    """Marca "Não tenho neste mês" pelo menu ⋯ do item (a tela pode redesenhar no meio, depois de uma leitura: tenta de novo)."""
+    for _ in range(6):
+        try:
+            if not await pn.locator(f'.env-i[data-item="{item}"] .env-mais[open]').count():
+                await pn.click(f'.env-i[data-item="{item}"] .env-mais > summary', timeout=3000)
+            await pn.locator(f'.env-i[data-item="{item}"] [data-na]').check(timeout=2000); return
+        except Exception:
+            await pn.wait_for_timeout(500)
+    raise AssertionError(f'não consegui marcar "não tenho neste mês" em {item}')
+
 async def teste_plataforma(b):
     """2.0: a plataforma em tela cheia por cima do portal, que é preenchido por baixo."""
     import datetime
@@ -1714,7 +1726,7 @@ async def teste_enviar_documentos(b):
     await pg.wait_for_timeout(300)
     await pn.locator('.env-i[data-item="vendas-cartao"] input[type=file]').set_input_files([{'name': 'vendas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
     await pg.wait_for_timeout(300)
-    await pn.click('.env-i[data-item="nf-servicos-tomados"] .env-mais > summary'); await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check(); await pg.wait_for_timeout(300)
+    await _nao_tenho(pn, 'nf-servicos-tomados'); await pg.wait_for_timeout(300)
     check(await pn.locator('[data-tambem="Contábil"]:checked').count() == 1, 'cópia: item que serve a dois setores já marca "Enviar também para: Contábil"')
     await pn.locator('[data-tambem="Contábil"]').uncheck()   # só o Fiscal neste primeiro envio (a cópia é testada adiante)
     check(await pn.locator('.env-i.pronto').count() == 2 and await pn.locator('.env-i.disp').count() == 1 and '3 arquivos em 2 itens' in await pn.locator('#env-resumo').inner_text(), 'enviar: arquivos anexados por item e "não se aplica neste mês" marcado')
@@ -3063,7 +3075,7 @@ async def teste_contraste(b):
         await medir_tela('hoje-setor')
         await pn.click('#rail [data-mod="enviar"]'); await pg.wait_for_timeout(700)
         await pn.locator('.env-i[data-item="nf-saida"] input[type=file]').set_input_files([{'name': 'notas.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.4'}])
-        await pn.click('.env-i[data-item="nf-servicos-tomados"] .env-mais > summary'); await pn.locator('.env-i[data-item="nf-servicos-tomados"] [data-na]').check()
+        await _nao_tenho(pn, 'nf-servicos-tomados')
         await medir_tela('enviar-documentos')
         await pn.click('.env-i[data-item="nf-servicos-tomados"] [data-na-desfazer]')
         await pn.click('[data-setor="Pessoal"]'); await pg.wait_for_timeout(700)
