@@ -1,5 +1,5 @@
 {
-  "versao": "2026.11.16-1",
+  "versao": "2026.11.16-2",
   "descricao": "Regras do Assistente do Portal do Cliente ControlTax. Edite este arquivo (no GitHub ou localmente no modo dev) para mudar campos, textos, prazos, documentos e dicas sem reinstalar a extensão.",
   "escritorio": {
     "nome": "ControlTax",
@@ -130,6 +130,7 @@
           "ativo": true,
           "_comentario": "2.46: a extensão lê no computador do cliente os arquivos soltos em Enviar documentos (XML de nota e PDF com texto; fotos e escaneados ficam para a fase 2) e coloca cada um no item certo. As palavras de cada item ficam em itens[].reconhecer (fortes valem 3, comuns 1; excluir zera). Nada é guardado.",
           "pontosMinimos": 3,
+          "ocr": {"ativo": true, "maxPaginas": 2, "confiancaMinima": 70, "tempoMaxSeg": 40, "_comentario": "2.47: foto e PDF escaneado passam pelo OCR (só as primeiras páginas). Abaixo da confiança mínima, ou com poucas palavras do item, o arquivo não entra sozinho: fica a sugestão \"Colocar em …\"."},
           "maxPaginas": 3,
           "nf": {
             "saida": "nf-saida",
@@ -147,7 +148,12 @@
             "outraCompetencia": "Este documento parece ser de {doc}, e você está enviando a competência {comp}.",
             "repetido": "Este arquivo repete {outro} (mesmo conteúdo ou a mesma nota).",
             "naoReconheci": "Não reconheci estes arquivos: escolha o item de cada um.",
-            "semTexto": "imagem ou PDF escaneado (sem texto): escolha o item"
+            "semTexto": "sem texto legível: escolha o item",
+            "lendoImagem": "lendo a imagem",
+            "pular": "Pular a leitura",
+            "pulado": "leitura pulada: escolha o item",
+            "colocarEm": "Colocar em “{rotulo}”",
+            "sugestaoOcr": "Lido em imagem: confira o item."
           }
         },
         "textos": {

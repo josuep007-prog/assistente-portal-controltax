@@ -4,7 +4,7 @@
  * Os arquivos ficam só na memória até o envio; no computador fica guardado apenas o que foi marcado (empresa, competência, id do item,
  * quantidade e data) — nunca nomes de arquivos. Quem envia é sempre o cliente, pelo resumo "Conferir e enviar". */
 import * as E from '../engine.js';
-import { readFile, carregarXlsx } from '../extract.js';
+import { readFile, carregarXlsx, cancelarLeituraAtual } from '../extract.js';
 
 export function montarEnviardocs(C) {
   const { A, S, $, esc, icon, toast, viewEl } = C;
@@ -41,8 +41,26 @@ export function montarEnviardocs(C) {
   const mesmo = (a, b) => a === b || (a.name === b.name && a.size === b.size && a.lastModified === b.lastModified);
   async function hashDe(buf) { try { const h = await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(h)].slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join(''); } catch { return ''; } }
   /** Lê um arquivo no computador do cliente e diz em que item ele cai (nada sai daqui nem fica guardado). */
+  const OCR = () => ({ ativo: true, maxPaginas: 2, confiancaMinima: 70, tempoMaxSeg: 40, ...(cfg().leitura?.ocr || {}) });
+  const idDe = (() => { const m = new WeakMap(); let n = 0; return (f) => { if (!m.has(f)) m.set(f, ++n); return m.get(f); }; })();
+  /** Fase 2 (2.47): foto ou PDF escaneado — OCR das primeiras páginas, no computador do cliente (Tesseract de lib/). */
+  async function lerPorOcr(f, ctx, hash) {
+    const O = OCR(); if (O.ativo === false) return { hash, semTexto: true };
+    const info = env.leituras.get(f); if (info) info.ocrEmCurso = true;
+    const prog = (p) => { const el = viewEl.querySelector(`[data-lendo="${idDe(f)}"]`); if (el) el.textContent = `${TL().lendoImagem || 'lendo a imagem'} ${Math.round((p || 0) * 100)}%`; };
+    const r = await readFile(f, prog, { ocr: true, ocrMaxPaginas: +O.maxPaginas || 2, ocrTempoMaxSeg: +O.tempoMaxSeg || 40 });
+    if (info) info.ocrEmCurso = false;
+    const texto = String(r?.texto || '').trim();
+    if (texto.length < 30) return { hash, semTexto: true, ocr: true };
+    const analise = E.analisarDocumentoCliente({ nome: f.name, texto }, S.rules, ctx);
+    const confianca = r?.confianca ?? 0;
+    // leitura fraca: os avisos (mês, empresa) não são confiáveis; o item fica só como sugestão
+    if (confianca < (+O.confiancaMinima || 70)) analise.avisos = analise.avisos.filter(a => a.tipo === 'outroSetor');
+    return { hash, analise, ocr: true, confianca };
+  }
   async function analisarArquivo(f, ctx) {
     const x = extDe(f.name), buf = await f.arrayBuffer(), hash = await hashDe(buf);
+    if (/^(jpe?g|png|webp|bmp|gif)$/.test(x)) return lerPorOcr(f, ctx, hash);
     const dec = (u8) => new TextDecoder('utf-8').decode(u8);
     if (x === 'xml') return { hash, analise: E.analisarDocumentoCliente({ nome: f.name, xml: dec(buf) }, S.rules, ctx) };
     if (x === 'zip') {   // ZIP de notas (XML): lê cada nota de dentro; o ZIP vai inteiro para o escritório
@@ -56,7 +74,7 @@ export function montarEnviardocs(C) {
     if (/^(pdf|xlsx|xls|csv|ods|txt|docx|odt)$/.test(x)) {
       const r = await readFile(f, null, { ocr: false });
       const texto = String(r?.texto || '').trim();
-      if (texto.length < 40) return { hash, semTexto: true };   // imagem dentro do PDF (escaneado): fica para a fase do OCR
+      if (texto.length < 40) return x === 'pdf' ? lerPorOcr(f, ctx, hash) : { hash, semTexto: true };   // PDF escaneado (imagem): OCR
       return { hash, analise: E.analisarDocumentoCliente({ nome: f.name, texto }, S.rules, ctx) };
     }
     return { hash, semTexto: true };
@@ -89,12 +107,16 @@ export function montarEnviardocs(C) {
     env.lendo = { n: 0, m: novos.length + (env.lendo ? env.lendo.m - env.lendo.n : 0) };
     renderEnviar();
     for (const f of novos) {
-      let r; try { r = await analisarArquivo(f, ctx); } catch { r = { semTexto: true }; }
+      let r; try { r = env.leituras.get(f)?.pulado ? { semTexto: true } : await analisarArquivo(f, ctx); } catch { r = { semTexto: true }; }
       const info = env.leituras.get(f);
       if (info) {   // pode ter sido tirado enquanto lia
-        Object.assign(info, { estado: r.semTexto ? 'semTexto' : 'ok', analise: r.analise || null, hash: r.hash || '' });
-        const alvo = r.analise?.item;
-        if (!itemFixo && alvo && itens.some(i => i.id === alvo) && !doMesDe(comp, alvo) && semItemDe(setor, comp).includes(f)) { porNoItem(comp, alvo, f); info.auto = true; }
+        Object.assign(info, { estado: r.semTexto || info.pulado ? 'semTexto' : 'ok', analise: info.pulado ? null : (r.analise || null), hash: r.hash || '', ocr: !!r.ocr, confianca: r.confianca });
+        const alvo = info.analise?.item;
+        // lido por OCR: só entra sozinho no item com leitura boa e muitas palavras do item; senão fica como sugestão ("Colocar em …")
+        const seguro = !r.ocr || ((r.confianca || 0) >= (+OCR().confiancaMinima || 70) && (info.analise?.conf || 0) >= 0.7);
+        if (!itemFixo && alvo && itens.some(i => i.id === alvo) && !doMesDe(comp, alvo) && semItemDe(setor, comp).includes(f)) {
+          if (seguro) { porNoItem(comp, alvo, f); info.auto = true; } else info.sugestao = alvo;
+        }
       }
       if (env.lendo) env.lendo.n++;
       if (S.view === 'enviar') renderEnviar();
@@ -164,10 +186,10 @@ export function montarEnviardocs(C) {
     const opcoesItens = (atualId) => atual.itens.filter(i => !doMesDe(comp, i.id)).map(i => `<option value="${esc(i.id)}"${i.id === atualId ? ' selected' : ''}>${esc(i.rotulo)}</option>`).join('');
     const rotLeitura = (f) => {
       const info = env.leituras.get(f); if (!info) return '';
-      if (info.estado === 'lendo') return `<small class="env-lido lendo">${icon('refresh', 'ic-sm')} lendo…</small>`;
-      if (info.estado === 'semTexto') return `<small class="env-lido">${esc(TL().semTexto || 'imagem ou PDF escaneado (sem texto)')}</small>`;
+      if (info.estado === 'lendo') return `<small class="env-lido lendo">${icon('refresh', 'ic-sm')} <span data-lendo="${idDe(f)}">lendo…</span></small><button type="button" class="btn btn-sm btn-ghost env-pular" data-pular-leitura="${idDe(f)}" title="Não esperar a leitura: você escolhe o item">${esc(TL().pular || 'Pular a leitura')}</button>`;
+      if (info.estado === 'semTexto') return `<small class="env-lido">${esc(info.pulado ? (TL().pulado || 'leitura pulada: escolha o item') : (TL().semTexto || 'imagem ou PDF escaneado (sem texto)'))}</small>`;
       const a = info.analise; if (!a) return '';
-      return `<small class="env-lido">${info.auto ? '<span class="chip ok">reconhecido</span>' : ''}${esc(a.resumo || '')}</small>`;
+      return `<small class="env-lido">${info.auto ? '<span class="chip ok">reconhecido</span>' : ''}${info.ocr ? `<span class="chip" title="Lido de uma imagem (OCR): confira">imagem${info.confianca != null ? ` · ${info.confianca}%` : ''}</span>` : ''}${esc(a.resumo || '')}</small>`;
     };
     const chipArquivo = (f, i, itemId) => `<div class="env-arq" title="${esc(f.name)}">${icon('clip', 'ic-sm')}<span class="env-arq-n">${esc(f.name)}</span>${rotLeitura(f)}
       ${leituraAtiva() ? `<select class="env-mover" data-mover-de="${esc(itemId || '')}" data-i="${i}" aria-label="Mudar ${esc(f.name)} de item"><option value="" disabled>Mudar para…</option>${opcoesItens(itemId)}</select>` : ''}
@@ -221,7 +243,8 @@ export function montarEnviardocs(C) {
           ${env.lendo ? `<div class="env-lendo" role="status">${icon('refresh', 'ic-sm')} Lendo os arquivos… ${env.lendo.n} de ${env.lendo.m}</div>` : ''}` : ''}
         ${semItem.length ? `<div class="env-sem"><h4>${esc(TL().naoReconheci || 'Não reconheci estes arquivos: escolha o item de cada um.')}</h4>${semItem.map((f, i) => {
           const info = env.leituras.get(f), os = info?.analise?.outroSetor;
-          return `<div class="env-arq env-sem-i">${icon('clip', 'ic-sm')}<span class="env-arq-n">${esc(f.name)}</span>${info?.estado === 'lendo' ? rotLeitura(f) : `<small class="env-lido">${esc(os ? `Parece ser “${os.rotulo}” (${os.setores.join(' e ')})` : info?.estado === 'semTexto' ? (TL().semTexto || 'sem texto') : (info?.analise?.resumo || 'não reconhecido'))}</small>`}
+          return `<div class="env-arq env-sem-i">${icon('clip', 'ic-sm')}<span class="env-arq-n">${esc(f.name)}</span>${info?.estado === 'lendo' ? rotLeitura(f) : `<small class="env-lido">${esc(os ? `Parece ser “${os.rotulo}” (${os.setores.join(' e ')})` : info?.estado === 'semTexto' ? (info.pulado ? (TL().pulado || 'leitura pulada') : (TL().semTexto || 'sem texto')) : info?.sugestao ? (TL().sugestaoOcr || 'Lido em imagem: confira o item.') : (info?.analise?.resumo || 'não reconhecido'))}</small>`}
+            ${info?.sugestao && atual.itens.some(x => x.id === info.sugestao) ? `<button type="button" class="btn btn-sm btn-primary" data-sug-item="${i}">${esc((TL().colocarEm || 'Colocar em “{rotulo}”').replace('{rotulo}', atual.itens.find(x => x.id === info.sugestao).rotulo))}</button>` : ''}
             <select class="env-mover" data-sem="${i}" aria-label="Escolher o item de ${esc(f.name)}"><option value="" selected disabled>Escolha o item…</option>${opcoesItens('')}</select>
             <button type="button" class="icon-btn" data-sem-tirar="${i}" aria-label="Tirar ${esc(f.name)}">${icon('x', 'ic-sm')}</button></div>`;
         }).join('')}</div>` : ''}
@@ -276,6 +299,11 @@ export function montarEnviardocs(C) {
       solta.addEventListener('dragleave', () => solta.classList.remove('over'));
       solta.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); solta.classList.remove('over'); lerParaEnvio(e.dataTransfer?.files || [], setor, comp); });
     }
+    viewEl.querySelectorAll('[data-sug-item]').forEach(b => b.addEventListener('click', () => { const f = semItem[+b.dataset.sugItem]; const info = f && env.leituras.get(f); if (info?.sugestao) porNoItem(comp, info.sugestao, f); renderEnviar(); }));
+    viewEl.querySelectorAll('[data-pular-leitura]').forEach(b => b.addEventListener('click', () => {
+      const f = [...env.leituras.keys()].find(x => idDe(x) === +b.dataset.pularLeitura); const info = f && env.leituras.get(f); if (!info) return;
+      info.pulado = true; if (info.ocrEmCurso) cancelarLeituraAtual();   // OCR em andamento: para agora
+    }));
     viewEl.querySelectorAll('select[data-sem]').forEach(sel => sel.addEventListener('change', () => { const f = semItem[+sel.dataset.sem]; if (f && sel.value) porNoItem(comp, sel.value, f); renderEnviar(); }));
     viewEl.querySelectorAll('[data-sem-tirar]').forEach(b => b.addEventListener('click', () => { const f = semItem[+b.dataset.semTirar]; if (f) tirarArquivo(f); renderEnviar(); }));
     viewEl.querySelectorAll('[data-av-mover]').forEach(b => b.addEventListener('click', () => {
