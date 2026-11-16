@@ -2315,4 +2315,23 @@ t('envio por competência (2.48): período do extrato, sequência das notas e de
   assert.ok(d.includes('• Notas fiscais de saída — 2 arquivos (5 NF-e, nº 101 a 108)'));
 });
 
+t('envio por competência (2.50): nome do arquivo, OFX e "na dúvida, aponta o mais provável"', () => {
+  const ctx = { empresa: 'EMPRESA EXEMPLO SIMPLES NACIONAL LTDA', competencia: '10/2026', itensDoSetor: E.itensDoSetor(rules, 'Contábil', '10/2026', {}), setor: 'Contábil' };
+  const caixa = E.analisarDocumentoCliente({ nome: '06_controle_caixa_10-2026.csv', texto: 'Data;Histórico;Entrada;Saída;Saldo\n01/10/2026;Saldo inicial;;;500,00\n31/10/2026;Venda;100,00;;600,00' }, rules, ctx);
+  assert.equal(caixa.item, 'caixa'); assert.ok(!caixa.duvida, 'pelo nome do arquivo e pelas colunas: sem dúvida');
+  const ofx = 'OFXHEADER:100\nDATA:OFXSGML\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM><BANKID>0341<ACCTID>123456<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST><DTSTART>20261001<DTEND>20261031<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261015<TRNAMT>200.00</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>';
+  const ex = E.analisarDocumentoCliente({ nome: '03c_extrato_conta_corrente_10-2026.ofx', texto: ofx }, rules, ctx);
+  assert.equal(ex.item, 'extratos'); assert.ok(!ex.duvida);
+  assert.deepEqual(ex.conta, { banco: 'Itaú', conta: '3456' }); assert.deepEqual(ex.periodo, { de: '01/10', ate: '31/10' });
+  assert.equal(ex.competenciaDoc, '10/2026'); assert.equal(ex.avisos.length, 0);
+  const setembro = E.analisarDocumentoCliente({ nome: 'extrato.ofx', texto: ofx.replace('20261031', '20260930').replace(/202610/g, '202609') }, rules, ctx);
+  assert.ok(setembro.avisos.some(a => a.tipo === 'competencia' && a.competencia === '09/2026'), 'OFX de setembro no envio de outubro');
+  const pouco = E.analisarDocumentoCliente({ nome: 'scan001.pdf', texto: 'Favorecido FULANO DE TAL valor 100,00 em 10/10/2026' }, rules, ctx);
+  assert.equal(pouco.item, 'pagamentos'); assert.equal(pouco.duvida, true, 'só uma palavra: aponta, mas com dúvida');
+  const comNome = E.analisarDocumentoCliente({ nome: 'scan003.pdf', texto: 'Pagador EMPRESA EXEMPLO SIMPLES NACIONAL LTDA\nRecebido em 12/10/2026 referente a servicos' }, rules, ctx);
+  assert.equal(comNome.item, 'pagamentos', 'o nome da empresa ("… SIMPLES NACIONAL LTDA") não faz parecer guia do Simples');
+  const nada = E.analisarDocumentoCliente({ nome: 'scan002.pdf', texto: 'texto qualquer sem palavra conhecida' }, rules, ctx);
+  assert.equal(nada.item, null); assert.ok(!nada.duvida);
+});
+
 console.log(`\n${n} testes ok`);

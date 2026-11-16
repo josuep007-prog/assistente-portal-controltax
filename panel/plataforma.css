@@ -1258,3 +1258,7 @@ body.plat .modal .sheet:not(.dlg) { width: min(640px, 100%); max-height: calc(10
 .env-desc { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--blue-deep) 40%, var(--rule)); border-left: 3px solid var(--blue-deep); border-radius: var(--r); background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
 .env-desc h4 { margin: 0 0 2px; font: 600 12.5px var(--f-head); color: var(--ink); display: flex; align-items: center; gap: 6px; }
 .env-desc .env-arq { background: var(--surface-2); }
+.env-duv { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--dp-today) 45%, var(--rule)); border-left: 3px solid var(--dp-today); border-radius: var(--r); background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.env-duv h4 { margin: 0 0 2px; font: 600 12.5px var(--f-head); color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.env-duv .env-arq { background: var(--surface-2); }
+.env-duv .env-lido b { color: var(--ink); }
