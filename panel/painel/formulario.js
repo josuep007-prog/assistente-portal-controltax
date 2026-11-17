@@ -142,7 +142,9 @@ export const chaveCampos = (tipo) => { const W = w(tipo); return JSON.stringify(
 function devolverFoco(padrao) {
   const a = document.activeElement;
   if (a && a !== document.body) return false;          // já está em algum campo: respeita
-  const alvo = S.pv.ultimoFoco?.isConnected ? S.pv.ultimoFoco : padrao;
+  // o formulário pode ter sido redesenhado: volta ao campo com o mesmo id
+  const u = S.pv.ultimoFoco;
+  const alvo = u?.isConnected ? u : (u?.id && document.getElementById(u.id)) || padrao;
   if (!alvo?.focus) return false;
   S.pv.devolvendoFoco = true;   // o foco devolvido por nós não pode disparar de novo a busca das opções da lista (ciclo de seleciona/desseleciona)
   try { alvo.focus(); } finally { S.pv.devolvendoFoco = false; }
@@ -208,15 +210,29 @@ export async function carregarListas(tipo, refazer = false) {
       if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break;   // saiu do formulário
       // cede a vez: só lê uma lista quando a pessoa está parada há uns segundos (cada leitura abre a lista do portal por baixo e tira o foco daqui),
       // e não atravessa uma gravação no portal
-      const dentroDeCampo = () => !!document.activeElement?.closest?.('#fields') && document.activeElement.matches?.('input,textarea,select');
-      while (S.preenchendo || dentroDeCampo() || Date.now() - (S.pv.ultimaAcao || 0) < 2500) { if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break; await new Promise(r => setTimeout(r, 400)); }
+      // 2.55: antes esperava enquanto o cursor estivesse num campo e devolvia o cursor ao campo depois de CADA lista — então, depois da 1ª lista,
+      // a leitura achava que a pessoa estava preenchendo e parava ali (só o Cargo vinha). Agora o cursor só volta no fim de todas as listas,
+      // e com o cursor parado num campo a leitura continua depois de 8 s sem mexer (sem o cursor num campo, 2,5 s).
+      const noCampo = () => !!document.activeElement?.closest?.('#fields') && document.activeElement.matches?.('input,textarea,select');
+      const ocupado = () => S.preenchendo || !!document.querySelector('.ctl-pop') || Date.now() - (S.pv.ultimaAcao || 0) < (noCampo() ? 8000 : 2500);
+      while (ocupado()) { if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break; await new Promise(r => setTimeout(r, 400)); }
       if (!(S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo)) break;
       tent[k] = Date.now();
-      let r = null; try { r = await request({ type: 'getOptions', locator: { fc: c.fc } }, 8000); } catch { /* a lista não respondeu: segue para a próxima */ }
+      const antes = S.pv.ultimaAcao || 0;
+      let r = null; try { r = await request({ type: 'getOptions', locator: { fc: c.fc }, force: refazer }, 8000); } catch { /* a lista não respondeu: segue para a próxima */ }
       if (r?.options?.length) { W.opcoes[k] = r.options; const dl = document.getElementById(`dl-${k}`); if (dl) dl.innerHTML = r.options.map(o => `<option value="${esc(o)}">`).join(''); }
-      S.pv.listas.n++; atualizarStatusListas(tipo); devolverFoco(null);
+      // diagnóstico (só o nome da lista, quantas opções e o motivo; nunca as opções)
+      (S.pv.listasDiag || (S.pv.listasDiag = {}))[k] = r ? `${r.options?.length || 0}${r.motivo ? ` (${r.motivo})` : ''}` : 'sem resposta';
+      S.pv.listas.n++; atualizarStatusListas(tipo);
+      // a pessoa clicou ou digitou enquanto esta lista era lida: o cursor volta para ela na hora (e a leitura espera)
+      if ((S.pv.ultimaAcao || 0) > antes) devolverFoco(null);
     }
   } finally { S.pv.listas = null; atualizarStatusListas(tipo); sincronizarPedidosNovos(tipo); devolverFoco(null); }
+  // as que voltaram vazias ganham mais uma tentativa sozinhas (a lista do portal às vezes ainda está carregando na 1ª vez);
+  // se nenhuma veio, não insiste (o botão "Ler listas do Onvio de novo" continua lá)
+  if (!refazer && !W.listasRefeitas && alvos.some(([k]) => !W.opcoes[k]?.length) && alvos.some(([k]) => W.opcoes[k]?.length) && S.ctx.route?.mode === 'form' && S.ctx.tipo === tipo) {
+    W.listasRefeitas = true; setTimeout(() => carregarListas(tipo, true), 1500);
+  }
 }
 
 export function renderFormularioProprio(el, tipo) {

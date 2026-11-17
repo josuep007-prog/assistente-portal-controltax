@@ -128,9 +128,12 @@ async function comboOptions(loc, force) {
   const key = currentPath() + '|' + (loc.fc || loc.sel);
   if (!force && optionsCache.has(key)) return optionsCache.get(key);
   const cb = findField(loc);
-  if (!cb || cb.tagName !== 'BENTO-COMBOBOX') return [];
+  const vazio = (motivo) => Object.assign([], { motivo });   // o motivo vai ao diagnóstico (sem opções nem valores)
+  if (!cb) return vazio('campo não achado');
+  if (cb.tagName !== 'BENTO-COMBOBOX') return vazio(`não é lista (${cb.tagName.toLowerCase()})`);
   await reveal(cb);
-  if (!visible(cb)) return [];
+  if (!visible(cb)) return vazio('campo escondido');
+  if (bloqueado(cb)) return vazio('bloqueado');
   const { box } = await openCombo(cb);
   let opts = readOpts(box).map(o => o.text);
   for (let i = 0; i < 6 && !opts.length; i++) { await sleep(300); opts = readOpts(document.getElementById(cb.getAttribute('aria-owns'))).map(o => o.text); }
@@ -148,7 +151,7 @@ async function comboOptions(loc, force) {
     vp.scrollTop = 0; vp.dispatchEvent(new Event('scroll'));
   }
   await closeCombo(cb);
-  opts = Object.assign([...opts], { virtual });
+  opts = Object.assign([...opts], { virtual, motivo: opts.length ? '' : (box || caixaDe(cb) ? 'lista aberta sem opções' : 'lista não abriu') });
   if (opts.length) optionsCache.set(key, opts);
   return opts;
 }
