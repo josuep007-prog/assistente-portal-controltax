@@ -53,7 +53,7 @@ async function onPanelMessage(m) {
       case 'getOptions': {
         const opts = await comboLock(() => comboOptions(m.locator, m.force));
         if (modo === 'plataforma') iframe?.focus();
-        post({ type: 'options', id: m.id, options: opts, virtual: !!opts.virtual });
+        post({ type: 'options', id: m.id, options: opts, virtual: !!opts.virtual, motivo: opts.motivo || '' });
         break;
       }
       case 'empregadoDetalhe': {   // ficha do funcionário: o registro que o portal já leu (nada é gravado)

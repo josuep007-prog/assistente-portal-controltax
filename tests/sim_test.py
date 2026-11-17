@@ -2053,9 +2053,16 @@ async def teste_foco_lista_vazia(b):
     await pn.evaluate("window.__focos = 0; document.addEventListener('focusin', (e) => { if (e.target.id === 'f-cargo') window.__focos++; })")
     await pn.locator('#f-cargo').click()
     await pg.wait_for_timeout(9000)
+    # 2.55: com o cursor parado, a leitura das listas continua depois de 8 s (e devolve o cursor só no fim): espera terminar
+    quieto = 0
+    for _ in range(240):
+        st = await pn.evaluate("document.getElementById('av-listas-st')?.innerText || ''")
+        quieto = quieto + 1 if 'Lendo' not in st else 0
+        if quieto >= 10: break
+        await pg.wait_for_timeout(500)
     focos = await pn.evaluate("window.__focos")
     ativo = await pn.evaluate("document.activeElement && (document.activeElement.id || document.activeElement.tagName)")
-    check(focos <= 3, f'foco: a lista sem opções não fica pegando o foco de novo e de novo ({focos} vezes em 9 s)')
+    check(focos <= 3, f'foco: a lista sem opções não fica pegando o foco de novo e de novo ({focos} vezes)')
     check(ativo == 'f-cargo', f'foco: no fim o campo continua com o foco ({ativo})')
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
@@ -2098,6 +2105,41 @@ async def teste_sem_ao_vivo(b):
         if 'Nada pendente' in pend2: break
         await pg.wait_for_timeout(500)
     check('Nada pendente' in pend2, f'ao vivo: depois de enviar não sobra nada pendente ({pend2!r})')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
+    await ctx.close()
+
+async def teste_listas_com_cursor(b):
+    """2.55: com o cursor parado num campo (sem digitar), a leitura das listas do Onvio continua até o fim (antes parava depois do Cargo)."""
+    print('\n[listas] o cursor parado num campo não trava a leitura das listas')
+    ctx = await b.new_context(viewport={'width': 1500, 'height': 900})
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    async def _auto():
+        while True:
+            try:
+                if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]', timeout=800)
+            except Exception: pass
+            await asyncio.sleep(0.15)
+    tarefa = asyncio.create_task(_auto())
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(800)
+    await pn.click('.pd-escolha .intent[data-tipo="cadastroEmpregado"]')
+    await pn.locator('#f-nome').wait_for(state='attached', timeout=20000)
+    await pn.locator('#f-nome').click(); await pn.locator('#f-nome').press_sequentially('MARIA', delay=30)   # e o cursor fica ali
+    ok = False
+    for _ in range(240):
+        st = await pn.locator('#av-listas-st').inner_text()
+        if 'já estão aqui' in st and 'Lendo' not in st: ok = True; break
+        await pg.wait_for_timeout(500)
+    n = await pn.evaluate("(() => { const o = {}; document.querySelectorAll('datalist[id^=dl-]').forEach(d => { o[d.id.slice(3)] = d.querySelectorAll('option').length; }); return o; })()")
+    cheias = [k for k, v in n.items() if v]
+    check(ok and len(cheias) >= 5 and n.get('sindicato', 0) > 0 and n.get('vinculo', 0) > 0, f'listas: com o cursor parado no Nome, as listas chegam até o fim ({len(cheias)} com opções: {cheias[:8]}…)')
+    foco = await pn.evaluate("document.activeElement?.id || ''")
+    check(foco == 'f-nome' and await pn.locator('#f-nome').input_value() == 'MARIA', f'o cursor volta ao Nome e o que foi digitado continua ({foco})')
+    diag = await pn.evaluate("JSON.stringify(window.__ctDiagListas || null)")
     check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
@@ -3600,7 +3642,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_leitura_duvida(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_lista_tema(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_leitura_duvida(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_lista_tema(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_listas_com_cursor(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3630,7 +3672,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'foco':
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lista_tema(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await b.close()
+            await teste_lista_tema(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_listas_com_cursor(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'ocr':
@@ -4042,7 +4084,7 @@ async def main():
         await teste_cadastro(b); await teste_cadastro_dependentes(b); await teste_form_sem_pedido(b)
         await teste_lote4(b)
         await teste_lote6(b)
-        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
+        await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_listas_com_cursor(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b)
         await teste_vivo(b)
         await teste_sugestao(b)
         await teste_lote5(b)
