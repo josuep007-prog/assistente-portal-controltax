@@ -11,6 +11,7 @@ import { aplicarSugestoes, contextoModelo, fillPortal, gerarPeloModelo, maskInpu
 import { renderModelosInicio } from './painel/portal.js';
 import { carregarHistorico, comecarDoZeroSeAbandonado, copiarDiagnostico, guardarEquipe, nomeCurto, renderAvisosInicio, renderFaq, renderRepetir, retomarPlanilha, salvarRascunhoAgora, ligar as ligarFacilidades } from './painel/facilidades.js';
 import { prazosDoHistorico } from './painel/historico.js';
+import { ligarListas } from './listas.js';
 import { mensagemAdmissao, renderConfig, renderFerramentas } from './painel/config.js';
 
 /* Painel — orquestração. O código das telas fica em panel/painel/*.js (dividido na 2.16.4). */
@@ -18,6 +19,7 @@ ligarConexao();
 ligarModo();
 ligarInicio();
 ligarFacilidades();
+ligarListas();   // listas de opções no tema da extensão (no lugar da lista clara do Chrome)
 
 /* =================== Plataforma (2.0) =================== */
 definirPlat(montarPlataforma({
