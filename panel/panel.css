@@ -414,3 +414,13 @@ details.more > summary::-webkit-details-marker { display: none; }
 .sim-acoes .sim-limpar:not(:disabled):hover { color: var(--brand-red); border-color: color-mix(in srgb, var(--brand-red) 40%, transparent); }
 .sim-acoes .btn:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 760px) { .sim-grid { grid-template-columns: minmax(0, 1fr); } .sim-res { position: static; } .sim-box { grid-template-columns: minmax(0, 1fr); } }
+
+/* 2.54 — lista de opções no tema (panel/listas.js; substitui a lista clara do <datalist> do Chrome) */
+.ctl-pop { position: fixed; z-index: 2147483000; overflow-y: auto; overscroll-behavior: contain; padding: 4px; border: 1px solid var(--rule-strong); border-radius: var(--r, 4px); background: var(--surface); box-shadow: var(--shadow-2); scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; font: 400 13px/1.35 var(--f-body); color: var(--ink); }
+.ctl-op { padding: 7px 10px; border-radius: 3px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctl-op.on { background: var(--surface-3); }
+.ctl-op.atual { font-weight: 600; box-shadow: inset 3px 0 0 var(--blue-deep); }
+.ctl-op mark { background: none; color: var(--blue-deep); font-weight: 700; }
+.ctl-vazio, .ctl-mais { padding: 8px 10px; color: var(--ink-2); font-size: 12px; }
+.ctl-mais { border-top: 1px solid var(--rule); margin-top: 4px; }
+input[data-lista], input[list] { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%); background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 28px; }

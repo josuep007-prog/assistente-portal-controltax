@@ -1957,6 +1957,46 @@ async def teste_blocos_cadastro(b):
     tarefa.cancel(); await asyncio.gather(tarefa, return_exceptions=True)
     await ctx.close()
 
+async def teste_lista_tema(b):
+    """2.54: as listas de opções do formulário (funcionários, tipos, cargos…) abrem na lista da extensão, no tema, e não na lista clara do Chrome."""
+    print('\n[lista] lista de opções no tema da extensão')
+    ctx = await b.new_context(viewport={'width': 1400, 'height': 900}, color_scheme='dark')
+    pg = await ctx.new_page()
+    erros = []
+    pg.on('pageerror', lambda e: erros.append(str(e)))
+    await pg.goto(f'http://127.0.0.1:{PORT}/'); await pg.wait_for_timeout(3500)
+    pn = next((f for f in pg.frames if 'panel/panel.html' in f.url), None)
+    await pn.click('#rail [data-mod="preencher"]'); await pg.wait_for_timeout(600)
+    await pn.locator('.pd-escolha .intent[data-tipo="afastamento"]').click(); await pg.wait_for_timeout(1500)
+    if await pn.locator('.ee-lista').count(): await pn.click('.dlg [data-acao="2"]')
+    await pn.locator('#f-empregado').wait_for(state='attached', timeout=20000); await pg.wait_for_timeout(2500)
+    inp = pn.locator('#f-empregado')
+    await inp.click(); await pg.wait_for_timeout(400)
+    n = await pn.locator('.ctl-pop .ctl-op').count()
+    sem_nativa = await inp.get_attribute('list') is None and await inp.get_attribute('data-lista') == 'dl-empregado'
+    fundo = await pn.evaluate("getComputedStyle(document.querySelector('.ctl-pop')).backgroundColor")
+    check(n >= 10 and sem_nativa and fundo not in ('rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)'), f'clicar no campo abre a lista da extensão, escura no tema escuro ({n} opções, fundo {fundo}) e sem a lista do Chrome')
+    await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+    check(await pn.locator('.ctl-pop').count() == 0, 'Esc fecha a lista')
+    await inp.fill(''); await inp.press_sequentially('mar', delay=30); await pg.wait_for_timeout(300)
+    ops = await pn.evaluate("[...document.querySelectorAll('.ctl-op')].map(e => e.textContent)")
+    check(ops and all('MAR' in o for o in ops), f'digitar filtra a lista ({ops})')
+    await pg.keyboard.press('ArrowDown'); await pg.keyboard.press('Enter'); await pg.wait_for_timeout(600)
+    check(await inp.input_value() == ops[0] and await pn.locator('.ctl-pop').count() == 0, f'↓ e Enter escolhem a opção ({await inp.input_value()})')
+    v = {}
+    for _ in range(20):
+        v = await pg.evaluate("Object.fromEntries([...document.querySelectorAll('main [formcontrolname]')].map(e => [e.getAttribute('formcontrolname'), e.tagName === 'BENTO-COMBOBOX' ? e.querySelector('input').value : e.value]))")
+        if any(ops[0] in str(x) for x in v.values()): break
+        await pg.wait_for_timeout(400)
+    check(any(ops[0] in str(x) for x in v.values()), 'a escolha vai ao portal como se tivesse sido digitada')
+    await pn.locator('#f-tipoAfastamento').click(); await pg.wait_for_timeout(300)
+    await pn.locator('.ctl-pop .ctl-op').nth(1).click(); await pg.wait_for_timeout(400)
+    check(bool(await pn.locator('#f-tipoAfastamento').input_value()) and await pn.locator('.ctl-pop').count() == 0, 'clicar numa opção também escolhe')
+    await inp.fill('ZZZ'); await pg.wait_for_timeout(300)
+    check(await pn.locator('.ctl-pop').count() == 0, 'preencher o campo por código (sem teclado) não abre a lista')
+    check(not erros, 'sem erros na página' + (': ' + '; '.join(erros[:2]) if erros else ''))
+    await ctx.close()
+
 async def teste_foco_listas(b):
     """2.29.4: clicar numa lista e logo em outro campo — quando a extensão termina de buscar as opções da lista o foco fica no campo em que a pessoa clicou por último
     (antes voltava à lista anterior)."""
@@ -3560,7 +3600,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'l6':   # SIM_SO=l6 roda só o lote 6 (variáveis da folha, grade de rubricas, resposta no portal)
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_leitura_duvida(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
+            await teste_lote6(b); await teste_grade_div(b); await teste_grade_virtual(b); await teste_grade_api(b); await teste_comando_rubricas(b); await teste_rascunho_rubricas(b); await teste_excel_rubricas(b); await teste_leitura_repetida(b); await teste_competencia_comando(b); await teste_resumo_conferencia(b); await teste_troca_empresa_dom(b); await teste_troca_empresa_modal(b); await teste_cancelar_rubricas(b); await teste_cancelar_todos(b); await teste_cabecalho_fixo(b); await teste_recados_hoje(b); await teste_enviar_documentos(b); await teste_leitura_envio(b); await teste_leitura_duvida(b); await teste_telas_do_setor(b); await teste_blocos_cadastro(b); await teste_lista_tema(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await teste_ocr_tempo(b); await teste_dicas_arquivo(b); await teste_arquivo_nome_e_leitura(b); await teste_pular_leitura(b); await teste_todas_as_empresas(b); await teste_empresa_do_funcionario(b); await teste_sair_do_pedido(b); await teste_tela_muda(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'l4':   # SIM_SO=l4 roda só o lote 4 (rescisão, férias e fluxo de pedidos)
@@ -3590,7 +3630,7 @@ async def main():
     if os.environ.get('SIM_SO') == 'foco':
         async with async_playwright() as p:
             b = await p.chromium.launch(args=['--disable-dev-shm-usage'])
-            await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await b.close()
+            await teste_lista_tema(b); await teste_foco_listas(b); await teste_foco_lista_vazia(b); await teste_sem_ao_vivo(b); await teste_listas_do_onvio(b); await teste_cargo_novo(b); await teste_cancelar_cadastro(b); await b.close()
         print('\nTUDO CERTO' if not falhas else f'\n{len(falhas)} FALHA(S):\n' + '\n'.join('  - ' + f for f in falhas))
         return
     if os.environ.get('SIM_SO') == 'ocr':
